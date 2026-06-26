@@ -1,5 +1,5 @@
 # =============================================================================
-# HeatValve-6 — Shared Base Configuration
+# Lune V6 — Shared Base Configuration
 # =============================================================================
 # This file is the shared base configuration. The device entrypoint lives in
 # configurations/heatvalve-6-ble.yaml and `!include`s this file plus the
@@ -15,7 +15,7 @@
 substitutions:
   # Device identity (overridden per variant in entrypoint)
   device_name: heatvalve-6
-  friendly_name: "HeatValve-6 UFH Controller"
+  friendly_name: "Lune V6 Controller"
 
   # GPIO pins — change to match your PCB revision
   pin_i2c_sda: GPIO8
@@ -27,7 +27,7 @@ substitutions:
   pin_adc_current: GPIO7
 
   # Network — fallback AP name when WiFi is unreachable
-  fallback_ap_ssid: "HeatValve-6 Setup"
+  fallback_ap_ssid: "Lune V6 Setup"
 
   # Control parameters — defaults (adjustable at runtime via HA)
   default_comfort_band: "0.5"        # °C dead-band around setpoint
@@ -46,14 +46,14 @@ esphome:
   name: ${device_name}
   name_add_mac_suffix: true
   friendly_name: ${friendly_name}
-  comment: "Underfloor heating 6-zone valve controller"
+  comment: "Lune V6 local 6-zone hydronic manifold controller"
   project:
-    name: birkemosen.heatvalve-6
+    name: guldborg-birkemose.lune-v6
     version: ${firmware_version}
   on_boot:
     - priority: 800
       then:
-      - logger.log: "HeatValve-6 booting..."
+      - logger.log: "Lune V6 booting..."
       - lambda: |-
           // Apply persisted DS18B20 ROM map early so probe slots stay stable across reboots.
           if (id(probe_addr_1) != 0) id(probe_temp_1)->set_address(id(probe_addr_1));

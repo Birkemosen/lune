@@ -2,7 +2,7 @@
 
 ## Hardware Context
 
-HeatValve-6 uses DRV8215 H-bridge drivers with the built-in IPROPI current mirror
+Lune V6 uses DRV8215 H-bridge drivers with the built-in IPROPI current mirror
 output as the **only analog feedback signal**. All 6 IPROPI outputs are wire-ORed to a
 single 5.1 kΩ sense resistor read by the ESP32-S3 ADC (GPIO7). Only one motor runs at
 a time (firmware invariant), so the active motor's current appears cleanly on the bus.

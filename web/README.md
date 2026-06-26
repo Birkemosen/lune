@@ -1,6 +1,8 @@
-# HeatValve-6 ESP Dashboard
+# Lune V6 ESP Dashboard
 
-A lightweight, modular, framework-free dashboard optimized for ESPHome devices.
+A lightweight, modular, framework-free dashboard for the Lune V6 ESPHome
+firmware. The implementation still uses the internal `hv6` namespace while
+public UI text moves to the Lune product structure.
 
 ## Features
 - Ultra-lightweight runtime

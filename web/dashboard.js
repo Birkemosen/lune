@@ -487,7 +487,7 @@ I2C_SCAN: ----- end -----`),P("I2C scan complete");return}if(s==="calibrate_all_
       </nav>
       <div class="top-brand">
         <div class="brand-row">
-          <div class="side-brand">HeatValve-6</div>
+          <div class="side-brand">Lune V6</div>
         </div>
         <span class="brand-fw" id="hdr-fw"></span>
       </div>

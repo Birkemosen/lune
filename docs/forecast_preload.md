@@ -1,11 +1,11 @@
 # Forecast Preload (wind-aware, on-device)
 
-`hv6_forecast` adds weather-forecast-driven per-zone preheating to HeatValve-6, on the
+`hv6_forecast` adds weather-forecast-driven per-zone preheating to Lune V6, on the
 board itself — no external service required. It exists because a Mitsubishi Ecodan + Odin
 optimizer plans the *whole house's* heat as a single signal, but this house loses heat
 unevenly: depending on wind direction and speed, only one or two of the six rooms (mostly
 the low-thermal-mass first floor) lag during a winter storm. Odin cannot route heat to a
-specific facade; HeatValve-6 must, and to do that it has to know which way the wind blows.
+specific facade; Lune V6 must, and to do that it has to know which way the wind blows.
 
 ## How it works
 

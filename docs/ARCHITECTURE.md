@@ -1,11 +1,16 @@
-# HeatValve-6 Architecture
+# Lune V6 Architecture
 
 ## System Overview
 
-HeatValve-6 is a 6-zone underfloor heating (UFH) valve controller built on ESP32-S3 with
-ESPHome firmware. Custom C++ components run as FreeRTOS tasks alongside the ESPHome main
-loop and separate hardware control (motor FSM, endstop detection) from heating logic
-(zone state machine, control algorithms, hydraulic balance).
+Lune V6 is a 6-zone underfloor heating (UFH) manifold controller in the Guldborg &
+Birkemose Lune product line. It is built on ESP32-S3 with ESPHome firmware. Custom C++
+components run as FreeRTOS tasks alongside the ESPHome main loop and separate hardware
+control (motor FSM, endstop detection) from heating logic (zone state machine, control
+algorithms, hydraulic balance).
+
+The current repository and code still use the historical `heatvalve-6` and `hv6` names.
+Treat those as internal implementation names until a deliberate migration is planned.
+Public product references should use Lune V6.
 
 ```
 ┌──────────────────────────────────────────────────────────────┐

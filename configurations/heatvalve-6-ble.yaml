@@ -1,5 +1,5 @@
 # =============================================================================
-# HeatValve-6 \u2014 BLE Configuration (BTHome temperature sensors)
+# Lune V6 \u2014 BLE Configuration (BTHome temperature sensors)
 # =============================================================================
 # Build:   make build
 # Deploy:  make deploy
@@ -11,7 +11,7 @@
 
 substitutions:
   device_name: heatvalve-6
-  friendly_name: "HeatValve-6 UFH Controller"
+  friendly_name: "Lune V6 Controller"
 
 packages:
   base: !include ../heatvalve-6.yaml

@@ -1,6 +1,9 @@
 # HV6 API v1 Contract
 
-This document defines the dedicated dashboard API contract for HeatValve-6.
+This document defines the dedicated dashboard API contract for Lune V6.
+
+`/api/hv6/v1` is intentionally retained as an internal compatibility namespace during
+the public rename from HeatValve-6 to Lune V6.
 
 ## Scope
 

@@ -1,5 +1,5 @@
 # -----------------------------------------------------------------------------
-# HeatValve-6 firmware build (BLE BTHome sensors, ESPHome native API)
+# Lune V6 firmware build (BLE BTHome sensors, ESPHome native API)
 # -----------------------------------------------------------------------------
 CONFIG ?= configurations/heatvalve-6-ble.yaml
 BUILD_NAME ?= heatvalve-6
@@ -23,7 +23,7 @@ DASHBOARD_COMPILED_LANG := $(if $(filter en da,$(LANG)),$(LANG),en)
 .PHONY: help check config build build-verify deploy ota logs discover monitor erase erase-nvs clean dashboard dashboard-tooling dashboard-build dashboard-watch test test-ripple test-forecast test-balance
 
 help:
-	@echo "HeatValve-6 ESPHome tasks"
+	@echo "Lune V6 ESPHome tasks"
 	@echo "  make config        Validate YAML"
 	@echo "  make build         Compile firmware (no version bump)"
 	@echo "  make build-verify  Alias for make build"
@@ -45,7 +45,7 @@ help:
 	@echo "  make deploy PORT=/dev/cu.usbmodemXXXX"
 	@echo "  make monitor PORT=/dev/cu.usbmodemXXXX"
 	@echo "  make erase PORT=/dev/cu.usbmodemXXXX"
-	@echo "  make ota HOST=heatvalve-6-a1b2c3.local"
+	@echo "  make ota HOST=heatvalve-6-a1b2c3.local  # current internal hostname pattern"
 	@echo "  make discover"
 
 check:
@@ -82,9 +82,9 @@ deploy: check
 	elif [ -n "$(HOST)" ]; then \
 		$(ESPHOME) upload $(CONFIG) --file $(FIRMWARE_BIN) --device $(HOST); \
 	else \
-		echo "No serial port detected. Scanning for HeatValve-6 devices (3s)..."; \
+		echo "No serial port detected. Scanning for Lune V6 devices (3s)..."; \
 		hosts=$$($(PYTHON) discover_devices.py 2>/dev/null); \
-		if [ -z "$$hosts" ]; then echo "No devices found. Use PORT=/dev/cu.usbmodemXXXX or HOST=heatvalve-6-XXXXXX.local"; exit 1; fi; \
+		if [ -z "$$hosts" ]; then echo "No Lune V6 devices found. Use PORT=/dev/cu.usbmodemXXXX or HOST=heatvalve-6-XXXXXX.local (current internal hostname pattern)"; exit 1; fi; \
 		count=$$(echo "$$hosts" | wc -l | tr -d ' '); \
 		echo "Found devices:"; \
 		i=1; for h in $$hosts; do printf "  %d) %s\n" $$i $$h; i=$$((i+1)); done; \
@@ -129,9 +129,9 @@ test: test-ripple test-forecast test-balance
 ota: check
 	$(MAKE) build
 	@if [ -z "$(HOST)" ]; then \
-		echo "Scanning for HeatValve-6 devices (3s)..."; \
+		echo "Scanning for Lune V6 devices (3s)..."; \
 		hosts=$$($(PYTHON) discover_devices.py 2>/dev/null); \
-		if [ -z "$$hosts" ]; then echo "No devices found. Use: make ota HOST=heatvalve-6-XXXXXX.local"; exit 1; fi; \
+		if [ -z "$$hosts" ]; then echo "No Lune V6 devices found. Use: make ota HOST=heatvalve-6-XXXXXX.local (current internal hostname pattern)"; exit 1; fi; \
 		count=$$(echo "$$hosts" | wc -l | tr -d ' '); \
 		echo "Found devices:"; \
 		i=1; for h in $$hosts; do printf "  %d) %s\n" $$i $$h; i=$$((i+1)); done; \
@@ -146,9 +146,9 @@ ota: check
 
 logs: check
 	@if [ -z "$(HOST)" ]; then \
-		echo "Scanning for HeatValve-6 devices (3s)..."; \
+		echo "Scanning for Lune V6 devices (3s)..."; \
 		hosts=$$($(PYTHON) discover_devices.py 2>/dev/null); \
-		if [ -z "$$hosts" ]; then echo "No devices found. Use: make logs HOST=heatvalve-6-XXXXXX.local"; exit 1; fi; \
+		if [ -z "$$hosts" ]; then echo "No Lune V6 devices found. Use: make logs HOST=heatvalve-6-XXXXXX.local (current internal hostname pattern)"; exit 1; fi; \
 		count=$$(echo "$$hosts" | wc -l | tr -d ' '); \
 		echo "Found devices:"; \
 		i=1; for h in $$hosts; do printf "  %d) %s\n" $$i $$h; i=$$((i+1)); done; \
@@ -162,7 +162,7 @@ logs: check
 	fi
 
 discover: check
-	@echo "Scanning for HeatValve-6 devices (5s)..."
+	@echo "Scanning for Lune V6 devices (5s)..."
 	@$(PYTHON) discover_devices.py 2>/dev/null || echo "(no devices found)"
 
 monitor: check

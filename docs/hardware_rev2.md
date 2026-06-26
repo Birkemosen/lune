@@ -1,4 +1,4 @@
-# HeatValve-6 — Rev 2 board design (shared-shunt, dumb-driver)
+# Lune V6 — Rev 2 board design (shared-shunt, dumb-driver)
 
 Status: **design draft for a PCB respin.** Component values marked _(validate)_ are
 reasoned starting points to confirm on a prototype channel, not final.

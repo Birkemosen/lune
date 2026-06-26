@@ -213,7 +213,7 @@ static const char DASHBOARD_HTML[] =
     "<!doctype html><html><head>"
     "<meta charset=\"utf-8\">"
     "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
-    "<title>HeatValve-6</title>"
+    "<title>Lune V6</title>"
     "</head><body>"
     "<div id=\"app\">Loading dashboard...</div>"
     "<script src=\"/dashboard.js\"></script>"

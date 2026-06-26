@@ -1,14 +1,26 @@
-# HeatValve-6
+# Lune V6
 
-ESPHome firmware for the HeatValve-6 underfloor heating controller on ESP32-S3 with 6 DRV8215 I2C motor drivers.
+ESPHome firmware for **Lune V6**, the Guldborg & Birkemose 6-zone hydronic
+underfloor-heating manifold controller, built on ESP32-S3 with 6 DRV8215 I2C
+motor drivers.
 
-This repository is now ESPHome-only. The legacy PlatformIO and ESP-IDF source tree has been removed.
+The repository and firmware internals still use the historical `heatvalve-6`
+and `hv6` names while the public product structure migrates to Lune. Avoid
+large renames unless they are part of a planned migration.
+
+Lune V6 is the local manifold node in the Lune product line. It owns valve
+motion, endstop detection, local temperature inputs, minimum-flow protection,
+motor fault handling, and conservative fail-safe heating. Whole-house learning
+and optimization belongs in the future Lune Touch / Lune Mini coordinator.
+
+This repository is ESPHome-only. The legacy PlatformIO and ESP-IDF source tree
+has been removed.
 
 ## Repository Layout
 
 ```text
 heatvalve-6/
-├── heatvalve-6.yaml   # Main ESPHome firmware config
+├── heatvalve-6.yaml   # Main ESPHome firmware config for Lune V6
 ├── secrets.yaml       # Local secrets template (gitignored)
 ├── components/        # Custom ESPHome external components
 │   ├── hv6_config_store/
@@ -102,6 +114,8 @@ esphome config heatvalve-6.yaml
 
 ## Documentation
 
+- [docs/lune_brand_architecture.md](docs/lune_brand_architecture.md)
+- [docs/lune_touch_build_plan.md](docs/lune_touch_build_plan.md)
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 - [docs/ecodan_integration.md](docs/ecodan_integration.md)
 - [docs/esp32-s3_ufh_pcb_solution.md](docs/esp32-s3_ufh_pcb_solution.md)

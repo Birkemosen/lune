@@ -1,6 +1,6 @@
 # Ecodan Heat Pump Integration (Asgard Virtual Thermostat)
 
-Integration between HeatValve-6 floor heating controllers and the Mitsubishi Ecodan heat
+Integration between Lune V6 floor heating controllers and the Mitsubishi Ecodan heat
 pump via [esphome-ecodan-hp](https://github.com/gekkekoe/esphome-ecodan-hp)'s Asgard
 virtual thermostat.
 
@@ -10,12 +10,12 @@ virtual thermostat.
 
 ## Architecture
 
-Two HeatValve-6 boards (one per manifold/floor, 6 zones each = 12 zones). Both boards run
+Two Lune V6 boards (one per manifold/floor, 6 zones each = 12 zones). Both boards run
 identical firmware; the **coordinator (master)** role is a runtime toggle persisted in NVS.
 
 ```
 ┌─────────────────────┐   GET /api/hv6/v1/peer    ┌─────────────────────┐
-│  HeatValve-6 slave  │◀──────────────────────────│ HeatValve-6 master  │
+│  Lune V6 slave      │◀──────────────────────────│ Lune V6 master      │
 │  (manifold B)       │                           │ (manifold A,        │
 └─────────────────────┘                           │  coordinator)       │
                                                   └──────────┬──────────┘
@@ -68,7 +68,7 @@ optimizer's comfort band instead.
   `POST http://<asgard>/number/virtual_thermostat_input_z1/set?value=21.0`
   (verify the exact entity name against the installed Asgard firmware).
 
-## HeatValve-6 Configuration (`hv6_asgard_bridge`)
+## Lune V6 Configuration (`hv6_asgard_bridge`)
 
 `AsgardConfig` in NVS (pattern follows `HeliosConfig`), editable at runtime from the
 dashboard's Asgard card:
@@ -80,7 +80,7 @@ dashboard's Asgard card:
 | `host` / `port` | Asgard address |
 | `entity_name` | Asgard z1 number entity to write |
 | `push_interval_s` | Push cadence (30–60 s) |
-| `peer_host` | The other HeatValve-6 board (master only) |
+| `peer_host` | The other Lune V6 board (master only) |
 
 Dashboard settings card shows coordinator role, peer status, last push, the recommended
 fixed Asgard setpoint, and the failure counter.
