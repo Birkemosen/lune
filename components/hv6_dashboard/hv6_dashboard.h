@@ -82,22 +82,8 @@ struct DashboardSnapshot {
   float             min_zone_flow_pct{15.0f};  // per-zone floor while bridge or always-enforce is active
   bool              minimum_flow_always{false}; // enforce independently of bridge state
 
-  // --- Hydraulic balancing (static / adaptive) ---
-  hv6::BalancingConfig balancing;                       // mode + adaptive knobs + min flow
-  float             zone_static_factor[hv6::NUM_ZONES]{};   // resistance-aware prior (0..1)
-  float             zone_balance_factor[hv6::NUM_ZONES]{};  // effective factor applied (static × adapt)
-  float             zone_balance_adapt[hv6::NUM_ZONES]{};   // learned multiplier in effect
-  float             zone_adapt_err[hv6::NUM_ZONES]{};       // long-window room-temp error EMA (NAN = none)
+  hv6::BalancingConfig balancing;       // retained for local minimum-flow settings
 
-  // --- Forecast preload (wind-aware) ---
-  hv6::ForecastConfig forecast;            // current forecast config
-  char              forecast_status[16];   // "ok"|"no data"|"stale"|"external helios"|"disabled"
-  char              forecast_last_error[SNAPSHOT_TEXT_LEN];
-  uint32_t          forecast_age_s{0};
-  uint32_t          forecast_fetch_epoch{0};  // wall-clock of last successful fetch
-  uint32_t          forecast_fail_streak{0};
-  float             forecast_zone_offset_c[hv6::NUM_ZONES]{};
-  int8_t            forecast_zone_peak_in_h[hv6::NUM_ZONES]{};
 };
 
 struct DashboardAction {
@@ -160,7 +146,6 @@ class HV6Dashboard : public Component, public AsyncWebHandler {
   void set_valve_controller(hv6::Hv6ValveController *ctrl) { this->valve_controller_ = ctrl; }
   void set_config_store(hv6::Hv6ConfigStore *store) { this->config_store_ = store; }
   void set_asgard_bridge(esphome::Component *bridge) { this->asgard_bridge_ = bridge; }
-  void set_forecast(esphome::Component *forecast) { this->forecast_ = forecast; }
   void set_wifi_signal_sensor(sensor::Sensor *sensor) { this->wifi_signal_sensor_ = sensor; }
   void set_manifold_flow_sensor(sensor::Sensor *s) { this->manifold_flow_sensor_ = s; }
   void set_manifold_return_sensor(sensor::Sensor *s) { this->manifold_return_sensor_ = s; }
@@ -209,7 +194,6 @@ class HV6Dashboard : public Component, public AsyncWebHandler {
   void handle_state_(AsyncWebServerRequest *request);
   void handle_history_(AsyncWebServerRequest *request);
   void handle_logs_(AsyncWebServerRequest *request);
-  void handle_forecast_(AsyncWebServerRequest *request);
   void handle_v1_(AsyncWebServerRequest *request, const char *path);
   void handle_ble_scan_(AsyncWebServerRequest *request);
   void handle_peer_(AsyncWebServerRequest *request);
@@ -224,7 +208,6 @@ class HV6Dashboard : public Component, public AsyncWebHandler {
   hv6::Hv6ValveController *valve_controller_{nullptr};
   hv6::Hv6ConfigStore *config_store_{nullptr};
   esphome::Component *asgard_bridge_{nullptr};
-  esphome::Component *forecast_{nullptr};
   sensor::Sensor *wifi_signal_sensor_{nullptr};
   sensor::Sensor *manifold_flow_sensor_{nullptr};
   sensor::Sensor *manifold_return_sensor_{nullptr};

@@ -6,12 +6,6 @@ import { key } from '../../utils/keys.js';
 import { applyZoneName, setZoneNumber, setZoneSelect, setZoneText } from '../../core/api.js';
 import { localize, subscribeLanguage } from '../../core/i18n.js';
 
-// Mirror firmware default_wind_exposure(): wind exposure seeded from wall count.
-const WIND_EXPOSURE_BY_WALLS = [0, 0.5, 0.7, 0.85, 1];
-function seededWindExposure(wallCount) {
-  return WIND_EXPOSURE_BY_WALLS[Math.min(wallCount, 4)];
-}
-
 // ========================================
 // CSS
 // ========================================
@@ -92,22 +86,6 @@ const template = () => `
       <button class="wall-btn" data-wall="E">E</button>
       <button class="wall-btn" data-wall="W">W</button>
     </div>
-
-    <div class="ui-divider"></div>
-    <div class="ui-section" data-i18n="zone.room.forecastPreload">Forecast Preload</div>
-    <div class="ui-row">
-      <span class="ui-label" data-i18n="zone.room.windExposure">Wind Exposure</span>
-      <span class="ui-field"><input class="ui-input zr-wind" type="number" min="0" max="1" step="0.05" placeholder="0.5"></span>
-    </div>
-    <div class="ui-row">
-      <span class="ui-label" data-i18n="zone.room.solarGain">Solar Gain</span>
-      <span class="ui-field"><input class="ui-input zr-solar" type="number" min="0" max="1" step="0.05" placeholder="0.3"></span>
-    </div>
-    <div class="ui-row">
-      <span class="ui-label" data-i18n="zone.room.thermalLead">Thermal Lead (h)</span>
-      <span class="ui-field"><input class="ui-input zr-lead" type="number" min="0" max="48" step="1" placeholder="4"></span>
-    </div>
-    <div class="ui-note" data-i18n="zone.room.note">Wind exposure (0-1) is auto-seeded from the exterior walls above - edit it for a sheltered or extra-exposed site. Solar (0-1) is the passive sun gain that reduces preload; Lead h is how far ahead to start charging the slab before a forecast cold/wind peak.</div>
   </div>
 `;
 
@@ -123,9 +101,6 @@ export default component({
     const spacingEl = el.querySelector('.zr-spacing');
     const pipeEl = el.querySelector('.zr-pipe');
     const wallBtns = el.querySelector('.wall-btn-group').querySelectorAll('.wall-btn');
-    const windEl = el.querySelector('.zr-wind');
-    const solarEl = el.querySelector('.zr-solar');
-    const leadEl = el.querySelector('.zr-lead');
 
     function zone() {
       return getDashboardValue('selectedZone');
@@ -137,13 +112,10 @@ export default component({
     form.num(areaEl, { read: () => ev(key.area(zone())), commit: (v) => setZoneNumber(zone(), 'zone_area_m2', v) });
     form.num(spacingEl, { read: () => ev(key.spacing(zone())), commit: (v) => setZoneNumber(zone(), 'zone_pipe_spacing_mm', v || 200) });
     form.select(pipeEl, { read: () => es(key.pipeType(zone())) || 'Unknown', commit: (v) => setZoneSelect(zone(), 'zone_pipe_type', v) });
-    const windField = form.num(windEl, { read: () => ev(key.windExposure(zone())), commit: (v) => setZoneNumber(zone(), 'zone_wind_exposure', v) });
-    form.num(solarEl, { read: () => ev(key.solarGain(zone())), commit: (v) => setZoneNumber(zone(), 'zone_solar_gain', v) });
-    form.num(leadEl, { read: () => ev(key.thermalLeadH(zone())), commit: (v) => setZoneNumber(zone(), 'zone_thermal_lead_h', v) });
 
     // Exterior-wall buttons: a custom multi-select staged with the rest of the
-    // form. Toggling walls re-seeds wind exposure (mirroring the firmware) and
-    // stages that too, so Apply commits both together.
+    // form. The coordinator can later use this local installation metadata for
+    // its weather and thermal model.
     let stagedWalls = [];
     function paintWalls() {
       wallBtns.forEach(btn => {
@@ -172,9 +144,6 @@ export default component({
         stagedWalls = ['N', 'S', 'E', 'W'].filter(d => dirs.includes(d));
         paintWalls();
         wallsField.markDirty();
-        // Re-seed wind exposure (staged) to match the new wall count.
-        windEl.value = String(seededWindExposure(stagedWalls.length));
-        windField.markDirty();
       });
     });
 
@@ -182,8 +151,7 @@ export default component({
       const z = zone();
       if (
         id === key.area(z) || id === key.spacing(z) || id === key.pipeType(z) ||
-        id === key.exteriorWalls(z) || id === key.windExposure(z) ||
-        id === key.solarGain(z) || id === key.thermalLeadH(z)
+        id === key.exteriorWalls(z)
       ) {
         form.refresh();
       }
@@ -197,9 +165,6 @@ export default component({
       subscribe(key.spacing(z), refreshIfSelectedZone);
       subscribe(key.pipeType(z), refreshIfSelectedZone);
       subscribe(key.exteriorWalls(z), refreshIfSelectedZone);
-      subscribe(key.windExposure(z), refreshIfSelectedZone);
-      subscribe(key.solarGain(z), refreshIfSelectedZone);
-      subscribe(key.thermalLeadH(z), refreshIfSelectedZone);
     }
     subscribeLanguage(() => localize(el));
     localize(el);

@@ -7,9 +7,6 @@
 #ifdef USE_HV6_ASGARD_BRIDGE
 #include "../hv6_asgard_bridge/hv6_asgard_bridge.h"
 #endif
-#ifdef USE_HV6_FORECAST
-#include "../hv6_forecast/hv6_forecast.h"
-#endif
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -291,28 +288,6 @@ void HV6Dashboard::update_snapshot_() {
   s.asgard_peer_status[sizeof(s.asgard_peer_status) - 1] = '\0';
   s.asgard_last_error[sizeof(s.asgard_last_error) - 1] = '\0';
 
-  // Forecast preload status
-#ifdef USE_HV6_FORECAST
-  if (this->forecast_ != nullptr) {
-    auto *fc = static_cast<hv6_forecast::Hv6Forecast *>(this->forecast_);
-    strncpy(s.forecast_status, fc->get_status_str(), sizeof(s.forecast_status) - 1);
-    strncpy(s.forecast_last_error, fc->get_last_error(), sizeof(s.forecast_last_error) - 1);
-    s.forecast_age_s = fc->get_fetch_age_s();  // "fetched X ago", not the hour offset
-    s.forecast_fetch_epoch = fc->get_last_fetch_epoch();
-    s.forecast_fail_streak = fc->get_fetch_fail_streak();
-    for (uint8_t i = 0; i < hv6::NUM_ZONES; i++) {
-      s.forecast_zone_offset_c[i] = fc->get_zone_offset(i);
-      s.forecast_zone_peak_in_h[i] = fc->get_zone_peak_in_h(i);
-    }
-  } else {
-    strncpy(s.forecast_status, "disabled", sizeof(s.forecast_status) - 1);
-  }
-#else
-  strncpy(s.forecast_status, "disabled", sizeof(s.forecast_status) - 1);
-#endif
-  s.forecast_status[sizeof(s.forecast_status) - 1] = '\0';
-  s.forecast_last_error[sizeof(s.forecast_last_error) - 1] = '\0';
-
   if (this->config_store_) {
     s.probes                 = this->config_store_->get_probe_config();
     s.motor                  = this->config_store_->get_motor_config();
@@ -327,23 +302,10 @@ void HV6Dashboard::update_snapshot_() {
     s.balancing              = this->config_store_->get_config().balancing;
     s.min_zone_flow_pct      = s.balancing.minimum_flow_pct;
     s.minimum_flow_always    = s.balancing.modulating_heat_source;
-    s.forecast               = this->config_store_->get_forecast_config();
     for (uint8_t i = 0; i < hv6::NUM_ZONES; i++) {
       s.zones[i]            = this->config_store_->get_zone_config(i);
       s.zone_temp_source[i] = this->config_store_->get_zone_temp_source(i);
       this->config_store_->get_zone_ble_mac_str(i, s.zone_ble_mac[i], sizeof(s.zone_ble_mac[i]));
-    }
-  }
-
-  // Per-zone balancing telemetry (static prior, learned multiplier, effective
-  // factor, long-window error) — surfaces why a loop is throttled/boosted.
-  if (this->zone_controller_) {
-    for (uint8_t i = 0; i < hv6::NUM_ZONES; i++) {
-      hv6::ZoneSnapshot zs = this->zone_controller_->get_zone_snapshot(i);
-      s.zone_static_factor[i]  = zs.static_factor;
-      s.zone_balance_factor[i] = zs.hydraulic_factor;
-      s.zone_balance_adapt[i]  = zs.balance_adapt;
-      s.zone_adapt_err[i]      = zs.adapt_err_ema;
     }
   }
 
@@ -902,91 +864,6 @@ void HV6Dashboard::handle_state_(AsyncWebServerRequest *request) {
       static_cast<unsigned>(snap->asgard_local_zones),
       static_cast<unsigned>(snap->asgard_peer_zones));
 
-  // flush before forecast section
-  if (!flush()) return;
-
-  // --- forecast config + status ---
-  appendf(buf, BUF_SIZE, offset,
-      "\"switch-forecast_enabled\":{\"state\":\"%s\"},"
-      "\"text-forecast_status\":{\"state\":\"%s\"},"
-      "\"text-forecast_last_error\":{\"state\":\"%s\"},"
-      "\"sensor-forecast_age_s\":{\"state\":%lu},"
-      "\"sensor-forecast_fetch_epoch\":{\"state\":%lu},"
-      "\"sensor-forecast_fail_streak\":{\"state\":%lu},",
-      snap->forecast.enabled ? "on" : "off",
-      snap->forecast_status,
-      snap->forecast_last_error,
-      static_cast<unsigned long>(snap->forecast_age_s),
-      static_cast<unsigned long>(snap->forecast_fetch_epoch),
-      static_cast<unsigned long>(snap->forecast_fail_streak));
-  format_float_token(num_buf, sizeof(num_buf), snap->forecast.latitude, 4);
-  appendf(buf, BUF_SIZE, offset, "\"number-forecast_latitude\":{\"value\":%s},", num_buf);
-  format_float_token(num_buf, sizeof(num_buf), snap->forecast.longitude, 4);
-  appendf(buf, BUF_SIZE, offset, "\"number-forecast_longitude\":{\"value\":%s},", num_buf);
-  format_float_token(num_buf, sizeof(num_buf), snap->forecast.load_threshold, 2);
-  appendf(buf, BUF_SIZE, offset, "\"number-forecast_load_threshold\":{\"value\":%s},", num_buf);
-  format_float_token(num_buf, sizeof(num_buf), snap->forecast.max_offset_c, 2);
-  appendf(buf, BUF_SIZE, offset, "\"number-forecast_max_offset_c\":{\"value\":%s},", num_buf);
-
-  if (!flush()) return;
-
-  // Per-zone active preload offset + hours-to-peak (read-only status).
-  for (uint8_t i = 0; i < hv6::NUM_ZONES; i++) {
-    const uint8_t zn = i + 1;
-    format_float_token(num_buf, sizeof(num_buf), snap->forecast_zone_offset_c[i], 2);
-    appendf(buf, BUF_SIZE, offset,
-        "\"sensor-zone_%u_forecast_offset_c\":{\"value\":%s},"
-        "\"sensor-zone_%u_forecast_peak_h\":{\"state\":%d},",
-        zn, num_buf, zn, static_cast<int>(snap->forecast_zone_peak_in_h[i]));
-  }
-  if (!flush()) return;
-
-  // Per-zone exposure config
-  for (uint8_t i = 0; i < hv6::NUM_ZONES; i++) {
-    const uint8_t zn = i + 1;
-    const hv6::ZoneConfig &z = snap->zones[i];
-    format_float_token(num_buf, sizeof(num_buf), z.wind_exposure, 2);
-    appendf(buf, BUF_SIZE, offset, "\"number-zone_%u_wind_exposure\":{\"value\":%s},", zn, num_buf);
-    format_float_token(num_buf, sizeof(num_buf), z.solar_gain_factor, 2);
-    appendf(buf, BUF_SIZE, offset, "\"number-zone_%u_solar_gain\":{\"value\":%s},", zn, num_buf);
-    appendf(buf, BUF_SIZE, offset,
-        "\"number-zone_%u_thermal_lead_h\":{\"value\":%u},", zn, static_cast<unsigned>(z.thermal_lead_h));
-    if (!flush()) return;
-  }
-
-  // --- hydraulic balancing: mode + adaptive knobs (global) ---
-  {
-    const hv6::BalanceMode bmode = hv6::effective_balance_mode(snap->balancing);
-    const char *mode_str = (bmode == hv6::BalanceMode::ADAPTIVE)    ? "Adaptive"
-                         : (bmode == hv6::BalanceMode::RETURN_TEMP) ? "Return Temp"
-                                                                    : "Static";
-    appendf(buf, BUF_SIZE, offset,
-        "\"select-balance_mode\":{\"state\":\"%s\"},"
-        "\"number-adapt_interval_s\":{\"value\":%lu},",
-        mode_str, static_cast<unsigned long>(snap->balancing.adapt_interval_s));
-    format_float_token(num_buf, sizeof(num_buf), snap->balancing.adapt_step, 3);
-    appendf(buf, BUF_SIZE, offset, "\"number-adapt_step\":{\"value\":%s},", num_buf);
-    format_float_token(num_buf, sizeof(num_buf), snap->balancing.adapt_min, 2);
-    appendf(buf, BUF_SIZE, offset, "\"number-adapt_min\":{\"value\":%s},", num_buf);
-    format_float_token(num_buf, sizeof(num_buf), snap->balancing.adapt_max, 2);
-    appendf(buf, BUF_SIZE, offset, "\"number-adapt_max\":{\"value\":%s},", num_buf);
-    if (!flush()) return;
-  }
-
-  // --- per-zone balancing telemetry (read-only): static × adapt = effective ---
-  for (uint8_t i = 0; i < hv6::NUM_ZONES; i++) {
-    const uint8_t zn = i + 1;
-    format_float_token(num_buf, sizeof(num_buf), snap->zone_static_factor[i], 3);
-    appendf(buf, BUF_SIZE, offset, "\"sensor-zone_%u_static_factor\":{\"value\":%s},", zn, num_buf);
-    format_float_token(num_buf, sizeof(num_buf), snap->zone_balance_factor[i], 3);
-    appendf(buf, BUF_SIZE, offset, "\"sensor-zone_%u_balance_factor\":{\"value\":%s},", zn, num_buf);
-    format_float_token(num_buf, sizeof(num_buf), snap->zone_balance_adapt[i], 3);
-    appendf(buf, BUF_SIZE, offset, "\"sensor-zone_%u_balance_adapt\":{\"value\":%s},", zn, num_buf);
-    format_float_token(num_buf, sizeof(num_buf), snap->zone_adapt_err[i], 2);
-    appendf(buf, BUF_SIZE, offset, "\"sensor-zone_%u_adapt_err\":{\"value\":%s},", zn, num_buf);
-    if (!flush()) return;
-  }
-
   // Sentinel field closes the JSON object and absorbs any trailing comma.
   appendf(buf, BUF_SIZE, offset, "\"_\":{}}");
   flush();
@@ -1077,10 +954,6 @@ void HV6Dashboard::handle_v1_(AsyncWebServerRequest *request, const char *path) 
   }
   if (strcmp(path, "/logs") == 0) {
     this->handle_logs_(request);
-    return;
-  }
-  if (strcmp(path, "/forecast") == 0) {
-    this->handle_forecast_(request);
     return;
   }
   if (strcmp(path, "/ble-scan") == 0) {
@@ -1201,7 +1074,7 @@ void HV6Dashboard::handle_v1_(AsyncWebServerRequest *request, const char *path) 
     if (is_number) {
       // Reject mixed/locale decimal separators before parsing. strtof() is "C"-locale
       // and stops at a comma, so "55,7" or "12.345,6" would otherwise be silently
-      // truncated (e.g. "55,7" → 55.0) — a wrong forecast coordinate. Require '.' only.
+      // truncated (e.g. "55,7" -> 55.0). Require '.' only.
       if (act.value_str.find(',') != std::string::npos) {
         this->send_v1_(request, 400, "invalid_value",
                        "use '.' as the decimal separator (no ',')");
@@ -1209,16 +1082,6 @@ void HV6Dashboard::handle_v1_(AsyncWebServerRequest *request, const char *path) 
       }
       if (!parse_num_arg(request, "value", &num) || !std::isfinite(num)) {
         this->send_v1_(request, 400, "invalid_value", "value must be a finite number");
-        return;
-      }
-      // Geographic range guard for the forecast location, so a bad coordinate can't be
-      // stored or sent to Open-Meteo.
-      if (act.key == "forecast_latitude" && (num < -90.0f || num > 90.0f)) {
-        this->send_v1_(request, 400, "invalid_value", "latitude must be between -90 and 90");
-        return;
-      }
-      if (act.key == "forecast_longitude" && (num < -180.0f || num > 180.0f)) {
-        this->send_v1_(request, 400, "invalid_value", "longitude must be between -180 and 180");
         return;
       }
       act.num_val = num;
@@ -1293,17 +1156,11 @@ void HV6Dashboard::dispatch_set_(const DashboardAction &act) {
       this->valve_controller_->reset_learned_factors(zi);
     } else if (strcmp(str_val, "motor_reset_and_relearn") == 0 && zone_valid && this->valve_controller_) {
       this->valve_controller_->reset_and_relearn(zi);
-    } else if (strcmp(str_val, "reset_balancing") == 0 && this->zone_controller_) {
-      this->zone_controller_->reset_balancing();
     } else if (strcmp(str_val, "dump_task_stats") == 0) {
       this->dump_task_stats_();
     } else if (strcmp(str_val, "restart") == 0) {
       ESP_LOGW(TAG, "Restarting device on dashboard request");
       esp_restart();
-#ifdef USE_HV6_FORECAST
-    } else if (strcmp(str_val, "trigger_forecast_fetch") == 0 && this->forecast_) {
-      static_cast<hv6_forecast::Hv6Forecast *>(this->forecast_)->trigger_fetch();
-#endif
     }
     // Unknown commands are silently accepted
 
@@ -1474,71 +1331,6 @@ void HV6Dashboard::dispatch_set_(const DashboardAction &act) {
   } else if (strcmp(key, "minimum_flow_always") == 0 && has_str && this->zone_controller_) {
     const bool enabled = (strcasecmp(str_val, "on") == 0 || strcmp(str_val, "1") == 0);
     this->zone_controller_->set_modulating_heat_source(enabled);
-
-  // ---- balance_mode (Static / Adaptive / Return Temp) ----
-  } else if (strcmp(key, "balance_mode") == 0 && has_str && this->zone_controller_) {
-    hv6::BalanceMode m = hv6::BalanceMode::STATIC;
-    if (strcasecmp(str_val, "Adaptive") == 0)
-      m = hv6::BalanceMode::ADAPTIVE;
-    else if (strcasecmp(str_val, "Return Temp") == 0 || strcasecmp(str_val, "Return") == 0)
-      m = hv6::BalanceMode::RETURN_TEMP;
-    this->zone_controller_->set_balance_mode(m);
-
-  // ---- adaptive balancing knobs ----
-  } else if (strcmp(key, "adapt_interval_s") == 0 && has_num && this->config_store_) {
-    auto bal = this->config_store_->get_config().balancing;
-    bal.adapt_interval_s = static_cast<uint32_t>(std::max(60.0f, std::min(86400.0f, num_val)));
-    this->config_store_->update_balancing(bal);
-  } else if (strcmp(key, "adapt_step") == 0 && has_num && this->config_store_) {
-    auto bal = this->config_store_->get_config().balancing;
-    bal.adapt_step = std::max(0.001f, std::min(0.2f, num_val));
-    this->config_store_->update_balancing(bal);
-  } else if (strcmp(key, "adapt_min") == 0 && has_num && this->config_store_) {
-    auto bal = this->config_store_->get_config().balancing;
-    bal.adapt_min = std::max(0.1f, std::min(1.0f, num_val));
-    this->config_store_->update_balancing(bal);
-  } else if (strcmp(key, "adapt_max") == 0 && has_num && this->config_store_) {
-    auto bal = this->config_store_->get_config().balancing;
-    bal.adapt_max = std::max(1.0f, std::min(3.0f, num_val));
-    this->config_store_->update_balancing(bal);
-
-  // ---- forecast_enabled ----
-  } else if (strcmp(key, "forecast_enabled") == 0 && has_str && this->config_store_) {
-    auto fc = this->config_store_->get_forecast_config();
-    fc.enabled = (strcasecmp(str_val, "on") == 0 || strcmp(str_val, "1") == 0);
-    this->config_store_->update_forecast(fc);
-
-  // ---- forecast_latitude ----
-  } else if (strcmp(key, "forecast_latitude") == 0 && has_num && this->config_store_) {
-    auto fc = this->config_store_->get_forecast_config();
-    fc.latitude = num_val;
-    this->config_store_->update_forecast(fc);
-
-  // ---- forecast_longitude ----
-  } else if (strcmp(key, "forecast_longitude") == 0 && has_num && this->config_store_) {
-    auto fc = this->config_store_->get_forecast_config();
-    fc.longitude = num_val;
-    this->config_store_->update_forecast(fc);
-
-  // ---- forecast_load_threshold ----
-  } else if (strcmp(key, "forecast_load_threshold") == 0 && has_num && this->config_store_) {
-    auto fc = this->config_store_->get_forecast_config();
-    fc.load_threshold = num_val;
-    this->config_store_->update_forecast(fc);
-
-  // ---- forecast_max_offset_c ----
-  } else if (strcmp(key, "forecast_max_offset_c") == 0 && has_num && this->config_store_) {
-    auto fc = this->config_store_->get_forecast_config();
-    fc.max_offset_c = num_val;
-    this->config_store_->update_forecast(fc);
-
-  // ---- per-zone exposure ----
-  } else if (strcmp(key, "zone_wind_exposure") == 0 && has_num && zone_valid && this->zone_controller_) {
-    this->zone_controller_->set_zone_wind_exposure(zi, num_val);
-  } else if (strcmp(key, "zone_solar_gain") == 0 && has_num && zone_valid && this->zone_controller_) {
-    this->zone_controller_->set_zone_solar_gain(zi, num_val);
-  } else if (strcmp(key, "zone_thermal_lead_h") == 0 && has_num && zone_valid && this->zone_controller_) {
-    this->zone_controller_->set_zone_thermal_lead_h(zi, static_cast<uint8_t>(std::max(0.0f, std::min(48.0f, num_val))));
 
   // ---- motor config numeric setters ----
   } else if (has_num && this->config_store_ && this->valve_controller_) {
@@ -1889,75 +1681,6 @@ void HV6Dashboard::handle_logs_(AsyncWebServerRequest *request) {
   flush();
   httpd_resp_send_chunk(req, nullptr, 0);
   free(ring_copy);
-}
-
-// GET /api/hv6/v1/forecast — the raw fetched hourly forecast, so the dashboard
-// can prove Open-Meteo data is actually available.
-void HV6Dashboard::handle_forecast_(AsyncWebServerRequest *request) {
-  httpd_req_t *req = *request;
-  httpd_resp_set_status(req, "200 OK");
-  httpd_resp_set_type(req, "application/json");
-  httpd_resp_set_hdr(req, "Cache-Control", "no-cache");
-  httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
-
-  constexpr size_t BUF_SIZE = 2048;
-  char *buf = this->json_buf_;
-  size_t offset = 0;
-  char num_buf[24];
-  auto flush = [&]() -> bool {
-    if (offset == 0) return true;
-    bool ok = (httpd_resp_send_chunk(req, buf, offset) == ESP_OK);
-    offset = 0;
-    return ok;
-  };
-
-  uint8_t count = 0;
-  uint32_t base_epoch = 0;
-  uint32_t age_s = 0;
-  uint32_t fetch_epoch = 0;
-
-#ifdef USE_HV6_FORECAST
-  static hv6_forecast::ForecastHour hours[hv6_forecast::FORECAST_HOURS];
-  if (this->forecast_ != nullptr) {
-    auto *fc = static_cast<hv6_forecast::Hv6Forecast *>(this->forecast_);
-    count = fc->copy_hours(hours, hv6_forecast::FORECAST_HOURS, &base_epoch, &age_s);
-    fetch_epoch = fc->get_last_fetch_epoch();
-  }
-#else
-  hv6_forecast::ForecastHour *hours = nullptr;
-  (void) hours;
-#endif
-
-  appendf(buf, BUF_SIZE, offset,
-          "{\"base_epoch\":%lu,\"age_s\":%lu,\"fetch_epoch\":%lu,\"count\":%u,\"hours\":[",
-          static_cast<unsigned long>(base_epoch),
-          static_cast<unsigned long>(age_s),
-          static_cast<unsigned long>(fetch_epoch),
-          static_cast<unsigned>(count));
-
-#ifdef USE_HV6_FORECAST
-  for (uint8_t i = 0; i < count; i++) {
-    if (offset + 80 >= BUF_SIZE) {
-      if (!flush()) return;
-    }
-    if (i != 0)
-      buf[offset++] = ',';
-    format_float_token(num_buf, sizeof(num_buf), hours[i].temp_c, 1);
-    appendf(buf, BUF_SIZE, offset, "[%s,", num_buf);
-    format_float_token(num_buf, sizeof(num_buf), hours[i].wind_speed_ms, 1);
-    appendf(buf, BUF_SIZE, offset, "%s,", num_buf);
-    format_float_token(num_buf, sizeof(num_buf), hours[i].wind_dir_deg, 0);
-    appendf(buf, BUF_SIZE, offset, "%s,", num_buf);
-    format_float_token(num_buf, sizeof(num_buf), hours[i].shortwave_wm2, 0);
-    appendf(buf, BUF_SIZE, offset, "%s]", num_buf);
-  }
-#else
-  (void) num_buf;
-#endif
-
-  appendf(buf, BUF_SIZE, offset, "]}");
-  flush();
-  httpd_resp_send_chunk(req, nullptr, 0);
 }
 
 // Compact board-to-board snapshot consumed by the peer board's Asgard bridge

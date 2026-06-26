@@ -218,14 +218,6 @@ body {
   align-items: stretch;
 }
 
-.settings-side-stack {
-  display: grid;
-  grid-template-rows: minmax(0, 1fr) auto;
-  gap: 18px;
-  min-width: 0;
-  height: 100%;
-}
-
 .settings-group,
 .diagnostics-group {
   display: grid;
@@ -277,7 +269,6 @@ body {
   grid-template-columns: 1fr;
 }
 
-.settings-weather-grid,
 .settings-motor-grid {
   grid-template-columns: 1fr;
 }
@@ -321,18 +312,15 @@ body {
 }
 
 .diagnostics-logs-group,
-.diagnostics-health-group,
-.diagnostics-learning-group {
+.diagnostics-health-group {
   grid-column: span 2;
 }
 
 .logs-main-col,
-.manual-control-col,
-.diag-learning-grid {
+.manual-control-col {
   min-width: 0;
 }
 
-.diag-learning-grid,
 .diag-health-grid,
 .diag-actions-grid {
   grid-template-columns: 1fr;
@@ -415,15 +403,8 @@ body {
   .logs-layout,
   .diagnostics-layout { grid-template-columns: 1fr; }
 
-  .settings-side-stack {
-    grid-template-rows: none;
-    gap: 18px;
-    height: auto;
-  }
-
   .diagnostics-logs-group,
-  .diagnostics-health-group,
-  .diagnostics-learning-group {
+  .diagnostics-health-group {
     grid-column: auto;
   }
 
@@ -477,7 +458,6 @@ const template = (ctx) => `
       <div class="hdr"></div>
       <section class="sec active" data-section="overview">
         <div class="overview-flow"></div>
-        <div class="overview-forecast" style="margin-top:14px"></div>
         <div class="overview-timeline" style="margin-top:14px"></div>
         <div class="dashboard-grid">
           <div class="overview-flow-return"></div>
@@ -500,7 +480,6 @@ const template = (ctx) => `
             <div class="settings-group-head"><span class="settings-group-title" data-i18n="settings.group.installation">Installation</span></div>
             <div class="settings-group-grid settings-installation-grid">
               <div class="settings-manifold-slot"></div>
-              <div class="settings-balancing-slot"></div>
             </div>
           </div>
           <div class="settings-group settings-heat-source-group">
@@ -513,18 +492,10 @@ const template = (ctx) => `
               </div>
             </div>
           </div>
-          <div class="settings-side-stack">
-            <div class="settings-group settings-weather-group">
-              <div class="settings-group-head"><span class="settings-group-title" data-i18n="settings.group.weather">Weather Preload</span></div>
-              <div class="settings-group-grid settings-weather-grid">
-                <div class="settings-forecast-slot"></div>
-              </div>
-            </div>
-            <div class="settings-group settings-motor-group">
-              <div class="settings-group-head"><span class="settings-group-title" data-i18n="settings.group.motorAdvanced">Motor Advanced</span></div>
-              <div class="settings-group-grid settings-motor-grid">
-                <div class="settings-motor-cal-slot"></div>
-              </div>
+          <div class="settings-group settings-motor-group">
+            <div class="settings-group-head"><span class="settings-group-title" data-i18n="settings.group.motorAdvanced">Motor Advanced</span></div>
+            <div class="settings-group-grid settings-motor-grid">
+              <div class="settings-motor-cal-slot"></div>
             </div>
           </div>
         </div>
@@ -547,13 +518,9 @@ const template = (ctx) => `
             <div class="diagnostics-group-head"><span class="diagnostics-group-title" data-i18n="diagnostics.group.health">Device Health</span></div>
             <div class="diagnostics-group-grid diag-health-grid"></div>
           </div>
-          <div class="diagnostics-group diagnostics-learning-group">
-            <div class="diagnostics-group-head"><span class="diagnostics-group-title" data-i18n="diagnostics.group.learning">Learning &amp; Balance</span></div>
-            <div class="diagnostics-group-grid diag-learning-grid"></div>
-          </div>
         </div>
       </section>
-      <div class="ftr" data-i18n="footer.product">HEATVALVE-6 · UFH CONTROLLER</div>
+      <div class="ftr" data-i18n="footer.product">LUNE V6 · LOCAL MANIFOLD CONTROLLER</div>
     </main>
   </div>
 `;
@@ -569,7 +536,6 @@ component({
   onMount(ctx, el) {
     el.querySelector('.hdr').appendChild(mountComponent('hv6-header'));
     el.querySelector('.overview-flow').appendChild(mountComponent('flow-diagram'));
-    el.querySelector('.overview-forecast').appendChild(mountComponent('monitor-forecast-preview'));
     el.querySelector('.overview-timeline').appendChild(mountComponent('zone-state-timeline'));
     el.querySelector('.overview-flow-return').appendChild(mountComponent('graph-widgets', { variant: 'flow-return' }));
 
@@ -581,11 +547,9 @@ component({
     el.querySelector('.zone-room-slot').appendChild(mountComponent('zone-room-card'));
 
     el.querySelector('.settings-manifold-slot').appendChild(mountComponent('settings-manifold-card'));
-    el.querySelector('.settings-balancing-slot').appendChild(mountComponent('settings-balancing-card'));
     el.querySelector('.settings-asgard-slot').appendChild(mountComponent('settings-asgard-card'));
     el.querySelector('.settings-min-flow-slot').appendChild(mountComponent('settings-minimum-flow-card'));
     el.querySelector('.settings-preheat-slot').appendChild(mountComponent('smart-preheat-card'));
-    el.querySelector('.settings-forecast-slot').appendChild(mountComponent('settings-forecast-card'));
     el.querySelector('.settings-motor-cal-slot').appendChild(mountComponent('settings-motor-calibration-card'));
 
     const logsMain = el.querySelector('.logs-main-col');
@@ -598,10 +562,6 @@ component({
     healthGrid.appendChild(mountComponent('asgard-bridge-status-card'));
     healthGrid.appendChild(mountComponent('diag-system-card'));
     healthGrid.appendChild(mountComponent('diag-i2c'));
-    const learningGrid = el.querySelector('.diag-learning-grid');
-    learningGrid.appendChild(mountComponent('preheat-factors-card'));
-    learningGrid.appendChild(mountComponent('forecast-preload-status-card'));
-    learningGrid.appendChild(mountComponent('balancing-status-card'));
     const actionsGrid = el.querySelector('.diag-actions-grid');
     actionsGrid.appendChild(mountComponent('settings-control-card'));
 

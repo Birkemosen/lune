@@ -36,11 +36,6 @@ itself is still served at `/dashboard` + `/dashboard.js`.
     newer than `<seq>`. Shape: `{"next_seq":N,"lines":[[seq,level,"tag","msg"],…]}` where `level`
     is the ESPHome log level (1=ERROR … 7=VERY_VERBOSE). Pass the previous `next_seq` (or the
     highest seen `seq`) back as `?since=` to append only new lines. RAM-only; reset on reboot.
-  - `GET /api/hv6/v1/forecast` — the raw fetched Open-Meteo hourly forecast (read-only, for
-    validating data freshness). Shape:
-    `{"base_epoch":N,"age_s":N,"count":N,"hours":[[temp_c,wind_speed_ms,wind_dir_deg],…]}`
-    where `hours[0]` ≈ "now" and `wind_dir_deg` is the meteorological direction the wind comes
-    *from*. `count`/`base_epoch` are `0` when no forecast has been fetched.
   - `GET /api/hv6/v1/ble-scan` — discovered BTHome sensors
   - `GET /api/hv6/v1/peer` — compact board-to-board zone snapshot
     (`{"ok":true,"zones":[{"t":21.4,"sp":21.0,"area":18.5,"en":true},…]}`) consumed by the peer
@@ -70,12 +65,9 @@ Implemented command names:
 - `motor_reset_and_relearn` (requires `zone`)
 - `motor_reset_learned_factors` (requires `zone`)
 - `open_motor_timed` / `close_motor_timed` / `stop_motor` (requires `zone`; also exposed as motor routes)
-- `reset_balancing` (clears every zone's learned adaptive-balance multiplier back to 1.0)
 
-Implemented global settings keys (selection/number) relevant to balancing:
+Implemented global settings keys (selection/number) relevant to local minimum flow:
 
-- `balance_mode` (select: `Static` | `Adaptive` | `Return Temp`) — hydraulic-balancing strategy
-- `adapt_interval_s`, `adapt_step`, `adapt_min`, `adapt_max` (number) — adaptive outer-loop knobs
 - `min_zone_flow_pct` (number) — per-zone minimum opening used by the manual minimum-flow control
 - `minimum_flow_always` (select: `on` | `off`) — manually enforce that floor for a modulating heat source, independent of the heat-source bridge
 
@@ -226,7 +218,6 @@ Minimum command set:
 - `motor_reset_learned_factors`
 - `calibrate_all_motors`
 - `i2c_scan`
-- `reset_balancing`
 
 ### `POST /api/hv6/v1/settings`
 

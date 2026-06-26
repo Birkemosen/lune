@@ -1,5 +1,11 @@
 # Adaptive Hydraulic Balancing (room-temperature feedback, no return probes)
 
+> Migration note: adaptive whole-house learning is now considered coordinator-owned for
+> Lune Touch / Lune Mini. Lune V6 keeps the low-level local balancing code and NVS fields
+> for back-compat, but the public dashboard/API controls have been removed from V6. Treat
+> this document as a legacy design note and extraction reference, not as the active V6 UI
+> contract.
+
 ## Goal
 
 Replace return-temperature-based balancing with a **self-learning balance** that uses

@@ -45,7 +45,7 @@ class Hv6ConfigStore : public esphome::Component {
   void update_motor(const MotorConfig &motor);
   void update_sensor_config(const SensorConfig &sensor_config);
   void update_balancing(const BalancingConfig &balancing);
-  HeliosConfig get_helios_config() const;  // forecast quiesce gate (.enabled)
+  HeliosConfig get_helios_config() const;  // legacy optimizer quiesce gate (.enabled)
   void update_asgard(const AsgardConfig &asgard);
   AsgardConfig get_asgard_config() const;
   void update_forecast(const ForecastConfig &forecast);
@@ -66,7 +66,7 @@ class Hv6ConfigStore : public esphome::Component {
   static constexpr const char *KEY_SENSORS = "sensors";  // BLE pairing, survives main-blob resets
   static constexpr const char *KEY_ZONES = "zones";      // Zone config, survives main-blob resets
   // Remaining global-settings sections, each mirrored to its own durable key so
-  // user settings (preheat, forecast, asgard, balancing, …) survive a
+  // user settings (preheat, legacy forecast, asgard, balancing, ...) survive a
   // legacy main-config reset just like zones/sensors do.
   static constexpr const char *KEY_SYSTEM = "system";
   static constexpr const char *KEY_CONTROL = "control";

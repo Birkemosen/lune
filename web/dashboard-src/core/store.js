@@ -27,7 +27,6 @@ const D = {
   zoneStateHistory: null,   // { interval_s, uptime_s, count, entries: [[uptime_s,z0..z5,absorbing],...] }
   deviceLog: [],            // [{ seq, level, tag, msg }] live device log lines (newest last)
   deviceLogSeq: 0,          // highest seq seen → passed as ?since= to /logs
-  forecastHours: null,      // { base_epoch, age_s, count, hours: [[temp_c, wind_ms, wind_dir_deg],...] }
 };
 
 export const DEVICE_LOG_MAX = 300;
@@ -325,15 +324,4 @@ export function getDeviceLog() {
 export function clearDeviceLog() {
   D.deviceLog = [];
   notify(dashboardKey('deviceLog'));
-}
-
-// ---- fetched forecast preview (GET /api/hv6/v1/forecast) ----
-
-export function setForecastHours(data) {
-  D.forecastHours = data || null;
-  notify(dashboardKey('forecastHours'));
-}
-
-export function getForecastHours() {
-  return D.forecastHours;
 }

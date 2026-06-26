@@ -74,11 +74,8 @@ improv_serial:
 mdns:
   disabled: true
 
-# System clock via SNTP. Required by hv6_forecast: preload timing (now_index)
-# and the "last fetched" timestamp both read the wall clock — without a time
-# source the ESP stays on the 1970 epoch (forecast preloads never apply and the
-# dashboard shows a bogus "1 Jan" update time). Epoch-only usage, so timezone is
-# irrelevant (left at UTC); Open-Meteo is queried with timezone=auto separately.
+# System clock via SNTP. Used for wall-clock diagnostics and future coordinator
+# interactions. Without a time source the ESP stays on the 1970 epoch.
 time:
   - platform: sntp
     id: sntp_time
@@ -96,7 +93,6 @@ packages:
   api:          !include packages/network/api.yaml
   ota:          !include packages/network/ota.yaml
   asgard:       !include packages/network/asgard.yaml
-  forecast:     !include packages/network/forecast.yaml
   # Hardware
   i2c:          !include packages/hardware/i2c.yaml
   onewire:      !include packages/hardware/onewire.yaml
@@ -123,7 +119,6 @@ external_components:
       - hv6_config_store
       - hv6_dashboard
       - hv6_asgard_bridge
-      - hv6_forecast
 
 # =============================================================================
 # Logger
@@ -219,7 +214,7 @@ interval:
     then:
       - lambda: |-
           static const char *const task_names[] = {
-            "hv6_valve", "hv6_ripple", "hv6_zone", "hv6_asgard", "hv6_forecast", "hv6_nvs", "loopTask"
+            "hv6_valve", "hv6_ripple", "hv6_zone", "hv6_asgard", "hv6_nvs", "loopTask"
           };
           for (const char *name : task_names) {
             TaskHandle_t handle = xTaskGetHandle(name);

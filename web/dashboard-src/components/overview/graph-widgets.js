@@ -85,7 +85,7 @@ injectStyle('graph-widgets', css);
 // ========================================
 const flowCard = () =>
   `<div class="chart-card"><div class="chart-head"><span class="chart-title" data-i18n="overview.graph.flowReturnDemand">Flow / Return / Demand</span><span class="chart-sub gw-dt">—</span></div>` +
-  `<div class="gw-controls" role="toolbar" data-i18n-label="overview.graph.layers.forecast" aria-label="Flow chart layers">` +
+  `<div class="gw-controls" role="toolbar" data-i18n-label="overview.graph.layers" aria-label="Flow chart layers">` +
     `<button type="button" class="gw-toggle" data-layer="flow" aria-pressed="true" data-i18n="overview.graph.layers.flow">Flow</button>` +
     `<button type="button" class="gw-toggle" data-layer="return" aria-pressed="true" data-i18n="overview.graph.layers.return">Return</button>` +
     `<button type="button" class="gw-toggle" data-layer="demand" aria-pressed="true" data-i18n="overview.graph.layers.demand">Demand</button>` +

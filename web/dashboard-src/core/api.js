@@ -1,6 +1,6 @@
 // core/api.js
 
-import { beginPendingWrite, endPendingWrite, setEntity, setI2cResult, setLive, addActivity, setDashboardValue, setZoneStateHistory, appendDeviceLog, getDeviceLogSeq, setForecastHours } from './store.js';
+import { beginPendingWrite, endPendingWrite, setEntity, setI2cResult, setLive, addActivity, setDashboardValue, setZoneStateHistory, appendDeviceLog, getDeviceLogSeq } from './store.js';
 import { handleMockPost } from './mock.js';
 import { key, gkey } from '../utils/keys.js';
 
@@ -92,8 +92,7 @@ const globalSelectMap = {
   manifold_flow_probe: gkey.manifoldFlowProbe,
   manifold_return_probe: gkey.manifoldReturnProbe,
   motor_profile_default: gkey.motorProfileDefault,
-  simple_preheat_enabled: gkey.simplePreheatEnabled,
-  balance_mode: gkey.balanceMode
+  simple_preheat_enabled: gkey.simplePreheatEnabled
 };
 
 const globalNumberMap = {
@@ -110,10 +109,6 @@ const globalNumberMap = {
   relearn_after_hours: gkey.relearnAfterHours,
   learned_factor_min_samples: gkey.learnedFactorMinSamples,
   learned_factor_max_deviation_pct: gkey.learnedFactorMaxDeviationPct,
-  adapt_interval_s: gkey.adaptIntervalS,
-  adapt_step: gkey.adaptStep,
-  adapt_min: gkey.adaptMin,
-  adapt_max: gkey.adaptMax
 };
 
 export function setZoneSelect(zone, settingKey, value) {
@@ -210,11 +205,6 @@ export function resetMotorAndRelearn(zone) {
   return command('motor_reset_and_relearn', zone);
 }
 
-export function resetBalancing() {
-  addActivity('Adaptive balancing reset — learned factors back to 1.0');
-  return command('reset_balancing');
-}
-
 export function dumpTaskStats() {
   addActivity('Task stats dumped to device log');
   return command('dump_task_stats');
@@ -236,13 +226,4 @@ export function fetchLogs() {
     .then((response) => response.ok ? response.json() : null)
     .then((data) => { if (data) appendDeviceLog(data.lines, data.next_seq); })
     .catch(() => { /* log fetch errors are non-fatal */ });
-}
-
-// Fetched Open-Meteo forecast (read-only preview to prove data freshness).
-export function fetchForecastHours() {
-  if (isMock()) return;
-  fetch(BASE + '/forecast', { cache: 'no-store' })
-    .then((response) => response.ok ? response.json() : null)
-    .then((data) => { if (data) setForecastHours(data); })
-    .catch(() => { /* forecast fetch errors are non-fatal */ });
 }

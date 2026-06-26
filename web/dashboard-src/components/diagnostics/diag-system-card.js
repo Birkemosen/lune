@@ -109,7 +109,7 @@ export default component({
     const update = () => {
       setCpu(cpu0El, bar0, ev(gkey.cpuLoadCore0));
       setCpu(cpu1El, bar1, ev(gkey.cpuLoadCore1));
-      setKb(heapEl, ev(gkey.freeInternalKb), 48);   // < 48 KB internal = forecast guard floor
+      setKb(heapEl, ev(gkey.freeInternalKb), 48);   // < 48 KB internal = tight for HTTPS/TLS tasks
       setKb(psramEl, ev(gkey.freePsramKb), null);
     };
 

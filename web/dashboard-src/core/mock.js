@@ -1,6 +1,6 @@
 // core/mock.js
 
-import { setEntity, ev, setLive, sampleHistory, setI2cResult, addActivity, setDashboardValue, setZoneStateHistory, getDashboardValue, setForecastHours, appendDeviceLog } from './store.js';
+import { setEntity, ev, setLive, sampleHistory, setI2cResult, addActivity, setDashboardValue, setZoneStateHistory, getDashboardValue, appendDeviceLog } from './store.js';
 import { key, gkey } from '../utils/keys.js';
 
 const ZONES = 6;
@@ -15,7 +15,6 @@ const MOCK_LOG_SAMPLES = [
   [3, 'hv6_zone', 'Control cycle: 4 zones heating, house avg 21.3°C'],
   [3, 'hv6_valve', 'Motor 2 reached open endstop (ripples=412)'],
   [5, 'hv6_ripple', 'ADC DMA buffer drained, 2048 samples'],
-  [3, 'hv6_forecast', 'Forecast updated: 48 hours from Open-Meteo'],
   [2, 'hv6_zone', 'Zone 5 disabled — skipping control'],
   [3, 'hv6_asgard', 'Pushed z1 thermostat 21.4°C to Asgard'],
 ];
@@ -54,17 +53,7 @@ function seed() {
     setEntity(key.ble(zone), { state: 'AA:BB:CC:DD:EE:0' + zone });
     setEntity(key.name(zone), { state: ['Living Room', 'Kitchen', 'Bedroom', 'Bathroom', 'Office', 'Hallway'][index] || '' });
     setEntity(key.exteriorWalls(zone), { state: ['N', 'E', 'S', 'W', 'N,E', 'S,W'][index] });
-    setEntity(key.windExposure(zone), { value: [0.5, 0.5, 0.5, 0.5, 0.7, 0.7][index] });
-    setEntity(key.solarGain(zone), { value: 0.3 });
-    setEntity(key.thermalLeadH(zone), { value: 4 });
     setEntity(key.preheatAdvance(zone), { value: 0.08 + (index * 0.03) });
-    // Adaptive balancing telemetry: prior, learned multiplier, effective, error.
-    const sf = [0.62, 0.78, 1.0, 0.55, 0.88, 0.7][index];
-    const ad = [1.08, 0.95, 1.0, 1.15, 0.9, 1.02][index];
-    setEntity(key.staticFactor(zone), { value: sf });
-    setEntity(key.balanceAdapt(zone), { value: ad });
-    setEntity(key.balanceFactor(zone), { value: Math.min(1, sf * ad) });
-    setEntity(key.adaptErr(zone), { value: [0.12, -0.05, 0.0, 0.22, -0.10, 0.03][index] });
   }
 
   for (let probe = 1; probe <= PROBES; probe++) {
@@ -101,11 +90,6 @@ function seed() {
   setEntity(gkey.learnedFactorMinSamples, { value: 3 });
   setEntity(gkey.learnedFactorMaxDeviationPct, { value: 12 });
   setEntity(gkey.simplePreheatEnabled, { state: 'on' });
-  setEntity(gkey.balanceMode, { state: 'Adaptive' });
-  setEntity(gkey.adaptIntervalS, { value: 3600 });
-  setEntity(gkey.adaptStep, { value: 0.02 });
-  setEntity(gkey.adaptMin, { value: 0.5 });
-  setEntity(gkey.adaptMax, { value: 1.5 });
   setEntity(gkey.minZoneFlowPct, { value: 15 });
   setEntity(gkey.minimumFlowAlways, { state: 'off' });
   setEntity(gkey.cpuLoadCore0, { value: 18.5 });
@@ -151,23 +135,6 @@ function seed() {
     mockEntries.push([t, ...states, absorbing, flowC, returnC, demandPct]);
   }
   setZoneStateHistory({ interval_s: INTERVAL_S, uptime_s: NOW_S, count: TOTAL, entries: mockEntries });
-
-  // Mock fetched forecast (48 h): cold front with a wind spike ~12 h out.
-  const fcHours = [];
-  for (let i = 0; i < 48; i++) {
-    const temp = 6 - 3 * Math.sin(i / 24 * Math.PI) - (i > 10 && i < 20 ? 2 : 0);
-    const wind = 4 + (i > 8 && i < 18 ? 9 * Math.exp(-Math.pow(i - 13, 2) / 12) : 0) + Math.sin(i / 5);
-    const dir = (220 + i * 4) % 360;
-    // Solar bell peaking ~midday each day (W/m²), zero overnight.
-    const hod = i % 24;
-    const solar = Math.max(0, Math.round(820 * Math.sin((hod - 6) / 12 * Math.PI)));
-    fcHours.push([Number(temp.toFixed(1)), Number(Math.max(0, wind).toFixed(1)), Math.round(dir), solar]);
-  }
-  // Anchor at local midnight so the mock reflects the full-day view (device
-  // anchors hours_[0] at 00:00 local). fetch_epoch ≈ 8 min ago.
-  const d0 = new Date(NOW_S * 1000); d0.setHours(0, 0, 0, 0);
-  const dayStart = Math.floor(d0.getTime() / 1000);
-  setForecastHours({ base_epoch: dayStart, age_s: 8 * 60, fetch_epoch: NOW_S - 8 * 60, count: 48, hours: fcHours });
 
   // Seed the device-log stream with a few lines.
   seedMockLogs(6);
@@ -338,15 +305,6 @@ export function handleMockPost(body) {
       addActivity('Task stats dumped to device log (mock)');
       return;
     }
-    if (cmd === 'reset_balancing') {
-      for (let z = 1; z <= ZONES; z++) {
-        setEntity(key.balanceAdapt(z), { value: 1.0 });
-        setEntity(key.balanceFactor(z), { value: ev(key.staticFactor(z)) ?? 1.0 });
-        setEntity(key.adaptErr(z), { value: null });
-      }
-      addActivity('Adaptive balancing reset');
-      return;
-    }
     return;
   }
 
@@ -363,18 +321,12 @@ export function handleMockPost(body) {
   if (k === 'motor_profile_default') { setEntity(gkey.motorProfileDefault, { state: String(v) }); addActivity('Setting updated: ' + k + ' = ' + v); return; }
   if (k === 'simple_preheat_enabled') { setEntity(gkey.simplePreheatEnabled, { state: String(v) }); addActivity('Setting updated: ' + k + ' = ' + v); return; }
   if (k === 'minimum_flow_always') { setEntity(gkey.minimumFlowAlways, { state: String(v) }); addActivity('Setting updated: ' + k + ' = ' + v); return; }
-  if (k === 'balance_mode') { setEntity(gkey.balanceMode, { state: String(v) }); addActivity('Setting updated: ' + k + ' = ' + v); return; }
-
   // Text settings
   if (k === 'zone_name' && zone >= 1) { setEntity(key.name(zone), { state: String(v) }); addActivity('Setting updated: ' + k + ' = ' + v, zone); return; }
   if (k === 'zone_ble_mac' && zone >= 1) { setEntity(key.ble(zone), { state: String(v) }); addActivity('Setting updated: ' + k + ' = ' + v, zone); return; }
   if (k === 'zone_exterior_walls' && zone >= 1) {
     const walls = String(v) || 'None';
     setEntity(key.exteriorWalls(zone), { state: walls });
-    // Mirror the firmware: re-seed wind exposure from the wall count.
-    const count = walls === 'None' ? 0 : walls.split(',').filter(Boolean).length;
-    const seeded = [0, 0.5, 0.7, 0.85, 1][Math.min(count, 4)];
-    setEntity(key.windExposure(zone), { value: seeded });
     addActivity('Setting updated: ' + k + ' = ' + v, zone);
     return;
   }
@@ -382,10 +334,6 @@ export function handleMockPost(body) {
   // Number settings (zone)
   if (k === 'zone_area_m2' && zone >= 1) { setEntity(key.area(zone), { value: Number(v) }); addActivity('Setting updated: ' + k + ' = ' + v, zone); return; }
   if (k === 'zone_pipe_spacing_mm' && zone >= 1) { setEntity(key.spacing(zone), { value: Number(v) }); addActivity('Setting updated: ' + k + ' = ' + v, zone); return; }
-  if (k === 'zone_wind_exposure' && zone >= 1) { setEntity(key.windExposure(zone), { value: Number(v) }); addActivity('Setting updated: ' + k + ' = ' + v, zone); return; }
-  if (k === 'zone_solar_gain' && zone >= 1) { setEntity(key.solarGain(zone), { value: Number(v) }); addActivity('Setting updated: ' + k + ' = ' + v, zone); return; }
-  if (k === 'zone_thermal_lead_h' && zone >= 1) { setEntity(key.thermalLeadH(zone), { value: Number(v) }); addActivity('Setting updated: ' + k + ' = ' + v, zone); return; }
-
   // Number settings (global motor calibration)
   const numMap = {
     close_threshold_multiplier: gkey.closeThresholdMultiplier,
@@ -401,10 +349,6 @@ export function handleMockPost(body) {
     relearn_after_hours: gkey.relearnAfterHours,
     learned_factor_min_samples: gkey.learnedFactorMinSamples,
     learned_factor_max_deviation_pct: gkey.learnedFactorMaxDeviationPct,
-    adapt_interval_s: gkey.adaptIntervalS,
-    adapt_step: gkey.adaptStep,
-    adapt_min: gkey.adaptMin,
-    adapt_max: gkey.adaptMax,
     min_zone_flow_pct: gkey.minZoneFlowPct
   };
 

@@ -21,13 +21,13 @@ esp32:
       CONFIG_SPIRAM_MODE_QUAD: "y"
       # Prefer PSRAM for large networking/crypto/BLE allocations to keep
       # internal heap available for the HTTP(S) client tasks (Helios/Asgard/
-      # forecast) and the dashboard web server.
+      # Asgard) and the dashboard web server.
       CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP: "y"
       CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC: "y"
       CONFIG_BT_ALLOCATION_FROM_SPIRAM_FIRST: "y"
       # --- Internal-heap relief -------------------------------------------------
       # BLE(Bluedroid)+WiFi+dashboard leave only ~16 KB free internal heap at
-      # idle, below the forecast's 48 KB TLS-fetch floor and tight enough that
+      # idle, low enough that
       # even the plain-HTTP Asgard push fails to allocate a socket
       # (ESP_ERR_HTTP_CONNECT). ESPHome's psram: component runs SPIRAM in
       # CAPS_ALLOC mode, so plain malloc()/new always lands in INTERNAL RAM —
@@ -50,7 +50,7 @@ esp32:
       CONFIG_LWIP_MAX_LISTENING_TCP: "5"
       # Widen the BSD socket pool. The default of 10 is too tight: the dashboard
       # httpd can hold up to 7 connections and lwIP reserves 3, which leaves zero
-      # for the native API *and* the outbound esp_http_client (forecast HTTPS /
+      # for the native API *and* outbound esp_http_client clients (Asgard /
       # Asgard) — accept() then floods with ENFILE (errno 23) and Open-Meteo
       # fetches fail. 16 (the Kconfig max) covers httpd(7) + control(3) + API(1)
       # + client(2) + headroom. Costs ~2-3 KB internal RAM, freed by dropping the

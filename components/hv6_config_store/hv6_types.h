@@ -215,8 +215,10 @@ struct ZoneConfig {
   float max_offset_c = 2.0f;   ///< Maximum setpoint offset from Helios (firmware safety clamp)
   float abs_min_c = 5.0f;      ///< Absolute minimum effective setpoint (overrides all offsets)
   float abs_max_c = 30.0f;     ///< Absolute maximum effective setpoint (overrides all offsets)
-  // Forecast preload exposure model (wind direction is matched against the
-  // exterior_walls bitmask above; see components/hv6_forecast/forecast_model.h)
+  // Coordinator forecast metadata retained for migration/back-compat. Lune V6
+  // no longer runs the forecast producer locally; Lune Touch/Mini should own
+  // weather, wind, solar and thermal-lead modelling and send clamped commands
+  // through the local command path.
   float wind_exposure = 0.5f;      ///< 0..1 — facade shelter factor for forecast preload
   float solar_gain_factor = 0.3f;  ///< 0..1 — passive solar relief through glazing
   uint8_t thermal_lead_h = 4;      ///< Hours before a forecast load peak charging must start
@@ -346,9 +348,8 @@ struct AsgardConfig {
   uint16_t peer_stale_after_s = 300;          ///< Exclude peer zones when its snapshot is older than this
 };
 
-/// Weather-forecast preload (hv6_forecast component). Pulls a 48 h Open-Meteo
-/// forecast and issues per-zone setpoint preload offsets through the Helios
-/// command path. Auto-quiesces while an external Helios service is enabled.
+/// Legacy weather-forecast preload config. Kept in the schema so existing NVS
+/// blobs remain readable, but the producer has moved to coordinator/lune-touch.
 struct ForecastConfig {
   bool enabled = false;
   float latitude = 0.0f;

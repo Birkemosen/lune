@@ -1,8 +1,7 @@
 import { component, subscribe } from '../../core/component.js';
 import { injectStyle } from '../../core/style.js';
-import { ev, es, getDashboardValue, getForecastHours, isEntityOn, subscribeDashboard, NZ } from '../../core/store.js';
+import { getDashboardValue, subscribeDashboard, NZ } from '../../core/store.js';
 import { key, gkey } from '../../utils/keys.js';
-import { computeForecastPreheat, forecastPreheatSubscriptions } from '../../utils/forecast-preload.js';
 import { localize, subscribeLanguage, t } from '../../core/i18n.js';
 
 // ========================================
@@ -24,8 +23,7 @@ const STATE_PALETTE = {
 };
 
 const PAST_WINDOW_S   = 24 * 3600;  // measured history window
-const FUTURE_WINDOW_S = 12 * 3600;  // forecast preload window
-const TOTAL_WINDOW_S  = PAST_WINDOW_S + FUTURE_WINDOW_S;
+const TOTAL_WINDOW_S  = PAST_WINDOW_S;
 const ROW_H      = 18;
 const ROW_GAP    = 4;
 const LABEL_W    = 54;
@@ -34,11 +32,7 @@ const PAD_TOP    = 4;
 const BAND_H     = 10;          // preheat-absorption band height
 const BAND_GAP   = 6;           // gap between zone rows and the absorption band
 const ABSORB_COLOR = '#ffc14d'; // gold — slab absorption / current-hour highlight
-const FORECAST_PRELOAD_COLOR = '#7aa7ce'; // muted blue — cool weather preload signal
-const DEFAULT_COMFORT_BAND_C = 0.5;
 const OBSERVED_BAR_H = 9;
-const EXPECTED_BAR_H = 6;
-const PRELOAD_BAR_H = 2;
 const ABSORB_INDEX = NZ + 1;    // entry shape: [uptime_s, z0..z5, absorbing]
 const ZONES_BOTTOM = PAD_TOP + NZ * (ROW_H + ROW_GAP) - ROW_GAP;
 const BAND_Y       = ZONES_BOTTOM + BAND_GAP;
@@ -142,7 +136,7 @@ const template = () => `
   <div class="timeline-card">
     <div class="timeline-head">
       <span data-i18n="overview.timeline.title">Zone State</span>
-      <strong>-24 h / +12 h</strong>
+      <strong>-24 h</strong>
     </div>
     <div class="tl-body"></div>
     <div class="timeline-legend"></div>
@@ -153,7 +147,7 @@ const template = () => `
 // SVG RENDERER
 // ========================================
 
-function renderTimeline(histData, currentUptimeS, forecastData) {
+function renderTimeline(histData, currentUptimeS) {
   if (!histData || !histData.entries || histData.entries.length === 0) {
     return null;   // caller will show empty state
   }
@@ -191,16 +185,8 @@ function renderTimeline(histData, currentUptimeS, forecastData) {
   svg.appendChild(bg);
 
   const nowX = relToX(0);
-  const futureBg = document.createElementNS(ns, 'rect');
-  futureBg.setAttribute('x', nowX);
-  futureBg.setAttribute('y', PAD_TOP);
-  futureBg.setAttribute('width', LABEL_W + chartW - nowX);
-  futureBg.setAttribute('height', CHART_H - PAD_TOP - AXIS_H);
-  futureBg.setAttribute('fill', 'rgba(255,166,0,0.035)');
-  svg.appendChild(futureBg);
-
   // ── Grid lines at 6 h intervals ───────────────────────────────
-  const TICK_REL_S = [-24, -18, -12, -6, 0, 6, 12].map((h) => h * 3600);
+  const TICK_REL_S = [-24, -18, -12, -6, 0].map((h) => h * 3600);
   for (const rel of TICK_REL_S) {
     const x = relToX(rel);
     const line = document.createElementNS(ns, 'line');
@@ -227,45 +213,6 @@ function renderTimeline(histData, currentUptimeS, forecastData) {
     'font-family': 'Montserrat, sans-serif',
     'font-weight': '600',
   }, 'now'));
-
-  const forecastRows = (() => {
-    const hours = forecastData && Array.isArray(forecastData.hours) ? forecastData.hours : [];
-    if (!hours.length || !forecastData.base_epoch) return [];
-    return computeForecastPreheat(hours, forecastData.count || hours.length);
-  })();
-  const maxForecastOffset = forecastRows.reduce((m, row) => {
-    for (const offset of row.offsets) m = Math.max(m, Number(offset) || 0);
-    return m;
-  }, 0);
-
-  function currentDisplayCode(zone) {
-    if (!isEntityOn(key.enabled(zone))) return 0;
-    if (!isEntityOn(gkey.drivers)) return 0;
-    const raw = String(es(key.state(zone)) || '').toUpperCase();
-    if (raw === 'MANUAL') return 1;
-    if (raw === 'CALIBRATING') return 2;
-    if (raw === 'WAITING_CALIBRATION') return 3;
-    if (raw === 'WAITING_ROOM_TEMP' || raw === 'UNKNOWN') return 4;
-    if (raw === 'HEATING') return 5;
-    if (raw === 'IDLE') return 6;
-    if (raw === 'OVERHEATED') return 7;
-    return 6;
-  }
-
-  function expectedDisplayCode(zone, offsetC) {
-    const currentCode = currentDisplayCode(zone);
-    if (currentCode <= 4 || currentCode === 7) return currentCode;
-
-    const temp = Number(ev(key.temp(zone)));
-    const setpoint = Number(ev(key.setpoint(zone)));
-    if (!Number.isFinite(temp) || !Number.isFinite(setpoint)) return 4;
-
-    const advanceRaw = Number(ev(key.preheatAdvance(zone)));
-    const preheatAdvance = Number.isFinite(advanceRaw) ? Math.max(0, advanceRaw) : 0;
-    const effectiveSetpoint = setpoint + Math.max(0, Number(offsetC) || 0);
-    const demandThreshold = effectiveSetpoint - DEFAULT_COMFORT_BAND_C + preheatAdvance;
-    return temp < demandThreshold ? 5 : 6;
-  }
 
   // ── Zone rows ─────────────────────────────────────────────────
   for (let zi = 0; zi < NZ; zi++) {
@@ -336,68 +283,6 @@ function renderTimeline(histData, currentUptimeS, forecastData) {
       drawSeg(segStart, 0, segState);
     }
 
-    const forecastRow = forecastRows[zi];
-    if (forecastRow && forecastData && forecastData.base_epoch) {
-      const expectedSegments = [];
-      const preloadSegments = [];
-
-      for (let i = 0; i < forecastRow.offsets.length; i++) {
-        const offset = Number(forecastRow.offsets[i]) || 0;
-        const startRel = forecastData.base_epoch + i * 3600 - nowEpoch;
-        const endRel = startRel + 3600;
-        if (endRel <= 0 || startRel >= FUTURE_WINDOW_S) continue;
-        const clampedStart = Math.max(0, startRel);
-        const clampedEnd = Math.min(FUTURE_WINDOW_S, endRel);
-        const stateCode = expectedDisplayCode(zi + 1, offset);
-
-        const last = expectedSegments[expectedSegments.length - 1];
-        if (last && last.state === stateCode && Math.abs(last.end - clampedStart) < 2) {
-          last.end = clampedEnd;
-        } else {
-          expectedSegments.push({ start: clampedStart, end: clampedEnd, state: stateCode });
-        }
-
-        if (offset > 0 && maxForecastOffset > 0) {
-          const prev = preloadSegments[preloadSegments.length - 1];
-          if (prev && Math.abs(prev.end - clampedStart) < 2) {
-            prev.end = clampedEnd;
-            prev.peak = Math.max(prev.peak, offset);
-          } else {
-            preloadSegments.push({ start: clampedStart, end: clampedEnd, peak: offset });
-          }
-        }
-      }
-
-      for (const seg of expectedSegments) {
-        const palette = STATE_PALETTE[seg.state] || STATE_PALETTE[255];
-        if (!palette || palette.color === 'transparent') continue;
-        const x0 = relToX(seg.start);
-        const x1 = relToX(seg.end);
-        const rect = document.createElementNS(ns, 'rect');
-        rect.setAttribute('x', x0);
-        rect.setAttribute('y', y + (ROW_H - EXPECTED_BAR_H) / 2);
-        rect.setAttribute('width', Math.max(1, x1 - x0));
-        rect.setAttribute('height', EXPECTED_BAR_H);
-        rect.setAttribute('fill', palette.color);
-        rect.setAttribute('rx', String(EXPECTED_BAR_H / 2));
-        rect.setAttribute('opacity', seg.state === 5 ? '0.50' : '0.34');
-        svg.appendChild(rect);
-      }
-
-      for (const seg of preloadSegments) {
-        const x0 = relToX(seg.start);
-        const x1 = relToX(seg.end);
-        const boost = document.createElementNS(ns, 'rect');
-        boost.setAttribute('x', x0 + 1);
-        boost.setAttribute('y', y + ROW_H - PRELOAD_BAR_H - 2);
-        boost.setAttribute('width', Math.max(1, x1 - x0 - 2));
-        boost.setAttribute('height', String(PRELOAD_BAR_H));
-        boost.setAttribute('fill', FORECAST_PRELOAD_COLOR);
-        boost.setAttribute('rx', String(PRELOAD_BAR_H / 2));
-        boost.setAttribute('opacity', String(Math.min(0.82, 0.26 + (seg.peak / maxForecastOffset) * 0.48)));
-        svg.appendChild(boost);
-      }
-    }
   }
 
   // ── Preheat-absorption band ───────────────────────────────────
@@ -457,12 +342,11 @@ function renderTimeline(histData, currentUptimeS, forecastData) {
   }
 
   // ── Hourly time axis labels ───────────────────────────────────
-  // Match the weather forecast chart: every local hour is visible, slanted,
-  // with the current hour highlighted.
+  // Every local hour is visible, slanted, with the current hour highlighted.
   const AXIS_Y = CHART_H - AXIS_H + 15;
   const HOUR_S = 3600;
   const firstHourEpoch = Math.ceil((nowEpoch - PAST_WINDOW_S) / HOUR_S) * HOUR_S;
-  const lastHourEpoch = Math.floor((nowEpoch + FUTURE_WINDOW_S) / HOUR_S) * HOUR_S;
+  const lastHourEpoch = Math.floor(nowEpoch / HOUR_S) * HOUR_S;
   const currentHourEpoch = Math.floor(nowEpoch / HOUR_S) * HOUR_S;
   for (let epoch = firstHourEpoch; epoch <= lastHourEpoch; epoch += HOUR_S) {
     const rel = epoch - nowEpoch;
@@ -523,17 +407,6 @@ function renderLegend(el) {
     '<span class="tl-legend-dot" style="background:' + ABSORB_COLOR + '"></span>' + t('overview.timeline.preheatAbsorption');
   el.appendChild(absorb);
 
-  const expected = document.createElement('div');
-  expected.className = 'tl-legend-item';
-  expected.innerHTML =
-    '<span class="tl-legend-dot expected" style="background:' + STATE_PALETTE[5].color + '"></span>' + t('overview.timeline.expectedState');
-  el.appendChild(expected);
-
-  const forecast = document.createElement('div');
-  forecast.className = 'tl-legend-item';
-  forecast.innerHTML =
-    '<span class="tl-legend-dot" style="background:' + FORECAST_PRELOAD_COLOR + '"></span>' + t('overview.timeline.weatherPreload');
-  el.appendChild(forecast);
 }
 
 // ========================================
@@ -550,7 +423,6 @@ export default component({
 
     function update() {
       const hist = getDashboardValue('zoneStateHistory');
-      const forecast = getForecastHours();
       const uptimeS = (() => {
         // Use wall-clock time if uptime not available from entity store.
         const raw = getDashboardValue && getDashboardValue('zoneStateHistory');
@@ -567,7 +439,7 @@ export default component({
         return;
       }
 
-      const svgEl = renderTimeline(hist, uptimeS, forecast);
+      const svgEl = renderTimeline(hist, uptimeS);
       if (svgEl) {
         body.appendChild(svgEl);
       }
@@ -575,9 +447,7 @@ export default component({
 
     subscribeDashboard('zoneStateHistory', update);
     subscribeDashboard('zoneNames', update);
-    subscribeDashboard('forecastHours', update);
     subscribeLanguage(() => { localize(el); renderLegend(legend); update(); });
-    forecastPreheatSubscriptions(subscribe, update);
     subscribe(gkey.drivers, update);
     for (let zone = 1; zone <= NZ; zone++) {
       subscribe(key.enabled(zone), update);

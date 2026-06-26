@@ -621,8 +621,8 @@ void Hv6ZoneController::set_zone_exterior_walls(uint8_t zone, uint8_t walls) {
     return;
   auto cfg = config_store_->get_config();
   cfg.zones[zone].exterior_walls = walls & 0x0F;  // Only lower 4 bits valid
-  // Seed the editable forecast wind-exposure from the wall layout; the user can
-  // still override it afterwards via set_zone_wind_exposure().
+  // Seed coordinator weather/preload metadata from the wall layout. The
+  // coordinator can override this later through a dedicated command path.
   cfg.zones[zone].wind_exposure = default_wind_exposure(cfg.zones[zone].exterior_walls);
   config_store_->update_zone(zone, cfg.zones[zone]);
   ESP_LOGI(TAG, "Zone %d exterior walls: 0x%02X (wind exposure %.2f)", zone + 1,

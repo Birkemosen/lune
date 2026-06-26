@@ -26,7 +26,6 @@ Public product references should use Lune V6.
 │  hv6_config_store ← hv6_valve_controller ← hv6_zone_controller
 │                                                  ↑           │
 │                                          hv6_asgard_bridge   │
-│                                          hv6_forecast        │
 │                                          hv6_dashboard       │
 └────────────────────────────┬─────────────────────────────────┘
                              ▼
@@ -50,14 +49,13 @@ heatvalve-6/
 ├── packages/
 │   ├── board/                ESP32-S3 board definition
 │   ├── hardware/             BLE, display, I2C, motors, LED, 1-Wire, sensors
-│   ├── network/              WiFi, API, OTA, Asgard bridge, forecast
+│   ├── network/              WiFi, API, OTA, Asgard bridge
 │   └── zones/                Climate entities, zone sensors, UI, dashboard wiring
 ├── components/               Custom ESPHome external components (C++)
 │   ├── hv6_config_store/     NVS persistence (DeviceConfig struct)
 │   ├── hv6_valve_controller/ Motor FSM, endstop detection, ripple counting
 │   ├── hv6_zone_controller/  Zone state machine, algorithms, hydraulic balance
 │   ├── hv6_asgard_bridge/    Weighted house temp → Asgard/Ecodan thermostat
-│   ├── hv6_forecast/         Open-Meteo wind-aware per-zone preload
 │   └── hv6_dashboard/        HTTP API (/api/hv6/v1), dashboard asset serving
 ├── web/
 │   ├── dashboard-src/        Dashboard source (modular JS, esbuild)
@@ -75,7 +73,6 @@ heatvalve-6/
 | `hv6_ripple` (DMA ADC) | 1 | 7 | continuous |
 | `hv6_zone` (control cycle) | 0 | 6 | 10 s (configurable) |
 | `hv6_asgard` (HTTP) | 1 | 1 | 30 s push (coordinator only) |
-| `hv6_forecast` (HTTPS) | 1 | 1 | 1 h fetch / 5 min recompute |
 | `hv6_nvs` (flash commit) | 1 | 1 | event-driven |
 | ESPHome loopTask | 1 | 1 | — |
 
@@ -98,15 +95,14 @@ Temp source (DS18B20 / BLE) → Zone state machine → Control algorithm → Hyd
 
 ### Setpoint-offset command path
 
-On-device optimizers (currently `hv6_forecast`) write per-zone setpoint-offset / preheat
-commands through `Hv6ZoneController::apply_helios_command()`. Offsets are clamped in
-firmware by per-zone safety limits; if a producer goes stale, its offsets are cleared and
-local control continues unchanged. `HeliosConfig.enabled` (NVS) acts as a quiesce gate so
-a producer can stand down if an external optimizer is ever reintroduced.
+Coordinator optimizers write per-zone setpoint-offset / preheat commands through
+`Hv6ZoneController::apply_helios_command()`. Offsets are clamped in firmware by per-zone
+safety limits; if a producer goes stale, its offsets are cleared and local control
+continues unchanged. `HeliosConfig.enabled` (NVS) remains as a compatibility quiesce gate.
 
 Whole-house MPC is provided by Odin via the [Asgard / Ecodan bridge](ecodan_integration.md),
 not an external HTTP optimizer — the previous `hv6_helios_client` was removed. Removing any
-producer reverts transparently to local control: no vendor lock-in, no firmware dependency
+producer reverts transparently to local control: no vendor lock-in, no safety dependency
 on an external service.
 
 ## Hardware Layer

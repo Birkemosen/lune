@@ -109,12 +109,12 @@ test-ripple:
 	$(RIPPLE_CXX) $(RIPPLE_CXXFLAGS) $(RIPPLE_SRCS) -o $(RIPPLE_OUT) -lm
 	$(RIPPLE_OUT)
 
-FORECAST_SRCS = components/hv6_forecast/forecast_model.cpp \
-                test/forecast/test_forecast_model.cpp
+FORECAST_SRCS = coordinator/lune-touch/components/hv6_forecast/forecast_model.cpp \
+                coordinator/lune-touch/tests/forecast/test_forecast_model.cpp
 FORECAST_OUT  = /tmp/test_forecast_model
 
 test-forecast:
-	$(RIPPLE_CXX) -std=c++17 -O2 -Wall -Wextra -I components/hv6_forecast $(FORECAST_SRCS) -o $(FORECAST_OUT) -lm
+	$(RIPPLE_CXX) -std=c++17 -O2 -Wall -Wextra -I coordinator/lune-touch/components/hv6_forecast $(FORECAST_SRCS) -o $(FORECAST_OUT) -lm
 	$(FORECAST_OUT)
 
 BALANCE_SRCS = test/adaptive_balance/test_adaptive_balance.cpp

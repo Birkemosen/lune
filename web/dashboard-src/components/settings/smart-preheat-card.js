@@ -7,7 +7,7 @@ import { gkey } from '../../utils/keys.js';
 import { localize, subscribeLanguage, t } from '../../core/i18n.js';
 
 // ========================================
-// CSS — reuses the control/forecast card language
+// CSS - reuses the compact settings card language
 // ========================================
 const css = `
 .smart-preheat-card .absorb-badge {

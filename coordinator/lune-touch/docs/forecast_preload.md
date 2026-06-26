@@ -1,18 +1,18 @@
-# Forecast Preload (wind-aware, on-device)
+# Forecast Preload (wind-aware, coordinator-owned)
 
-`hv6_forecast` adds weather-forecast-driven per-zone preheating to Lune V6, on the
-board itself — no external service required. It exists because a Mitsubishi Ecodan + Odin
-optimizer plans the *whole house's* heat as a single signal, but this house loses heat
-unevenly: depending on wind direction and speed, only one or two of the six rooms (mostly
-the low-thermal-mass first floor) lag during a winter storm. Odin cannot route heat to a
-specific facade; Lune V6 must, and to do that it has to know which way the wind blows.
+`hv6_forecast` is the extracted weather-forecast-driven per-zone preheating producer for
+the Lune Touch / Mini coordinator. It exists because a Mitsubishi Ecodan + Odin optimizer
+plans the *whole house's* heat as a single signal, but a real house loses heat unevenly:
+depending on wind direction and speed, only one or two rooms may lag during a winter
+storm. Odin cannot route heat to a specific facade; the Lune coordinator can, while each
+Lune V6 keeps validating and clamping the resulting commands locally.
 
 ## How it works
 
-1. **Fetch.** A FreeRTOS task (Core 1, same pattern as the Asgard component) pulls a
+1. **Fetch.** A coordinator task pulls a
    48 h Open-Meteo forecast over HTTPS every `fetch_interval_s` (default 1 h): hourly
    temperature, wind speed, wind direction and shortwave radiation. The parsed forecast is
-   cached in its own NVS namespace (`hv6f`) so a reboot does not lose it.
+   cached in coordinator-owned storage so a reboot does not lose it.
 
 2. **Per-zone weather load.** Each forecast hour is reduced to a dimensionless load per zone
    ([forecast_model.h](../components/hv6_forecast/forecast_model.h)):
@@ -25,8 +25,8 @@ specific facade; Lune V6 must, and to do that it has to know which way the wind 
    ```
 
    A zone with no exterior walls (interior room) always scores 0. Wind from a sheltered
-   side scores 0. The per-zone `exterior_walls` bitmask (set in the zone sensor card) is
-   what makes this directional.
+   side scores 0. The per-zone `exterior_walls` bitmask (set in V6 zone settings and
+   eventually mirrored into the coordinator zone registry) is what makes this directional.
 
 3. **Preload decision.** For each zone the model scans the next `thermal_lead_h` hours and
    takes the peak load. Above `load_threshold` it issues a setpoint offset
@@ -37,25 +37,23 @@ specific facade; Lune V6 must, and to do that it has to know which way the wind 
 4. **Apply.** The offset is fed through the **internal setpoint-offset command path**
    (`apply_helios_command`), so every per-zone firmware safety clamp applies unchanged:
    `[min_offset_c, max_offset_c]`, `abs_min_c/abs_max_c`. The forecast producer
-   **auto-quiesces whenever the `HeliosConfig.enabled` gate is set** — a hook left in place
-   so an external optimizer could reclaim the command slots; with the external Helios client
-   removed this gate is normally off and the local producer stays active.
+   should auto-quiesce whenever a higher-priority coordinator strategy owns the same command
+   slots.
 
-The forecast and the preheat-absorption logic (see
-[ecodan_integration.md](ecodan_integration.md)) are complementary: forecast preload opens
-the exposed zone's valve / raises its setpoint *before* the weather, so the weighted house
-temperature dips slightly and Odin/Asgard delivers the heat; preheat-absorption then keeps
-the satisfied zones open so the slab can store it.
+The forecast and Lune V6's local preheat-absorption logic are complementary: forecast
+preload biases exposed zones *before* the weather, while V6's local absorption behavior
+keeps satisfied zones from fighting a hot-water buffer that arrives from an external
+optimizer.
 
-## Two boards
+## Multi-node coordination
 
-Each board runs its own `hv6_forecast` for its own six zones — exposure config is per zone
-and local, and two Open-Meteo calls are harmless. No cross-board coordination is needed in
-the preload layer; only the Asgard z1 feed is aggregated (master/slave).
+The coordinator should run this logic once per house, across one or more Lune V6 nodes.
+Each V6 receives only validated, expiring setpoint-offset commands through the existing
+local command path.
 
 ## Configuration
 
-Dashboard **Forecast Preload** card (`ForecastConfig` + per-zone exposure in NVS):
+Legacy V6 NVS schema retained for migration (`ForecastConfig` + per-zone exposure fields):
 
 | Field | Default | Meaning |
 |---|---|---|
@@ -71,13 +69,13 @@ Dashboard **Forecast Preload** card (`ForecastConfig` + per-zone exposure in NVS
 | per-zone `solar_gain_factor` | 0.3 | 0–1 passive solar relief through glazing |
 | per-zone `thermal_lead_h` | 4 | Hours of slab charging before a load peak |
 
-Status (badge + per-zone active offset / hours-to-peak) is shown on the card and reported
-in the dashboard state.
+Coordinator UI should show status, per-zone active offset, command expiry, and the local
+clamp result returned by each V6.
 
 ## Testing
 
 The load/preload math is pure C++ with no ESP dependencies and is covered by
-[test/forecast/test_forecast_model.cpp](../test/forecast/test_forecast_model.cpp):
+[coordinator/lune-touch/tests/forecast/test_forecast_model.cpp](../tests/forecast/test_forecast_model.cpp):
 
 ```bash
 make test-forecast   # or: make test   (runs ripple + forecast)
