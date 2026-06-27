@@ -127,5 +127,6 @@ Dashboard transport uses the dedicated `/api/hv6/v1` JSON namespace served by
 - Home Assistant integration continues through the ESPHome native API
 - Contract: [hv6_api_v1.md](hv6_api_v1.md)
 
-Frontend source lives under `web/dashboard-src/` and is bundled by esbuild into
-`web/dashboard.js`, which is committed and embedded into the firmware at build time.
+Frontend source lives under `devices/lune-v6/web/dashboard-src/` and is bundled by esbuild
+into `devices/lune-v6/web/dashboard.js`, which is committed and embedded into the firmware
+at build time.

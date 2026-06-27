@@ -75,8 +75,8 @@ clamp result returned by each V6.
 ## Testing
 
 The load/preload math is pure C++ with no ESP dependencies and is covered by
-[coordinator/lune-touch/tests/forecast/test_forecast_model.cpp](../tests/forecast/test_forecast_model.cpp):
+[devices/lune-touch/tests/forecast/test_forecast_model.cpp](../tests/forecast/test_forecast_model.cpp):
 
 ```bash
-make test-forecast   # or: make test   (runs ripple + forecast)
+make test-forecast   # or: make test from the repo root
 ```

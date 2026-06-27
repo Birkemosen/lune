@@ -10,7 +10,7 @@ function isMock() {
   return !!(window.HV6_DASHBOARD_CONFIG && window.HV6_DASHBOARD_CONFIG.mock);
 }
 
-// POST to a /api/hv6/v1 write endpoint (query params per docs/hv6_api_v1.md).
+// POST to a /api/hv6/v1 write endpoint (query params per devices/lune-v6/docs/hv6_api_v1.md).
 // mockBody carries the legacy {key, value, zone?} action shape consumed by core/mock.js.
 function postV1(path, params, mockBody) {
   beginPendingWrite();

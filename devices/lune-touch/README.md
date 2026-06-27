@@ -1,4 +1,4 @@
-# Lune Coordinator Workspace
+# Lune Touch / Mini
 
 This folder holds functionality that belongs in Lune Touch / Lune Mini rather than in
 Lune V6's local manifold firmware.
@@ -7,10 +7,10 @@ Lune V6's local manifold firmware.
 
 The first extracted module is the wind-aware forecast preload producer:
 
-- `lune-touch/components/hv6_forecast/` - legacy ESPHome component and pure forecast model
-- `lune-touch/packages/forecast.yaml` - legacy package wiring kept as reference
-- `lune-touch/tests/forecast/` - host tests for the pure preload model
-- `lune-touch/docs/forecast_preload.md` - coordinator-oriented design note
+- `components/hv6_forecast/` - legacy ESPHome component and pure forecast model
+- `packages/forecast.yaml` - legacy package wiring kept as reference
+- `tests/forecast/` - host tests for the pure preload model
+- `docs/forecast_preload.md` - coordinator-oriented design note
 
 Lune V6 no longer builds or starts the local `hv6_forecast` HTTPS task. It keeps the local
 setpoint-offset command path and firmware clamps, because coordinator commands must still

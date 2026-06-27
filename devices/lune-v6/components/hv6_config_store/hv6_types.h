@@ -349,7 +349,7 @@ struct AsgardConfig {
 };
 
 /// Legacy weather-forecast preload config. Kept in the schema so existing NVS
-/// blobs remain readable, but the producer has moved to coordinator/lune-touch.
+/// blobs remain readable, but the producer has moved to devices/lune-touch.
 struct ForecastConfig {
   bool enabled = false;
   float latitude = 0.0f;

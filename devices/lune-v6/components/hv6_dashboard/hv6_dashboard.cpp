@@ -871,7 +871,7 @@ void HV6Dashboard::handle_state_(AsyncWebServerRequest *request) {
 }
 
 // =============================================================================
-// /api/hv6/v1 — request routing (contract: docs/hv6_api_v1.md)
+// /api/hv6/v1 - request routing (contract: devices/lune-v6/docs/hv6_api_v1.md)
 // =============================================================================
 
 namespace {

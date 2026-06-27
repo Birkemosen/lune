@@ -3,9 +3,9 @@
 // =============================================================================
 // Build + run (from repo root):
 //   clang++ -std=c++17 -O2 -Wall -Wextra \
-//     -I coordinator/lune-touch/components/hv6_forecast \
-//     coordinator/lune-touch/components/hv6_forecast/forecast_model.cpp \
-//     coordinator/lune-touch/tests/forecast/test_forecast_model.cpp -o /tmp/test_forecast -lm \
+//     -I devices/lune-touch/components/hv6_forecast \
+//     devices/lune-touch/components/hv6_forecast/forecast_model.cpp \
+//     devices/lune-touch/tests/forecast/test_forecast_model.cpp -o /tmp/test_forecast -lm \
 //   && /tmp/test_forecast
 // =============================================================================
 

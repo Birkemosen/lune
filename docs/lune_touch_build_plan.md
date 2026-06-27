@@ -46,9 +46,9 @@ Recommended starting point:
 - NVS-backed local configuration with explicit schema versions
 - OTA, safe mode, USB provisioning, and structured diagnostics from the beginning
 
-The starter workspace for coordinator-owned code lives in [coordinator/](../coordinator/).
+The starter workspace for coordinator-owned code lives in [devices/lune-touch/](../devices/lune-touch/).
 The first extracted module is the legacy wind-aware forecast preload producer, now kept as
-reference implementation under `coordinator/lune-touch/components/hv6_forecast/`.
+reference implementation under `devices/lune-touch/components/hv6_forecast/`.
 
 Coordinator responsibilities:
 

@@ -11,7 +11,7 @@ the public rename from HeatValve-6 to Lune V6.
 - Dashboard transport: HTTP JSON + SSE
 - Home Assistant integration remains on ESPHome API/entities/services
 - Dashboard no longer depends on ESPHome entity-name REST routes
-- Dashboard source is modularized under `web/dashboard-src/` and bundled into `web/dashboard.js`
+- Dashboard source is modularized under `devices/lune-v6/web/dashboard-src/` and bundled into `devices/lune-v6/web/dashboard.js`
 
 ## Current Implementation Status
 

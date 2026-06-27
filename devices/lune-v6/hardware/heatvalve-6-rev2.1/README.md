@@ -19,18 +19,18 @@ Editable KiCad 10 design for the USB-C-powered, six-channel DRV8837 HeatValve co
 
 ```bash
 PYTHONPATH=/private/tmp/kicad_pydeps HOME=/private/tmp \
-  python3 hardware/heatvalve-6-rev2.1/generate_kicad.py
+  python3 devices/lune-v6/hardware/heatvalve-6-rev2.1/generate_kicad.py
 
 kicad-cli sch erc \
-  --output hardware/heatvalve-6-rev2.1/erc.rpt \
-  hardware/heatvalve-6-rev2.1/heatvalve-6-rev2.1.kicad_sch
+  --output devices/lune-v6/hardware/heatvalve-6-rev2.1/erc.rpt \
+  devices/lune-v6/hardware/heatvalve-6-rev2.1/heatvalve-6-rev2.1.kicad_sch
 
 /Applications/KiCad/KiCad.app/Contents/Frameworks/Python.framework/Versions/3.9/bin/python3.9 \
-  hardware/heatvalve-6-rev2.1/generate_pcb.py
+  devices/lune-v6/hardware/heatvalve-6-rev2.1/generate_pcb.py
 
 kicad-cli pcb drc \
-  --output hardware/heatvalve-6-rev2.1/drc.rpt \
-  hardware/heatvalve-6-rev2.1/heatvalve-6-rev2.1.kicad_pcb
+  --output devices/lune-v6/hardware/heatvalve-6-rev2.1/drc.rpt \
+  devices/lune-v6/hardware/heatvalve-6-rev2.1/heatvalve-6-rev2.1.kicad_pcb
 ```
 
 The committed `.kicad_sch` is usable without the Python generator dependency.

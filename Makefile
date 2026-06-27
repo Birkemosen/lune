@@ -1,230 +1,53 @@
 # -----------------------------------------------------------------------------
-# Lune V6 firmware build (BLE BTHome sensors, ESPHome native API)
+# Guldborg & Birkemose product workspace
 # -----------------------------------------------------------------------------
-CONFIG ?= configurations/heatvalve-6-ble.yaml
-BUILD_NAME ?= heatvalve-6
-ESPHOME ?= $(if $(wildcard .venv313/bin/esphome),.venv313/bin/esphome,$(if $(wildcard .venv/bin/esphome),.venv/bin/esphome,esphome))
-PIO ?= $(if $(wildcard .venv313/bin/platformio),.venv313/bin/platformio,$(if $(wildcard .venv/bin/platformio),.venv/bin/platformio,platformio))
-PYTHON ?= $(if $(wildcard .venv313/bin/python3),.venv313/bin/python3,$(if $(wildcard .venv/bin/python3),.venv/bin/python3,python3))
-# ESPHome materialises generated sources next to the config file, so the
-# build root for the configurations/ entrypoints lives under that directory.
-BUILD_ROOT ?= configurations/.esphome/build/$(BUILD_NAME)
-PIO_BUILD_DIR ?= $(BUILD_ROOT)/.pio/build/$(BUILD_NAME)
-FIRMWARE_BIN ?= $(PIO_BUILD_DIR)/firmware.bin
-HOST ?=
-PORT ?=
-AUTO_PORT := $(strip $(shell ls /dev/cu.usbmodem* /dev/cu.usbserial* /dev/cu.SLAB_USBtoUART* /dev/cu.wchusbserial* 2>/dev/null | head -n 1))
-SERIAL_PORT := $(if $(PORT),$(PORT),$(AUTO_PORT))
-DASHBOARD_SRC_DIR ?= web/dashboard-src
-DASHBOARD_OUT_FILE ?= web/dashboard.js
-LANG ?= en
-DASHBOARD_COMPILED_LANG := $(if $(filter en da,$(LANG)),$(LANG),en)
+LUNE_V6_DIR ?= devices/lune-v6
+LUNE_TOUCH_DIR ?= devices/lune-touch
 
-.PHONY: help check config build build-verify deploy ota logs discover monitor erase erase-nvs clean dashboard dashboard-tooling dashboard-build dashboard-watch test test-ripple test-forecast test-balance
+.PHONY: help config build build-verify deploy ota logs discover monitor erase erase-nvs clean \
+        dashboard dashboard-tooling dashboard-build dashboard-watch \
+        test test-lune-v6 test-lune-touch test-ripple test-balance test-forecast \
+        lune-v6-help lune-touch-help
 
 help:
-	@echo "Lune V6 ESPHome tasks"
-	@echo "  make config        Validate YAML"
-	@echo "  make build         Compile firmware (no version bump)"
-	@echo "  make build-verify  Alias for make build"
-	@echo "  make deploy        Build + upload (USB, OTA, or auto-discover)"
-	@echo "  make ota           Build + upload over network (auto-discover if HOST unset)"
-	@echo "  make logs          Stream logs (auto-discover if HOST unset)"
-	@echo "  make discover      Scan network and list found devices"
-	@echo "  make monitor       Open serial monitor on PORT"
-	@echo "  make erase         Erase flash on PORT"
-	@echo "  make erase-nvs     Erase NVS partition only (clears calibration data)"
-	@echo "  make test          Run all host unit tests"
-	@echo "  make test-ripple   Run ripple-counter unit tests (5 rates × 5 cases)"
-	@echo "  make test-forecast Run forecast preload-model unit tests"
-	@echo "  make test-balance  Run adaptive-balancing step-math unit tests"
+	@echo "Guldborg & Birkemose product workspace"
 	@echo ""
-	@echo "Examples:"
-	@echo "  make build"
-	@echo "  make deploy"
-	@echo "  make deploy PORT=/dev/cu.usbmodemXXXX"
-	@echo "  make monitor PORT=/dev/cu.usbmodemXXXX"
-	@echo "  make erase PORT=/dev/cu.usbmodemXXXX"
-	@echo "  make ota HOST=heatvalve-6-a1b2c3.local  # current internal hostname pattern"
-	@echo "  make discover"
+	@echo "Default hardware target: Lune V6"
+	@echo "  make config              Validate Lune V6 ESPHome YAML"
+	@echo "  make build               Build Lune V6 firmware"
+	@echo "  make dashboard-build     Build Lune V6 dashboard bundle"
+	@echo "  make deploy              Build + deploy Lune V6"
+	@echo "  make logs                Stream Lune V6 logs"
+	@echo ""
+	@echo "Tests"
+	@echo "  make test                Run all host tests across devices"
+	@echo "  make test-lune-v6        Run Lune V6 host tests"
+	@echo "  make test-lune-touch     Run Lune Touch host tests"
+	@echo "  make test-forecast       Run Lune Touch forecast-model tests"
+	@echo ""
+	@echo "Device-specific command namespaces"
+	@echo "  make lune-v6-help"
+	@echo "  make lune-touch-help"
 
-check:
-	@command -v $(ESPHOME) >/dev/null 2>&1 || { \
-		echo "ESPHome CLI not found."; \
-		echo "Create .venv and install: python3 -m venv .venv && ./.venv/bin/pip install esphome"; \
-		exit 1; \
-	}
-	@command -v $(PIO) >/dev/null 2>&1 || { \
-		echo "PlatformIO CLI not found."; \
-		echo "Install in venv: ./.venv313/bin/pip install platformio"; \
-		exit 1; \
-	}
+config build build-verify deploy ota logs discover monitor erase erase-nvs clean dashboard dashboard-tooling dashboard-build dashboard-watch:
+	$(MAKE) -C $(LUNE_V6_DIR) $@
 
-config: check
-	$(ESPHOME) config $(CONFIG)
-
-build: check dashboard-build
-	$(ESPHOME) compile --only-generate $(CONFIG)
-	perl -0pi -e 's/" ".join\(cmd\)/" ".join(map(str, cmd))/g' $(BUILD_ROOT)/post_build.py
-	$(PIO) run -d $(BUILD_ROOT)
-
-build-verify: check dashboard-build
-	$(MAKE) build
-
-deploy: check
-	$(MAKE) build
-	@if [ -n "$(PORT)" ]; then \
-		echo "Flashing via serial port: $(PORT)"; \
-		$(PIO) run -d $(BUILD_ROOT) -t upload --upload-port $(PORT); \
-	elif [ -n "$(AUTO_PORT)" ]; then \
-		echo "Auto-detected serial port: $(AUTO_PORT)"; \
-		$(PIO) run -d $(BUILD_ROOT) -t upload --upload-port $(AUTO_PORT); \
-	elif [ -n "$(HOST)" ]; then \
-		$(ESPHOME) upload $(CONFIG) --file $(FIRMWARE_BIN) --device $(HOST); \
-	else \
-		echo "No serial port detected. Scanning for Lune V6 devices (3s)..."; \
-		hosts=$$($(PYTHON) discover_devices.py 2>/dev/null); \
-		if [ -z "$$hosts" ]; then echo "No Lune V6 devices found. Use PORT=/dev/cu.usbmodemXXXX or HOST=heatvalve-6-XXXXXX.local (current internal hostname pattern)"; exit 1; fi; \
-		count=$$(echo "$$hosts" | wc -l | tr -d ' '); \
-		echo "Found devices:"; \
-		i=1; for h in $$hosts; do printf "  %d) %s\n" $$i $$h; i=$$((i+1)); done; \
-		printf "Select device [1-$$count]: "; \
-		read choice < /dev/tty; \
-		selected=$$(echo "$$hosts" | sed -n "$${choice}p"); \
-		[ -z "$$selected" ] && { echo "Invalid selection"; exit 1; }; \
-		$(ESPHOME) upload $(CONFIG) --file $(FIRMWARE_BIN) --device $$selected; \
-	fi
-
-# =============================================================================
-# Host unit tests (no ESP-IDF, runs on macOS/Linux with clang++)
-# =============================================================================
-RIPPLE_CXX      ?= clang++
-RIPPLE_CXXFLAGS  = -std=c++17 -O2 -Wall -Wextra -Wno-unused-parameter \
-                   -I components/hv6_valve_controller
-RIPPLE_SRCS      = components/hv6_valve_controller/ripple_counter.cpp \
-                   test/ripple_counter/test_ripple_counter.cpp
-RIPPLE_OUT       = /tmp/test_ripple_counter
-
-test-ripple:
-	$(RIPPLE_CXX) $(RIPPLE_CXXFLAGS) $(RIPPLE_SRCS) -o $(RIPPLE_OUT) -lm
-	$(RIPPLE_OUT)
-
-FORECAST_SRCS = coordinator/lune-touch/components/hv6_forecast/forecast_model.cpp \
-                coordinator/lune-touch/tests/forecast/test_forecast_model.cpp
-FORECAST_OUT  = /tmp/test_forecast_model
+test-ripple test-balance:
+	$(MAKE) -C $(LUNE_V6_DIR) $@
 
 test-forecast:
-	$(RIPPLE_CXX) -std=c++17 -O2 -Wall -Wextra -I coordinator/lune-touch/components/hv6_forecast $(FORECAST_SRCS) -o $(FORECAST_OUT) -lm
-	$(FORECAST_OUT)
+	$(MAKE) -C $(LUNE_TOUCH_DIR) test-forecast
 
-BALANCE_SRCS = test/adaptive_balance/test_adaptive_balance.cpp
-BALANCE_OUT  = /tmp/test_adaptive_balance
+test-lune-v6:
+	$(MAKE) -C $(LUNE_V6_DIR) test
 
-test-balance:
-	$(RIPPLE_CXX) -std=c++17 -O2 -Wall -Wextra -I components/hv6_zone_controller $(BALANCE_SRCS) -o $(BALANCE_OUT) -lm
-	$(BALANCE_OUT)
+test-lune-touch:
+	$(MAKE) -C $(LUNE_TOUCH_DIR) test
 
-test: test-ripple test-forecast test-balance
+test: test-lune-v6 test-lune-touch
 
-ota: check
-	$(MAKE) build
-	@if [ -z "$(HOST)" ]; then \
-		echo "Scanning for Lune V6 devices (3s)..."; \
-		hosts=$$($(PYTHON) discover_devices.py 2>/dev/null); \
-		if [ -z "$$hosts" ]; then echo "No Lune V6 devices found. Use: make ota HOST=heatvalve-6-XXXXXX.local (current internal hostname pattern)"; exit 1; fi; \
-		count=$$(echo "$$hosts" | wc -l | tr -d ' '); \
-		echo "Found devices:"; \
-		i=1; for h in $$hosts; do printf "  %d) %s\n" $$i $$h; i=$$((i+1)); done; \
-		printf "Select device [1-$$count]: "; \
-		read choice < /dev/tty; \
-		selected=$$(echo "$$hosts" | sed -n "$${choice}p"); \
-		[ -z "$$selected" ] && { echo "Invalid selection"; exit 1; }; \
-		$(ESPHOME) upload $(CONFIG) --file $(FIRMWARE_BIN) --device $$selected; \
-	else \
-		$(ESPHOME) upload $(CONFIG) --file $(FIRMWARE_BIN) --device $(HOST); \
-	fi
+lune-v6-help:
+	$(MAKE) -C $(LUNE_V6_DIR) help
 
-logs: check
-	@if [ -z "$(HOST)" ]; then \
-		echo "Scanning for Lune V6 devices (3s)..."; \
-		hosts=$$($(PYTHON) discover_devices.py 2>/dev/null); \
-		if [ -z "$$hosts" ]; then echo "No Lune V6 devices found. Use: make logs HOST=heatvalve-6-XXXXXX.local (current internal hostname pattern)"; exit 1; fi; \
-		count=$$(echo "$$hosts" | wc -l | tr -d ' '); \
-		echo "Found devices:"; \
-		i=1; for h in $$hosts; do printf "  %d) %s\n" $$i $$h; i=$$((i+1)); done; \
-		printf "Select device [1-$$count]: "; \
-		read choice < /dev/tty; \
-		selected=$$(echo "$$hosts" | sed -n "$${choice}p"); \
-		[ -z "$$selected" ] && { echo "Invalid selection"; exit 1; }; \
-		$(ESPHOME) logs $(CONFIG) --device $$selected; \
-	else \
-		$(ESPHOME) logs $(CONFIG) --device $(HOST); \
-	fi
-
-discover: check
-	@echo "Scanning for Lune V6 devices (5s)..."
-	@$(PYTHON) discover_devices.py 2>/dev/null || echo "(no devices found)"
-
-monitor: check
-	@if [ -z "$(SERIAL_PORT)" ]; then \
-		echo "No serial port detected. Use PORT=/dev/cu.usbmodemXXXX"; \
-		exit 1; \
-	fi
-	@echo "Using serial port: $(SERIAL_PORT)"
-	$(PIO) device monitor --port $(SERIAL_PORT)
-
-erase: check
-	@if [ -z "$(SERIAL_PORT)" ]; then \
-		echo "No serial port detected. Use PORT=/dev/cu.usbmodemXXXX"; \
-		exit 1; \
-	fi
-	@echo "Using serial port: $(SERIAL_PORT)"
-	$(PIO) run -d $(BUILD_ROOT) -t erase --upload-port $(SERIAL_PORT)
-
-erase-nvs: check
-	@if [ -z "$(SERIAL_PORT)" ]; then \
-		echo "No serial port detected. Use PORT=/dev/cu.usbmodemXXXX"; \
-		exit 1; \
-	fi
-	@echo "Erasing NVS partition on $(SERIAL_PORT)..."
-	python3 -m esptool --port $(SERIAL_PORT) erase_region 0x9000 0x6000
-	@echo "NVS erased. Calibration data cleared — device will need recalibration."
-
-clean:
-	rm -rf .esphome/build
-
-# Dashboard build tasks
-dashboard: check
-	# Check if esbuild is available, if not, download it (silent unless error)
-	@command -v ./.tools/esbuild >/dev/null 2>&1 || $(MAKE) dashboard-tooling
-	$(MAKE) dashboard-build
-
-dashboard-tooling:
-	# Download esbuild if not present into .tools/esbuild
-	mkdir -p .tools
-	# change to .tools directory and download esbuild
-	cd .tools && curl -fsSL https://esbuild.github.io/dl/latest | sh
-	cd ../
-
-dashboard-build:
-	@command -v ./.tools/esbuild >/dev/null 2>&1 || $(MAKE) dashboard-tooling
-	./.tools/esbuild $(DASHBOARD_SRC_DIR)/main.js \
-	--bundle \
-	--minify \
-	--tree-shaking=true \
-	--format=iife \
-	--target=es2018 \
-	--platform=browser \
-	--define:DEBUG=false \
-	--define:HV6_DASHBOARD_LANG=\"$(DASHBOARD_COMPILED_LANG)\" \
-	--outfile=$(DASHBOARD_OUT_FILE)
-
-dashboard-watch:
-	@echo "Watching dashboard source for changes... press (ctrl+c to stop)"
-	@fswatch -r -o web/dashboard-src | \
-    while read; do \
-        echo "Rebuilding dashboard..."; \
-        if ! $(MAKE) dashboard --no-print-directory; then \
-            echo "Dashboard build failed!"; \
-        fi; \
-    done
+lune-touch-help:
+	$(MAKE) -C $(LUNE_TOUCH_DIR) help

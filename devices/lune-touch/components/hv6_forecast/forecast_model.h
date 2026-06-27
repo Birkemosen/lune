@@ -6,7 +6,7 @@
 // walls, scaled by how cold it is, minus passive solar relief. When the peak
 // load inside the zone's thermal lead window exceeds a threshold, a setpoint
 // preload offset is issued so the slab is charged before the weather arrives.
-// Tested by test/forecast/test_forecast_model.cpp (make test-forecast).
+// Tested by devices/lune-touch/tests/forecast/test_forecast_model.cpp (make test-forecast).
 // =============================================================================
 
 #pragma once
