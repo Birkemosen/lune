@@ -93,14 +93,20 @@ void LuneTouchCoordinator::poll_once_() {
   give_state_lock_();
 
   const uint32_t now = esphome::millis();
+  last_poll_ms_ = now;
   for (size_t i = 0; i < count; i++) {
     if (nodes[i].hostname[0] == '\0' && nodes[i].fallback_ip[0] == '\0')
       continue;
     if (!poll_node_zones_(i, nodes[i], now)) {
+      poll_fail_count_++;
+      snprintf(last_poll_error_, sizeof(last_poll_error_), "poll failed");
       if (take_state_lock_(100)) {
         model_.mark_node_unreachable(i, now);
         give_state_lock_();
       }
+    } else {
+      poll_success_count_++;
+      last_poll_error_[0] = '\0';
     }
   }
 }
@@ -723,10 +729,15 @@ void LuneTouchCoordinator::write_commands_json(char *buffer, size_t capacity) co
 void LuneTouchCoordinator::write_diagnostics_json(char *buffer, size_t capacity) const {
   snprintf(buffer, capacity,
            "{\"heap\":\"watching\",\"nodes\":%u,\"zones\":%u,\"ledger\":%u,"
-           "\"screen\":\"overview-only\",\"api\":\"/api/lune-touch/v1\"}",
+           "\"screen\":\"overview-only\",\"api\":\"/api/lune-touch/v1\","
+           "\"polling\":{\"last_poll_ms\":%lu,\"success\":%lu,\"fail\":%lu,\"last_error\":\"%s\"}}",
            static_cast<unsigned>(model_.node_count()),
            static_cast<unsigned>(model_.zone_count()),
-           static_cast<unsigned>(ledger_.count()));
+           static_cast<unsigned>(ledger_.count()),
+           static_cast<unsigned long>(last_poll_ms_),
+           static_cast<unsigned long>(poll_success_count_),
+           static_cast<unsigned long>(poll_fail_count_),
+           last_poll_error_);
 }
 
 }  // namespace lune_touch_coordinator

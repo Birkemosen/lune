@@ -74,6 +74,10 @@ class LuneTouchCoordinator : public esphome::Component {
   mutable SemaphoreHandle_t state_lock_{nullptr};
   TaskHandle_t poll_task_handle_{nullptr};
   uint32_t last_ledger_expire_ms_{0};
+  uint32_t last_poll_ms_{0};
+  uint32_t poll_success_count_{0};
+  uint32_t poll_fail_count_{0};
+  char last_poll_error_[80]{};
   ::lune_touch::HouseModel model_{};
   ::lune_touch::CommandLedger ledger_{};
   float forecast_latitude_{0.0f};
