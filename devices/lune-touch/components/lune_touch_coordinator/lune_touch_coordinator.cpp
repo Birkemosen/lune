@@ -707,10 +707,13 @@ void LuneTouchCoordinator::write_commands_json(char *buffer, size_t capacity) co
     off += snprintf(buffer + off, capacity - off,
                     "%s{\"request_id\":\"%s\",\"source\":\"%s\",\"reason\":\"%s\","
                     "\"node_index\":%u,\"zone_index\":%u,\"requested_offset_c\":%.2f,"
-                    "\"accepted_offset_c\":%.2f,\"result\":\"%s\",\"clamp_applied\":%s}",
+                    "\"accepted_offset_c\":%.2f,\"created_at_ms\":%lu,\"expires_at_ms\":%lu,"
+                    "\"result\":\"%s\",\"clamp_applied\":%s}",
                     i ? "," : "", record->request_id, record->source, record->reason,
                     static_cast<unsigned>(record->node_index), static_cast<unsigned>(record->zone_index),
                     record->requested_offset_c, record->accepted_offset_c,
+                    static_cast<unsigned long>(record->created_at_ms),
+                    static_cast<unsigned long>(record->expires_at_ms),
                     ::lune_touch::command_result_name(record->result),
                     record->clamp_applied ? "true" : "false");
   }

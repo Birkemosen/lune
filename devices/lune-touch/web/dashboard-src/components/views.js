@@ -3,6 +3,14 @@ import { state } from '../core/store.js';
 
 const fmtC = (value) => value == null || Number.isNaN(value) ? '--.- C' : `${Number(value).toFixed(1)} C`;
 const v6Name = (index) => `V6-${String.fromCharCode(65 + Number(index || 0))}`;
+const fmtCommandExpiry = (command) => {
+  if (!command?.expires_at_ms) return '-';
+  if (command.result === 'expired') return 'expired';
+  if (command.result !== 'pending') return 'done';
+  const remaining = Math.max(0, Number(command.expires_at_ms) - Date.now());
+  const minutes = Math.ceil(remaining / 60000);
+  return minutes > 0 ? `${minutes} min` : 'now';
+};
 
 function statusClass(status) {
   if (status === 'heat' || status === 'call' || status === 'preheat') return 'ok';
@@ -80,8 +88,8 @@ export function renderCommands() {
   return `<section class="panel">
     <div class="section-head"><h2>Command ledger</h2><span class="note">Requested vs accepted/clamped values</span></div>
     <div class="data-table">
-      <div class="tr head"><span>ID</span><span>Source</span><span>Reason</span><span>Target</span><span>Requested</span><span>Accepted</span><span>Result</span></div>
-      ${state.commands.map((c) => `<div class="tr"><span>${c.request_id}</span><span>${c.source}</span><span>${c.reason}</span><span>${v6Name(c.node_index)} / Z${Number(c.zone_index) + 1}</span><span>${c.requested_offset_c}</span><span>${c.accepted_offset_c}</span><span class="${statusClass(c.result === 'accepted' ? 'heat' : c.result)}">${c.result}</span></div>`).join('')}
+      <div class="tr head commands"><span>ID</span><span>Source</span><span>Reason</span><span>Target</span><span>Request</span><span>Accept</span><span>Clamp</span><span>Expiry</span></div>
+      ${state.commands.map((c) => `<div class="tr commands"><span>${c.request_id}</span><span>${c.source}</span><span>${c.reason}</span><span>${v6Name(c.node_index)} / Z${Number(c.zone_index) + 1}</span><span>${c.requested_offset_c}</span><span>${c.accepted_offset_c}</span><span class="${c.clamp_applied ? 'warn' : 'ok'}">${c.clamp_applied ? 'yes' : 'no'}</span><span class="${statusClass(c.result === 'accepted' ? 'heat' : c.result)}">${c.result} / ${fmtCommandExpiry(c)}</span></div>`).join('')}
     </div>
   </section>`;
 }
