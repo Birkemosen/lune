@@ -50,6 +50,19 @@ static void test_node_staleness() {
   expect(node != nullptr && std::strcmp(node->firmware, "1.4.1") == 0, "node: firmware updated");
 }
 
+static void test_node_unreachable_marks_zones_stale() {
+  HouseModel model;
+  model.upsert_node("v6-a", "a.local", "", "lune-v6", "1.0", NodeTrust::TRUSTED);
+  model.bind_zone("living", "Living", 0, 0);
+  model.update_zone_live("living", 21.0f, true, 21.0f, true, "heat", true, 1000);
+  expect(model.mark_node_seen(0, 1000), "node: reachable before failure");
+  expect(model.mark_node_unreachable(0, 2000), "node: mark unreachable succeeds");
+  expect(model.is_node_stale(0, 2000), "node: unreachable is stale");
+  ResolvedZone living = model.resolve_room("living");
+  expect(living.live != nullptr && !living.live->fresh && std::strcmp(living.live->status, "stale") == 0,
+         "node: unreachable marks bound zones stale");
+}
+
 static void test_zone_registry() {
   HouseModel model;
   int ground = model.upsert_node("v6-ground", "ground.local", "", "lune-v6", "1.4.0", NodeTrust::TRUSTED);
@@ -208,6 +221,7 @@ static void test_ledger_persisted_state_roundtrip() {
 
 int main() {
   test_node_staleness();
+  test_node_unreachable_marks_zones_stale();
   test_zone_registry();
   test_remove_node_remaps_zones();
   test_persisted_state_roundtrip();

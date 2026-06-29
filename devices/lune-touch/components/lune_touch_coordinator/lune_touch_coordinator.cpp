@@ -1,7 +1,10 @@
 #include "lune_touch_coordinator.h"
+#include "esphome/components/network/util.h"
 #include "esphome/core/hal.h"
 #include "esphome/core/log.h"
+#include "esp_http_client.h"
 #include <nvs.h>
+#include <ArduinoJson.h>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -15,6 +18,7 @@ static const char *const WEATHER_NAMESPACE = "weather";
 static const char *const LEDGER_NAMESPACE = "ledger";
 
 void LuneTouchCoordinator::setup() {
+  state_lock_ = xSemaphoreCreateMutex();
   model_.set_node_stale_after_ms(node_stale_after_ms_);
   const bool loaded_registry = load_registry_();
   load_ledger_();
@@ -26,6 +30,22 @@ void LuneTouchCoordinator::setup() {
            static_cast<unsigned>(node_stale_after_ms_),
            static_cast<unsigned>(::lune_touch::MAX_NODES),
            static_cast<unsigned>(::lune_touch::LEDGER_CAPACITY));
+  xTaskCreatePinnedToCore(poll_task_func_, "lune_touch_poll", POLL_STACK_SIZE, this,
+                          POLL_PRIORITY, &poll_task_handle_, POLL_CORE);
+}
+
+void LuneTouchCoordinator::loop() {
+  const uint32_t now = esphome::millis();
+  if ((int32_t) (now - last_ledger_expire_ms_) < 5000)
+    return;
+  last_ledger_expire_ms_ = now;
+
+  if (!take_state_lock_(10))
+    return;
+  const size_t expired = ledger_.expire_pending(now);
+  give_state_lock_();
+  if (expired > 0)
+    save_ledger_();
 }
 
 void LuneTouchCoordinator::dump_config() {
@@ -33,6 +53,163 @@ void LuneTouchCoordinator::dump_config() {
   ESP_LOGCONFIG(TAG, "  Node stale after: %u ms", static_cast<unsigned>(node_stale_after_ms_));
   ESP_LOGCONFIG(TAG, "  V6 endpoints: /api/hv6/v1/state, /peer, /logs");
   ESP_LOGCONFIG(TAG, "  Command path: expiring coordinator commands, clamped by Lune V6");
+}
+
+bool LuneTouchCoordinator::take_state_lock_(uint32_t timeout_ms) const {
+  return state_lock_ == nullptr || xSemaphoreTake(state_lock_, pdMS_TO_TICKS(timeout_ms)) == pdTRUE;
+}
+
+void LuneTouchCoordinator::give_state_lock_() const {
+  if (state_lock_ != nullptr)
+    xSemaphoreGive(state_lock_);
+}
+
+void LuneTouchCoordinator::poll_task_func_(void *arg) {
+  static_cast<LuneTouchCoordinator *>(arg)->poll_task_();
+}
+
+void LuneTouchCoordinator::poll_task_() {
+  vTaskDelay(pdMS_TO_TICKS(POLL_BOOT_DELAY_MS));
+  while (true) {
+    if (esphome::network::is_connected())
+      poll_once_();
+    vTaskDelay(pdMS_TO_TICKS(POLL_INTERVAL_MS));
+  }
+}
+
+void LuneTouchCoordinator::poll_once_() {
+  ::lune_touch::PairedNode nodes[::lune_touch::MAX_NODES]{};
+  size_t count = 0;
+  if (!take_state_lock_(100))
+    return;
+  count = model_.node_count();
+  if (count > ::lune_touch::MAX_NODES)
+    count = ::lune_touch::MAX_NODES;
+  for (size_t i = 0; i < count; i++) {
+    const auto *node = model_.node(i);
+    if (node != nullptr)
+      nodes[i] = *node;
+  }
+  give_state_lock_();
+
+  const uint32_t now = esphome::millis();
+  for (size_t i = 0; i < count; i++) {
+    if (nodes[i].hostname[0] == '\0' && nodes[i].fallback_ip[0] == '\0')
+      continue;
+    if (!poll_node_zones_(i, nodes[i], now)) {
+      if (take_state_lock_(100)) {
+        model_.mark_node_unreachable(i, now);
+        give_state_lock_();
+      }
+    }
+  }
+}
+
+bool LuneTouchCoordinator::poll_node_zones_(size_t node_index, const ::lune_touch::PairedNode &node, uint32_t now_ms) {
+  const char *host = node.hostname[0] != '\0' ? node.hostname : node.fallback_ip;
+  if (host == nullptr || host[0] == '\0')
+    return false;
+
+  char url[160];
+  snprintf(url, sizeof(url), "http://%s/api/hv6/v1/zones", host);
+
+  char body[3072];
+  int status = 0;
+  if (!fetch_json_(url, body, sizeof(body), &status)) {
+    ESP_LOGD(TAG, "V6 poll failed for %s (%d)", node.node_id, status);
+    return false;
+  }
+  if (!ingest_v6_zones_(node_index, body, now_ms)) {
+    ESP_LOGW(TAG, "V6 poll returned unusable zones for %s", node.node_id);
+    return false;
+  }
+  return true;
+}
+
+bool LuneTouchCoordinator::fetch_json_(const char *url, char *body, size_t body_capacity, int *status_code) {
+  if (body == nullptr || body_capacity == 0 || url == nullptr)
+    return false;
+  body[0] = '\0';
+  if (status_code != nullptr)
+    *status_code = 0;
+
+  esp_http_client_config_t cfg{};
+  cfg.url = url;
+  cfg.method = HTTP_METHOD_GET;
+  cfg.timeout_ms = HTTP_TIMEOUT_MS;
+  cfg.disable_auto_redirect = true;
+
+  esp_http_client_handle_t client = esp_http_client_init(&cfg);
+  if (client == nullptr)
+    return false;
+
+  bool ok = false;
+  esp_err_t err = esp_http_client_open(client, 0);
+  if (err == ESP_OK) {
+    esp_http_client_fetch_headers(client);
+    const int status = esp_http_client_get_status_code(client);
+    if (status_code != nullptr)
+      *status_code = status;
+    const int len = esp_http_client_read_response(client, body, body_capacity - 1);
+    if (status == 200 && len > 0) {
+      body[len] = '\0';
+      ok = true;
+    }
+  } else {
+    ESP_LOGD(TAG, "HTTP GET failed: %s", esp_err_to_name(err));
+  }
+
+  esp_http_client_close(client);
+  esp_http_client_cleanup(client);
+  return ok;
+}
+
+bool LuneTouchCoordinator::ingest_v6_zones_(size_t node_index, const char *body, uint32_t now_ms) {
+  if (body == nullptr || body[0] == '\0')
+    return false;
+
+  JsonDocument doc;
+  DeserializationError err = deserializeJson(doc, body);
+  if (err) {
+    ESP_LOGW(TAG, "V6 zones JSON parse failed: %s", err.c_str());
+    return false;
+  }
+
+  JsonArray zones = doc["data"]["zones"].as<JsonArray>();
+  if (zones.isNull())
+    zones = doc["zones"].as<JsonArray>();
+  if (zones.isNull())
+    return false;
+
+  if (!take_state_lock_(100))
+    return false;
+
+  size_t updated = 0;
+  for (JsonObject zone : zones) {
+    int zone_number = zone["zone"] | 0;
+    if (zone_number <= 0) {
+      zone_number = static_cast<int>(updated) + 1;
+    }
+    if (zone_number < 1 || zone_number > static_cast<int>(::lune_touch::ZONES_PER_NODE))
+      continue;
+
+    const bool has_temp = !zone["temperature_c"].isNull();
+    const bool has_setpoint = !zone["setpoint_c"].isNull();
+    const float temp = has_temp ? (zone["temperature_c"] | 0.0f) : 0.0f;
+    const float setpoint = has_setpoint ? (zone["setpoint_c"] | 0.0f) : 0.0f;
+    const char *status = zone["state"] | nullptr;
+    if (status == nullptr)
+      status = zone["status"] | "unknown";
+    const bool fresh = zone["fresh"] | true;
+    if (model_.update_zone_live_by_binding(node_index, static_cast<size_t>(zone_number - 1),
+                                           temp, has_temp, setpoint, has_setpoint,
+                                           status, fresh, now_ms))
+      updated++;
+  }
+  if (updated > 0)
+    model_.mark_node_seen(node_index, now_ms);
+  give_state_lock_();
+  return updated > 0;
 }
 
 bool LuneTouchCoordinator::load_registry_() {

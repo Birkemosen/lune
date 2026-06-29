@@ -89,6 +89,20 @@ bool HouseModel::mark_node_seen(size_t node_index, uint32_t now_ms) {
   return true;
 }
 
+bool HouseModel::mark_node_unreachable(size_t node_index, uint32_t now_ms) {
+  if (node_index >= node_count_)
+    return false;
+  nodes_[node_index].reachable = false;
+  for (size_t i = 0; i < zone_count_; i++) {
+    if (!zones_[i].enabled || zones_[i].node_index != node_index)
+      continue;
+    copy_text_(live_[i].status, sizeof(live_[i].status), "stale");
+    live_[i].fresh = false;
+    live_[i].updated_at_ms = now_ms;
+  }
+  return true;
+}
+
 bool HouseModel::is_node_stale(size_t node_index, uint32_t now_ms) const {
   if (node_index >= node_count_)
     return true;
