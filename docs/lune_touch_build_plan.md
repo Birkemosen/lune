@@ -50,6 +50,18 @@ The starter workspace for coordinator-owned code lives in [devices/lune-touch/](
 The first extracted module is the legacy wind-aware forecast preload producer, now kept as
 reference implementation under `devices/lune-touch/components/hv6_forecast/`.
 
+Initial firmware scaffolding now exists at
+`devices/lune-touch/configurations/lune-touch-7.yaml`. It includes the 16 MB OTA
+partition table, ESP32-S3/PSRAM SDK memory profile, network/OTA diagnostics
+packages, LCD/LVGL stability documentation, and a host-testable coordinator model
+for paired V6 nodes, zone registry mapping, stale-node detection, and command
+ledger expiry.
+
+The first hardware profile targets Waveshare ESP32-S3-Touch-LCD-7B: 1024 x 600
+RGB565 over 16-bit RGB, GT911 touch on GPIO8/GPIO9 I2C, and CH422G-controlled
+LCD/touch reset, VDD/VCOM enable, and backlight lines. The pin map and timings
+are captured in `devices/lune-touch/docs/waveshare_esp32_s3_touch_lcd_7b.md`.
+
 Coordinator responsibilities:
 
 - Discover and pair Lune V6 nodes

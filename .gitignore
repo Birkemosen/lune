@@ -4,6 +4,7 @@
 # ESPHome build artifacts
 .esphome/
 traces/
+.cache/
 # IDE
 .vscode/
 .idea/

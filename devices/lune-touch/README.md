@@ -3,6 +3,31 @@
 This folder holds functionality that belongs in Lune Touch / Lune Mini rather than in
 Lune V6's local manifold firmware.
 
+## Firmware Workspace
+
+The active Lune Touch prototype entrypoint is:
+
+```text
+devices/lune-touch/configurations/lune-touch-7.yaml
+```
+
+It targets a 7-inch ESP32-S3 RGB touch device with 16 MB flash and PSRAM. The
+firmware skeleton already includes:
+
+- custom 16 MB OTA partition table in `partitions/lune_touch_16mb_ota.csv`
+- ESP-IDF/ESPHome board profile with PSRAM, WiFi, coredump, and mbedTLS memory rules
+- network, OTA, safe mode, USB serial provisioning, and diagnostics packages
+- a `lune_touch_coordinator` external component with host-testable coordinator models
+- LCD/LVGL stability rules documented in `docs/LCD_STABILITY.md`
+
+Useful commands from the repo root:
+
+```bash
+make config-lune-touch
+make build-lune-touch
+make test-lune-touch
+```
+
 ## Current Extraction
 
 The first extracted module is the wind-aware forecast preload producer:
@@ -34,3 +59,10 @@ Lune V6-owned:
 - Minimum flow protection
 - Command validation, clamp, expiry, and reporting
 - Snapshot / diagnostics API for local state
+
+## Bringup Boundary
+
+The first firmware shell intentionally does not encode a guessed 7-inch RGB pin
+map. The display package carries the stability contract into the firmware include
+graph; the actual panel/touch driver should be added when the exact dev kit or
+PCB revision is fixed.
