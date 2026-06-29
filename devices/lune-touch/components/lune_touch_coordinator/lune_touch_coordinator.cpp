@@ -2,6 +2,8 @@
 #include "esphome/components/network/util.h"
 #include "esphome/core/hal.h"
 #include "esphome/core/log.h"
+#include "esp_crt_bundle.h"
+#include "esp_heap_caps.h"
 #include "esp_http_client.h"
 #include <nvs.h>
 #include <ArduinoJson.h>
@@ -254,6 +256,118 @@ bool LuneTouchCoordinator::ingest_v6_zones_(size_t node_index, const char *body,
     model_.mark_node_seen(node_index, now_ms);
   give_state_lock_();
   return updated > 0;
+}
+
+bool LuneTouchCoordinator::fetch_open_meteo_(float latitude, float longitude, char *error, size_t error_len,
+                                             uint8_t *hours_count, float *min_temp_c, float *max_wind_ms,
+                                             float *peak_wind_dir_deg, float *max_solar_wm2) {
+  if (error != nullptr && error_len > 0)
+    error[0] = '\0';
+  if (hours_count != nullptr)
+    *hours_count = 0;
+
+  char url[320];
+  snprintf(url, sizeof(url),
+           "https://api.open-meteo.com/v1/forecast?latitude=%.4f&longitude=%.4f"
+           "&hourly=temperature_2m,wind_speed_10m,wind_direction_10m,shortwave_radiation"
+           "&forecast_days=3&timeformat=unixtime&wind_speed_unit=ms&timezone=auto",
+           latitude, longitude);
+
+  esp_http_client_config_t cfg{};
+  cfg.url = url;
+  cfg.method = HTTP_METHOD_GET;
+  cfg.timeout_ms = 8000;
+  cfg.disable_auto_redirect = true;
+  cfg.crt_bundle_attach = esp_crt_bundle_attach;
+  cfg.buffer_size = 2048;
+
+  constexpr size_t BODY_CAP = 16384;
+  char *body = static_cast<char *>(heap_caps_malloc(BODY_CAP, MALLOC_CAP_SPIRAM));
+  if (body == nullptr)
+    body = static_cast<char *>(heap_caps_malloc(BODY_CAP, MALLOC_CAP_8BIT));
+  if (body == nullptr) {
+    snprintf(error, error_len, "no_body_heap");
+    return false;
+  }
+
+  esp_http_client_handle_t client = esp_http_client_init(&cfg);
+  if (client == nullptr) {
+    free(body);
+    snprintf(error, error_len, "http_init_failed");
+    return false;
+  }
+
+  bool ok = false;
+  esp_err_t err = esp_http_client_open(client, 0);
+  if (err == ESP_OK) {
+    esp_http_client_fetch_headers(client);
+    const int status = esp_http_client_get_status_code(client);
+    const int len = esp_http_client_read_response(client, body, BODY_CAP - 1);
+    if (status == 200 && len > 0) {
+      body[len] = '\0';
+
+      JsonDocument filter;
+      filter["hourly"]["temperature_2m"] = true;
+      filter["hourly"]["wind_speed_10m"] = true;
+      filter["hourly"]["wind_direction_10m"] = true;
+      filter["hourly"]["shortwave_radiation"] = true;
+
+      JsonDocument doc;
+      DeserializationError jerr = deserializeJson(doc, body, len, DeserializationOption::Filter(filter));
+      if (!jerr) {
+        JsonArray temps = doc["hourly"]["temperature_2m"].as<JsonArray>();
+        JsonArray winds = doc["hourly"]["wind_speed_10m"].as<JsonArray>();
+        JsonArray dirs = doc["hourly"]["wind_direction_10m"].as<JsonArray>();
+        JsonArray solar = doc["hourly"]["shortwave_radiation"].as<JsonArray>();
+        const size_t count = temps.size();
+        if (count >= 24 && winds.size() >= count && dirs.size() >= count && solar.size() >= count) {
+          float min_temp = temps[0] | 0.0f;
+          float max_wind = 0.0f;
+          float wind_dir = 0.0f;
+          float max_solar = 0.0f;
+          uint8_t kept = 0;
+          for (size_t i = 0; i < count && kept < 72; i++, kept++) {
+            const float temp = temps[i] | 0.0f;
+            const float wind = winds[i] | 0.0f;
+            const float dir = dirs[i] | 0.0f;
+            const float sun = solar[i] | 0.0f;
+            if (temp < min_temp)
+              min_temp = temp;
+            if (wind > max_wind) {
+              max_wind = wind;
+              wind_dir = dir;
+            }
+            if (sun > max_solar)
+              max_solar = sun;
+          }
+          if (hours_count != nullptr)
+            *hours_count = kept;
+          if (min_temp_c != nullptr)
+            *min_temp_c = min_temp;
+          if (max_wind_ms != nullptr)
+            *max_wind_ms = max_wind;
+          if (peak_wind_dir_deg != nullptr)
+            *peak_wind_dir_deg = wind_dir;
+          if (max_solar_wm2 != nullptr)
+            *max_solar_wm2 = max_solar;
+          ok = true;
+        } else {
+          snprintf(error, error_len, "short_forecast");
+        }
+      } else {
+        snprintf(error, error_len, "json_%s", jerr.c_str());
+      }
+    } else {
+      snprintf(error, error_len, "http_%d_len_%d", status, len);
+    }
+  } else {
+    snprintf(error, error_len, "%s", esp_err_to_name(err));
+  }
+
+  esp_http_client_close(client);
+  esp_http_client_cleanup(client);
+  free(body);
+  return ok;
 }
 
 void LuneTouchCoordinator::url_encode_(const char *src, char *out, size_t out_len) const {
@@ -620,6 +734,9 @@ bool LuneTouchCoordinator::set_forecast_location(float latitude, float longitude
   std::strncpy(forecast_location_mode_, mode != nullptr && mode[0] != '\0' ? mode : "manual",
                sizeof(forecast_location_mode_) - 1);
   forecast_location_mode_[sizeof(forecast_location_mode_) - 1] = '\0';
+  std::strncpy(forecast_status_, "stale", sizeof(forecast_status_) - 1);
+  forecast_status_[sizeof(forecast_status_) - 1] = '\0';
+  forecast_last_error_[0] = '\0';
   save_forecast_settings_();
   snprintf(response, capacity, "{\"result\":\"saved\",\"latitude\":%.6f,\"longitude\":%.6f}",
            forecast_latitude_, forecast_longitude_);
@@ -627,8 +744,80 @@ bool LuneTouchCoordinator::set_forecast_location(float latitude, float longitude
 }
 
 bool LuneTouchCoordinator::request_forecast_fetch(char *response, size_t capacity) {
-  forecast_last_fetch_ms_ = esphome::millis();
-  snprintf(response, capacity, "{\"result\":\"queued\",\"status\":\"fetch_pending\"}");
+  float latitude = 0.0f;
+  float longitude = 0.0f;
+  if (take_state_lock_(100)) {
+    latitude = forecast_latitude_;
+    longitude = forecast_longitude_;
+    give_state_lock_();
+  } else {
+    snprintf(response, capacity, "{\"result\":\"rejected\",\"error\":\"coordinator_busy\"}");
+    return false;
+  }
+
+  if (!std::isfinite(latitude) || !std::isfinite(longitude) ||
+      (std::fabs(latitude) < 0.0001f && std::fabs(longitude) < 0.0001f)) {
+    if (take_state_lock_(100)) {
+      std::strncpy(forecast_status_, "needs_location", sizeof(forecast_status_) - 1);
+      forecast_status_[sizeof(forecast_status_) - 1] = '\0';
+      std::strncpy(forecast_last_error_, "location_required", sizeof(forecast_last_error_) - 1);
+      forecast_last_error_[sizeof(forecast_last_error_) - 1] = '\0';
+      give_state_lock_();
+    }
+    snprintf(response, capacity, "{\"result\":\"rejected\",\"error\":\"location_required\"}");
+    return false;
+  }
+  if (!esphome::network::is_connected()) {
+    if (take_state_lock_(100)) {
+      std::strncpy(forecast_status_, "offline", sizeof(forecast_status_) - 1);
+      forecast_status_[sizeof(forecast_status_) - 1] = '\0';
+      std::strncpy(forecast_last_error_, "network_offline", sizeof(forecast_last_error_) - 1);
+      forecast_last_error_[sizeof(forecast_last_error_) - 1] = '\0';
+      give_state_lock_();
+    }
+    snprintf(response, capacity, "{\"result\":\"rejected\",\"error\":\"network_offline\"}");
+    return false;
+  }
+
+  char error[96]{};
+  uint8_t hours = 0;
+  float min_temp = 0.0f;
+  float max_wind = 0.0f;
+  float wind_dir = 0.0f;
+  float max_solar = 0.0f;
+  const bool ok = fetch_open_meteo_(latitude, longitude, error, sizeof(error),
+                                    &hours, &min_temp, &max_wind, &wind_dir, &max_solar);
+
+  if (take_state_lock_(100)) {
+    forecast_last_fetch_ms_ = esphome::millis();
+    if (ok) {
+      std::strncpy(forecast_status_, "ok", sizeof(forecast_status_) - 1);
+      forecast_status_[sizeof(forecast_status_) - 1] = '\0';
+      forecast_last_error_[0] = '\0';
+      forecast_hours_count_ = hours;
+      forecast_min_temp_c_ = min_temp;
+      forecast_max_wind_ms_ = max_wind;
+      forecast_peak_wind_dir_deg_ = wind_dir;
+      forecast_max_solar_wm2_ = max_solar;
+    } else {
+      std::strncpy(forecast_status_, "error", sizeof(forecast_status_) - 1);
+      forecast_status_[sizeof(forecast_status_) - 1] = '\0';
+      std::strncpy(forecast_last_error_, error[0] != '\0' ? error : "fetch_failed",
+                   sizeof(forecast_last_error_) - 1);
+      forecast_last_error_[sizeof(forecast_last_error_) - 1] = '\0';
+    }
+    give_state_lock_();
+  }
+
+  if (!ok) {
+    snprintf(response, capacity, "{\"result\":\"rejected\",\"status\":\"error\",\"error\":\"%s\"}",
+             error[0] != '\0' ? error : "fetch_failed");
+    return false;
+  }
+  snprintf(response, capacity,
+           "{\"result\":\"fetched\",\"status\":\"ok\",\"hours\":%u,\"min_temp_c\":%.1f,"
+           "\"max_wind_ms\":%.1f,\"peak_wind_dir_deg\":%.0f}",
+           static_cast<unsigned>(hours), min_temp, max_wind, wind_dir);
   return true;
 }
 
@@ -696,11 +885,15 @@ void LuneTouchCoordinator::write_zones_json(char *buffer, size_t capacity) const
 
 void LuneTouchCoordinator::write_forecast_json(char *buffer, size_t capacity) const {
   snprintf(buffer, capacity,
-           "{\"status\":\"stale\",\"location\":{\"mode\":\"%s\",\"latitude\":%.6f,\"longitude\":%.6f},"
-           "\"last_fetch_age_s\":%lu,\"decisions\":[{\"room_id\":\"room-01\",\"offset_c\":0.4,"
-           "\"peak_in_h\":10,\"reason\":\"mock wind preload\"}]}",
+           "{\"status\":\"%s\",\"location\":{\"mode\":\"%s\",\"latitude\":%.6f,\"longitude\":%.6f},"
+           "\"last_fetch_age_s\":%lu,\"cache\":{\"hours\":%u,\"min_temp_c\":%.1f,"
+           "\"max_wind_ms\":%.1f,\"peak_wind_dir_deg\":%.0f,\"max_solar_wm2\":%.0f},"
+           "\"last_error\":\"%s\",\"decisions\":[]}",
+           forecast_status_,
            forecast_location_mode_, forecast_latitude_, forecast_longitude_,
-           forecast_last_fetch_ms_ == 0 ? 0UL : static_cast<unsigned long>((esphome::millis() - forecast_last_fetch_ms_) / 1000UL));
+           forecast_last_fetch_ms_ == 0 ? 0UL : static_cast<unsigned long>((esphome::millis() - forecast_last_fetch_ms_) / 1000UL),
+           static_cast<unsigned>(forecast_hours_count_), forecast_min_temp_c_, forecast_max_wind_ms_,
+           forecast_peak_wind_dir_deg_, forecast_max_solar_wm2_, forecast_last_error_);
 }
 
 void LuneTouchCoordinator::write_commands_json(char *buffer, size_t capacity) const {

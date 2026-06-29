@@ -58,6 +58,9 @@ class LuneTouchCoordinator : public esphome::Component {
   bool fetch_json_(const char *url, char *body, size_t body_capacity, int *status_code);
   bool post_json_(const char *url, char *body, size_t body_capacity, int *status_code);
   bool ingest_v6_zones_(size_t node_index, const char *body, uint32_t now_ms);
+  bool fetch_open_meteo_(float latitude, float longitude, char *error, size_t error_len,
+                         uint8_t *hours_count, float *min_temp_c, float *max_wind_ms,
+                         float *peak_wind_dir_deg, float *max_solar_wm2);
   bool send_v6_setpoint_command_(const ::lune_touch::PairedNode &node, uint8_t zone_index,
                                  const ::lune_touch::CommandRecord &request,
                                  uint32_t ttl_s, ::lune_touch::CommandRecord *result);
@@ -84,6 +87,13 @@ class LuneTouchCoordinator : public esphome::Component {
   float forecast_longitude_{0.0f};
   char forecast_location_mode_[16]{"manual"};
   uint32_t forecast_last_fetch_ms_{0};
+  char forecast_status_[16]{"stale"};
+  char forecast_last_error_[96]{};
+  uint8_t forecast_hours_count_{0};
+  float forecast_min_temp_c_{0.0f};
+  float forecast_max_wind_ms_{0.0f};
+  float forecast_peak_wind_dir_deg_{0.0f};
+  float forecast_max_solar_wm2_{0.0f};
 };
 
 }  // namespace lune_touch_coordinator

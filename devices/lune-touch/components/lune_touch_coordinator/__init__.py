@@ -27,4 +27,5 @@ async def to_code(config):
     include_builtin_idf_component("esp_http_client")
     include_builtin_idf_component("esp_lcd")
     include_builtin_idf_component("espcoredump")
+    include_builtin_idf_component("mbedtls")
     include_builtin_idf_component("nvs_flash")
