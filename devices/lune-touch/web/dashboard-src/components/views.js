@@ -11,6 +11,13 @@ const fmtCommandExpiry = (command) => {
   const minutes = Math.ceil(remaining / 60000);
   return minutes > 0 ? `${minutes} min` : 'now';
 };
+const fmtUptime = (ms) => {
+  const totalSeconds = Math.floor(Number(ms || 0) / 1000);
+  if (!totalSeconds) return 'never';
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return minutes ? `${minutes}m ${seconds}s` : `${seconds}s`;
+};
 
 function statusClass(status) {
   if (status === 'heat' || status === 'call' || status === 'preheat') return 'ok';
@@ -103,10 +110,12 @@ export function renderSettings() {
 
 export function renderDiagnostics() {
   const d = state.diagnostics || {};
+  const polling = d.polling || {};
   return `<section class="panel">
     <div class="section-head"><h2>Diagnostics</h2><span class="note">${d.api || '/api/lune-touch/v1'}</span></div>
     <div class="card-grid">
       <div class="card"><h3>Coordinator</h3><p>${d.nodes || 0} nodes, ${d.zones || 0} zones, ${d.ledger || 0} ledger records</p></div>
+      <div class="card"><h3>V6 polling</h3><p>Last poll at ${fmtUptime(polling.last_poll_ms)} uptime</p><p><span class="ok">${polling.success || 0} ok</span> / <span class="${polling.fail ? 'warn' : 'ok'}">${polling.fail || 0} failed</span></p><p class="${polling.last_error ? 'warn' : 'muted'}">${polling.last_error || 'no current error'}</p></div>
       <div class="card"><h3>Screen</h3><p>${d.screen || 'overview-only'}</p></div>
       <div class="card"><h3>Heap</h3><p>${d.heap || 'watching'}</p></div>
     </div>
