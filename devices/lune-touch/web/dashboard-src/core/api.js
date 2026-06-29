@@ -23,7 +23,14 @@ function mockData(path) {
       fresh: statuses[i] !== 'stale',
     })) };
   }
-  if (path === '/forecast') return { status: 'stale', location: { mode: 'manual', latitude: 0, longitude: 0 }, last_fetch_age_s: 0, decisions: [{ room_id: 'room-01', offset_c: 0.4, peak_in_h: 10, reason: 'mock wind preload' }] };
+  if (path === '/forecast') return {
+    status: 'ok',
+    location: { mode: 'manual', latitude: 55.6761, longitude: 12.5683 },
+    last_fetch_age_s: 420,
+    cache: { hours: 72, min_temp_c: -2.1, max_wind_ms: 13.4, peak_wind_dir_deg: 275, max_solar_wm2: 180 },
+    last_error: '',
+    decisions: [],
+  };
   if (path === '/commands') return { commands: [{ request_id: 'mock-forecast-1', source: 'forecast', reason: 'wind preload', node_index: 0, zone_index: 0, requested_offset_c: 0.4, accepted_offset_c: 0.4, created_at_ms: Date.now() - 600000, expires_at_ms: Date.now() + 2100000, result: 'accepted', clamp_applied: false }] };
   if (path === '/diagnostics') return {
     heap: 'watching',

@@ -18,6 +18,14 @@ const fmtUptime = (ms) => {
   const seconds = totalSeconds % 60;
   return minutes ? `${minutes}m ${seconds}s` : `${seconds}s`;
 };
+const fmtAge = (seconds) => {
+  const total = Math.floor(Number(seconds || 0));
+  if (!total) return 'never';
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  return hours ? `${hours}h ${minutes}m` : `${minutes}m`;
+};
+const fmtValue = (value, suffix = '') => value == null || Number.isNaN(Number(value)) ? '-' : `${Number(value).toFixed(1)}${suffix}`;
 
 function statusClass(status) {
   if (status === 'heat' || status === 'call' || status === 'preheat') return 'ok';
@@ -81,13 +89,25 @@ export function renderManifolds() {
 
 export function renderForecast() {
   const f = state.forecast || {};
+  const cache = f.cache || {};
+  const location = f.location || {};
   return `<section class="panel two-col">
     <div>
       <div class="section-head"><h2>Forecast</h2><button class="btn" data-action="forecast-fetch">Fetch now</button></div>
-      <div class="card"><h3>Status</h3><p class="${f.status === 'ok' ? 'ok' : 'warn'}">${f.status || 'unknown'}</p><p>Location: ${f.location?.mode || 'manual'} (${f.location?.latitude || 0}, ${f.location?.longitude || 0})</p></div>
-      <div class="card"><h3>Location fallback</h3><p>Browser geolocation may seed these values; manual latitude/longitude remains durable fallback in Touch NVS.</p><button class="btn" data-action="geo">Use browser location</button></div>
+      <div class="card"><h3>Status</h3><p class="${f.status === 'ok' ? 'ok' : 'warn'}">${f.status || 'unknown'}</p><p>Last fetch: ${fmtAge(f.last_fetch_age_s)}</p><p class="${f.last_error ? 'warn' : 'muted'}">${f.last_error || 'no current forecast error'}</p></div>
+      <div class="card"><h3>Location</h3><p>${location.mode || 'manual'} (${Number(location.latitude || 0).toFixed(5)}, ${Number(location.longitude || 0).toFixed(5)})</p>
+        <div class="inline-form forecast-location">
+          <input class="input mini-input" id="forecast-lat" type="number" step="0.000001" placeholder="Latitude" value="${location.latitude || ''}">
+          <input class="input mini-input" id="forecast-lon" type="number" step="0.000001" placeholder="Longitude" value="${location.longitude || ''}">
+          <button class="btn" data-action="save-forecast-location">Save</button>
+          <button class="btn" data-action="geo">Use browser</button>
+        </div>
+      </div>
     </div>
-    <div class="card"><h3>Decisions</h3>${(f.decisions || []).map((d) => `<p>${d.room_id}: +${d.offset_c} C, peak in ${d.peak_in_h}h</p>`).join('') || '<p>No active decisions</p>'}</div>
+    <div>
+      <div class="card"><h3>Cache</h3><dl><dt>Hours</dt><dd>${cache.hours || 0}</dd><dt>Min temp</dt><dd>${fmtValue(cache.min_temp_c, ' C')}</dd><dt>Max wind</dt><dd>${fmtValue(cache.max_wind_ms, ' m/s')} from ${Math.round(cache.peak_wind_dir_deg || 0)} deg</dd><dt>Max solar</dt><dd>${fmtValue(cache.max_solar_wm2, ' W/m2')}</dd></dl></div>
+      <div class="card"><h3>Decisions</h3>${(f.decisions || []).map((d) => `<p>${d.room_id}: +${d.offset_c} C, peak in ${d.peak_in_h}h</p>`).join('') || '<p>No active decisions</p>'}</div>
+    </div>
   </section>`;
 }
 
@@ -126,6 +146,13 @@ export function bindActions(root) {
   root.querySelector('[data-action="refresh"]')?.addEventListener('click', refreshAll);
   root.querySelector('[data-action="scan"]')?.addEventListener('click', () => api.scanNodes().then(refreshAll));
   root.querySelector('[data-action="forecast-fetch"]')?.addEventListener('click', () => api.fetchForecast().then(refreshAll));
+  root.querySelector('[data-action="save-forecast-location"]')?.addEventListener('click', () => {
+    const latitude = Number(root.querySelector('#forecast-lat')?.value);
+    const longitude = Number(root.querySelector('#forecast-lon')?.value);
+    if (Number.isFinite(latitude) && Number.isFinite(longitude)) {
+      api.saveForecast({ latitude, longitude, source: 'manual' }).then(refreshAll);
+    }
+  });
   root.querySelector('[data-action="geo"]')?.addEventListener('click', () => {
     if (!navigator.geolocation) return;
     navigator.geolocation.getCurrentPosition((pos) => {
