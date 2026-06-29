@@ -175,6 +175,30 @@ static void test_ledger_ring_capacity() {
          "ledger: latest survives wrap");
 }
 
+static void test_ledger_persisted_state_roundtrip() {
+  CommandLedger ledger;
+  CommandRecord first = command("cmd-a", 1000, 5000);
+  first.result = CommandResult::ACCEPTED;
+  ledger.append(first);
+  ledger.append(command("cmd-b", 2000, 5000));
+
+  PersistedLedger state{};
+  expect(ledger.export_state(&state), "ledger persist: export succeeds");
+  expect(state.magic == PERSISTED_LEDGER_MAGIC && state.version == PERSISTED_LEDGER_VERSION,
+         "ledger persist: magic and version set");
+
+  CommandLedger restored;
+  expect(restored.import_state(state), "ledger persist: import succeeds");
+  expect(restored.count() == 2, "ledger persist: count restored");
+  expect(restored.count_result(CommandResult::ACCEPTED) == 1, "ledger persist: result restored");
+  const CommandRecord *latest = restored.latest();
+  expect(latest != nullptr && std::strcmp(latest->request_id, "cmd-b") == 0,
+         "ledger persist: latest restored");
+
+  state.version = 99;
+  expect(!restored.import_state(state), "ledger persist: reject invalid version");
+}
+
 int main() {
   test_node_staleness();
   test_zone_registry();
@@ -183,6 +207,7 @@ int main() {
   test_zone_live_state();
   test_command_ledger();
   test_ledger_ring_capacity();
+  test_ledger_persisted_state_roundtrip();
 
   if (g_failures > 0) {
     std::printf("%d test(s) FAILED.\n", g_failures);

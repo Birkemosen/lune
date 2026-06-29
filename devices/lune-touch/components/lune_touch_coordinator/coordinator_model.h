@@ -11,6 +11,8 @@ static constexpr size_t MAX_HOUSE_ZONES = MAX_NODES * ZONES_PER_NODE;
 static constexpr size_t LEDGER_CAPACITY = 32;
 static constexpr uint32_t PERSISTED_STATE_MAGIC = 0x4C544348;  // LTCH
 static constexpr uint16_t PERSISTED_STATE_VERSION = 1;
+static constexpr uint32_t PERSISTED_LEDGER_MAGIC = 0x4C544C47;  // LTLG
+static constexpr uint16_t PERSISTED_LEDGER_VERSION = 1;
 
 enum class NodeTrust : uint8_t {
   UNPAIRED = 0,
@@ -85,6 +87,15 @@ struct PersistedState {
   ZoneBinding zones[MAX_HOUSE_ZONES]{};
 };
 
+struct PersistedLedger {
+  uint32_t magic{PERSISTED_LEDGER_MAGIC};
+  uint16_t version{PERSISTED_LEDGER_VERSION};
+  uint16_t reserved{0};
+  uint32_t next{0};
+  uint32_t count{0};
+  CommandRecord records[LEDGER_CAPACITY]{};
+};
+
 class HouseModel {
  public:
   void set_node_stale_after_ms(uint32_t value) { node_stale_after_ms_ = value; }
@@ -130,6 +141,8 @@ class CommandLedger {
   size_t count_result(CommandResult result) const;
   const CommandRecord *latest() const;
   const CommandRecord *at(size_t index) const;
+  bool export_state(PersistedLedger *out) const;
+  bool import_state(const PersistedLedger &state);
 
  private:
   CommandRecord records_[LEDGER_CAPACITY]{};

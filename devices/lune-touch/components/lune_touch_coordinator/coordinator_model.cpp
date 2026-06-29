@@ -282,6 +282,32 @@ const CommandRecord *CommandLedger::at(size_t index) const {
   return index < count_ ? &records_[index] : nullptr;
 }
 
+bool CommandLedger::export_state(PersistedLedger *out) const {
+  if (out == nullptr)
+    return false;
+  std::memset(out, 0, sizeof(*out));
+  out->magic = PERSISTED_LEDGER_MAGIC;
+  out->version = PERSISTED_LEDGER_VERSION;
+  out->next = static_cast<uint32_t>(next_);
+  out->count = static_cast<uint32_t>(count_);
+  for (size_t i = 0; i < LEDGER_CAPACITY; i++)
+    out->records[i] = records_[i];
+  return true;
+}
+
+bool CommandLedger::import_state(const PersistedLedger &state) {
+  if (state.magic != PERSISTED_LEDGER_MAGIC || state.version != PERSISTED_LEDGER_VERSION)
+    return false;
+  if (state.next >= LEDGER_CAPACITY || state.count > LEDGER_CAPACITY)
+    return false;
+  std::memset(records_, 0, sizeof(records_));
+  next_ = state.next;
+  count_ = state.count;
+  for (size_t i = 0; i < LEDGER_CAPACITY; i++)
+    records_[i] = state.records[i];
+  return true;
+}
+
 const char *command_result_name(CommandResult result) {
   switch (result) {
     case CommandResult::ACCEPTED:

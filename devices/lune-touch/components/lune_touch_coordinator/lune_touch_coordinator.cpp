@@ -12,10 +12,12 @@ namespace lune_touch_coordinator {
 static const char *const TAG = "lune_touch";
 static const char *const TOUCH_NAMESPACE = "touch";
 static const char *const WEATHER_NAMESPACE = "weather";
+static const char *const LEDGER_NAMESPACE = "ledger";
 
 void LuneTouchCoordinator::setup() {
   model_.set_node_stale_after_ms(node_stale_after_ms_);
   const bool loaded_registry = load_registry_();
+  load_ledger_();
   load_forecast_settings_();
   if (!loaded_registry)
     seed_mock_house_();
@@ -64,6 +66,38 @@ void LuneTouchCoordinator::save_registry_() {
   if (nvs_open(TOUCH_NAMESPACE, NVS_READWRITE, &handle) != ESP_OK)
     return;
   if (nvs_set_blob(handle, "registry", &state, sizeof(state)) == ESP_OK)
+    nvs_commit(handle);
+  nvs_close(handle);
+}
+
+void LuneTouchCoordinator::load_ledger_() {
+  nvs_handle_t handle;
+  if (nvs_open(LEDGER_NAMESPACE, NVS_READONLY, &handle) != ESP_OK)
+    return;
+
+  ::lune_touch::PersistedLedger state{};
+  size_t len = sizeof(state);
+  const esp_err_t err = nvs_get_blob(handle, "recent", &state, &len);
+  nvs_close(handle);
+  if (err != ESP_OK || len != sizeof(state))
+    return;
+  if (!ledger_.import_state(state)) {
+    ESP_LOGW(TAG, "Ignoring incompatible Touch command ledger blob");
+    return;
+  }
+  ESP_LOGI(TAG, "Loaded Touch command ledger: records=%u",
+           static_cast<unsigned>(ledger_.count()));
+}
+
+void LuneTouchCoordinator::save_ledger_() {
+  ::lune_touch::PersistedLedger state{};
+  if (!ledger_.export_state(&state))
+    return;
+
+  nvs_handle_t handle;
+  if (nvs_open(LEDGER_NAMESPACE, NVS_READWRITE, &handle) != ESP_OK)
+    return;
+  if (nvs_set_blob(handle, "recent", &state, sizeof(state)) == ESP_OK)
     nvs_commit(handle);
   nvs_close(handle);
 }
@@ -155,6 +189,7 @@ void LuneTouchCoordinator::seed_mock_house_() {
   record.expires_at_ms = esphome::millis() + 45UL * 60UL * 1000UL;
   record.result = ::lune_touch::CommandResult::ACCEPTED;
   ledger_.append(record);
+  save_ledger_();
   save_registry_();
 }
 
@@ -232,6 +267,7 @@ bool LuneTouchCoordinator::queue_setpoint_command(const char *room_id, float req
   record.expires_at_ms = record.created_at_ms + ttl_s * 1000UL;
   record.result = ::lune_touch::CommandResult::PENDING;
   ledger_.append(record);
+  save_ledger_();
 
   snprintf(response, capacity,
            "{\"result\":\"queued\",\"request_id\":\"%s\",\"target_node\":\"%s\","

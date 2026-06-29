@@ -39,6 +39,8 @@ class LuneTouchCoordinator : public esphome::Component {
  protected:
   bool load_registry_();
   void save_registry_();
+  void load_ledger_();
+  void save_ledger_();
   void load_forecast_settings_();
   void save_forecast_settings_();
   void seed_mock_house_();
