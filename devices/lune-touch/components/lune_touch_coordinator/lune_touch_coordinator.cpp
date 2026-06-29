@@ -26,7 +26,7 @@ void LuneTouchCoordinator::setup() {
   load_ledger_();
   load_forecast_settings_();
   if (!loaded_registry)
-    seed_mock_house_();
+    ESP_LOGI(TAG, "No persisted Touch registry; waiting for dashboard pairing");
   ESP_LOGI(TAG, "Lune Touch coordinator model ready");
   ESP_LOGI(TAG, "  stale_after=%ums max_nodes=%u ledger_capacity=%u",
            static_cast<unsigned>(node_stale_after_ms_),
@@ -98,6 +98,8 @@ void LuneTouchCoordinator::poll_once_() {
   last_poll_ms_ = now;
   for (size_t i = 0; i < count; i++) {
     if (nodes[i].hostname[0] == '\0' && nodes[i].fallback_ip[0] == '\0')
+      continue;
+    if (std::strcmp(nodes[i].firmware, "mock") == 0)
       continue;
     const bool overview_ok = poll_node_overview_(i, nodes[i], now);
     const bool zones_ok = poll_node_zones_(i, nodes[i], now);
