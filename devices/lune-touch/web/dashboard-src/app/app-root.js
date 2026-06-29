@@ -1,5 +1,5 @@
 import { renderHeader, bindHeader } from './header.js';
-import { refreshAll } from '../core/api.js';
+import { refreshAll, refreshSection } from '../core/api.js';
 import { state, subscribe } from '../core/store.js';
 import { bindActions, renderCommands, renderDiagnostics, renderForecast, renderManifolds, renderOverview, renderSettings, renderZones } from '../components/views.js';
 
@@ -32,6 +32,16 @@ function view() {
   return renderOverview();
 }
 
+function hasActiveEditor(root) {
+  const el = document.activeElement;
+  return !!el && root.contains(el) && ['INPUT', 'SELECT', 'TEXTAREA'].includes(el.tagName);
+}
+
+function shouldAutoRefresh(root) {
+  if (hasActiveEditor(root)) return false;
+  return ['overview', 'manifolds', 'commands', 'diagnostics'].includes(state.section);
+}
+
 export function mountApp(root) {
   if (!document.getElementById('lt-style')) {
     const style = document.createElement('style');
@@ -46,6 +56,8 @@ export function mountApp(root) {
   }
   subscribe(render);
   render();
-  refreshAll();
-  setInterval(refreshAll, 5000);
+  refreshAll({ loading: true });
+  setInterval(() => {
+    if (shouldAutoRefresh(root)) refreshSection(state.section);
+  }, 20000);
 }

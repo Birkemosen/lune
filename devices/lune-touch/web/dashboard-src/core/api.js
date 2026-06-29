@@ -53,24 +53,40 @@ async function get(path) {
   return json.data || json;
 }
 
-export async function refreshAll() {
-  patch({ loading: true, error: '' });
+async function refreshPaths(paths, { loading = false } = {}) {
+  if (loading) patch({ loading: true, error: '' });
   try {
-    const [overview, nodes, zones, forecast, commands, diagnostics] = await Promise.all([
-      get('/overview'), get('/nodes'), get('/zones'), get('/forecast'), get('/commands'), get('/diagnostics')
-    ]);
-    patch({
-      overview,
-      nodes: nodes.nodes || [],
-      zones: zones.zones || [],
-      forecast,
-      commands: commands.commands || [],
-      diagnostics,
-      loading: false,
+    const values = await Promise.all(paths.map(get));
+    const next = { error: '' };
+    paths.forEach((path, index) => {
+      const value = values[index];
+      if (path === '/overview') next.overview = value;
+      if (path === '/nodes') next.nodes = value.nodes || [];
+      if (path === '/zones') next.zones = value.zones || [];
+      if (path === '/forecast') next.forecast = value;
+      if (path === '/commands') next.commands = value.commands || [];
+      if (path === '/diagnostics') next.diagnostics = value;
     });
+    if (loading) next.loading = false;
+    patch(next);
   } catch (error) {
     patch({ loading: false, error: error.message || String(error) });
   }
+}
+
+export async function refreshAll(options = {}) {
+  return refreshPaths(['/overview', '/nodes', '/zones', '/forecast', '/commands', '/diagnostics'], {
+    loading: options.loading ?? true,
+  });
+}
+
+export async function refreshSection(section) {
+  if (section === 'overview') return refreshPaths(['/overview', '/zones']);
+  if (section === 'manifolds') return refreshPaths(['/overview', '/nodes']);
+  if (section === 'forecast') return refreshPaths(['/forecast']);
+  if (section === 'commands') return refreshPaths(['/commands']);
+  if (section === 'diagnostics') return refreshPaths(['/diagnostics']);
+  return Promise.resolve();
 }
 
 async function post(path, body = {}) {
