@@ -44,9 +44,21 @@ struct ZoneBinding {
   bool enabled{false};
 };
 
+struct ZoneLiveState {
+  char room_id[32]{};
+  float temperature_c{0.0f};
+  float setpoint_c{0.0f};
+  char status[16]{"unknown"};
+  uint32_t updated_at_ms{0};
+  bool has_temperature{false};
+  bool has_setpoint{false};
+  bool fresh{false};
+};
+
 struct ResolvedZone {
   const PairedNode *node{nullptr};
   const ZoneBinding *binding{nullptr};
+  const ZoneLiveState *live{nullptr};
 };
 
 struct CommandRecord {
@@ -85,11 +97,17 @@ class HouseModel {
   bool is_node_stale(size_t node_index, uint32_t now_ms) const;
 
   bool bind_zone(const char *room_id, const char *room_name, size_t node_index, size_t zone_index);
+  bool update_zone_live(const char *room_id, float temperature_c, bool has_temperature,
+                        float setpoint_c, bool has_setpoint, const char *status,
+                        bool fresh, uint32_t now_ms);
   ResolvedZone resolve_room(const char *room_id) const;
   size_t active_zone_count() const;
+  size_t calling_zone_count() const;
+  size_t stale_zone_count() const;
 
   const PairedNode *node(size_t index) const;
   const ZoneBinding *zone(size_t index) const;
+  const ZoneLiveState *zone_live(size_t index) const;
   size_t node_count() const { return node_count_; }
   size_t zone_count() const { return zone_count_; }
   bool export_state(PersistedState *out) const;
@@ -99,6 +117,7 @@ class HouseModel {
   uint32_t node_stale_after_ms_{300000};
   PairedNode nodes_[MAX_NODES]{};
   ZoneBinding zones_[MAX_HOUSE_ZONES]{};
+  ZoneLiveState live_[MAX_HOUSE_ZONES]{};
   size_t node_count_{0};
   size_t zone_count_{0};
 };

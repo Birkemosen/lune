@@ -117,13 +117,37 @@ bool HouseModel::bind_zone(const char *room_id, const char *room_name, size_t no
   if (zone_count_ >= MAX_HOUSE_ZONES)
     return false;
 
-  ZoneBinding &zone = zones_[zone_count_++];
+  const size_t index = zone_count_++;
+  ZoneBinding &zone = zones_[index];
   copy_text_(zone.room_id, sizeof(zone.room_id), room_id);
   copy_text_(zone.room_name, sizeof(zone.room_name), room_name);
   zone.node_index = static_cast<uint8_t>(node_index);
   zone.zone_index = static_cast<uint8_t>(zone_index);
   zone.enabled = true;
+  live_[index] = {};
+  copy_text_(live_[index].room_id, sizeof(live_[index].room_id), room_id);
   return true;
+}
+
+bool HouseModel::update_zone_live(const char *room_id, float temperature_c, bool has_temperature,
+                                  float setpoint_c, bool has_setpoint, const char *status,
+                                  bool fresh, uint32_t now_ms) {
+  if (room_id == nullptr || room_id[0] == '\0')
+    return false;
+  for (size_t i = 0; i < zone_count_; i++) {
+    if (!same_text_(zones_[i].room_id, room_id))
+      continue;
+    copy_text_(live_[i].room_id, sizeof(live_[i].room_id), room_id);
+    live_[i].temperature_c = temperature_c;
+    live_[i].setpoint_c = setpoint_c;
+    live_[i].has_temperature = has_temperature;
+    live_[i].has_setpoint = has_setpoint;
+    copy_text_(live_[i].status, sizeof(live_[i].status), status != nullptr && status[0] != '\0' ? status : "unknown");
+    live_[i].fresh = fresh;
+    live_[i].updated_at_ms = now_ms;
+    return true;
+  }
+  return false;
 }
 
 ResolvedZone HouseModel::resolve_room(const char *room_id) const {
@@ -132,7 +156,7 @@ ResolvedZone HouseModel::resolve_room(const char *room_id) const {
   for (size_t i = 0; i < zone_count_; i++) {
     if (zones_[i].enabled && same_text_(zones_[i].room_id, room_id)) {
       const size_t node_index = zones_[i].node_index;
-      return {node(node_index), &zones_[i]};
+      return {node(node_index), &zones_[i], &live_[i]};
     }
   }
   return {};
@@ -147,12 +171,37 @@ size_t HouseModel::active_zone_count() const {
   return total;
 }
 
+size_t HouseModel::calling_zone_count() const {
+  size_t total = 0;
+  for (size_t i = 0; i < zone_count_; i++) {
+    if (!zones_[i].enabled)
+      continue;
+    if (same_text_(live_[i].status, "heat") || same_text_(live_[i].status, "call") ||
+        same_text_(live_[i].status, "preheat"))
+      total++;
+  }
+  return total;
+}
+
+size_t HouseModel::stale_zone_count() const {
+  size_t total = 0;
+  for (size_t i = 0; i < zone_count_; i++) {
+    if (zones_[i].enabled && (!live_[i].fresh || same_text_(live_[i].status, "stale")))
+      total++;
+  }
+  return total;
+}
+
 const PairedNode *HouseModel::node(size_t index) const {
   return index < node_count_ ? &nodes_[index] : nullptr;
 }
 
 const ZoneBinding *HouseModel::zone(size_t index) const {
   return index < zone_count_ ? &zones_[index] : nullptr;
+}
+
+const ZoneLiveState *HouseModel::zone_live(size_t index) const {
+  return index < zone_count_ ? &live_[index] : nullptr;
 }
 
 bool HouseModel::export_state(PersistedState *out) const {
@@ -178,12 +227,15 @@ bool HouseModel::import_state(const PersistedState &state) {
 
   std::memset(nodes_, 0, sizeof(nodes_));
   std::memset(zones_, 0, sizeof(zones_));
+  std::memset(live_, 0, sizeof(live_));
   node_count_ = state.node_count;
   zone_count_ = state.zone_count;
   for (size_t i = 0; i < node_count_; i++)
     nodes_[i] = state.nodes[i];
   for (size_t i = 0; i < zone_count_; i++) {
     zones_[i] = state.zones[i];
+    copy_text_(live_[i].room_id, sizeof(live_[i].room_id), zones_[i].room_id);
+    copy_text_(live_[i].status, sizeof(live_[i].status), "unknown");
     if (zones_[i].node_index >= node_count_)
       zones_[i].enabled = false;
   }

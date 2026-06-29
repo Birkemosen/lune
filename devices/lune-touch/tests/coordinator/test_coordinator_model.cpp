@@ -94,6 +94,7 @@ static void test_persisted_state_roundtrip() {
   HouseModel model;
   model.upsert_node("v6-a", "a.local", "192.168.1.51", "lune-v6", "1.0", NodeTrust::TRUSTED);
   model.bind_zone("living", "Living", 0, 4);
+  model.update_zone_live("living", 21.4f, true, 21.0f, true, "heat", true, 1234);
 
   PersistedState state{};
   expect(model.export_state(&state), "persist: export succeeds");
@@ -108,9 +109,31 @@ static void test_persisted_state_roundtrip() {
          "persist: node fields restored");
   expect(living.binding != nullptr && living.binding->zone_index == 4,
          "persist: zone binding restored");
+  expect(living.live != nullptr && !living.live->fresh && std::strcmp(living.live->status, "unknown") == 0,
+         "persist: live state is runtime-only");
 
   state.magic = 0;
   expect(!restored.import_state(state), "persist: reject invalid magic");
+}
+
+static void test_zone_live_state() {
+  HouseModel model;
+  model.upsert_node("v6-a", "a.local", "", "lune-v6", "1.0", NodeTrust::TRUSTED);
+  model.bind_zone("living", "Living", 0, 0);
+  model.bind_zone("bath", "Bath", 0, 1);
+
+  expect(model.update_zone_live("living", 20.9f, true, 21.5f, true, "heat", true, 5000),
+         "live: update mapped room");
+  expect(model.update_zone_live("bath", 19.0f, true, 20.0f, true, "stale", false, 5000),
+         "live: update stale room");
+  expect(!model.update_zone_live("missing", 0.0f, false, 0.0f, false, "idle", false, 5000),
+         "live: reject unknown room");
+  expect(model.calling_zone_count() == 1, "live: calling zone count");
+  expect(model.stale_zone_count() == 1, "live: stale zone count");
+
+  ResolvedZone living = model.resolve_room("living");
+  expect(living.live != nullptr && living.live->has_temperature && living.live->temperature_c > 20.8f,
+         "live: resolve includes snapshot");
 }
 
 static void test_command_ledger() {
@@ -157,6 +180,7 @@ int main() {
   test_zone_registry();
   test_remove_node_remaps_zones();
   test_persisted_state_roundtrip();
+  test_zone_live_state();
   test_command_ledger();
   test_ledger_ring_capacity();
 

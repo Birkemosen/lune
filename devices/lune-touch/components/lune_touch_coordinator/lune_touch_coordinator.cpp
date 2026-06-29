@@ -130,11 +130,17 @@ void LuneTouchCoordinator::seed_mock_house_() {
       "Living", "Kitchen", "Bath", "Hall", "Office", "Bedroom",
       "Guest", "Utility", "Laundry", "Workshop", "Pantry", "Landing",
       "Kids west", "Kids east", "Ensuite", "Basement", "Garage", "Spare"};
+  static const float temps[18] = {21.3f,20.9f,22.2f,20.1f,20.8f,19.4f,19.8f,18.9f,18.7f,17.6f,18.1f,20.3f,20.5f,20.0f,21.8f,NAN,12.4f,NAN};
+  static const float setpoints[18] = {21.0f,21.0f,22.5f,20.0f,21.0f,19.5f,20.0f,19.0f,18.5f,18.0f,18.0f,20.0f,20.5f,20.5f,22.0f,18.0f,12.0f,NAN};
+  static const char *states[18] = {"heat","idle","call","hold","idle","preheat","idle","heat","idle","call","idle","hold","idle","heat","call","stale","idle","unused"};
   for (size_t i = 0; i < 18; i++) {
     const size_t node = i / ::lune_touch::ZONES_PER_NODE;
     char id[16];
     snprintf(id, sizeof(id), "room-%02u", static_cast<unsigned>(i + 1));
     model_.bind_zone(id, rooms[i], node, i % ::lune_touch::ZONES_PER_NODE);
+    model_.update_zone_live(id, temps[i], !std::isnan(temps[i]), setpoints[i], !std::isnan(setpoints[i]),
+                            states[i], strcmp(states[i], "stale") != 0 && strcmp(states[i], "unused") != 0,
+                            esphome::millis());
   }
 
   ::lune_touch::CommandRecord record{};
@@ -260,11 +266,21 @@ bool LuneTouchCoordinator::request_forecast_fetch(char *response, size_t capacit
 }
 
 void LuneTouchCoordinator::write_overview_json(char *buffer, size_t capacity) const {
+  size_t stale_nodes = 0;
+  const uint32_t now = esphome::millis();
+  for (size_t i = 0; i < model_.node_count(); i++) {
+    if (model_.is_node_stale(i, now))
+      stale_nodes++;
+  }
+  const auto *latest = ledger_.latest();
   snprintf(buffer, capacity,
-           "{\"summary\":{\"zones\":%u,\"nodes\":%u,\"calling\":5,\"stale_nodes\":1,"
-           "\"comfort_avg_c\":21.1,\"forecast_status\":\"stale\",\"latest_command\":\"accepted\"}}",
+           "{\"summary\":{\"zones\":%u,\"nodes\":%u,\"calling\":%u,\"stale_nodes\":%u,"
+           "\"comfort_avg_c\":21.1,\"forecast_status\":\"stale\",\"latest_command\":\"%s\"}}",
            static_cast<unsigned>(model_.active_zone_count()),
-           static_cast<unsigned>(model_.node_count()));
+           static_cast<unsigned>(model_.node_count()),
+           static_cast<unsigned>(model_.calling_zone_count()),
+           static_cast<unsigned>(stale_nodes),
+           latest != nullptr ? ::lune_touch::command_result_name(latest->result) : "none");
 }
 
 void LuneTouchCoordinator::write_nodes_json(char *buffer, size_t capacity) const {
@@ -285,27 +301,28 @@ void LuneTouchCoordinator::write_nodes_json(char *buffer, size_t capacity) const
 }
 
 void LuneTouchCoordinator::write_zones_json(char *buffer, size_t capacity) const {
-  static const float temps[18] = {21.3f,20.9f,22.2f,20.1f,20.8f,19.4f,19.8f,18.9f,18.7f,17.6f,18.1f,20.3f,20.5f,20.0f,21.8f,NAN,12.4f,NAN};
-  static const float setpoints[18] = {21.0f,21.0f,22.5f,20.0f,21.0f,19.5f,20.0f,19.0f,18.5f,18.0f,18.0f,20.0f,20.5f,20.5f,22.0f,18.0f,12.0f,NAN};
-  static const char *states[18] = {"heat","idle","call","hold","idle","preheat","idle","heat","idle","call","idle","hold","idle","heat","call","stale","idle","unused"};
   size_t off = 0;
   off += snprintf(buffer + off, capacity - off, "{\"count\":%u,\"zones\":[", static_cast<unsigned>(model_.active_zone_count()));
   for (size_t i = 0; i < model_.zone_count() && i < 18 && off + 180 < capacity; i++) {
     const auto *zone = model_.zone(i);
+    const auto *live = model_.zone_live(i);
     if (zone == nullptr)
       continue;
-    const char *temp = std::isnan(temps[i]) ? "null" : "";
-    const char *sp = std::isnan(setpoints[i]) ? "null" : "";
     char temp_buf[16];
     char sp_buf[16];
-    if (!std::isnan(temps[i])) snprintf(temp_buf, sizeof(temp_buf), "%.1f", temps[i]); else std::strncpy(temp_buf, temp, sizeof(temp_buf));
-    if (!std::isnan(setpoints[i])) snprintf(sp_buf, sizeof(sp_buf), "%.1f", setpoints[i]); else std::strncpy(sp_buf, sp, sizeof(sp_buf));
+    if (live != nullptr && live->has_temperature) snprintf(temp_buf, sizeof(temp_buf), "%.1f", live->temperature_c); else std::strncpy(temp_buf, "null", sizeof(temp_buf));
+    if (live != nullptr && live->has_setpoint) snprintf(sp_buf, sizeof(sp_buf), "%.1f", live->setpoint_c); else std::strncpy(sp_buf, "null", sizeof(sp_buf));
+    temp_buf[sizeof(temp_buf) - 1] = '\0';
+    sp_buf[sizeof(sp_buf) - 1] = '\0';
+    const char *status = live != nullptr && live->status[0] != '\0' ? live->status : (zone->enabled ? "unknown" : "unused");
     off += snprintf(buffer + off, capacity - off,
                     "%s{\"room_id\":\"%s\",\"name\":\"%s\",\"node_index\":%u,\"zone_index\":%u,"
-                    "\"temperature_c\":%s,\"setpoint_c\":%s,\"status\":\"%s\",\"fresh\":%s}",
+                    "\"temperature_c\":%s,\"setpoint_c\":%s,\"status\":\"%s\",\"fresh\":%s,"
+                    "\"updated_at_ms\":%lu}",
                     i ? "," : "", zone->room_id, zone->room_name,
                     static_cast<unsigned>(zone->node_index), static_cast<unsigned>(zone->zone_index),
-                    temp_buf, sp_buf, states[i], strcmp(states[i], "stale") == 0 ? "false" : "true");
+                    temp_buf, sp_buf, status, live != nullptr && live->fresh && zone->enabled ? "true" : "false",
+                    static_cast<unsigned long>(live != nullptr ? live->updated_at_ms : 0));
   }
   snprintf(buffer + off, capacity - off, "]}");
 }
