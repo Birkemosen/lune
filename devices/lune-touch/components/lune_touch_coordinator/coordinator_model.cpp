@@ -150,6 +150,19 @@ bool HouseModel::update_zone_live(const char *room_id, float temperature_c, bool
   return false;
 }
 
+bool HouseModel::update_zone_live_by_binding(size_t node_index, size_t zone_index,
+                                             float temperature_c, bool has_temperature,
+                                             float setpoint_c, bool has_setpoint, const char *status,
+                                             bool fresh, uint32_t now_ms) {
+  for (size_t i = 0; i < zone_count_; i++) {
+    if (!zones_[i].enabled || zones_[i].node_index != node_index || zones_[i].zone_index != zone_index)
+      continue;
+    return update_zone_live(zones_[i].room_id, temperature_c, has_temperature,
+                            setpoint_c, has_setpoint, status, fresh, now_ms);
+  }
+  return false;
+}
+
 ResolvedZone HouseModel::resolve_room(const char *room_id) const {
   if (room_id == nullptr)
     return {};

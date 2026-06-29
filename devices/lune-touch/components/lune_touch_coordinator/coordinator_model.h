@@ -111,6 +111,10 @@ class HouseModel {
   bool update_zone_live(const char *room_id, float temperature_c, bool has_temperature,
                         float setpoint_c, bool has_setpoint, const char *status,
                         bool fresh, uint32_t now_ms);
+  bool update_zone_live_by_binding(size_t node_index, size_t zone_index,
+                                   float temperature_c, bool has_temperature,
+                                   float setpoint_c, bool has_setpoint, const char *status,
+                                   bool fresh, uint32_t now_ms);
   ResolvedZone resolve_room(const char *room_id) const;
   size_t active_zone_count() const;
   size_t calling_zone_count() const;

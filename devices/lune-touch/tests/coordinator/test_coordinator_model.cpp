@@ -134,6 +134,13 @@ static void test_zone_live_state() {
   ResolvedZone living = model.resolve_room("living");
   expect(living.live != nullptr && living.live->has_temperature && living.live->temperature_c > 20.8f,
          "live: resolve includes snapshot");
+  expect(model.update_zone_live_by_binding(0, 1, 22.0f, true, 22.5f, true, "call", true, 6000),
+         "live: update by node/zone binding");
+  ResolvedZone bath = model.resolve_room("bath");
+  expect(bath.live != nullptr && std::strcmp(bath.live->status, "call") == 0,
+         "live: binding update changes mapped room");
+  expect(!model.update_zone_live_by_binding(2, 1, 0.0f, false, 0.0f, false, "idle", false, 6000),
+         "live: reject unmapped binding");
 }
 
 static void test_command_ledger() {
