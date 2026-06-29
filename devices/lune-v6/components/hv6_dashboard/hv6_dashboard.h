@@ -192,6 +192,10 @@ class HV6Dashboard : public Component, public AsyncWebHandler {
   void handle_root_(AsyncWebServerRequest *request);
   void handle_js_(AsyncWebServerRequest *request);
   void handle_state_(AsyncWebServerRequest *request);
+  void handle_overview_(AsyncWebServerRequest *request);
+  void handle_zones_(AsyncWebServerRequest *request);
+  void handle_diagnostics_(AsyncWebServerRequest *request);
+  void handle_events_(AsyncWebServerRequest *request);
   void handle_history_(AsyncWebServerRequest *request);
   void handle_logs_(AsyncWebServerRequest *request);
   void handle_v1_(AsyncWebServerRequest *request, const char *path);
@@ -201,6 +205,7 @@ class HV6Dashboard : public Component, public AsyncWebHandler {
                 const char *err_message = nullptr);
   bool enqueue_action_(const DashboardAction &act);
   void dispatch_set_(const DashboardAction &act);
+  void expire_coordinator_commands_();
   void sample_history_();
 
   web_server_base::WebServerBase *base_{nullptr};
@@ -228,6 +233,7 @@ class HV6Dashboard : public Component, public AsyncWebHandler {
 
   SemaphoreHandle_t action_lock_{nullptr};
   std::vector<DashboardAction> action_queue_;
+  uint32_t coordinator_command_expires_at_ms_[hv6::NUM_ZONES]{};
 
   SemaphoreHandle_t snapshot_lock_{nullptr};
   DashboardSnapshot snapshot_{};

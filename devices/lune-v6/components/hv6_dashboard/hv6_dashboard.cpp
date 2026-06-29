@@ -424,6 +424,7 @@ void HV6Dashboard::loop() {
   for (const auto &act : todo) {
     dispatch_set_(act);
   }
+  this->expire_coordinator_commands_();
 
   // Update snapshot at 1 Hz (int32_t cast for millis() rollover safety).
   const uint32_t now = millis();
@@ -870,6 +871,125 @@ void HV6Dashboard::handle_state_(AsyncWebServerRequest *request) {
   httpd_resp_send_chunk(req, nullptr, 0);
 }
 
+void HV6Dashboard::handle_overview_(AsyncWebServerRequest *request) {
+  if (snapshot_lock_ == nullptr || !snapshot_ready_ ||
+      xSemaphoreTake(snapshot_lock_, pdMS_TO_TICKS(50)) != pdTRUE) {
+    request->send(503, "application/json", "{\"ok\":false,\"error\":{\"code\":\"snapshot_not_ready\"}}");
+    return;
+  }
+  memcpy(&this->state_snap_buf_, &this->snapshot_, sizeof(this->state_snap_buf_));
+  xSemaphoreGive(snapshot_lock_);
+
+  const DashboardSnapshot *snap = &this->state_snap_buf_;
+  uint8_t enabled = 0;
+  uint8_t active = 0;
+  float valve_sum = 0.0f;
+  uint8_t valve_count = 0;
+  for (uint8_t i = 0; i < hv6::NUM_ZONES; i++) {
+    if (snap->zones[i].enabled)
+      enabled++;
+    if (std::isfinite(snap->zone_valve_pct[i])) {
+      valve_sum += snap->zone_valve_pct[i];
+      valve_count++;
+      if (snap->zone_valve_pct[i] > 0.5f)
+        active++;
+    }
+  }
+
+  char flow[24], ret[24], demand[24], wifi[24];
+  format_float_token(flow, sizeof(flow), snap->manifold_flow_c, 1);
+  format_float_token(ret, sizeof(ret), snap->manifold_return_c, 1);
+  format_float_token(demand, sizeof(demand), valve_count ? valve_sum / valve_count : NAN, 0);
+  format_float_token(wifi, sizeof(wifi), snap->wifi_dbm, 0);
+
+  snprintf(this->json_buf_, sizeof(this->json_buf_),
+           "{\"ok\":true,\"version\":\"v1\",\"data\":{\"node\":{\"model\":\"lune-v6\","
+           "\"firmware\":\"%s\",\"ip\":\"%s\",\"ssid\":\"%s\",\"mac\":\"%s\",\"uptime_s\":%lu},"
+           "\"zones\":{\"count\":%u,\"enabled\":%u,\"active\":%u,\"open_valves\":%u},"
+           "\"manifold\":{\"flow_c\":%s,\"return_c\":%s,\"mean_valve_pct\":%s},"
+           "\"system\":{\"wifi_dbm\":%s,\"drivers_enabled\":%s,\"free_internal_kb\":%lu,"
+           "\"free_psram_kb\":%lu},\"safety\":{\"local_authority\":true,\"commands_clamped\":true,"
+           "\"minimum_flow_always\":%s}}}",
+           snap->firmware_version, snap->ip_address, snap->connected_ssid, snap->mac_address,
+           static_cast<unsigned long>(snap->uptime_s),
+           static_cast<unsigned>(hv6::NUM_ZONES), static_cast<unsigned>(enabled),
+           static_cast<unsigned>(active), static_cast<unsigned>(active),
+           flow, ret, demand, wifi, snap->drivers_enabled ? "true" : "false",
+           static_cast<unsigned long>(snap->free_internal_kb),
+           static_cast<unsigned long>(snap->free_psram_kb),
+           snap->minimum_flow_always ? "true" : "false");
+  request->send(200, "application/json", this->json_buf_);
+}
+
+void HV6Dashboard::handle_zones_(AsyncWebServerRequest *request) {
+  if (snapshot_lock_ == nullptr || !snapshot_ready_ ||
+      xSemaphoreTake(snapshot_lock_, pdMS_TO_TICKS(50)) != pdTRUE) {
+    request->send(503, "application/json", "{\"ok\":false,\"error\":{\"code\":\"snapshot_not_ready\"}}");
+    return;
+  }
+  memcpy(&this->state_snap_buf_, &this->snapshot_, sizeof(this->state_snap_buf_));
+  xSemaphoreGive(snapshot_lock_);
+
+  const DashboardSnapshot *snap = &this->state_snap_buf_;
+  char *buf = this->json_buf_;
+  size_t off = 0;
+  appendf(buf, sizeof(this->json_buf_), off, "{\"ok\":true,\"version\":\"v1\",\"data\":{\"count\":%u,\"zones\":[",
+          static_cast<unsigned>(hv6::NUM_ZONES));
+  for (uint8_t i = 0; i < hv6::NUM_ZONES && off + 280 < sizeof(this->json_buf_); i++) {
+    char temp[24], setpoint[24], valve[24], preload[24];
+    format_float_token(temp, sizeof(temp), snap->zone_temp_c[i], 1);
+    format_float_token(setpoint, sizeof(setpoint), snap->zones[i].setpoint_c, 1);
+    format_float_token(valve, sizeof(valve), snap->zone_valve_pct[i], 0);
+    format_float_token(preload, sizeof(preload), snap->zone_preheat_c[i], 1);
+    appendf(buf, sizeof(this->json_buf_), off,
+            "%s{\"zone\":%u,\"name\":\"",
+            i ? "," : "", static_cast<unsigned>(i + 1));
+    append_json_escaped(buf, sizeof(this->json_buf_), off, snap->zones[i].name);
+    appendf(buf, sizeof(this->json_buf_), off,
+            "\",\"enabled\":%s,\"temperature_c\":%s,\"setpoint_c\":%s,\"valve_pct\":%s,"
+            "\"preheat_c\":%s,\"state\":\"%s\",\"temp_source\":\"%s\",\"fresh\":%s}",
+            snap->zones[i].enabled ? "true" : "false", temp, setpoint, valve, preload,
+            snap->zone_state[i], temp_source_to_dashboard_str(snap->zone_temp_source[i]),
+            std::isfinite(snap->zone_temp_c[i]) ? "true" : "false");
+  }
+  appendf(buf, sizeof(this->json_buf_), off, "]}}");
+  request->send(200, "application/json", buf);
+}
+
+void HV6Dashboard::handle_diagnostics_(AsyncWebServerRequest *request) {
+  if (snapshot_lock_ == nullptr || !snapshot_ready_ ||
+      xSemaphoreTake(snapshot_lock_, pdMS_TO_TICKS(50)) != pdTRUE) {
+    request->send(503, "application/json", "{\"ok\":false,\"error\":{\"code\":\"snapshot_not_ready\"}}");
+    return;
+  }
+  memcpy(&this->state_snap_buf_, &this->snapshot_, sizeof(this->state_snap_buf_));
+  xSemaphoreGive(snapshot_lock_);
+
+  const DashboardSnapshot *snap = &this->state_snap_buf_;
+  char cpu0[24], cpu1[24], flow[24], ret[24];
+  format_float_token(cpu0, sizeof(cpu0), snap->cpu0_pct, 1);
+  format_float_token(cpu1, sizeof(cpu1), snap->cpu1_pct, 1);
+  format_float_token(flow, sizeof(flow), snap->manifold_flow_c, 1);
+  format_float_token(ret, sizeof(ret), snap->manifold_return_c, 1);
+  snprintf(this->json_buf_, sizeof(this->json_buf_),
+           "{\"ok\":true,\"version\":\"v1\",\"data\":{\"heap\":{\"internal_kb\":%lu,"
+           "\"psram_kb\":%lu},\"cpu\":{\"core0_pct\":%s,\"core1_pct\":%s},"
+           "\"manifold\":{\"flow_c\":%s,\"return_c\":%s},\"drivers_enabled\":%s,"
+           "\"asgard\":{\"role\":\"%s\",\"peer_status\":\"%s\",\"last_error\":\"%s\"},"
+           "\"logs_endpoint\":\"/api/hv6/v1/logs\"}}",
+           static_cast<unsigned long>(snap->free_internal_kb),
+           static_cast<unsigned long>(snap->free_psram_kb), cpu0, cpu1, flow, ret,
+           snap->drivers_enabled ? "true" : "false", snap->asgard_role,
+           snap->asgard_peer_status, snap->asgard_last_error);
+  request->send(200, "application/json", this->json_buf_);
+}
+
+void HV6Dashboard::handle_events_(AsyncWebServerRequest *request) {
+  request->send(200, "text/event-stream",
+                "event: hello\n"
+                "data: {\"resource\":\"/api/hv6/v1/state\",\"stream\":\"poll\"}\n\n");
+}
+
 // =============================================================================
 // /api/hv6/v1 - request routing (contract: devices/lune-v6/docs/hv6_api_v1.md)
 // =============================================================================
@@ -942,10 +1062,43 @@ bool HV6Dashboard::enqueue_action_(const DashboardAction &act) {
   return true;
 }
 
+void HV6Dashboard::expire_coordinator_commands_() {
+  if (this->zone_controller_ == nullptr)
+    return;
+  const uint32_t now = millis();
+  for (uint8_t i = 0; i < hv6::NUM_ZONES; i++) {
+    const uint32_t expires_at = this->coordinator_command_expires_at_ms_[i];
+    if (expires_at == 0)
+      continue;
+    if ((int32_t) (now - expires_at) < 0)
+      continue;
+    hv6::HeliosZoneCommand clear{};
+    this->zone_controller_->apply_helios_command(i, clear);
+    this->coordinator_command_expires_at_ms_[i] = 0;
+    ESP_LOGI(TAG, "Coordinator command expired for zone %u", static_cast<unsigned>(i + 1));
+  }
+}
+
 void HV6Dashboard::handle_v1_(AsyncWebServerRequest *request, const char *path) {
   // ---- read endpoints ----
   if (strcmp(path, "/state") == 0) {
     this->handle_state_(request);
+    return;
+  }
+  if (strcmp(path, "/overview") == 0) {
+    this->handle_overview_(request);
+    return;
+  }
+  if (strcmp(path, "/zones") == 0) {
+    this->handle_zones_(request);
+    return;
+  }
+  if (strcmp(path, "/diagnostics") == 0) {
+    this->handle_diagnostics_(request);
+    return;
+  }
+  if (strcmp(path, "/events") == 0) {
+    this->handle_events_(request);
     return;
   }
   if (strcmp(path, "/history") == 0) {
@@ -989,6 +1142,66 @@ void HV6Dashboard::handle_v1_(AsyncWebServerRequest *request, const char *path) 
     act.num_val = num;
     act.has_num = true;
     apply_zone(act, zone);
+
+  } else if ((zone = match_zone_route(path, "/zones", "setpoint-command")) != -1 ||
+             (zone = match_zone_route(path, "/zones", "coordinator-command")) != -1 ||
+             (zone = match_zone_route(path, "/zones", "coordinator_command")) != -1) {
+    if (zone == 0) {
+      this->send_v1_(request, 400, "invalid_zone", "Zone must be in range 1..6");
+      return;
+    }
+    if (!parse_num_arg(request, "setpoint_offset_c", &num) &&
+        !parse_num_arg(request, "requested_offset_c", &num)) {
+      this->send_v1_(request, 400, "missing_param", "setpoint_offset_c is required");
+      return;
+    }
+    if (!std::isfinite(num)) {
+      this->send_v1_(request, 400, "invalid_value", "setpoint_offset_c must be finite");
+      return;
+    }
+    float ttl_s = 3600.0f;
+    parse_num_arg(request, "ttl_s", &ttl_s);
+    if (!std::isfinite(ttl_s))
+      ttl_s = 3600.0f;
+    ttl_s = std::clamp(ttl_s, 60.0f, 21600.0f);
+
+    DashboardSnapshot snap{};
+    if (snapshot_lock_ != nullptr && snapshot_ready_ &&
+        xSemaphoreTake(snapshot_lock_, pdMS_TO_TICKS(50)) == pdTRUE) {
+      memcpy(&snap, &this->snapshot_, sizeof(snap));
+      xSemaphoreGive(snapshot_lock_);
+    } else if (this->config_store_) {
+      snap.zones[zone - 1] = this->config_store_->get_zone_config(zone - 1);
+    }
+    const uint8_t zi = static_cast<uint8_t>(zone - 1);
+    const hv6::ZoneConfig &cfg = snap.zones[zi];
+    const float accepted_offset = std::clamp(num, cfg.min_offset_c, cfg.max_offset_c);
+    const float effective_setpoint = std::clamp(cfg.setpoint_c + accepted_offset, cfg.abs_min_c, cfg.abs_max_c);
+    const bool clamp_applied = std::fabs(accepted_offset - num) > 0.001f ||
+                               std::fabs(effective_setpoint - (cfg.setpoint_c + accepted_offset)) > 0.001f;
+
+    if (this->zone_controller_ == nullptr) {
+      this->send_v1_(request, 503, "controller_unavailable", "Zone controller unavailable");
+      return;
+    }
+    hv6::HeliosZoneCommand cmd{};
+    cmd.setpoint_offset_c = num;
+    this->zone_controller_->apply_helios_command(zi, cmd);
+    this->coordinator_command_expires_at_ms_[zi] = millis() + static_cast<uint32_t>(ttl_s * 1000.0f);
+
+    char response[384];
+    snprintf(response, sizeof(response),
+             "{\"ok\":true,\"version\":\"v1\",\"data\":{\"request_id\":\"%s\","
+             "\"source\":\"%s\",\"reason\":\"%s\",\"zone\":%u,\"requested_offset_c\":%.2f,"
+             "\"accepted_offset_c\":%.2f,\"effective_setpoint_c\":%.2f,\"expires_at_ms\":%lu,"
+             "\"ttl_s\":%lu,\"clamp_applied\":%s,\"result\":\"accepted\"}}",
+             request->arg("request_id").c_str(), request->arg("source").empty() ? "lune-touch" : request->arg("source").c_str(),
+             request->arg("reason").empty() ? "coordinator command" : request->arg("reason").c_str(),
+             static_cast<unsigned>(zone), num, accepted_offset, effective_setpoint,
+             static_cast<unsigned long>(this->coordinator_command_expires_at_ms_[zi]),
+             static_cast<unsigned long>(ttl_s), clamp_applied ? "true" : "false");
+    request->send(200, "application/json", response);
+    return;
 
   } else if ((zone = match_zone_route(path, "/zones", "enabled")) != -1) {
     if (zone == 0) {
