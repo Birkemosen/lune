@@ -33,8 +33,16 @@ export function renderOverview() {
 }
 
 export function renderZones() {
+  const nodeOptions = state.nodes.map((node, index) => `<option value="${index}">${node.id || v6Name(index)}</option>`).join('');
   return `<section class="panel">
     <div class="section-head"><h2>Zone control</h2><span class="note">Expiring commands only. V6 clamps locally.</span></div>
+    <div class="inline-form">
+      <input class="input mini-input" id="map-room-id" placeholder="room-id">
+      <input class="input mini-input" id="map-room-name" placeholder="Room name">
+      <select class="input mini-input" id="map-node">${nodeOptions || '<option value="0">V6-0</option>'}</select>
+      <input class="input mini-input" id="map-zone" type="number" min="1" max="6" value="1">
+      <button class="btn" data-action="save-room-map">Map room</button>
+    </div>
     <div class="data-table">
       <div class="tr head"><span>Room</span><span>Current</span><span>Setpoint</span><span>Status</span><span>Source</span><span>Command</span></div>
       ${state.zones.map((z) => `<div class="tr">
@@ -51,6 +59,7 @@ export function renderManifolds() {
     <div class="card-grid">${state.nodes.map((n) => `<article class="card">
       <h3>${n.id}</h3><p>${n.hostname || n.ip || 'no address'}</p>
       <dl><dt>Firmware</dt><dd>${n.firmware || '-'}</dd><dt>Status</dt><dd class="${n.reachable ? 'ok' : 'warn'}">${n.reachable ? 'reachable' : 'stale'}</dd><dt>Trust</dt><dd>${n.trust}</dd></dl>
+      <button class="btn slim danger" data-remove-node="${n.id}">Remove</button>
     </article>`).join('')}</div>
   </section>`;
 }
@@ -110,8 +119,17 @@ export function bindActions(root) {
     const host = root.querySelector('#node-host')?.value?.trim();
     if (host) api.addNode({ hostname: host }).then(refreshAll);
   });
+  root.querySelector('[data-action="save-room-map"]')?.addEventListener('click', () => {
+    const roomId = root.querySelector('#map-room-id')?.value?.trim();
+    const name = root.querySelector('#map-room-name')?.value?.trim() || roomId;
+    const nodeIndex = Number(root.querySelector('#map-node')?.value || 0);
+    const zoneIndex = Math.max(0, Number(root.querySelector('#map-zone')?.value || 1) - 1);
+    if (roomId) api.saveZone(roomId, { name, node_index: nodeIndex, zone_index: zoneIndex }).then(refreshAll);
+  });
+  root.querySelectorAll('[data-remove-node]').forEach((btn) => {
+    btn.addEventListener('click', () => api.removeNode(btn.dataset.removeNode).then(refreshAll));
+  });
   root.querySelectorAll('[data-command-room]').forEach((btn) => {
     btn.addEventListener('click', () => api.setpointCommand(btn.dataset.commandRoom, { offset_c: 0.5, ttl_s: 2700, reason: 'dashboard quick boost' }).then(refreshAll));
   });
 }
-
