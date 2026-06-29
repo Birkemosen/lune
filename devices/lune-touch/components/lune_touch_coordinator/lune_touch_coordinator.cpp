@@ -99,7 +99,9 @@ void LuneTouchCoordinator::poll_once_() {
   for (size_t i = 0; i < count; i++) {
     if (nodes[i].hostname[0] == '\0' && nodes[i].fallback_ip[0] == '\0')
       continue;
-    if (!poll_node_zones_(i, nodes[i], now)) {
+    const bool overview_ok = poll_node_overview_(i, nodes[i], now);
+    const bool zones_ok = poll_node_zones_(i, nodes[i], now);
+    if (!overview_ok && !zones_ok) {
       poll_fail_count_++;
       snprintf(last_poll_error_, sizeof(last_poll_error_), "poll failed");
       if (take_state_lock_(100)) {
@@ -111,6 +113,42 @@ void LuneTouchCoordinator::poll_once_() {
       last_poll_error_[0] = '\0';
     }
   }
+}
+
+bool LuneTouchCoordinator::poll_node_overview_(size_t node_index, const ::lune_touch::PairedNode &node, uint32_t now_ms) {
+  const char *host = node.hostname[0] != '\0' ? node.hostname : node.fallback_ip;
+  if (host == nullptr || host[0] == '\0')
+    return false;
+
+  char url[160];
+  snprintf(url, sizeof(url), "http://%s/api/hv6/v1/overview", host);
+
+  char body[2048];
+  int status = 0;
+  if (!fetch_json_(url, body, sizeof(body), &status)) {
+    ESP_LOGD(TAG, "V6 overview poll failed for %s (%d)", node.node_id, status);
+    return false;
+  }
+
+  JsonDocument doc;
+  DeserializationError err = deserializeJson(doc, body);
+  if (err) {
+    ESP_LOGW(TAG, "V6 overview JSON parse failed for %s: %s", node.node_id, err.c_str());
+    return false;
+  }
+  JsonVariant data = doc["data"];
+  if (data.isNull())
+    data = doc;
+  const char *model = data["node"]["model"] | nullptr;
+  const char *firmware = data["node"]["firmware"] | nullptr;
+  const char *ip = data["node"]["ip"] | nullptr;
+
+  if (!take_state_lock_(100))
+    return false;
+  model_.update_node_metadata(node_index, model, firmware, ip);
+  model_.mark_node_seen(node_index, now_ms);
+  give_state_lock_();
+  return true;
 }
 
 bool LuneTouchCoordinator::poll_node_zones_(size_t node_index, const ::lune_touch::PairedNode &node, uint32_t now_ms) {

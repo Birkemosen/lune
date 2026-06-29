@@ -103,6 +103,19 @@ bool HouseModel::mark_node_unreachable(size_t node_index, uint32_t now_ms) {
   return true;
 }
 
+bool HouseModel::update_node_metadata(size_t node_index, const char *model, const char *firmware,
+                                      const char *fallback_ip) {
+  if (node_index >= node_count_)
+    return false;
+  if (model != nullptr && model[0] != '\0')
+    copy_text_(nodes_[node_index].model, sizeof(nodes_[node_index].model), model);
+  if (firmware != nullptr && firmware[0] != '\0')
+    copy_text_(nodes_[node_index].firmware, sizeof(nodes_[node_index].firmware), firmware);
+  if (fallback_ip != nullptr && fallback_ip[0] != '\0')
+    copy_text_(nodes_[node_index].fallback_ip, sizeof(nodes_[node_index].fallback_ip), fallback_ip);
+  return true;
+}
+
 bool HouseModel::is_node_stale(size_t node_index, uint32_t now_ms) const {
   if (node_index >= node_count_)
     return true;

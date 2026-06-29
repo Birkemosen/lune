@@ -48,6 +48,14 @@ static void test_node_staleness() {
   expect(updated == 0 && model.node_count() == 1, "node: upsert updates existing node");
   const PairedNode *node = model.node(0);
   expect(node != nullptr && std::strcmp(node->firmware, "1.4.1") == 0, "node: firmware updated");
+  expect(model.update_node_metadata(0, "lune-v6", "1.4.2", "192.168.1.60"),
+         "node: metadata update succeeds");
+  node = model.node(0);
+  expect(node != nullptr && std::strcmp(node->firmware, "1.4.2") == 0 &&
+             std::strcmp(node->fallback_ip, "192.168.1.60") == 0,
+         "node: metadata refresh updates firmware and ip");
+  expect(!model.update_node_metadata(2, "lune-v6", "bad", "192.168.1.99"),
+         "node: metadata rejects missing index");
 }
 
 static void test_node_unreachable_marks_zones_stale() {

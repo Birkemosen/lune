@@ -106,6 +106,8 @@ class HouseModel {
   bool remove_node(const char *node_id);
   bool mark_node_seen(size_t node_index, uint32_t now_ms);
   bool mark_node_unreachable(size_t node_index, uint32_t now_ms);
+  bool update_node_metadata(size_t node_index, const char *model, const char *firmware,
+                            const char *fallback_ip);
   bool is_node_stale(size_t node_index, uint32_t now_ms) const;
 
   bool bind_zone(const char *room_id, const char *room_name, size_t node_index, size_t zone_index);

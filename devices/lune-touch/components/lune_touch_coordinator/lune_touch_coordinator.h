@@ -54,6 +54,7 @@ class LuneTouchCoordinator : public esphome::Component {
   static void poll_task_func_(void *arg);
   void poll_task_();
   void poll_once_();
+  bool poll_node_overview_(size_t node_index, const ::lune_touch::PairedNode &node, uint32_t now_ms);
   bool poll_node_zones_(size_t node_index, const ::lune_touch::PairedNode &node, uint32_t now_ms);
   bool fetch_json_(const char *url, char *body, size_t body_capacity, int *status_code);
   bool post_json_(const char *url, char *body, size_t body_capacity, int *status_code);
