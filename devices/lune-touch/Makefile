@@ -12,6 +12,9 @@ PIO ?= $(if $(wildcard $(ROOT_ABS)/.venv313/bin/platformio),$(ROOT_ABS)/.venv313
 PLATFORMIO_CORE_DIR ?= $(ROOT_ABS)/.cache/platformio
 CXX ?= clang++
 BUILD_ROOT ?= $(ROOT_ABS)/$(DEVICE_DIR)/configurations/.esphome/build/$(BUILD_NAME)
+PORT ?=
+AUTO_PORT := $(strip $(shell ls /dev/cu.usbmodem* /dev/cu.usbserial* /dev/cu.SLAB_USBtoUART* /dev/cu.wchusbserial* 2>/dev/null | head -n 1))
+SERIAL_PORT := $(if $(PORT),$(PORT),$(AUTO_PORT))
 SECRETS_LINK ?= configurations/secrets.yaml
 SECRETS_TARGET ?= ../../../secrets.yaml
 DASHBOARD_SRC_DIR ?= $(ROOT_ABS)/$(DEVICE_DIR)/web/dashboard-src
@@ -30,7 +33,7 @@ COORDINATOR_SRCS := $(COORDINATOR_COMPONENT_DIR)/coordinator_model.cpp \
                     $(COORDINATOR_TEST_DIR)/test_coordinator_model.cpp
 COORDINATOR_OUT ?= /tmp/test_lune_touch_coordinator_model
 
-.PHONY: help check ensure-secrets-link config build build-verify deploy dashboard dashboard-tooling dashboard-build dashboard-watch test test-forecast test-coordinator clean
+.PHONY: help check ensure-secrets-link config build build-verify deploy monitor dashboard dashboard-tooling dashboard-build dashboard-watch test test-forecast test-coordinator clean
 
 help:
 	@echo "Lune Touch coordinator tasks"
@@ -38,6 +41,8 @@ help:
 	@echo "  make build            Compile Lune Touch firmware"
 	@echo "  make deploy           Build + upload Lune Touch"
 	@echo "  make deploy PORT=/dev/cu.usbmodemXXXX"
+	@echo "  make monitor          Open serial monitor on PORT"
+	@echo "  make monitor PORT=/dev/cu.usbmodemXXXX"
 	@echo "  make dashboard-build  Build Lune Touch dashboard bundle"
 	@echo "  make test             Run host tests"
 	@echo "  make test-forecast    Run forecast preload-model tests"
@@ -84,6 +89,14 @@ deploy: build
 		echo "Uploading to $$AUTO_PORT"; \
 		PLATFORMIO_CORE_DIR=$(PLATFORMIO_CORE_DIR) $(PIO) run -d $(BUILD_ROOT) -t upload --upload-port $$AUTO_PORT; \
 	fi
+
+monitor: check
+	@if [ -z "$(SERIAL_PORT)" ]; then \
+		echo "No serial port detected. Use PORT=/dev/cu.usbmodemXXXX"; \
+		exit 1; \
+	fi
+	@echo "Using serial port: $(SERIAL_PORT)"
+	PLATFORMIO_CORE_DIR=$(PLATFORMIO_CORE_DIR) $(PIO) device monitor --port $(SERIAL_PORT)
 
 test-forecast:
 	$(CXX) -std=c++17 -O2 -Wall -Wextra -I $(FORECAST_COMPONENT_DIR) $(FORECAST_SRCS) -o $(FORECAST_OUT) -lm

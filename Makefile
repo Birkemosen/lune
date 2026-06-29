@@ -7,7 +7,7 @@ LUNE_TOUCH_DIR ?= devices/lune-touch
 .PHONY: help config build build-verify deploy ota logs discover monitor erase erase-nvs clean \
         dashboard dashboard-tooling dashboard-build dashboard-watch \
         test test-lune-v6 test-lune-touch test-ripple test-balance test-forecast \
-        config-lune-touch build-lune-touch deploy-lune-touch dashboard-build-lune-touch \
+        monitor-lune-v6 config-lune-touch build-lune-touch deploy-lune-touch monitor-lune-touch dashboard-build-lune-touch \
         lune-v6-help lune-touch-help
 
 help:
@@ -19,6 +19,8 @@ help:
 	@echo "  make dashboard-build     Build Lune V6 dashboard bundle"
 	@echo "  make deploy              Build + deploy Lune V6"
 	@echo "  make logs                Stream Lune V6 logs"
+	@echo "  make monitor             Open Lune V6 serial monitor"
+	@echo "  make monitor-lune-v6     Open Lune V6 serial monitor"
 	@echo ""
 	@echo "Tests"
 	@echo "  make test                Run all host tests across devices"
@@ -30,6 +32,7 @@ help:
 	@echo "  make config-lune-touch   Validate Lune Touch ESPHome YAML"
 	@echo "  make build-lune-touch    Compile Lune Touch firmware"
 	@echo "  make deploy-lune-touch   Build + upload Lune Touch"
+	@echo "  make monitor-lune-touch  Open Lune Touch serial monitor"
 	@echo "  make dashboard-build-lune-touch"
 	@echo ""
 	@echo "Device-specific command namespaces"
@@ -51,6 +54,9 @@ test-lune-v6:
 test-lune-touch:
 	$(MAKE) -C $(LUNE_TOUCH_DIR) test
 
+monitor-lune-v6:
+	$(MAKE) -C $(LUNE_V6_DIR) monitor
+
 config-lune-touch:
 	$(MAKE) -C $(LUNE_TOUCH_DIR) config
 
@@ -59,6 +65,9 @@ build-lune-touch:
 
 deploy-lune-touch:
 	$(MAKE) -C $(LUNE_TOUCH_DIR) deploy
+
+monitor-lune-touch:
+	$(MAKE) -C $(LUNE_TOUCH_DIR) monitor
 
 dashboard-build-lune-touch:
 	$(MAKE) -C $(LUNE_TOUCH_DIR) dashboard-build
