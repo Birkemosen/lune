@@ -50,6 +50,37 @@ int HouseModel::upsert_node(const char *node_id, const char *hostname, const cha
   return static_cast<int>(node_count_++);
 }
 
+bool HouseModel::remove_node(const char *node_id) {
+  if (node_id == nullptr || node_id[0] == '\0')
+    return false;
+
+  size_t remove_index = MAX_NODES;
+  for (size_t i = 0; i < node_count_; i++) {
+    if (same_text_(nodes_[i].node_id, node_id)) {
+      remove_index = i;
+      break;
+    }
+  }
+  if (remove_index >= node_count_)
+    return false;
+
+  for (size_t i = remove_index; i + 1 < node_count_; i++)
+    nodes_[i] = nodes_[i + 1];
+  nodes_[node_count_ - 1] = {};
+  node_count_--;
+
+  for (size_t i = 0; i < zone_count_; i++) {
+    if (!zones_[i].enabled)
+      continue;
+    if (zones_[i].node_index == remove_index) {
+      zones_[i].enabled = false;
+    } else if (zones_[i].node_index > remove_index) {
+      zones_[i].node_index--;
+    }
+  }
+  return true;
+}
+
 bool HouseModel::mark_node_seen(size_t node_index, uint32_t now_ms) {
   if (node_index >= node_count_)
     return false;
@@ -122,6 +153,41 @@ const PairedNode *HouseModel::node(size_t index) const {
 
 const ZoneBinding *HouseModel::zone(size_t index) const {
   return index < zone_count_ ? &zones_[index] : nullptr;
+}
+
+bool HouseModel::export_state(PersistedState *out) const {
+  if (out == nullptr)
+    return false;
+  std::memset(out, 0, sizeof(*out));
+  out->magic = PERSISTED_STATE_MAGIC;
+  out->version = PERSISTED_STATE_VERSION;
+  out->node_count = static_cast<uint32_t>(node_count_);
+  out->zone_count = static_cast<uint32_t>(zone_count_);
+  for (size_t i = 0; i < node_count_; i++)
+    out->nodes[i] = nodes_[i];
+  for (size_t i = 0; i < zone_count_; i++)
+    out->zones[i] = zones_[i];
+  return true;
+}
+
+bool HouseModel::import_state(const PersistedState &state) {
+  if (state.magic != PERSISTED_STATE_MAGIC || state.version != PERSISTED_STATE_VERSION)
+    return false;
+  if (state.node_count > MAX_NODES || state.zone_count > MAX_HOUSE_ZONES)
+    return false;
+
+  std::memset(nodes_, 0, sizeof(nodes_));
+  std::memset(zones_, 0, sizeof(zones_));
+  node_count_ = state.node_count;
+  zone_count_ = state.zone_count;
+  for (size_t i = 0; i < node_count_; i++)
+    nodes_[i] = state.nodes[i];
+  for (size_t i = 0; i < zone_count_; i++) {
+    zones_[i] = state.zones[i];
+    if (zones_[i].node_index >= node_count_)
+      zones_[i].enabled = false;
+  }
+  return true;
 }
 
 bool CommandLedger::append(const CommandRecord &record) {

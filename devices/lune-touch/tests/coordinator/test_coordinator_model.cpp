@@ -73,6 +73,46 @@ static void test_zone_registry() {
          "registry: rebind updates target");
 }
 
+static void test_remove_node_remaps_zones() {
+  HouseModel model;
+  model.upsert_node("v6-a", "a.local", "", "lune-v6", "1.0", NodeTrust::TRUSTED);
+  model.upsert_node("v6-b", "b.local", "", "lune-v6", "1.0", NodeTrust::TRUSTED);
+  model.upsert_node("v6-c", "c.local", "", "lune-v6", "1.0", NodeTrust::TRUSTED);
+  model.bind_zone("living", "Living", 0, 0);
+  model.bind_zone("bath", "Bath", 1, 2);
+  model.bind_zone("bed", "Bedroom", 2, 3);
+
+  expect(model.remove_node("v6-b"), "registry: remove middle node");
+  expect(model.node_count() == 2, "registry: node count after remove");
+  expect(model.resolve_room("bath").binding == nullptr, "registry: removed node disables bound rooms");
+  ResolvedZone bed = model.resolve_room("bed");
+  expect(bed.binding != nullptr && bed.binding->node_index == 1, "registry: later zones remap down");
+  expect(!model.remove_node("missing"), "registry: reject missing node remove");
+}
+
+static void test_persisted_state_roundtrip() {
+  HouseModel model;
+  model.upsert_node("v6-a", "a.local", "192.168.1.51", "lune-v6", "1.0", NodeTrust::TRUSTED);
+  model.bind_zone("living", "Living", 0, 4);
+
+  PersistedState state{};
+  expect(model.export_state(&state), "persist: export succeeds");
+  expect(state.magic == PERSISTED_STATE_MAGIC && state.version == PERSISTED_STATE_VERSION,
+         "persist: magic and version set");
+
+  HouseModel restored;
+  expect(restored.import_state(state), "persist: import succeeds");
+  expect(restored.node_count() == 1 && restored.zone_count() == 1, "persist: counts restored");
+  ResolvedZone living = restored.resolve_room("living");
+  expect(living.node != nullptr && std::strcmp(living.node->hostname, "a.local") == 0,
+         "persist: node fields restored");
+  expect(living.binding != nullptr && living.binding->zone_index == 4,
+         "persist: zone binding restored");
+
+  state.magic = 0;
+  expect(!restored.import_state(state), "persist: reject invalid magic");
+}
+
 static void test_command_ledger() {
   CommandLedger ledger;
   ledger.append(command("cmd-1", 1000, 5000));
@@ -115,6 +155,8 @@ static void test_ledger_ring_capacity() {
 int main() {
   test_node_staleness();
   test_zone_registry();
+  test_remove_node_remaps_zones();
+  test_persisted_state_roundtrip();
   test_command_ledger();
   test_ledger_ring_capacity();
 

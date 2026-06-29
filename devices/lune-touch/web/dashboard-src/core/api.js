@@ -60,7 +60,12 @@ export async function refreshAll() {
 
 async function post(path, body = {}) {
   if (window.LUNE_TOUCH_DASHBOARD_CONFIG?.mock) return { ok: true };
-  const response = await fetch(BASE + path, {
+  const query = new URLSearchParams();
+  Object.entries(body).forEach(([key, value]) => {
+    if (value !== undefined && value !== null) query.set(key, String(value));
+  });
+  const url = `${BASE}${path}${query.toString() ? `?${query}` : ''}`;
+  const response = await fetch(url, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify(body),
@@ -78,4 +83,3 @@ export const api = {
   saveForecast: (data) => post('/forecast/settings', data),
   fetchForecast: () => post('/forecast/fetch'),
 };
-

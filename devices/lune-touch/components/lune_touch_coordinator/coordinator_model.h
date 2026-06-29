@@ -9,6 +9,8 @@ static constexpr size_t MAX_NODES = 4;
 static constexpr size_t ZONES_PER_NODE = 6;
 static constexpr size_t MAX_HOUSE_ZONES = MAX_NODES * ZONES_PER_NODE;
 static constexpr size_t LEDGER_CAPACITY = 32;
+static constexpr uint32_t PERSISTED_STATE_MAGIC = 0x4C544348;  // LTCH
+static constexpr uint16_t PERSISTED_STATE_VERSION = 1;
 
 enum class NodeTrust : uint8_t {
   UNPAIRED = 0,
@@ -61,6 +63,16 @@ struct CommandRecord {
   bool clamp_applied{false};
 };
 
+struct PersistedState {
+  uint32_t magic{PERSISTED_STATE_MAGIC};
+  uint16_t version{PERSISTED_STATE_VERSION};
+  uint16_t reserved{0};
+  uint32_t node_count{0};
+  uint32_t zone_count{0};
+  PairedNode nodes[MAX_NODES]{};
+  ZoneBinding zones[MAX_HOUSE_ZONES]{};
+};
+
 class HouseModel {
  public:
   void set_node_stale_after_ms(uint32_t value) { node_stale_after_ms_ = value; }
@@ -68,6 +80,7 @@ class HouseModel {
 
   int upsert_node(const char *node_id, const char *hostname, const char *fallback_ip,
                   const char *model, const char *firmware, NodeTrust trust);
+  bool remove_node(const char *node_id);
   bool mark_node_seen(size_t node_index, uint32_t now_ms);
   bool is_node_stale(size_t node_index, uint32_t now_ms) const;
 
@@ -79,6 +92,8 @@ class HouseModel {
   const ZoneBinding *zone(size_t index) const;
   size_t node_count() const { return node_count_; }
   size_t zone_count() const { return zone_count_; }
+  bool export_state(PersistedState *out) const;
+  bool import_state(const PersistedState &state);
 
  private:
   uint32_t node_stale_after_ms_{300000};
