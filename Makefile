@@ -7,7 +7,7 @@ LUNE_TOUCH_DIR ?= devices/lune-touch
 .PHONY: help config build build-verify deploy ota logs discover monitor erase erase-nvs clean \
         dashboard dashboard-tooling dashboard-build dashboard-watch \
         test test-lune-v6 test-lune-touch test-ripple test-balance test-forecast \
-        config-lune-touch build-lune-touch \
+        config-lune-touch build-lune-touch dashboard-build-lune-touch \
         lune-v6-help lune-touch-help
 
 help:
@@ -29,6 +29,7 @@ help:
 	@echo "Lune Touch firmware"
 	@echo "  make config-lune-touch   Validate Lune Touch ESPHome YAML"
 	@echo "  make build-lune-touch    Compile Lune Touch firmware"
+	@echo "  make dashboard-build-lune-touch"
 	@echo ""
 	@echo "Device-specific command namespaces"
 	@echo "  make lune-v6-help"
@@ -54,6 +55,9 @@ config-lune-touch:
 
 build-lune-touch:
 	$(MAKE) -C $(LUNE_TOUCH_DIR) build
+
+dashboard-build-lune-touch:
+	$(MAKE) -C $(LUNE_TOUCH_DIR) dashboard-build
 
 test: test-lune-v6 test-lune-touch
 

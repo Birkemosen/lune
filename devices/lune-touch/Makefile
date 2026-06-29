@@ -14,6 +14,9 @@ CXX ?= clang++
 BUILD_ROOT ?= $(ROOT_ABS)/$(DEVICE_DIR)/configurations/.esphome/build/$(BUILD_NAME)
 SECRETS_LINK ?= configurations/secrets.yaml
 SECRETS_TARGET ?= ../../../secrets.yaml
+DASHBOARD_SRC_DIR ?= $(ROOT_ABS)/$(DEVICE_DIR)/web/dashboard-src
+DASHBOARD_OUT_FILE ?= $(ROOT_ABS)/$(DEVICE_DIR)/web/dashboard.js
+DASHBOARD_TOOL ?= $(ROOT_ABS)/.tools/esbuild
 
 FORECAST_COMPONENT_DIR := components/hv6_forecast
 FORECAST_TEST_DIR := tests/forecast
@@ -27,12 +30,13 @@ COORDINATOR_SRCS := $(COORDINATOR_COMPONENT_DIR)/coordinator_model.cpp \
                     $(COORDINATOR_TEST_DIR)/test_coordinator_model.cpp
 COORDINATOR_OUT ?= /tmp/test_lune_touch_coordinator_model
 
-.PHONY: help check ensure-secrets-link config build build-verify test test-forecast test-coordinator clean
+.PHONY: help check ensure-secrets-link config build build-verify dashboard dashboard-tooling dashboard-build dashboard-watch test test-forecast test-coordinator clean
 
 help:
 	@echo "Lune Touch coordinator tasks"
 	@echo "  make config           Validate Lune Touch ESPHome YAML"
 	@echo "  make build            Compile Lune Touch firmware"
+	@echo "  make dashboard-build  Build Lune Touch dashboard bundle"
 	@echo "  make test             Run host tests"
 	@echo "  make test-forecast    Run forecast preload-model tests"
 	@echo "  make test-coordinator Run coordinator model tests"
@@ -59,7 +63,7 @@ check: ensure-secrets-link
 config: check
 	cd $(ROOT_ABS) && $(ESPHOME) config $(CONFIG_PATH)
 
-build: check
+build: check dashboard-build
 	cd $(ROOT_ABS) && $(ESPHOME) compile --only-generate $(CONFIG_PATH)
 	perl -0pi -e 's/" ".join\(cmd\)/" ".join(map(str, cmd))/g' $(BUILD_ROOT)/post_build.py
 	PLATFORMIO_CORE_DIR=$(PLATFORMIO_CORE_DIR) $(PIO) run -d $(BUILD_ROOT)
@@ -75,6 +79,34 @@ test-coordinator:
 	$(COORDINATOR_OUT)
 
 test: test-forecast test-coordinator
+
+dashboard: dashboard-build
+
+dashboard-tooling:
+	mkdir -p $(ROOT_ABS)/.tools
+	cd $(ROOT_ABS)/.tools && curl -fsSL https://esbuild.github.io/dl/latest | sh
+
+dashboard-build:
+	@command -v $(DASHBOARD_TOOL) >/dev/null 2>&1 || $(MAKE) dashboard-tooling
+	$(DASHBOARD_TOOL) $(DASHBOARD_SRC_DIR)/main.js \
+	--bundle \
+	--minify \
+	--tree-shaking=true \
+	--format=iife \
+	--target=es2018 \
+	--platform=browser \
+	--define:DEBUG=false \
+	--outfile=$(DASHBOARD_OUT_FILE)
+
+dashboard-watch:
+	@echo "Watching Lune Touch dashboard source for changes... press ctrl+c to stop"
+	@fswatch -r -o $(DASHBOARD_SRC_DIR) | \
+    while read; do \
+        echo "Rebuilding Lune Touch dashboard..."; \
+        if ! $(MAKE) dashboard-build --no-print-directory; then \
+            echo "Dashboard build failed!"; \
+        fi; \
+    done
 
 clean:
 	rm -f $(FORECAST_OUT) $(COORDINATOR_OUT)
