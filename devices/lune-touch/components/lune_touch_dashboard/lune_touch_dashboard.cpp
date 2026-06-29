@@ -1,7 +1,7 @@
 #include "lune_touch_dashboard.h"
 
+#include "esphome/core/hal.h"
 #include "esphome/core/log.h"
-#include <ctime>
 #include <cstdlib>
 #include <cstring>
 
@@ -140,19 +140,17 @@ void LuneTouchDashboard::send_json_(AsyncWebServerRequest *request, const char *
 }
 
 void LuneTouchDashboard::send_ok_(AsyncWebServerRequest *request, const char *data) {
-  char buf[768];
-  const long long ts_ms = static_cast<long long>(::time(nullptr)) * 1000LL;
-  snprintf(buf, sizeof(buf), "{\"ok\":true,\"version\":\"v1\",\"ts_ms\":%lld,\"data\":%s}", ts_ms, data);
-  send_json_(request, buf);
+  const unsigned long ts_ms = static_cast<unsigned long>(esphome::millis());
+  snprintf(response_buf_, sizeof(response_buf_), "{\"ok\":true,\"version\":\"v1\",\"ts_ms\":%lu,\"data\":%s}", ts_ms, data);
+  send_json_(request, response_buf_);
 }
 
 void LuneTouchDashboard::send_error_(AsyncWebServerRequest *request, int code, const char *err_code, const char *message) {
-  char buf[256];
-  const long long ts_ms = static_cast<long long>(::time(nullptr)) * 1000LL;
-  snprintf(buf, sizeof(buf),
-           "{\"ok\":false,\"version\":\"v1\",\"ts_ms\":%lld,\"error\":{\"code\":\"%s\",\"message\":\"%s\"}}",
+  const unsigned long ts_ms = static_cast<unsigned long>(esphome::millis());
+  snprintf(response_buf_, sizeof(response_buf_),
+           "{\"ok\":false,\"version\":\"v1\",\"ts_ms\":%lu,\"error\":{\"code\":\"%s\",\"message\":\"%s\"}}",
            ts_ms, err_code, message);
-  request->send(code, "application/json", buf);
+  request->send(code, "application/json", response_buf_);
 }
 
 void LuneTouchDashboard::handle_v1_(AsyncWebServerRequest *request, const char *path) {
@@ -163,57 +161,51 @@ void LuneTouchDashboard::handle_v1_(AsyncWebServerRequest *request, const char *
 
   if (request->method() == HTTP_GET) {
     if (strcmp(path, "/overview") == 0 || strcmp(path, "/") == 0) {
-      char data[768];
       if (coordinator_)
-        coordinator_->write_overview_json(data, sizeof(data));
+        coordinator_->write_overview_json(data_buf_, sizeof(data_buf_));
       else
-        snprintf(data, sizeof(data), "{}");
-      send_ok_(request, data);
+        snprintf(data_buf_, sizeof(data_buf_), "{}");
+      send_ok_(request, data_buf_);
       return;
     }
     if (strcmp(path, "/nodes") == 0) {
-      char data[768];
       if (coordinator_)
-        coordinator_->write_nodes_json(data, sizeof(data));
+        coordinator_->write_nodes_json(data_buf_, sizeof(data_buf_));
       else
-        snprintf(data, sizeof(data), "{\"nodes\":[]}");
-      send_ok_(request, data);
+        snprintf(data_buf_, sizeof(data_buf_), "{\"nodes\":[]}");
+      send_ok_(request, data_buf_);
       return;
     }
     if (strcmp(path, "/zones") == 0) {
-      char data[2048];
       if (coordinator_)
-        coordinator_->write_zones_json(data, sizeof(data));
+        coordinator_->write_zones_json(data_buf_, sizeof(data_buf_));
       else
-        snprintf(data, sizeof(data), "{\"count\":0,\"zones\":[]}");
-      send_ok_(request, data);
+        snprintf(data_buf_, sizeof(data_buf_), "{\"count\":0,\"zones\":[]}");
+      send_ok_(request, data_buf_);
       return;
     }
     if (strcmp(path, "/forecast") == 0) {
-      char data[1024];
       if (coordinator_)
-        coordinator_->write_forecast_json(data, sizeof(data));
+        coordinator_->write_forecast_json(data_buf_, sizeof(data_buf_));
       else
-        snprintf(data, sizeof(data), "{}");
-      send_ok_(request, data);
+        snprintf(data_buf_, sizeof(data_buf_), "{}");
+      send_ok_(request, data_buf_);
       return;
     }
     if (strcmp(path, "/commands") == 0) {
-      char data[2048];
       if (coordinator_)
-        coordinator_->write_commands_json(data, sizeof(data));
+        coordinator_->write_commands_json(data_buf_, sizeof(data_buf_));
       else
-        snprintf(data, sizeof(data), "{\"commands\":[]}");
-      send_ok_(request, data);
+        snprintf(data_buf_, sizeof(data_buf_), "{\"commands\":[]}");
+      send_ok_(request, data_buf_);
       return;
     }
     if (strcmp(path, "/diagnostics") == 0) {
-      char data[768];
       if (coordinator_)
-        coordinator_->write_diagnostics_json(data, sizeof(data));
+        coordinator_->write_diagnostics_json(data_buf_, sizeof(data_buf_));
       else
-        snprintf(data, sizeof(data), "{}");
-      send_ok_(request, data);
+        snprintf(data_buf_, sizeof(data_buf_), "{}");
+      send_ok_(request, data_buf_);
       return;
     }
     send_error_(request, 404, "unknown_route", "Unknown route");
@@ -230,21 +222,20 @@ void LuneTouchDashboard::handle_v1_(AsyncWebServerRequest *request, const char *
     return;
   }
 
-  char data[512];
   if (strcmp(path, "/nodes/scan") == 0) {
     send_ok_(request, "{\"scan\":\"queued\",\"found\":[]}");
   } else if (strcmp(path, "/nodes") == 0) {
     coordinator_->add_node(request->arg("node_id").c_str(), request->arg("hostname").c_str(),
-                           request->arg("ip").c_str(), data, sizeof(data));
-    send_ok_(request, data);
+                           request->arg("ip").c_str(), data_buf_, sizeof(data_buf_));
+    send_ok_(request, data_buf_);
   } else if (strstr(path, "/remove") != nullptr) {
     char node_id[32]{};
     if (!extract_middle_segment(path, "/nodes/", "/remove", node_id, sizeof(node_id))) {
       send_error_(request, 404, "unknown_route", "Unknown node remove route");
       return;
     }
-    coordinator_->remove_node(node_id, data, sizeof(data));
-    send_ok_(request, data);
+    coordinator_->remove_node(node_id, data_buf_, sizeof(data_buf_));
+    send_ok_(request, data_buf_);
   } else if (strstr(path, "/setpoint-command") != nullptr) {
     char room_id[40]{};
     if (!extract_middle_segment(path, "/zones/", "/setpoint-command", room_id, sizeof(room_id))) {
@@ -258,8 +249,8 @@ void LuneTouchDashboard::handle_v1_(AsyncWebServerRequest *request, const char *
     }
     uint32_t ttl_s = 2700;
     parse_uint_arg(request, "ttl_s", &ttl_s);
-    coordinator_->queue_setpoint_command(room_id, offset, ttl_s, request->arg("reason").c_str(), data, sizeof(data));
-    send_ok_(request, data);
+    coordinator_->queue_setpoint_command(room_id, offset, ttl_s, request->arg("reason").c_str(), data_buf_, sizeof(data_buf_));
+    send_ok_(request, data_buf_);
   } else if (strcmp(path, "/forecast/settings") == 0) {
     float latitude = 0.0f;
     float longitude = 0.0f;
@@ -267,11 +258,11 @@ void LuneTouchDashboard::handle_v1_(AsyncWebServerRequest *request, const char *
       send_error_(request, 400, "missing_param", "latitude and longitude are required");
       return;
     }
-    coordinator_->set_forecast_location(latitude, longitude, request->arg("source").c_str(), data, sizeof(data));
-    send_ok_(request, data);
+    coordinator_->set_forecast_location(latitude, longitude, request->arg("source").c_str(), data_buf_, sizeof(data_buf_));
+    send_ok_(request, data_buf_);
   } else if (strcmp(path, "/forecast/fetch") == 0) {
-    coordinator_->request_forecast_fetch(data, sizeof(data));
-    send_ok_(request, data);
+    coordinator_->request_forecast_fetch(data_buf_, sizeof(data_buf_));
+    send_ok_(request, data_buf_);
   } else if (strncmp(path, "/zones/", 7) == 0) {
     const char *room_id = path + 7;
     if (room_id[0] == '\0' || strchr(room_id, '/') != nullptr) {
@@ -285,8 +276,8 @@ void LuneTouchDashboard::handle_v1_(AsyncWebServerRequest *request, const char *
       send_error_(request, 400, "missing_param", "node_index and zone_index are required");
       return;
     }
-    coordinator_->bind_room(room_id, request->arg("name").c_str(), node_index, zone_index, data, sizeof(data));
-    send_ok_(request, data);
+    coordinator_->bind_room(room_id, request->arg("name").c_str(), node_index, zone_index, data_buf_, sizeof(data_buf_));
+    send_ok_(request, data_buf_);
   } else {
     send_error_(request, 404, "unknown_route", "Unknown route");
   }

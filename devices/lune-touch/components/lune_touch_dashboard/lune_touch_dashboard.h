@@ -38,6 +38,8 @@ class LuneTouchDashboard : public Component, public AsyncWebHandler {
 
   web_server_base::WebServerBase *base_{nullptr};
   lune_touch_coordinator::LuneTouchCoordinator *coordinator_{nullptr};
+  char data_buf_[3072]{};
+  char response_buf_[3840]{};
 };
 
 }  // namespace lune_touch_dashboard
