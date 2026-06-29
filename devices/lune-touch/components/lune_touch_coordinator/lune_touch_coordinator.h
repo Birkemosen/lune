@@ -56,7 +56,12 @@ class LuneTouchCoordinator : public esphome::Component {
   void poll_once_();
   bool poll_node_zones_(size_t node_index, const ::lune_touch::PairedNode &node, uint32_t now_ms);
   bool fetch_json_(const char *url, char *body, size_t body_capacity, int *status_code);
+  bool post_json_(const char *url, char *body, size_t body_capacity, int *status_code);
   bool ingest_v6_zones_(size_t node_index, const char *body, uint32_t now_ms);
+  bool send_v6_setpoint_command_(const ::lune_touch::PairedNode &node, uint8_t zone_index,
+                                 const ::lune_touch::CommandRecord &request,
+                                 uint32_t ttl_s, ::lune_touch::CommandRecord *result);
+  void url_encode_(const char *src, char *out, size_t out_len) const;
 
   static constexpr uint32_t POLL_INTERVAL_MS = 15000;
   static constexpr uint32_t POLL_BOOT_DELAY_MS = 9000;

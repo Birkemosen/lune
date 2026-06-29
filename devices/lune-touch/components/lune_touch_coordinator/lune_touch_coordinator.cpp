@@ -164,6 +164,44 @@ bool LuneTouchCoordinator::fetch_json_(const char *url, char *body, size_t body_
   return ok;
 }
 
+bool LuneTouchCoordinator::post_json_(const char *url, char *body, size_t body_capacity, int *status_code) {
+  if (body == nullptr || body_capacity == 0 || url == nullptr)
+    return false;
+  body[0] = '\0';
+  if (status_code != nullptr)
+    *status_code = 0;
+
+  esp_http_client_config_t cfg{};
+  cfg.url = url;
+  cfg.method = HTTP_METHOD_POST;
+  cfg.timeout_ms = HTTP_TIMEOUT_MS;
+  cfg.disable_auto_redirect = true;
+
+  esp_http_client_handle_t client = esp_http_client_init(&cfg);
+  if (client == nullptr)
+    return false;
+
+  bool ok = false;
+  esp_err_t err = esp_http_client_open(client, 0);
+  if (err == ESP_OK) {
+    esp_http_client_fetch_headers(client);
+    const int status = esp_http_client_get_status_code(client);
+    if (status_code != nullptr)
+      *status_code = status;
+    const int len = esp_http_client_read_response(client, body, body_capacity - 1);
+    if (status >= 200 && status < 300 && len > 0) {
+      body[len] = '\0';
+      ok = true;
+    }
+  } else {
+    ESP_LOGD(TAG, "HTTP POST failed: %s", esp_err_to_name(err));
+  }
+
+  esp_http_client_close(client);
+  esp_http_client_cleanup(client);
+  return ok;
+}
+
 bool LuneTouchCoordinator::ingest_v6_zones_(size_t node_index, const char *body, uint32_t now_ms) {
   if (body == nullptr || body[0] == '\0')
     return false;
@@ -210,6 +248,89 @@ bool LuneTouchCoordinator::ingest_v6_zones_(size_t node_index, const char *body,
     model_.mark_node_seen(node_index, now_ms);
   give_state_lock_();
   return updated > 0;
+}
+
+void LuneTouchCoordinator::url_encode_(const char *src, char *out, size_t out_len) const {
+  if (out_len == 0)
+    return;
+  if (src == nullptr)
+    src = "";
+  static const char HEX[] = "0123456789ABCDEF";
+  size_t off = 0;
+  for (const unsigned char *p = reinterpret_cast<const unsigned char *>(src);
+       *p != '\0' && off + 1 < out_len; ++p) {
+    const unsigned char c = *p;
+    const bool safe = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+                      (c >= '0' && c <= '9') || c == '-' || c == '_' ||
+                      c == '.' || c == '~';
+    if (safe) {
+      out[off++] = static_cast<char>(c);
+    } else if (off + 3 < out_len) {
+      out[off++] = '%';
+      out[off++] = HEX[(c >> 4) & 0x0F];
+      out[off++] = HEX[c & 0x0F];
+    } else {
+      break;
+    }
+  }
+  out[off] = '\0';
+}
+
+bool LuneTouchCoordinator::send_v6_setpoint_command_(const ::lune_touch::PairedNode &node, uint8_t zone_index,
+                                                     const ::lune_touch::CommandRecord &request,
+                                                     uint32_t ttl_s, ::lune_touch::CommandRecord *result) {
+  if (result == nullptr)
+    return false;
+  *result = request;
+
+  if (!esphome::network::is_connected())
+    return false;
+
+  const char *host = node.hostname[0] != '\0' ? node.hostname : node.fallback_ip;
+  if (host == nullptr || host[0] == '\0')
+    return false;
+
+  char request_id[64];
+  char source[64];
+  char reason[128];
+  url_encode_(request.request_id, request_id, sizeof(request_id));
+  url_encode_("lune-touch", source, sizeof(source));
+  url_encode_(request.reason, reason, sizeof(reason));
+
+  char url[320];
+  snprintf(url, sizeof(url),
+           "http://%s/api/hv6/v1/zones/%u/setpoint-command?"
+           "request_id=%s&source=%s&reason=%s&setpoint_offset_c=%.2f&ttl_s=%lu",
+           host, static_cast<unsigned>(zone_index + 1), request_id, source, reason,
+           request.requested_offset_c, static_cast<unsigned long>(ttl_s));
+
+  char body[512];
+  int status = 0;
+  if (!post_json_(url, body, sizeof(body), &status))
+    return false;
+
+  JsonDocument doc;
+  DeserializationError err = deserializeJson(doc, body);
+  if (err)
+    return false;
+
+  JsonVariant data = doc["data"];
+  const char *result_name = data["result"] | nullptr;
+  if (result_name == nullptr)
+    result_name = doc["result"] | "";
+  const bool accepted = std::strcmp(result_name, "accepted") == 0 || doc["ok"] == true;
+  result->result = accepted ? ::lune_touch::CommandResult::ACCEPTED : ::lune_touch::CommandResult::REJECTED;
+  if (!data["accepted_offset_c"].isNull())
+    result->accepted_offset_c = data["accepted_offset_c"] | request.requested_offset_c;
+  else if (!data["requested_offset_c"].isNull())
+    result->accepted_offset_c = data["requested_offset_c"] | request.requested_offset_c;
+  else
+    result->accepted_offset_c = request.requested_offset_c;
+  result->clamp_applied = data["clamp_applied"] | false;
+  const uint32_t expires_at = data["expires_at_ms"] | 0UL;
+  if (expires_at != 0)
+    result->expires_at_ms = expires_at;
+  return true;
 }
 
 bool LuneTouchCoordinator::load_registry_() {
@@ -416,11 +537,6 @@ bool LuneTouchCoordinator::bind_room(const char *room_id, const char *room_name,
 
 bool LuneTouchCoordinator::queue_setpoint_command(const char *room_id, float requested_offset_c, uint32_t ttl_s,
                                                   const char *reason, char *response, size_t capacity) {
-  const auto resolved = model_.resolve_room(room_id);
-  if (resolved.node == nullptr || resolved.binding == nullptr) {
-    snprintf(response, capacity, "{\"result\":\"rejected\",\"error\":\"room_not_mapped\"}");
-    return false;
-  }
   if (!std::isfinite(requested_offset_c)) {
     snprintf(response, capacity, "{\"result\":\"rejected\",\"error\":\"invalid_offset\"}");
     return false;
@@ -430,27 +546,59 @@ bool LuneTouchCoordinator::queue_setpoint_command(const char *room_id, float req
   if (ttl_s > 21600)
     ttl_s = 21600;
 
+  ::lune_touch::PairedNode target_node{};
+  uint8_t target_node_index = 0;
+  uint8_t target_zone = 0;
+  if (!take_state_lock_(100)) {
+    snprintf(response, capacity, "{\"result\":\"rejected\",\"error\":\"coordinator_busy\"}");
+    return false;
+  }
+  const auto resolved = model_.resolve_room(room_id);
+  if (resolved.node == nullptr || resolved.binding == nullptr) {
+    give_state_lock_();
+    snprintf(response, capacity, "{\"result\":\"rejected\",\"error\":\"room_not_mapped\"}");
+    return false;
+  }
+  target_node = *resolved.node;
+  target_node_index = resolved.binding->node_index;
+  target_zone = resolved.binding->zone_index;
+  give_state_lock_();
+
   ::lune_touch::CommandRecord record{};
   snprintf(record.request_id, sizeof(record.request_id), "touch-%lu",
            static_cast<unsigned long>(esphome::millis()));
   std::strncpy(record.source, "dashboard", sizeof(record.source) - 1);
   std::strncpy(record.reason, reason != nullptr && reason[0] != '\0' ? reason : "dashboard command",
                sizeof(record.reason) - 1);
-  record.node_index = resolved.binding->node_index;
-  record.zone_index = resolved.binding->zone_index;
+  record.node_index = target_node_index;
+  record.zone_index = target_zone;
   record.requested_offset_c = requested_offset_c;
   record.accepted_offset_c = 0.0f;
   record.created_at_ms = esphome::millis();
   record.expires_at_ms = record.created_at_ms + ttl_s * 1000UL;
   record.result = ::lune_touch::CommandResult::PENDING;
-  ledger_.append(record);
+
+  ::lune_touch::CommandRecord final_record = record;
+  const bool sent = send_v6_setpoint_command_(target_node, target_zone, record, ttl_s, &final_record);
+  if (!sent)
+    final_record.result = ::lune_touch::CommandResult::REJECTED;
+
+  if (take_state_lock_(100)) {
+    ledger_.append(final_record);
+    give_state_lock_();
+  } else {
+    ledger_.append(final_record);
+  }
   save_ledger_();
 
   snprintf(response, capacity,
-           "{\"result\":\"queued\",\"request_id\":\"%s\",\"target_node\":\"%s\","
-           "\"zone_index\":%u,\"requested_offset_c\":%.2f,\"ttl_s\":%lu}",
-           record.request_id, resolved.node->node_id, static_cast<unsigned>(record.zone_index),
-           record.requested_offset_c, static_cast<unsigned long>(ttl_s));
+           "{\"result\":\"%s\",\"request_id\":\"%s\",\"target_node\":\"%s\","
+           "\"zone_index\":%u,\"requested_offset_c\":%.2f,\"accepted_offset_c\":%.2f,"
+           "\"clamp_applied\":%s,\"ttl_s\":%lu}",
+           ::lune_touch::command_result_name(final_record.result), final_record.request_id,
+           target_node.node_id, static_cast<unsigned>(final_record.zone_index),
+           final_record.requested_offset_c, final_record.accepted_offset_c,
+           final_record.clamp_applied ? "true" : "false", static_cast<unsigned long>(ttl_s));
   return true;
 }
 
