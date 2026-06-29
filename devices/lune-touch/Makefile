@@ -30,12 +30,14 @@ COORDINATOR_SRCS := $(COORDINATOR_COMPONENT_DIR)/coordinator_model.cpp \
                     $(COORDINATOR_TEST_DIR)/test_coordinator_model.cpp
 COORDINATOR_OUT ?= /tmp/test_lune_touch_coordinator_model
 
-.PHONY: help check ensure-secrets-link config build build-verify dashboard dashboard-tooling dashboard-build dashboard-watch test test-forecast test-coordinator clean
+.PHONY: help check ensure-secrets-link config build build-verify deploy dashboard dashboard-tooling dashboard-build dashboard-watch test test-forecast test-coordinator clean
 
 help:
 	@echo "Lune Touch coordinator tasks"
 	@echo "  make config           Validate Lune Touch ESPHome YAML"
 	@echo "  make build            Compile Lune Touch firmware"
+	@echo "  make deploy           Build + upload Lune Touch"
+	@echo "  make deploy PORT=/dev/cu.usbmodemXXXX"
 	@echo "  make dashboard-build  Build Lune Touch dashboard bundle"
 	@echo "  make test             Run host tests"
 	@echo "  make test-forecast    Run forecast preload-model tests"
@@ -69,6 +71,19 @@ build: check dashboard-build
 	PLATFORMIO_CORE_DIR=$(PLATFORMIO_CORE_DIR) $(PIO) run -d $(BUILD_ROOT)
 
 build-verify: build
+
+deploy: build
+	@if [ -n "$(PORT)" ]; then \
+		PLATFORMIO_CORE_DIR=$(PLATFORMIO_CORE_DIR) $(PIO) run -d $(BUILD_ROOT) -t upload --upload-port $(PORT); \
+	else \
+		AUTO_PORT=$$(ls /dev/cu.usbmodem* /dev/cu.wchusbserial* /dev/cu.SLAB_USBtoUART* 2>/dev/null | head -n 1); \
+		if [ -z "$$AUTO_PORT" ]; then \
+			echo "No serial upload port found. Re-run with PORT=/dev/cu.usbmodemXXXX"; \
+			exit 1; \
+		fi; \
+		echo "Uploading to $$AUTO_PORT"; \
+		PLATFORMIO_CORE_DIR=$(PLATFORMIO_CORE_DIR) $(PIO) run -d $(BUILD_ROOT) -t upload --upload-port $$AUTO_PORT; \
+	fi
 
 test-forecast:
 	$(CXX) -std=c++17 -O2 -Wall -Wextra -I $(FORECAST_COMPONENT_DIR) $(FORECAST_SRCS) -o $(FORECAST_OUT) -lm
