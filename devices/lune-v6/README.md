@@ -1,6 +1,6 @@
 # Lune V6
 
-ESPHome firmware for **Lune V6**, the Guldborg & Birkemose 6-zone hydronic
+ESPHome firmware for **Lune V6**, the Birkemosen 6-zone hydronic
 underfloor-heating manifold controller, built on ESP32-S3 with 6 DRV8215 I2C
 motor drivers.
 

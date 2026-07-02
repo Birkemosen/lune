@@ -40,9 +40,10 @@ itself is still served at `/dashboard` + `/dashboard.js`.
   - `GET /api/hv6/v1/peer` — compact board-to-board zone snapshot
     (`{"ok":true,"zones":[{"t":21.4,"sp":21.0,"area":18.5,"en":true},…]}`) consumed by the peer
     board's Asgard bridge; see [ecodan_integration.md](ecodan_integration.md)
-- Write endpoints (query parameters; return the v1 response envelope):
+- Write endpoints (JSON request bodies or backwards-compatible query parameters; return the v1 response envelope):
   - `POST /api/hv6/v1/zones/{zone}/setpoint?setpoint_c=<float>`
   - `POST /api/hv6/v1/zones/{zone}/enabled?enabled=true|false`
+  - `POST /api/hv6/v1/zones/{zone}/setpoint-command`
   - `POST /api/hv6/v1/commands?command=<name>[&zone=1..6]`
   - `POST /api/hv6/v1/drivers/enabled?enabled=true|false`
   - `POST /api/hv6/v1/motors/{zone}/target?value=<0..100>`
@@ -53,10 +54,11 @@ itself is still served at `/dashboard` + `/dashboard.js`.
   - `POST /api/hv6/v1/settings/number?key=<name>&value=<value>[&zone=1..6]`
   - `POST /api/hv6/v1/settings/text?key=<name>&value=<value>[&zone=1..6]`
   - `POST /api/hv6/v1/manual_mode?enabled=true|false`
-- Planned (not yet implemented):
-  - `GET /api/hv6/v1/overview`, `GET /api/hv6/v1/zones` (enveloped, resource-shaped reads replacing `/state`)
-  - `GET /api/hv6/v1/events` (SSE)
-  - JSON body support on write endpoints
+- Migration reads:
+  - `GET /api/hv6/v1/overview`, `GET /api/hv6/v1/zones`,
+    `GET /api/hv6/v1/zones/{zone}`, `GET /api/hv6/v1/settings`,
+    `GET /api/hv6/v1/diagnostics`
+  - `GET /api/hv6/v1/events` (SSE hello/poll stream placeholder)
 
 Implemented command names:
 
@@ -131,10 +133,25 @@ Returns controller-level snapshot:
     },
     "firmware": {
       "version": "1.4.12"
+    },
+    "node": {
+      "model": "lune-v6",
+      "firmware": "1.4.12",
+      "ip": "192.168.1.50",
+      "mac": "AA:BB:CC:DD:EE:FF",
+      "pairing_fingerprint": "hv6-aabbccddeeff"
+    },
+    "pairing": {
+      "method": "mac-fingerprint-v1",
+      "fingerprint": "hv6-aabbccddeeff"
     }
   }
 }
 ```
+
+`pairing.fingerprint` is a stable identity hint derived from the V6 MAC address.
+Lune Touch stores it during commissioning and treats later overview responses
+with a different fingerprint as an identity mismatch.
 
 ### `GET /api/hv6/v1/zones`
 
@@ -166,7 +183,54 @@ Returns all zones:
 
 ### `GET /api/hv6/v1/zones/{zone}`
 
-Returns one zone with settings/diagnostics fields required by dashboard details panel.
+Returns one zone with the settings and diagnostics fields required by dashboard details
+panels and coordinator pairing checks:
+
+```json
+{
+  "ok": true,
+  "version": "v1",
+  "data": {
+    "zone": 1,
+    "name": "Living",
+    "enabled": true,
+    "state": "HEATING",
+    "fresh": true,
+    "temperature_c": 21.3,
+    "setpoint_c": 22.0,
+    "valve_pct": 47,
+    "preheat_c": 0.2,
+    "temp_source": "BLE",
+    "probe_index": 2,
+    "probe_temp_c": 21.1,
+    "ble_mac": "AA:BB:CC:DD:EE:FF",
+    "settings": {
+      "area_m2": 18.5,
+      "pipe_spacing_mm": 150,
+      "pipe_type": 2,
+      "sync_to_zone": 0,
+      "abs_min_c": 5.0,
+      "abs_max_c": 35.0,
+      "min_offset_c": -3.00,
+      "max_offset_c": 3.00
+    },
+    "forecast": {
+      "exterior_walls": 9,
+      "wind_exposure": 0.80,
+      "solar_gain": 0.20,
+      "thermal_lead_h": 8,
+      "max_offset_c": 1.25
+    },
+    "motor": {
+      "fault": "none",
+      "open_ripples": 120,
+      "close_ripples": 118,
+      "open_factor": 1.00,
+      "close_factor": 1.00
+    }
+  }
+}
+```
 
 ### `GET /api/hv6/v1/diagnostics`
 
@@ -174,7 +238,77 @@ Returns diagnostics summary and latest fault/calibration state.
 
 ### `GET /api/hv6/v1/settings`
 
-Returns dashboard-editable settings currently backed by config store and controllers.
+Returns dashboard-editable settings currently backed by config store and controllers:
+
+```json
+{
+  "ok": true,
+  "version": "v1",
+  "data": {
+    "control": {
+      "simple_preheat_enabled": true,
+      "preheat_absorb_enabled": true,
+      "preheat_absorb_band_c": 1.0,
+      "preheat_detect_delta_c": 8.0
+    },
+    "minimum_flow": {
+      "enabled": false,
+      "min_zone_flow_pct": 15.0
+    },
+    "manifold": {
+      "type": "NC",
+      "flow_probe": 7,
+      "return_probe": 8
+    },
+    "motor": {
+      "default_profile": "HMIP_VDMOT",
+      "generic_runtime_limit_s": 45,
+      "hmip_runtime_limit_s": 40,
+      "relearn_after_movements": 120,
+      "relearn_after_hours": 720
+    },
+    "asgard": {
+      "enabled": false,
+      "coordinator": false,
+      "host": "",
+      "port": 80,
+      "entity_name": "virtual_thermostat_input_z1",
+      "peer_host": "",
+      "peer_port": 80,
+      "peer_stale_after_s": 300
+    },
+    "zones": [
+      {
+        "zone": 1,
+        "name": "Living",
+        "enabled": true,
+        "setpoint_c": 21.0,
+        "area_m2": 18.5,
+        "pipe_spacing_mm": 150,
+        "pipe_type": "PEX_16X2",
+        "temp_source": "BLE",
+        "probe_index": 1,
+        "sync_to_zone": 0,
+        "ble_mac": "AA:BB:CC:DD:EE:FF",
+        "limits": {
+          "min_offset_c": -2.00,
+          "max_offset_c": 2.00,
+          "abs_min_c": 5.0,
+          "abs_max_c": 30.0
+        },
+        "forecast": {
+          "exterior_walls": 9,
+          "wind_exposure": 0.80,
+          "solar_gain": 0.20,
+          "thermal_lead_h": 8,
+          "max_offset_c": 2.00
+        },
+        "motor_profile": "INHERIT"
+      }
+    ]
+  }
+}
+```
 
 ## Write Endpoints
 
@@ -197,6 +331,26 @@ Request:
   "enabled": true
 }
 ```
+
+### `POST /api/hv6/v1/zones/{zone}/setpoint-command`
+
+Coordinator-owned, expiring setpoint offset. Lune V6 clamps the offset locally before
+applying it and returns the accepted/effective values.
+
+Request:
+
+```json
+{
+  "request_id": "fc-12345-00",
+  "source": "forecast",
+  "reason": "weather peak in 4h",
+  "setpoint_offset_c": 0.4,
+  "ttl_s": 4500
+}
+```
+
+`requested_offset_c` is accepted as an alias for `setpoint_offset_c`. Query parameters
+with the same names remain accepted during dashboard/coordinator migration.
 
 ### `POST /api/hv6/v1/commands`
 

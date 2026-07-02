@@ -2,8 +2,7 @@
 
 ## System Overview
 
-Lune V6 is a 6-zone underfloor heating (UFH) manifold controller in the Guldborg &
-Birkemose Lune product line. It is built on ESP32-S3 with ESPHome firmware. Custom C++
+Lune V6 is a 6-zone underfloor heating (UFH) manifold controller in the Birkemosen Lune product line. It is built on ESP32-S3 with ESPHome firmware. Custom C++
 components run as FreeRTOS tasks alongside the ESPHome main loop and separate hardware
 control (motor FSM, endstop detection) from heating logic (zone state machine, control
 algorithms, hydraulic balance).

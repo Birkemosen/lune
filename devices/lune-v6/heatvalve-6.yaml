@@ -48,7 +48,7 @@ esphome:
   friendly_name: ${friendly_name}
   comment: "Lune V6 local 6-zone hydronic manifold controller"
   project:
-    name: guldborg-birkemose.lune-v6
+    name: birkemosen.lune-v6
     version: ${firmware_version}
   on_boot:
     - priority: 800

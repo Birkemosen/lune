@@ -194,6 +194,8 @@ class HV6Dashboard : public Component, public AsyncWebHandler {
   void handle_state_(AsyncWebServerRequest *request);
   void handle_overview_(AsyncWebServerRequest *request);
   void handle_zones_(AsyncWebServerRequest *request);
+  void handle_zone_(AsyncWebServerRequest *request, uint8_t zone);
+  void handle_settings_(AsyncWebServerRequest *request);
   void handle_diagnostics_(AsyncWebServerRequest *request);
   void handle_events_(AsyncWebServerRequest *request);
   void handle_history_(AsyncWebServerRequest *request);

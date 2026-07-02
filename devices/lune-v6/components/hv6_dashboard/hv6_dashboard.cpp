@@ -89,6 +89,24 @@ void format_float_token(char *buffer, size_t capacity, float value, int decimals
   snprintf(buffer, capacity, "%ld.%s", whole, frac_buf);
 }
 
+void format_pairing_fingerprint(const char *mac, char *buffer, size_t capacity) {
+  if (capacity == 0)
+    return;
+  size_t off = 0;
+  off += snprintf(buffer + off, capacity - off, "hv6-");
+  for (const char *p = mac; p != nullptr && *p != '\0' && off + 1 < capacity; ++p) {
+    char c = *p;
+    if (c >= 'A' && c <= 'F')
+      c = static_cast<char>(c - 'A' + 'a');
+    if ((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'))
+      buffer[off++] = c;
+  }
+  buffer[off] = '\0';
+  if (std::strcmp(buffer, "hv6-") == 0)
+    std::strncpy(buffer, "hv6-unknown", capacity - 1);
+  buffer[capacity - 1] = '\0';
+}
+
 void sanitize_text(const std::string &src, char *buffer, size_t capacity) {
   if (capacity == 0)
     return;
@@ -105,10 +123,16 @@ void sanitize_text(const std::string &src, char *buffer, size_t capacity) {
 
 static bool json_get_str(const char *body, const char *field, char *out, size_t out_len) {
   char pat[48];
-  snprintf(pat, sizeof(pat), "\"%s\":\"", field);
+  snprintf(pat, sizeof(pat), "\"%s\"", field);
   const char *p = strstr(body, pat);
   if (!p) return false;
   p += strlen(pat);
+  while (*p == ' ') p++;
+  if (*p != ':') return false;
+  p++;
+  while (*p == ' ') p++;
+  if (*p != '"') return false;
+  p++;
   const char *end = strchr(p, '"');
   if (!end) return false;
   const size_t len = std::min(static_cast<size_t>(end - p), out_len - 1);
@@ -119,10 +143,13 @@ static bool json_get_str(const char *body, const char *field, char *out, size_t 
 
 static bool json_get_num(const char *body, const char *field, float *out) {
   char pat[48];
-  snprintf(pat, sizeof(pat), "\"%s\":", field);
+  snprintf(pat, sizeof(pat), "\"%s\"", field);
   const char *p = strstr(body, pat);
   if (!p) return false;
   p += strlen(pat);
+  while (*p == ' ') p++;
+  if (*p != ':') return false;
+  p++;
   while (*p == ' ') p++;
   if (*p == '"' || *p == '{' || *p == '[') return false;
   char *end;
@@ -130,6 +157,32 @@ static bool json_get_num(const char *body, const char *field, float *out) {
   if (end == p) return false;
   *out = v;
   return true;
+}
+
+static bool json_get_bool(const char *body, const char *field, bool *out) {
+  char pat[48];
+  snprintf(pat, sizeof(pat), "\"%s\"", field);
+  const char *p = strstr(body, pat);
+  if (!p) return false;
+  p += strlen(pat);
+  while (*p == ' ') p++;
+  if (*p != ':') return false;
+  p++;
+  while (*p == ' ') p++;
+  if (strncmp(p, "true", 4) == 0) {
+    *out = true;
+    return true;
+  }
+  if (strncmp(p, "false", 5) == 0) {
+    *out = false;
+    return true;
+  }
+  float num = 0.0f;
+  if (json_get_num(body, field, &num)) {
+    *out = std::fabs(num) > 0.001f;
+    return true;
+  }
+  return false;
 }
 
 // --- string → enum parsers ---
@@ -165,6 +218,29 @@ static const char *temp_source_to_dashboard_str(hv6::TempSource src) {
       return "BLE";
     default:
       return "Local Probe";
+  }
+}
+
+static const char *pipe_type_to_api_str(hv6::PipeType type) {
+  switch (type) {
+    case hv6::PipeType::PEX_12X2: return "PEX_12X2";
+    case hv6::PipeType::PEX_14X2: return "PEX_14X2";
+    case hv6::PipeType::PEX_16X2: return "PEX_16X2";
+    case hv6::PipeType::PEX_17X2: return "PEX_17X2";
+    case hv6::PipeType::PEX_18X2: return "PEX_18X2";
+    case hv6::PipeType::PEX_20X2: return "PEX_20X2";
+    case hv6::PipeType::ALUPEX_16X2: return "ALUPEX_16X2";
+    case hv6::PipeType::ALUPEX_20X2: return "ALUPEX_20X2";
+    default: return "UNKNOWN";
+  }
+}
+
+static const char *motor_profile_to_api_str(hv6::MotorProfile profile) {
+  switch (profile) {
+    case hv6::MotorProfile::INHERIT: return "INHERIT";
+    case hv6::MotorProfile::GENERIC: return "GENERIC";
+    case hv6::MotorProfile::HMIP_VDMOT: return "HMIP_VDMOT";
+    default: return "UNKNOWN";
   }
 }
 
@@ -901,17 +977,22 @@ void HV6Dashboard::handle_overview_(AsyncWebServerRequest *request) {
   format_float_token(ret, sizeof(ret), snap->manifold_return_c, 1);
   format_float_token(demand, sizeof(demand), valve_count ? valve_sum / valve_count : NAN, 0);
   format_float_token(wifi, sizeof(wifi), snap->wifi_dbm, 0);
+  char pairing_fingerprint[24];
+  format_pairing_fingerprint(snap->mac_address, pairing_fingerprint, sizeof(pairing_fingerprint));
 
   snprintf(this->json_buf_, sizeof(this->json_buf_),
            "{\"ok\":true,\"version\":\"v1\",\"data\":{\"node\":{\"model\":\"lune-v6\","
-           "\"firmware\":\"%s\",\"ip\":\"%s\",\"ssid\":\"%s\",\"mac\":\"%s\",\"uptime_s\":%lu},"
+           "\"firmware\":\"%s\",\"ip\":\"%s\",\"ssid\":\"%s\",\"mac\":\"%s\","
+           "\"pairing_fingerprint\":\"%s\",\"uptime_s\":%lu},"
+           "\"pairing\":{\"method\":\"mac-fingerprint-v1\",\"fingerprint\":\"%s\"},"
            "\"zones\":{\"count\":%u,\"enabled\":%u,\"active\":%u,\"open_valves\":%u},"
            "\"manifold\":{\"flow_c\":%s,\"return_c\":%s,\"mean_valve_pct\":%s},"
            "\"system\":{\"wifi_dbm\":%s,\"drivers_enabled\":%s,\"free_internal_kb\":%lu,"
            "\"free_psram_kb\":%lu},\"safety\":{\"local_authority\":true,\"commands_clamped\":true,"
            "\"minimum_flow_always\":%s}}}",
            snap->firmware_version, snap->ip_address, snap->connected_ssid, snap->mac_address,
-           static_cast<unsigned long>(snap->uptime_s),
+           pairing_fingerprint, static_cast<unsigned long>(snap->uptime_s),
+           pairing_fingerprint,
            static_cast<unsigned>(hv6::NUM_ZONES), static_cast<unsigned>(enabled),
            static_cast<unsigned>(active), static_cast<unsigned>(active),
            flow, ret, demand, wifi, snap->drivers_enabled ? "true" : "false",
@@ -935,25 +1016,215 @@ void HV6Dashboard::handle_zones_(AsyncWebServerRequest *request) {
   size_t off = 0;
   appendf(buf, sizeof(this->json_buf_), off, "{\"ok\":true,\"version\":\"v1\",\"data\":{\"count\":%u,\"zones\":[",
           static_cast<unsigned>(hv6::NUM_ZONES));
-  for (uint8_t i = 0; i < hv6::NUM_ZONES && off + 280 < sizeof(this->json_buf_); i++) {
+  for (uint8_t i = 0; i < hv6::NUM_ZONES && off + 360 < sizeof(this->json_buf_); i++) {
     char temp[24], setpoint[24], valve[24], preload[24];
     format_float_token(temp, sizeof(temp), snap->zone_temp_c[i], 1);
     format_float_token(setpoint, sizeof(setpoint), snap->zones[i].setpoint_c, 1);
     format_float_token(valve, sizeof(valve), snap->zone_valve_pct[i], 0);
     format_float_token(preload, sizeof(preload), snap->zone_preheat_c[i], 1);
+    char wind[24], solar[24], max_offset[24];
+    format_float_token(wind, sizeof(wind), snap->zones[i].wind_exposure, 2);
+    format_float_token(solar, sizeof(solar), snap->zones[i].solar_gain_factor, 2);
+    format_float_token(max_offset, sizeof(max_offset), snap->zones[i].max_offset_c, 2);
     appendf(buf, sizeof(this->json_buf_), off,
             "%s{\"zone\":%u,\"name\":\"",
             i ? "," : "", static_cast<unsigned>(i + 1));
     append_json_escaped(buf, sizeof(this->json_buf_), off, snap->zones[i].name);
     appendf(buf, sizeof(this->json_buf_), off,
             "\",\"enabled\":%s,\"temperature_c\":%s,\"setpoint_c\":%s,\"valve_pct\":%s,"
-            "\"preheat_c\":%s,\"state\":\"%s\",\"temp_source\":\"%s\",\"fresh\":%s}",
+            "\"preheat_c\":%s,\"state\":\"%s\",\"temp_source\":\"%s\",\"fresh\":%s,"
+            "\"forecast\":{\"exterior_walls\":%u,\"wind_exposure\":%s,\"solar_gain\":%s,"
+            "\"thermal_lead_h\":%u,\"max_offset_c\":%s}}",
             snap->zones[i].enabled ? "true" : "false", temp, setpoint, valve, preload,
             snap->zone_state[i], temp_source_to_dashboard_str(snap->zone_temp_source[i]),
-            std::isfinite(snap->zone_temp_c[i]) ? "true" : "false");
+            std::isfinite(snap->zone_temp_c[i]) ? "true" : "false",
+            static_cast<unsigned>(snap->zones[i].exterior_walls), wind, solar,
+            static_cast<unsigned>(snap->zones[i].thermal_lead_h), max_offset);
   }
   appendf(buf, sizeof(this->json_buf_), off, "]}}");
   request->send(200, "application/json", buf);
+}
+
+void HV6Dashboard::handle_zone_(AsyncWebServerRequest *request, uint8_t zone) {
+  if (zone < 1 || zone > hv6::NUM_ZONES) {
+    this->send_v1_(request, 400, "invalid_zone", "Zone must be in range 1..6");
+    return;
+  }
+  if (snapshot_lock_ == nullptr || !snapshot_ready_ ||
+      xSemaphoreTake(snapshot_lock_, pdMS_TO_TICKS(50)) != pdTRUE) {
+    request->send(503, "application/json", "{\"ok\":false,\"error\":{\"code\":\"snapshot_not_ready\"}}");
+    return;
+  }
+  memcpy(&this->state_snap_buf_, &this->snapshot_, sizeof(this->state_snap_buf_));
+  xSemaphoreGive(snapshot_lock_);
+
+  const uint8_t i = zone - 1;
+  const DashboardSnapshot *snap = &this->state_snap_buf_;
+  const hv6::ZoneConfig &z = snap->zones[i];
+  char temp[24], setpoint[24], valve[24], preload[24], probe[24];
+  char area[24], spacing[24], wind[24], solar[24], max_offset[24];
+  char open_ripple[24], close_ripple[24], open_factor[24], close_factor[24];
+  format_float_token(temp, sizeof(temp), snap->zone_temp_c[i], 1);
+  format_float_token(setpoint, sizeof(setpoint), z.setpoint_c, 1);
+  format_float_token(valve, sizeof(valve), snap->zone_valve_pct[i], 0);
+  format_float_token(preload, sizeof(preload), snap->zone_preheat_c[i], 1);
+  format_float_token(area, sizeof(area), z.area_m2, 1);
+  format_float_token(spacing, sizeof(spacing), z.pipe_spacing_mm, 0);
+  format_float_token(wind, sizeof(wind), z.wind_exposure, 2);
+  format_float_token(solar, sizeof(solar), z.solar_gain_factor, 2);
+  format_float_token(max_offset, sizeof(max_offset), z.max_offset_c, 2);
+  format_float_token(open_ripple, sizeof(open_ripple), snap->motor_open_ripple[i], 0);
+  format_float_token(close_ripple, sizeof(close_ripple), snap->motor_close_ripple[i], 0);
+  format_float_token(open_factor, sizeof(open_factor), snap->motor_open_factor[i], 2);
+  format_float_token(close_factor, sizeof(close_factor), snap->motor_close_factor[i], 2);
+
+  const int8_t probe_idx = snap->probes.zone_return_probe[i];
+  if (probe_idx >= 0 && probe_idx < static_cast<int8_t>(hv6::MAX_PROBES))
+    format_float_token(probe, sizeof(probe), snap->probe_temp_c[probe_idx], 1);
+  else
+    snprintf(probe, sizeof(probe), "null");
+
+  char *buf = this->json_buf_;
+  size_t off = 0;
+  appendf(buf, sizeof(this->json_buf_), off,
+          "{\"ok\":true,\"version\":\"v1\",\"data\":{\"zone\":%u,\"name\":\"",
+          static_cast<unsigned>(zone));
+  append_json_escaped(buf, sizeof(this->json_buf_), off, z.name);
+  appendf(buf, sizeof(this->json_buf_), off,
+          "\",\"enabled\":%s,\"state\":\"%s\",\"fresh\":%s,"
+          "\"temperature_c\":%s,\"setpoint_c\":%s,\"valve_pct\":%s,\"preheat_c\":%s,"
+          "\"temp_source\":\"%s\",\"probe_index\":%d,\"probe_temp_c\":%s,\"ble_mac\":\"%s\","
+          "\"settings\":{\"area_m2\":%s,\"pipe_spacing_mm\":%s,\"pipe_type\":%u,"
+          "\"sync_to_zone\":%d,\"abs_min_c\":%.1f,\"abs_max_c\":%.1f,"
+          "\"min_offset_c\":%.2f,\"max_offset_c\":%.2f},"
+          "\"forecast\":{\"exterior_walls\":%u,\"wind_exposure\":%s,\"solar_gain\":%s,"
+          "\"thermal_lead_h\":%u,\"max_offset_c\":%s},"
+          "\"motor\":{\"fault\":\"%s\",\"open_ripples\":%s,\"close_ripples\":%s,"
+          "\"open_factor\":%s,\"close_factor\":%s}}}",
+          z.enabled ? "true" : "false", snap->zone_state[i],
+          std::isfinite(snap->zone_temp_c[i]) ? "true" : "false",
+          temp, setpoint, valve, preload, temp_source_to_dashboard_str(snap->zone_temp_source[i]),
+          probe_idx >= 0 ? static_cast<int>(probe_idx) + 1 : 0, probe, snap->zone_ble_mac[i],
+          area, spacing, static_cast<unsigned>(z.pipe_type),
+          z.sync_to_zone >= 0 ? static_cast<int>(z.sync_to_zone) + 1 : 0,
+          z.abs_min_c, z.abs_max_c, z.min_offset_c, z.max_offset_c,
+          static_cast<unsigned>(z.exterior_walls), wind, solar,
+          static_cast<unsigned>(z.thermal_lead_h), max_offset,
+          snap->motor_fault[i], open_ripple, close_ripple, open_factor, close_factor);
+  request->send(200, "application/json", buf);
+}
+
+void HV6Dashboard::handle_settings_(AsyncWebServerRequest *request) {
+  if (snapshot_lock_ == nullptr || !snapshot_ready_ ||
+      xSemaphoreTake(snapshot_lock_, pdMS_TO_TICKS(50)) != pdTRUE) {
+    request->send(503, "application/json", "{\"ok\":false,\"error\":{\"code\":\"snapshot_not_ready\"}}");
+    return;
+  }
+  memcpy(&this->state_snap_buf_, &this->snapshot_, sizeof(this->state_snap_buf_));
+  xSemaphoreGive(snapshot_lock_);
+
+  const DashboardSnapshot *snap = &this->state_snap_buf_;
+  httpd_req_t *req = *request;
+  httpd_resp_set_status(req, "200 OK");
+  httpd_resp_set_type(req, "application/json");
+  httpd_resp_set_hdr(req, "Cache-Control", "no-cache");
+  httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+
+  constexpr size_t BUF_SIZE = 2048;
+  char *buf = this->json_buf_;
+  size_t off = 0;
+
+  auto flush = [&]() -> bool {
+    if (off == 0) return true;
+    const bool ok = httpd_resp_send_chunk(req, buf, off) == ESP_OK;
+    off = 0;
+    return ok;
+  };
+
+  char preheat_band[24], preheat_delta[24], min_flow[24];
+  format_float_token(preheat_band, sizeof(preheat_band), snap->preheat_absorb_band_c, 1);
+  format_float_token(preheat_delta, sizeof(preheat_delta), snap->preheat_detect_delta_c, 1);
+  format_float_token(min_flow, sizeof(min_flow), snap->min_zone_flow_pct, 1);
+
+  appendf(buf, BUF_SIZE, off,
+          "{\"ok\":true,\"version\":\"v1\",\"data\":{\"control\":{"
+          "\"simple_preheat_enabled\":%s,\"preheat_absorb_enabled\":%s,"
+          "\"preheat_absorb_band_c\":%s,\"preheat_detect_delta_c\":%s},"
+          "\"minimum_flow\":{\"enabled\":%s,\"min_zone_flow_pct\":%s},"
+          "\"manifold\":{\"type\":\"%s\",\"flow_probe\":%d,\"return_probe\":%d},"
+          "\"motor\":{\"default_profile\":\"%s\",\"generic_runtime_limit_s\":%lu,"
+          "\"hmip_runtime_limit_s\":%lu,\"relearn_after_movements\":%lu,"
+          "\"relearn_after_hours\":%lu},"
+          "\"asgard\":{\"enabled\":%s,\"coordinator\":%s,\"host\":\"",
+          snap->simple_preheat_enabled ? "true" : "false",
+          snap->preheat_absorb_enabled ? "true" : "false",
+          preheat_band, preheat_delta,
+          snap->minimum_flow_always ? "true" : "false", min_flow,
+          snap->manifold_type == hv6::ManifoldType::NC ? "NC" : "NO",
+          static_cast<int>(snap->probes.manifold_flow_probe) + 1,
+          static_cast<int>(snap->probes.manifold_return_probe) + 1,
+          motor_profile_to_api_str(snap->motor.default_profile),
+          static_cast<unsigned long>(snap->motor.generic_profile_runtime_limit_s),
+          static_cast<unsigned long>(snap->motor.hmip_vdmot_runtime_limit_s),
+          static_cast<unsigned long>(snap->motor.relearn_after_movements),
+          static_cast<unsigned long>(snap->motor.relearn_after_hours),
+          snap->asgard.enabled ? "true" : "false",
+          snap->asgard.coordinator ? "true" : "false");
+  append_json_escaped(buf, BUF_SIZE, off, snap->asgard.host);
+  appendf(buf, BUF_SIZE, off,
+          "\",\"port\":%u,\"entity_name\":\"",
+          static_cast<unsigned>(snap->asgard.port));
+  append_json_escaped(buf, BUF_SIZE, off, snap->asgard.entity_name);
+  appendf(buf, BUF_SIZE, off,
+          "\",\"peer_host\":\"");
+  append_json_escaped(buf, BUF_SIZE, off, snap->asgard.peer_host);
+  appendf(buf, BUF_SIZE, off,
+          "\",\"peer_port\":%u,\"peer_stale_after_s\":%u},\"zones\":[",
+          static_cast<unsigned>(snap->asgard.peer_port),
+          static_cast<unsigned>(snap->asgard.peer_stale_after_s));
+  if (!flush()) return;
+
+  for (uint8_t i = 0; i < hv6::NUM_ZONES; i++) {
+    char setpoint[24], area[24], spacing[24], min_offset[24], max_offset[24];
+    char abs_min[24], abs_max[24], wind[24], solar[24];
+    format_float_token(setpoint, sizeof(setpoint), snap->zones[i].setpoint_c, 1);
+    format_float_token(area, sizeof(area), snap->zones[i].area_m2, 1);
+    format_float_token(spacing, sizeof(spacing), snap->zones[i].pipe_spacing_mm, 0);
+    format_float_token(min_offset, sizeof(min_offset), snap->zones[i].min_offset_c, 2);
+    format_float_token(max_offset, sizeof(max_offset), snap->zones[i].max_offset_c, 2);
+    format_float_token(abs_min, sizeof(abs_min), snap->zones[i].abs_min_c, 1);
+    format_float_token(abs_max, sizeof(abs_max), snap->zones[i].abs_max_c, 1);
+    format_float_token(wind, sizeof(wind), snap->zones[i].wind_exposure, 2);
+    format_float_token(solar, sizeof(solar), snap->zones[i].solar_gain_factor, 2);
+
+    appendf(buf, BUF_SIZE, off,
+            "%s{\"zone\":%u,\"name\":\"",
+            i ? "," : "", static_cast<unsigned>(i + 1));
+    append_json_escaped(buf, BUF_SIZE, off, snap->zones[i].name);
+    appendf(buf, BUF_SIZE, off,
+            "\",\"enabled\":%s,\"setpoint_c\":%s,\"area_m2\":%s,"
+            "\"pipe_spacing_mm\":%s,\"pipe_type\":\"%s\",\"temp_source\":\"%s\","
+            "\"probe_index\":%d,\"sync_to_zone\":%d,\"ble_mac\":\"%s\","
+            "\"limits\":{\"min_offset_c\":%s,\"max_offset_c\":%s,"
+            "\"abs_min_c\":%s,\"abs_max_c\":%s},"
+            "\"forecast\":{\"exterior_walls\":%u,\"wind_exposure\":%s,"
+            "\"solar_gain\":%s,\"thermal_lead_h\":%u,\"max_offset_c\":%s},"
+            "\"motor_profile\":\"%s\"}",
+            snap->zones[i].enabled ? "true" : "false", setpoint, area, spacing,
+            pipe_type_to_api_str(snap->zones[i].pipe_type),
+            temp_source_to_dashboard_str(snap->zone_temp_source[i]),
+            snap->probes.zone_return_probe[i] >= 0 ? static_cast<int>(snap->probes.zone_return_probe[i]) + 1 : 0,
+            snap->zones[i].sync_to_zone >= 0 ? static_cast<int>(snap->zones[i].sync_to_zone) + 1 : 0,
+            snap->zone_ble_mac[i], min_offset, max_offset, abs_min, abs_max,
+            static_cast<unsigned>(snap->zones[i].exterior_walls), wind, solar,
+            static_cast<unsigned>(snap->zones[i].thermal_lead_h), max_offset,
+            motor_profile_to_api_str(snap->zones[i].motor_profile_override));
+    if (!flush()) return;
+  }
+
+  appendf(buf, BUF_SIZE, off, "]}}");
+  flush();
+  httpd_resp_send_chunk(req, nullptr, 0);
 }
 
 void HV6Dashboard::handle_diagnostics_(AsyncWebServerRequest *request) {
@@ -1012,6 +1283,20 @@ int match_zone_route(const char *path, const char *prefix, const char *action) {
   return static_cast<int>(zone);
 }
 
+/// Matches "<prefix>/{zone}" exactly. Return semantics match match_zone_route().
+int match_zone_resource(const char *path, const char *prefix) {
+  const size_t plen = strlen(prefix);
+  if (strncmp(path, prefix, plen) != 0 || path[plen] != '/')
+    return -1;
+  char *end = nullptr;
+  const long zone = strtol(path + plen + 1, &end, 10);
+  if (end == path + plen + 1 || *end != '\0')
+    return -1;
+  if (zone < 1 || zone > static_cast<long>(hv6::NUM_ZONES))
+    return 0;
+  return static_cast<int>(zone);
+}
+
 bool parse_num_arg(AsyncWebServerRequest *request, const char *name, float *out) {
   const std::string val = request->arg(name);
   if (val.empty())
@@ -1024,12 +1309,38 @@ bool parse_num_arg(AsyncWebServerRequest *request, const char *name, float *out)
   return true;
 }
 
+bool parse_num_param(AsyncWebServerRequest *request, const char *body, const char *name, float *out) {
+  if (parse_num_arg(request, name, out))
+    return true;
+  return body != nullptr && body[0] != '\0' && json_get_num(body, name, out);
+}
+
 bool parse_bool_arg(AsyncWebServerRequest *request, const char *name, bool *out) {
   const std::string val = request->arg(name);
   if (val.empty())
     return false;
   *out = strcasecmp(val.c_str(), "true") == 0 || val == "1" || strcasecmp(val.c_str(), "on") == 0;
   return true;
+}
+
+bool parse_bool_param(AsyncWebServerRequest *request, const char *body, const char *name, bool *out) {
+  if (parse_bool_arg(request, name, out))
+    return true;
+  return body != nullptr && body[0] != '\0' && json_get_bool(body, name, out);
+}
+
+void parse_text_param(AsyncWebServerRequest *request, const char *body, const char *name,
+                      const char *fallback, char *out, size_t out_len) {
+  if (out_len == 0)
+    return;
+  const std::string arg = request->arg(name);
+  if (!arg.empty()) {
+    sanitize_text(arg, out, out_len);
+    return;
+  }
+  if (body != nullptr && body[0] != '\0' && json_get_str(body, name, out, out_len))
+    return;
+  sanitize_text(fallback != nullptr ? std::string(fallback) : std::string(), out, out_len);
 }
 
 void apply_zone(DashboardAction &act, int zone) {
@@ -1081,6 +1392,7 @@ void HV6Dashboard::expire_coordinator_commands_() {
 
 void HV6Dashboard::handle_v1_(AsyncWebServerRequest *request, const char *path) {
   // ---- read endpoints ----
+  int zone;
   if (strcmp(path, "/state") == 0) {
     this->handle_state_(request);
     return;
@@ -1091,6 +1403,18 @@ void HV6Dashboard::handle_v1_(AsyncWebServerRequest *request, const char *path) 
   }
   if (strcmp(path, "/zones") == 0) {
     this->handle_zones_(request);
+    return;
+  }
+  if ((zone = match_zone_resource(path, "/zones")) != -1) {
+    if (zone == 0) {
+      this->send_v1_(request, 400, "invalid_zone", "Zone must be in range 1..6");
+      return;
+    }
+    this->handle_zone_(request, static_cast<uint8_t>(zone));
+    return;
+  }
+  if (strcmp(path, "/settings") == 0) {
+    this->handle_settings_(request);
     return;
   }
   if (strcmp(path, "/diagnostics") == 0) {
@@ -1127,14 +1451,15 @@ void HV6Dashboard::handle_v1_(AsyncWebServerRequest *request, const char *path) 
   DashboardAction act{};
   float num = 0.0f;
   bool flag = false;
-  int zone;
+  const std::string body_str = request->arg("plain");
+  const char *body = body_str.c_str();
 
   if ((zone = match_zone_route(path, "/zones", "setpoint")) != -1) {
     if (zone == 0) {
       this->send_v1_(request, 400, "invalid_zone", "Zone must be in range 1..6");
       return;
     }
-    if (!parse_num_arg(request, "setpoint_c", &num)) {
+    if (!parse_num_param(request, body, "setpoint_c", &num)) {
       this->send_v1_(request, 400, "missing_param", "setpoint_c is required");
       return;
     }
@@ -1150,8 +1475,8 @@ void HV6Dashboard::handle_v1_(AsyncWebServerRequest *request, const char *path) 
       this->send_v1_(request, 400, "invalid_zone", "Zone must be in range 1..6");
       return;
     }
-    if (!parse_num_arg(request, "setpoint_offset_c", &num) &&
-        !parse_num_arg(request, "requested_offset_c", &num)) {
+    if (!parse_num_param(request, body, "setpoint_offset_c", &num) &&
+        !parse_num_param(request, body, "requested_offset_c", &num)) {
       this->send_v1_(request, 400, "missing_param", "setpoint_offset_c is required");
       return;
     }
@@ -1160,7 +1485,7 @@ void HV6Dashboard::handle_v1_(AsyncWebServerRequest *request, const char *path) 
       return;
     }
     float ttl_s = 3600.0f;
-    parse_num_arg(request, "ttl_s", &ttl_s);
+    parse_num_param(request, body, "ttl_s", &ttl_s);
     if (!std::isfinite(ttl_s))
       ttl_s = 3600.0f;
     ttl_s = std::clamp(ttl_s, 60.0f, 21600.0f);
@@ -1185,9 +1510,16 @@ void HV6Dashboard::handle_v1_(AsyncWebServerRequest *request, const char *path) 
       return;
     }
     hv6::HeliosZoneCommand cmd{};
-    cmd.setpoint_offset_c = num;
+    cmd.setpoint_offset_c = accepted_offset;
     this->zone_controller_->apply_helios_command(zi, cmd);
     this->coordinator_command_expires_at_ms_[zi] = millis() + static_cast<uint32_t>(ttl_s * 1000.0f);
+
+    char request_id[48];
+    char source[32];
+    char reason[80];
+    parse_text_param(request, body, "request_id", "", request_id, sizeof(request_id));
+    parse_text_param(request, body, "source", "lune-touch", source, sizeof(source));
+    parse_text_param(request, body, "reason", "coordinator command", reason, sizeof(reason));
 
     char response[384];
     snprintf(response, sizeof(response),
@@ -1195,8 +1527,7 @@ void HV6Dashboard::handle_v1_(AsyncWebServerRequest *request, const char *path) 
              "\"source\":\"%s\",\"reason\":\"%s\",\"zone\":%u,\"requested_offset_c\":%.2f,"
              "\"accepted_offset_c\":%.2f,\"effective_setpoint_c\":%.2f,\"expires_at_ms\":%lu,"
              "\"ttl_s\":%lu,\"clamp_applied\":%s,\"result\":\"accepted\"}}",
-             request->arg("request_id").c_str(), request->arg("source").empty() ? "lune-touch" : request->arg("source").c_str(),
-             request->arg("reason").empty() ? "coordinator command" : request->arg("reason").c_str(),
+             request_id, source, reason,
              static_cast<unsigned>(zone), num, accepted_offset, effective_setpoint,
              static_cast<unsigned long>(this->coordinator_command_expires_at_ms_[zi]),
              static_cast<unsigned long>(ttl_s), clamp_applied ? "true" : "false");
@@ -1208,7 +1539,7 @@ void HV6Dashboard::handle_v1_(AsyncWebServerRequest *request, const char *path) 
       this->send_v1_(request, 400, "invalid_zone", "Zone must be in range 1..6");
       return;
     }
-    if (!parse_bool_arg(request, "enabled", &flag)) {
+    if (!parse_bool_param(request, body, "enabled", &flag)) {
       this->send_v1_(request, 400, "missing_param", "enabled is required");
       return;
     }
@@ -1218,7 +1549,7 @@ void HV6Dashboard::handle_v1_(AsyncWebServerRequest *request, const char *path) 
     apply_zone(act, zone);
 
   } else if (strcmp(path, "/drivers/enabled") == 0 || strcmp(path, "/manual_mode") == 0) {
-    if (!parse_bool_arg(request, "enabled", &flag)) {
+    if (!parse_bool_param(request, body, "enabled", &flag)) {
       this->send_v1_(request, 400, "missing_param", "enabled is required");
       return;
     }
@@ -1231,7 +1562,7 @@ void HV6Dashboard::handle_v1_(AsyncWebServerRequest *request, const char *path) 
       this->send_v1_(request, 400, "invalid_zone", "Zone must be in range 1..6");
       return;
     }
-    if (!parse_num_arg(request, "value", &num)) {
+    if (!parse_num_param(request, body, "value", &num)) {
       this->send_v1_(request, 400, "missing_param", "value is required");
       return;
     }
@@ -1258,15 +1589,16 @@ void HV6Dashboard::handle_v1_(AsyncWebServerRequest *request, const char *path) 
     apply_zone(act, zone);
 
   } else if (strcmp(path, "/commands") == 0) {
-    const std::string cmd = request->arg("command");
-    if (cmd.empty()) {
+    char cmd_buf[48];
+    parse_text_param(request, body, "command", "", cmd_buf, sizeof(cmd_buf));
+    if (cmd_buf[0] == '\0') {
       this->send_v1_(request, 400, "missing_param", "command is required");
       return;
     }
     act.key = "command";
-    act.value_str = cmd;
+    act.value_str = cmd_buf;
     act.has_str = true;
-    if (!parse_num_arg(request, "zone", &num))
+    if (!parse_num_param(request, body, "zone", &num))
       num = 0.0f;
     apply_zone(act, static_cast<int>(num));
 
@@ -1277,12 +1609,16 @@ void HV6Dashboard::handle_v1_(AsyncWebServerRequest *request, const char *path) 
       this->send_v1_(request, 404, "unknown_route", "Unknown settings type");
       return;
     }
-    act.key = request->arg("key");
+    char key_buf[48];
+    char value_buf[96];
+    parse_text_param(request, body, "key", "", key_buf, sizeof(key_buf));
+    act.key = key_buf;
     if (act.key.empty()) {
       this->send_v1_(request, 400, "missing_param", "key is required");
       return;
     }
-    act.value_str = request->arg("value");
+    parse_text_param(request, body, "value", "", value_buf, sizeof(value_buf));
+    act.value_str = value_buf;
     act.has_str = !act.value_str.empty();
     if (is_number) {
       // Reject mixed/locale decimal separators before parsing. strtof() is "C"-locale
@@ -1293,14 +1629,14 @@ void HV6Dashboard::handle_v1_(AsyncWebServerRequest *request, const char *path) 
                        "use '.' as the decimal separator (no ',')");
         return;
       }
-      if (!parse_num_arg(request, "value", &num) || !std::isfinite(num)) {
+      if (!parse_num_param(request, body, "value", &num) || !std::isfinite(num)) {
         this->send_v1_(request, 400, "invalid_value", "value must be a finite number");
         return;
       }
       act.num_val = num;
       act.has_num = true;
     }
-    if (!parse_num_arg(request, "zone", &num))
+    if (!parse_num_param(request, body, "zone", &num))
       num = 0.0f;
     apply_zone(act, static_cast<int>(num));
 
