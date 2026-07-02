@@ -4,7 +4,7 @@ Guidance for agents working in this repository.
 
 ## Project Shape
 
-This is a Guldborg & Birkemose monorepo. Each hardware product owns its code in a
+This is a Birkemosen monorepo. Each hardware product owns its code in a
 dedicated subfolder:
 
 ```text

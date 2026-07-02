@@ -1,6 +1,6 @@
-# Guldborg & Birkemose Product Architecture
+# Birkemosen Product Architecture
 
-Guldborg & Birkemose is the umbrella brand for intelligent, durable products for home,
+Birkemosen is the umbrella brand for intelligent, durable products for home,
 garden, and everyday infrastructure. Products should feel calm, architectural, useful,
 and technically robust: less gadget, more long-lived tool.
 
@@ -8,7 +8,7 @@ and technically robust: less gadget, more long-lived tool.
 
 | Level | Names | Scope |
 |---|---|---|
-| Umbrella | Guldborg & Birkemose | Shared product family and design language |
+| Umbrella | Birkemosen | Shared product family and design language |
 | Categories | Home, Garden, Objects | Home infrastructure, garden automation, physical design objects |
 | Product lines | Lune, Spire, Brim | Short, warm, international names with a Nordic tone |
 | Models | Lune V6, Lune Touch, Lune Mini, Lune Sense, Lune Flow | Specific products inside each line |
@@ -56,7 +56,7 @@ local I/O, motor control, zone safety, and a clear snapshot / command API.
 
 ## UI And Documentation Rules
 
-Use **Guldborg & Birkemose** for the umbrella brand and **Lune V6** for the current
+Use **Birkemosen** for the umbrella brand and **Lune V6** for the current
 manifold controller in user-facing surfaces.
 
 Keep the UI dense, operational, and calm. Prioritize overview, reliability, zone balance,

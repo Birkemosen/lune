@@ -1,5 +1,5 @@
 # -----------------------------------------------------------------------------
-# Guldborg & Birkemose product workspace
+# Birkemosen product workspace
 # -----------------------------------------------------------------------------
 LUNE_V6_DIR ?= devices/lune-v6
 LUNE_TOUCH_DIR ?= devices/lune-touch
@@ -11,7 +11,7 @@ LUNE_TOUCH_DIR ?= devices/lune-touch
         lune-v6-help lune-touch-help
 
 help:
-	@echo "Guldborg & Birkemose product workspace"
+	@echo "Birkemosen product workspace"
 	@echo ""
 	@echo "Default hardware target: Lune V6"
 	@echo "  make config              Validate Lune V6 ESPHome YAML"

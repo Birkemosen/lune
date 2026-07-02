@@ -1,4 +1,4 @@
-# Guldborg & Birkemose Product Workspace
+# Birkemosen Product Workspace
 
 This repository is a monorepo for the Lune hardware family. Each hardware product owns its
 firmware, dashboard, tests, hardware files, and device-specific documentation in its own
