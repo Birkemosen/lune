@@ -112,7 +112,8 @@ def generate():
     sch = ksa.create_schematic("HeatValve-6 Rev 2.1")
 
     # ------------------------------------------------------------------
-    # USB-C input and 3.3 V buck supply
+    # USB-C is the sole power input. The buck-derived 3.3 V rail powers both
+    # logic and the low-voltage motor drive; no auxiliary motor supply exists.
     # ------------------------------------------------------------------
     section("USB-C INPUT / 3V3 POWER", (25, 18))
     j1 = add(
@@ -188,6 +189,7 @@ def generate():
     decoupling("C7", "10u", (170, 70), "+3V3_A", footprint="Capacitor_SMD:C_0805_2012Metric")
     decoupling("C8", "100n", (181, 70), "+3V3_A")
     note("U3 pins: 1 BS, 2 GND, 3 FB, 4 EN, 5 IN, 6 SW", (98, 88))
+    note("USB-C VBUS is the only board power input; +3V3_SYS powers logic and motors.", (98, 94))
 
     # ------------------------------------------------------------------
     # ESP32-S3, buttons and status LEDs
@@ -207,16 +209,17 @@ def generate():
     net(u1, 2, "+3V3_SYS")
     gpio_nets = {
         3: "ESP_EN", 4: "ADC_CURRENT", 5: "ADC_BEMF",
-        6: "BEMF_SEL0", 7: "BEMF_SEL1", 8: "TACHO_EDGE", 9: "FLIM_PWM",
-        10: "LATCH_ARM_N", 11: "LATCH_STATE", 13: "USB_DM", 14: "USB_DP",
-        17: "PH1", 18: "PH2", 19: "PH3", 20: "PH4", 21: "PH5", 22: "PH6",
-        24: "EN1", 25: "EN2", 31: "EN3", 32: "EN4", 33: "EN5", 34: "EN6",
-        35: "OW_MCU", 27: "BOOT_N", 12: "BEMF_SEL2",
+        6: "MUX_EN1", 7: "MUX_EN2", 8: "TACHO_EDGE", 9: "FLIM_PWM",
+        10: "LATCH_ARM_N", 11: "LATCH_STATE", 12: "MUX_EN3",
+        13: "USB_DM", 14: "USB_DP",
+        17: "MUX_EN4", 18: "MUX_EN5", 19: "MUX_EN6",
+        20: "HBR_IN1", 21: "HBR_IN2",
+        35: "OW_MCU", 27: "BOOT_N",
         38: "I2C_SCL_DNP", 39: "I2C_SDA_DNP",
     }
     for pin, name in gpio_nets.items():
         net(u1, pin, name)
-    for pin in (15, 16, 23, 26, 28, 29, 30, 36, 37):
+    for pin in (15, 16, 22, 23, 24, 25, 26, 28, 29, 30, 31, 32, 33, 34, 36, 37):
         nc(u1, pin)
 
     passive("R7", "10k", (202, 45), "+3V3_SYS", "ESP_EN")
@@ -258,7 +261,7 @@ def generate():
     u13 = add("Diode:BAT54S", "D5", "BAT54S ADC clamp", (158, 150), "Package_TO_SOT_SMD:SOT-23")
     net(u13, 1, "GND"); net(u13, 2, "+3V3_A"); net(u13, 3, "ADC_CURRENT")
     note("INA180 is 3V3-powered (intrinsic rail limit). R14 + D5 limit ADC injection transients.", (90, 185))
-    note("30mA=0.60V, 60mA=1.20V, 150mA=3.00V. Engagement current remains measurable.", (90, 191))
+    note("30mA=0.60V, 60mA=1.20V, 150mA=3.00V. Current is endstop/load/force evidence.", (90, 191))
 
     # Mid-rail reference for the bidirectional differential BEMF front end.
     passive("R15", "10k", (196, 146), "+3V3_A", "VBIAS_DIV")
@@ -268,37 +271,13 @@ def generate():
     net(u10a, 3, "VBIAS_DIV"); net(u10a, 2, "VBIAS"); net(u10a, 1, "VBIAS")
 
     # ------------------------------------------------------------------
-    # Selected differential motor BEMF: independent motion/position channel
+    # Shared motor bus BEMF: selected motor appears directly on the driver bus
     # ------------------------------------------------------------------
-    section("SELECTED DIFFERENTIAL BEMF / TACHO", (225, 128))
-    mux_fp = "Package_SO:TSSOP-16_4.4x5mm_P0.65mm"
-    bemf_mux = {}
-    for ref, suffix, x in (("U13", "A", 255), ("U14", "B", 300)):
-        mux = add("74xx:74HC4051", ref, "74HC4051", (x, 166), mux_fp,
-                  MPN="74HC4051PW")
-        bemf_mux[suffix] = mux
-        # Common, enable, supplies, then three binary select inputs.
-        net(mux, 3, f"BEMF_MUX_{suffix}")
-        net(mux, 6, "GND"); net(mux, 7, "GND"); net(mux, 8, "GND")
-        net(mux, 9, "BEMF_SEL2"); net(mux, 10, "BEMF_SEL1"); net(mux, 11, "BEMF_SEL0")
-        net(mux, 16, "+3V3_A")
-        # Codes 6/7 are deliberately quiet if firmware selects an invalid channel.
-        net(mux, 2, "GND"); net(mux, 4, "GND")
-    decoupling("C50", "100n", (252, 198), "+3V3_A")
-    decoupling("C51", "100n", (300, 198), "+3V3_A")
-    passive("R60", "100k", (230, 198), "BEMF_SEL0", "GND")
-    passive("R61", "100k", (242, 198), "BEMF_SEL1", "GND")
-    passive("R62", "100k", (266, 198), "BEMF_SEL2", "GND")
-
-    # Each exposed motor terminal is current-limited before entering the mux.
-    mux_pins = (13, 14, 15, 12, 1, 5)
-    for idx, pin in enumerate(mux_pins, 1):
-        passive(f"R{68 + idx * 2}", "10k", (235 + idx * 11, 215),
-                f"MOT{idx}_A", f"BEMF_A{idx}")
-        passive(f"R{69 + idx * 2}", "10k", (235 + idx * 11, 226),
-                f"MOT{idx}_B", f"BEMF_B{idx}")
-        net(bemf_mux["A"], pin, f"BEMF_A{idx}")
-        net(bemf_mux["B"], pin, f"BEMF_B{idx}")
+    section("SHARED MOTOR BUS BEMF / TACHO", (225, 128))
+    passive("R60", "10k", (255, 154), "MOT_COM", "BEMF_MUX_A")
+    passive("R61", "10k", (255, 178), "MOT_DRV", "BEMF_MUX_B")
+    passive("R62", "1M", (282, 198), "MOT_DRV", "GND")
+    note("Only one mux channel may be enabled; the selected motor is visible on MOT_COM/MOT_DRV.", (235, 216))
 
     # 10k terminal resistors + 90.9k/47k network give ~0.466 differential gain.
     u10b = add("Amplifier_Operational:MCP6004", "U10", "MCP6004", (350, 166), "Package_SO:SOIC-14_3.9x8.7mm_P1.27mm", unit=2)
@@ -328,7 +307,7 @@ def generate():
     net(u11a, 5, "BEMF_TACH_AMP"); net(u11a, 4, "VBIAS"); net(u11a, 2, "TACHO_EDGE")
     passive("R58", "1M", (496, 195), "TACHO_EDGE", "BEMF_TACH_AMP")
     passive("R59", "10k", (496, 212), "+3V3_SYS", "TACHO_EDGE")
-    note("ADC_BEMF is differential motion evidence; TACHO_EDGE counts qualified commutation.", (315, 238))
+    note("TACHO_EDGE is the required commutation-count channel; ADC_BEMF qualifies it.", (315, 238))
 
     # ------------------------------------------------------------------
     # PWM threshold, raw-shunt comparator and fail-safe latch
@@ -375,31 +354,45 @@ def generate():
     decoupling("C21", "100n", (530, 212), "+3V3_SYS")
 
     # ------------------------------------------------------------------
-    # Six DRV8837 channels and 4P4C connectors
+    # One shared H-bridge, six low-Ron bilateral mux channels, and 4P4C connectors
     # ------------------------------------------------------------------
-    section("6 x DRV8837 / 4P4C MOTOR OUTPUTS", (25, 258))
-    driver_x = (55, 145, 235, 325, 415, 505)
+    section("SHARED DRV8837 + 6 x MOTOR MUX / 4P4C OUTPUTS", (25, 258))
+    drv = add(
+        "Driver_Motor:DRV8837", "U21", "DRV8837DSGR shared H-bridge", (55, 290),
+        "Package_SON:WSON-8-1EP_2x2mm_P0.5mm_EP0.9x1.6mm",
+        MPN="DRV8837DSGR", LCSC="C39159",
+    )
+    for pin, name in ((1, "+3V3_SYS"), (2, "MOT_COM"), (3, "MOT_DRV"),
+                      (4, "SHUNT"), (5, "HBR_IN2"), (6, "HBR_IN1"),
+                      (7, "DRIVE_PERMIT"), (8, "+3V3_SYS"), (9, "SHUNT")):
+        net(drv, pin, name)
+    decoupling("C30", "100n", (40, 318), "+3V3_SYS", "SHUNT")
+    decoupling("C31", "1u", (55, 318), "+3V3_SYS", "SHUNT", "Capacitor_SMD:C_0805_2012Metric")
+    passive("R70", "100k", (75, 276), "HBR_IN1", "GND")
+    passive("R71", "100k", (90, 276), "HBR_IN2", "GND")
+
+    # U31..U36 are placeholders for a production-selected low-Ron bilateral SPST
+    # switch/load-switch part. Required behaviour: rail-to-rail 3.3 V signal path,
+    # bidirectional current, <=1 ohm target Ron, >=250 mA peak, high-Z when disabled.
+    driver_x = (130, 205, 280, 355, 430, 505)
     for idx, x in enumerate(driver_x, 1):
-        drv_ref = f"U{20 + idx}"
-        conn_ref = f"J{1 + idx}"
-        drv = add(
-            "Driver_Motor:DRV8837", drv_ref, "DRV8837DSGR", (x, 290),
-            "Package_SON:WSON-8-1EP_2x2mm_P0.5mm_EP0.9x1.6mm",
-            MPN="DRV8837DSGR", LCSC="C39159",
+        mux = add(
+            "Connector_Generic:Conn_01x06", f"U{30 + idx}",
+            f"LOW_RON_BILATERAL_SPST MUX {idx}", (x, 292),
+            "Package_TO_SOT_SMD:SOT-23-6", MPN="TBD_LOW_RON_SPST",
+            Review="Select exact MPN/pinout before fab",
         )
-        for pin, name in ((1, "+3V3_SYS"), (2, f"MOT{idx}_A"), (3, f"MOT{idx}_B"),
-                          (4, "SHUNT"), (5, f"EN{idx}"), (6, f"PH{idx}"),
-                          (7, "DRIVE_PERMIT"), (8, "+3V3_SYS"), (9, "SHUNT")):
-            net(drv, pin, name)
-        decoupling(f"C{30 + (idx-1)*2}", "100n", (x - 12, 318), "+3V3_SYS", "SHUNT")
-        decoupling(f"C{31 + (idx-1)*2}", "1u", (x + 2, 318), "+3V3_SYS", "SHUNT", "Capacitor_SMD:C_0805_2012Metric")
+        net(mux, 1, "+3V3_SYS"); net(mux, 2, "GND"); net(mux, 3, f"MUX_EN{idx}")
+        net(mux, 4, "MOT_DRV"); net(mux, 5, f"MOT{idx}_SEL"); nc(mux, 6)
+        passive(f"R{71 + idx}", "100k", (x, 320), f"MUX_EN{idx}", "GND")
         conn = add(
-            "Connector_Generic:Conn_01x04", conn_ref, f"MOTOR {idx} 4P4C",
+            "Connector_Generic:Conn_01x04", f"J{1 + idx}", f"MOTOR {idx} 4P4C",
             (x, 350), "Connector_RJ:RJ9_Evercom_5301-440xxx_Horizontal",
             MPN="5301-4P4C", LCSC="C3097715",
         )
-        nc(conn, 1); net(conn, 2, f"MOT{idx}_A"); net(conn, 3, f"MOT{idx}_B"); nc(conn, 4)
-    note("Connector pinout: 1 NC, 2 MOT_A, 3 MOT_B, 4 NC (center pair).", (25, 365))
+        nc(conn, 1); net(conn, 2, "MOT_COM"); net(conn, 3, f"MOT{idx}_SEL"); nc(conn, 4)
+    note("Connector pinout: 1 NC, 2 shared MOT_COM, 3 selected MOTx_SEL, 4 NC.", (25, 365))
+    note("Firmware and hardware review must guarantee exactly one MUX_EN active during drive.", (25, 371))
 
     # ------------------------------------------------------------------
     # OneWire and DNP I2C expansion

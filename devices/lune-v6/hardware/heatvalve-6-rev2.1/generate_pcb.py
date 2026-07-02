@@ -73,21 +73,20 @@ def placements():
         "D3": (49, 35, 0), "D4": (54, 35, 0),
         "U9": (60, 34, 0), "U10": (76, 29, 0),
         "U11": (90, 29, 0), "U12": (105, 29, 0),
-        "U13": (72, 40, 0), "U14": (86, 40, 0),
         "RSH1": (39, 40, 0), "RSH2": (45, 40, 0),
         "D5": (51, 40, 0), "D7": (57, 40, 0),
+        "U21": (17, 48, 0), "C30": (10, 50, 0), "C31": (24, 50, 0),
+        "R70": (12, 44, 0), "R71": (22, 44, 0),
     }
 
-    # Six identical motor lanes: driver above its connector, local bypass nearby.
-    xs = [17, 34, 51, 68, 85, 102]
+    # Six identical motor lanes: bilateral mux above its connector. The shared
+    # H-bridge sits at the left edge of the lane row and feeds the MOT_DRV bus.
+    xs = [34, 48, 62, 76, 90, 104]
     for index, x in enumerate(xs, 1):
-        p[f"U{20 + index}"] = (x, 48, 0)
+        p[f"U{30 + index}"] = (x, 48, 0)
         # User-facing jack opening points toward the bottom board edge.
         p[f"J{1 + index}"] = (x, 57, 0)
-        p[f"C{28 + 2 * index}"] = (x - 4, 50, 0)
-        p[f"C{29 + 2 * index}"] = (x + 4, 50, 0)
-        p[f"R{68 + index * 2}"] = (x - 3, 44, 0)
-        p[f"R{69 + index * 2}"] = (x + 3, 44, 0)
+        p[f"R{71 + index}"] = (x, 44, 0)
 
     # Remaining passives are grouped on compact, manufacturable grids.
     groups = [

@@ -1,5 +1,5 @@
-ERC report (2026-06-19T17:36:12, Encoding UTF8)
-Report includes: Errors, Warnings, Exclusions
+ERC report (2026-07-02T09:36:50, Encoding UTF8)
+Report includes: Errors, Warnings
 
 ***** Sheet /
 [lib_symbol_mismatch]: Symbol 'MCP6004' doesn't match copy in library 'Amplifier_Operational'

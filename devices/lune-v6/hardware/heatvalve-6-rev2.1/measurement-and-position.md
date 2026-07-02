@@ -5,13 +5,17 @@
 Rev 2.1 separates force measurement from motion measurement:
 
 - `ADC_CURRENT` measures shared-shunt motor current for load, engagement, jam,
-  and force protection.
-- `ADC_BEMF` measures the selected motor's differential generated voltage.
+  endstop detection, and force protection.
+- `ADC_BEMF` measures the selected motor's differential generated voltage from
+  the shared `MOT_COM`/`MOT_DRV` bus.
 - `TACHO_EDGE` provides hardware-timed candidate commutation edges to PCNT.
 
-Current ripple alone is not accepted as proof of rotation because PWM/current-decay
-activity can continue while a rotor is stalled. BEMF is weak at startup and standstill,
-so neither signal is sufficient alone.
+Current is a good endstop and force signal, but current ripple alone is not
+accepted as proof of rotation because PWM/current-decay activity can continue
+while a rotor is stalled. The VdMot result makes the useful split clear:
+position should be learned from qualified motor commutations, while endstop and
+abnormal force come from current. BEMF is weak at startup and standstill, so
+neither signal is sufficient alone.
 
 ## Mechanical landmarks
 
@@ -54,19 +58,25 @@ the settle and continued-motion conditions are satisfied.
 
 ## Candidate tacho qualification
 
-PCNT edges are candidates. Firmware accepts an edge as position only when:
+PCNT edges are candidates for real motor commutations. Firmware accepts an edge
+as position only when:
 
-- the selected BEMF channel matches the active motor;
+- the mux state puts the commanded motor on the shared `MOT_COM`/`MOT_DRV` bus;
 - the edge is outside direction-change and switching blanking windows;
 - raw differential BEMF indicates rotation;
 - its interval is inside the learned physical cadence window;
 - the interval does not match PWM or coast-sampling frequency;
 - it is not a duplicate inside the minimum-period guard.
 
-If continuous-drive BEMF is contaminated, command a short coast window by driving both
-DRV8837 inputs low, wait for recirculation current to decay, sample `ADC_BEMF`, then
-resume drive. Coast duration and sample delay are prototype-tuned values, not schematic
-constants.
+If continuous-drive BEMF is contaminated, command a short coast window by driving
+both shared DRV8837 inputs low while keeping the active `MUX_ENn` asserted, wait
+for recirculation current to decay, sample `ADC_BEMF`, then resume drive. Coast
+duration and sample delay are prototype-tuned values, not schematic constants.
+
+The motor mux changes the failure model: position evidence is valid only when
+exactly one mux channel is enabled. Firmware must treat zero active mux channels,
+multiple active mux channels, or a mux state that disagrees with the requested
+zone as a hard motion fault and must not accept BEMF/tacho edges in that window.
 
 ## Endstop and fault classification
 
@@ -103,6 +113,11 @@ Do not release the PCB measurement values or production thresholds until simulta
 oscilloscope/ADC captures demonstrate separation among startup, engagement, loaded
 travel, closed stop, open stop, obstruction, and disconnected-motor cases across the
 intended actuator population and supply range.
+
+The prototype gate specifically includes proving that `TACHO_EDGE` tracks real
+commutation count well enough for learning and positioning. A board that can only
+detect endstops by current is still useful for safety, but it is not the intended
+Rev 2.1 design.
 
 Background references:
 

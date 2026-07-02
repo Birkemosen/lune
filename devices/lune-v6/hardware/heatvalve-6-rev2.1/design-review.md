@@ -2,15 +2,51 @@
 
 ## Scope and status
 
-This directory is the editable KiCad 10 implementation of Rev 2.1. The schematic
-is suitable for detailed electrical review. The PCB is a placement baseline, not
-a fabrication release: copper routing and mechanical fit still need to be completed.
+This directory is the editable KiCad 10 implementation of Rev 2.1. The
+programmatic schematic source has been updated to a shared-driver / motor-mux
+architecture after teardown review of the HmIP-FALMOT-C12. The committed
+`.kicad_sch` has been regenerated from the generator; the `.kicad_pcb` artifact
+still needs regeneration/routing work.
+
+The PCB remains a placement baseline, not a fabrication release: copper routing,
+mechanical fit, mux part selection, and final review still need to be completed.
+Power is USB-C-only in this revision; there is no mains input, no auxiliary
+low-voltage input, and no separate external motor supply.
+
+## Motor architecture
+
+Rev 2.1 now exploits the invariant that only one valve motor moves at a time.
+Instead of six independent H-bridges, one shared DRV8837 drives a two-wire motor
+bus:
+
+```text
+DRV8837 OUT1 -> MOT_COM -> pin 2 on all motor jacks
+DRV8837 OUT2 -> MOT_DRV -> selected pin 3 through one mux channel
+```
+
+Each motor connector keeps the center pair, but pin 2 is common across all
+outputs and pin 3 is the per-zone selected terminal. With only one mux channel
+enabled, the active actuator sees normal bidirectional H-bridge drive. Inactive
+actuators have only `MOT_COM` connected and therefore no return path through
+`MOT_DRV`.
+
+The generator represents each mux as `TBD_LOW_RON_SPST` until a final component
+is selected. The production part must be a low-Ron bidirectional analog/load
+switch suitable for rail-to-rail 3.3 V motor terminals, at least 250 mA peak
+current, high off-isolation, and safe high-Z behavior when unpowered or disabled.
+Target on resistance is <=1 ohm so the actuator still sees essentially the full
+3.3 V rail. The exact MPN/pinout is a release blocker.
+
+Firmware must assert exactly one `MUX_ENn` during any drive window. Hardware
+review must also consider whether a small logic interlock is needed before fab,
+so a firmware bug cannot connect two valves to `MOT_DRV` at once.
 
 ## Current sensing and protection
 
-`RSH1` is 1.0 ohm, with `RSH2` as a DNP parallel tuning footprint. All six driver
-returns join the `SHUNT` side; only one valve may be driven at a time. `R13` makes
-the single connection from the quiet shunt ground pickup to the main ground plane.
+`RSH1` is 1.0 ohm, with `RSH2` as a DNP parallel tuning footprint. The shared
+driver return joins the `SHUNT` side; only one valve may be driven at a time.
+`R13` makes the single connection from the quiet shunt ground pickup to the main
+ground plane.
 
 The INA180A1 gain is 20 V/V:
 
@@ -31,12 +67,15 @@ raw-shunt threshold range of approximately 0–174 mA with the 1.0 ohm shunt.
 The production setting must exceed measured startup and engagement peaks with margin,
 while remaining below the destructive pop-off/grinding current.
 
+Current is therefore the preferred signal for load, pin engagement, jam, normal
+endstop detection, and destructive force protection. It is not used as the sole
+position counter.
+
 ## Differential BEMF and tacho
 
-`U13` and `U14` are synchronized 74HC4051 selectors. GPIO-controlled
-`BEMF_SEL[2:0]` selects the A and B terminals of the one active motor; codes 6 and 7
-select grounded spare channels. Each exposed motor terminal enters through a 10k
-current-limiting resistor before the analog selector.
+The selected actuator is already present on the shared motor bus, so the separate
+74HC4051 BEMF selectors are removed from the new source design. `MOT_COM` and
+`MOT_DRV` enter the differential front end through 10k current-limiting resistors.
 
 The matched terminal/input and feedback network (`10k + 90.9k`, with 47k feedback)
 produces approximately:
@@ -50,11 +89,14 @@ This keeps a nominal full-rail differential inside the 3.3 V analog domain.
 measurement, and motion validation. A separate AC-coupled x11 stage and LM339B
 comparator produce `TACHO_EDGE` for ESP32 PCNT.
 
-The comparator output is not sufficient by itself. Switching transitions must be
-blanked, edge intervals must match a physically plausible commutation cadence, and
-firmware must confirm motion using the raw BEMF waveform. If continuous-drive sensing
-is not clean enough, firmware shall briefly command both DRV8837 inputs low, allow the
-recirculation transient to decay, sample differential BEMF, and resume drive.
+The tacho circuit is a first-class design requirement, not an optional debug
+output. It exists to count candidate real motor commutations so valve position can
+be learned from motion, while current remains the stop/load signal. The comparator
+output is not sufficient by itself. Switching transitions must be blanked, edge
+intervals must match a physically plausible commutation cadence, and firmware
+must confirm motion using the raw BEMF waveform. If continuous-drive sensing is
+not clean enough, firmware shall briefly command both DRV8837 inputs low, allow
+the recirculation transient to decay, sample differential BEMF, and resume drive.
 
 ## Fail-safe behavior
 
@@ -69,9 +111,11 @@ must still enforce the one-motor-at-a-time constraint.
 
 ## External interfaces
 
-- USB-C USB 2.0 UFP: 5.1k CC resistors, USBLC6-2SC6 ESD, 22 ohm data resistors.
-- Six 4P4C jacks: pin 1 NC, pin 2 MOT_A, pin 3 MOT_B, pin 4 NC.
-- BEMF selector GPIOs: `BEMF_SEL0`, `BEMF_SEL1`, `BEMF_SEL2`; code 0–5 selects valve 1–6.
+- USB-C USB 2.0 UFP and sole power input: 5.1k CC resistors, USBLC6-2SC6 ESD,
+  22 ohm data resistors, fused VBUS into the 3.3 V buck.
+- Six 4P4C jacks: pin 1 NC, pin 2 shared `MOT_COM`, pin 3 per-zone `MOTx_SEL`,
+  pin 4 NC.
+- Motor mux GPIOs: `MUX_EN1`..`MUX_EN6`; exactly one may be active during drive.
 - Analog diagnostics: `ADC_CURRENT`, `ADC_BEMF`; pulse counter: `TACHO_EDGE`.
 - Three shared OneWire connectors: pin 1 +3V3, pin 2 DQ, pin 3 GND; 33 ohm source
   resistor, 4.7k pull-up, and ESD diode.
@@ -87,8 +131,9 @@ must still enforce the one-motor-at-a-time constraint.
 - Bottom: return/power routing and low-priority signals where needed.
 - The ESP32 antenna bridges a 20 x 11.5 mm U-notch cut into the top board edge;
   the wider module keepout remains free of copper and parts.
-- Six drivers form repeated lanes directly above their 4P4C connectors.
-- Shunt/INA/BEMF-selector/tacho/latch circuitry occupies the center analog region.
+- One shared driver sits beside six repeated mux lanes directly above their 4P4C
+  connectors.
+- Shunt/INA/BEMF/tacho/latch circuitry occupies the center analog region.
 
 ## Release gates
 
@@ -98,14 +143,17 @@ must still enforce the one-motor-at-a-time constraint.
 3. Route the shunt as a true star return and route two Kelvin traces directly from
    `RSH1` pads; do not sample the high-current copper elsewhere.
 4. Route USB D+/D- as a short, length-matched 90 ohm differential pair over GND.
-5. Route each WSON motor output with a narrow neck-down escape, then widen to at
-   least 0.5 mm; add thermal/return vias according to the DRV8837 layout guidance.
+5. Route the shared WSON motor outputs with a narrow neck-down escape, then widen
+   the `MOT_COM` and `MOT_DRV` buses. Keep each mux channel short and symmetric
+   from mux to connector.
 6. Keep PWM, motor outputs, and buck switch node away from Kelvin traces,
    `BEMF_MUX_A/B`, `BEMF_RAW`, `BEMF_AC`, `FLIM_REF`, and both ADC traces.
 7. Fill planes, run final KiCad DRC with zero errors/unconnected items, inspect
    Gerbers and drill files, then perform an independent schematic/PCB review.
-8. Prototype with one populated motor lane first; tune coast blanking, BEMF gain,
+8. Prototype with one populated mux lane first; tune coast blanking, BEMF gain,
    tacho cadence filtering, and force threshold before populating all six lanes.
+9. Treat a weak or ambiguous `TACHO_EDGE` waveform as a board-release blocker,
+   even if current-based endstop detection works.
 
 ## Prototype validation
 
@@ -116,11 +164,13 @@ must still enforce the one-motor-at-a-time constraint.
    pin-engagement peaks without clipping.
 5. Sweep `FLIM_PWM`, measure the raw-shunt trip threshold, and verify the latch trips
    with firmware stalled and stays tripped until explicitly re-armed.
-6. Capture simultaneous `ADC_CURRENT`, `ADC_BEMF`, driver inputs, and `TACHO_EDGE`
+6. Capture simultaneous `ADC_CURRENT`, `ADC_BEMF`, shared driver inputs,
+   `MUX_ENn`, and `TACHO_EDGE`
    during free travel, pin engagement, loaded modulation, closed stop, open stop,
    mid-stroke obstruction, and disconnected-motor tests.
 7. Tune C53/C54, x11 gain, hysteresis, switching blanking, and optional coast-window
-   delay. Confirm a stalled motor cannot generate accepted position counts.
+   delay. Confirm `TACHO_EDGE` follows real commutations and that a stalled motor
+   cannot generate accepted position counts.
 8. Learn open, engagement, and closed commutation landmarks over at least 20 cycles
    per actuator. Quantify missed/double edges and directional backlash.
 9. Verify normal engagement cannot trip the hardware latch, while destructive current
