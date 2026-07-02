@@ -34,11 +34,11 @@ Lune V6 keeps validating and clamping the resulting commands locally.
    `thermal_lead_h` before the storm — longer for high-mass floors (concrete ground floor
    ≈ 8–12 h), shorter for the light first floor (≈ 2–3 h).
 
-4. **Apply.** The offset is fed through the **internal setpoint-offset command path**
-   (`apply_helios_command`), so every per-zone firmware safety clamp applies unchanged:
-   `[min_offset_c, max_offset_c]`, `abs_min_c/abs_max_c`. The forecast producer
-   should auto-quiesce whenever a higher-priority coordinator strategy owns the same command
-   slots.
+4. **Apply.** Touch sends each active offset through the V6 expiring
+   `setpoint-command` path, so every per-zone firmware safety clamp applies unchanged:
+   `[min_offset_c, max_offset_c]`, `abs_min_c/abs_max_c`. A fetch skips a zone when a
+   recent, still-active forecast command with nearly the same offset is already in the
+   Touch ledger, and stale zone snapshots are never dispatched.
 
 The forecast and Lune V6's local preheat-absorption logic are complementary: forecast
 preload biases exposed zones *before* the weather, while V6's local absorption behavior
@@ -48,8 +48,9 @@ optimizer.
 ## Multi-node coordination
 
 The coordinator should run this logic once per house, across one or more Lune V6 nodes.
-Each V6 receives only validated, expiring setpoint-offset commands through the existing
-local command path.
+Each fresh, reachable V6 receives only validated, expiring setpoint-offset commands
+through the existing local command path. Touch skips stale or unreachable nodes before
+send and reports those blocked counts separately from actual send failures.
 
 ## Configuration
 
@@ -69,8 +70,8 @@ Legacy V6 NVS schema retained for migration (`ForecastConfig` + per-zone exposur
 | per-zone `solar_gain_factor` | 0.3 | 0–1 passive solar relief through glazing |
 | per-zone `thermal_lead_h` | 4 | Hours of slab charging before a load peak |
 
-Coordinator UI should show status, per-zone active offset, command expiry, and the local
-clamp result returned by each V6.
+Coordinator UI should show status, per-zone active offset, fetch dispatch counts, command
+expiry, and the local clamp result returned by each V6.
 
 ## Testing
 

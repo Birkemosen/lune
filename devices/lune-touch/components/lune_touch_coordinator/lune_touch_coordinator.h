@@ -1,6 +1,7 @@
 #pragma once
 
 #include "coordinator_model.h"
+#include "esphome/components/time/real_time_clock.h"
 #include "esphome/core/component.h"
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
@@ -10,6 +11,36 @@
 
 namespace esphome {
 namespace lune_touch_coordinator {
+
+struct ForecastHourState {
+  float temp_c{0.0f};
+  float wind_speed_ms{0.0f};
+  float wind_dir_deg{0.0f};
+  float shortwave_wm2{0.0f};
+};
+
+struct ForecastDecisionState {
+  char room_id[32]{};
+  char room_name[48]{};
+  uint8_t node_index{0};
+  uint8_t zone_index{0};
+  float comfort_setpoint_c{21.0f};
+  uint8_t priority{1};
+  float offset_c{0.0f};
+  float peak_load{0.0f};
+  int8_t peak_in_h{-1};
+  bool active{false};
+};
+
+struct ForecastDispatchSummary {
+  uint8_t active{0};
+  uint8_t sent{0};
+  uint8_t skipped{0};
+  uint8_t failed{0};
+  uint8_t blocked_stale{0};
+  uint8_t blocked_unreachable{0};
+  uint8_t blocked_untrusted{0};
+};
 
 class LuneTouchCoordinator : public esphome::Component {
  public:
@@ -21,19 +52,32 @@ class LuneTouchCoordinator : public esphome::Component {
   void set_node_stale_after_ms(uint32_t stale_after_ms) {
     node_stale_after_ms_ = stale_after_ms;
   }
+  void set_time(esphome::time::RealTimeClock *time) { time_ = time; }
 
   void write_overview_json(char *buffer, size_t capacity) const;
   void write_nodes_json(char *buffer, size_t capacity) const;
+  void write_node_scan_json(char *buffer, size_t capacity) const;
   void write_zones_json(char *buffer, size_t capacity) const;
+  void write_strategy_json(char *buffer, size_t capacity) const;
   void write_forecast_json(char *buffer, size_t capacity) const;
   void write_commands_json(char *buffer, size_t capacity) const;
   void write_diagnostics_json(char *buffer, size_t capacity) const;
 
   bool add_node(const char *node_id, const char *hostname, const char *fallback_ip,
-                char *response, size_t capacity);
+                const char *pairing_fingerprint, char *response, size_t capacity);
+  bool scan_node_candidate(const char *hostname, const char *fallback_ip,
+                           char *response, size_t capacity);
+  bool set_node_trust(const char *node_id, ::lune_touch::NodeTrust trust,
+                      char *response, size_t capacity);
   bool remove_node(const char *node_id, char *response, size_t capacity);
+  bool reset_registry(const char *confirmation, char *response, size_t capacity);
   bool bind_room(const char *room_id, const char *room_name, size_t node_index, size_t zone_index,
                  char *response, size_t capacity);
+  bool set_zone_comfort(const char *room_id, float comfort_setpoint_c, uint8_t priority,
+                        float comfort_bias_c, char *response, size_t capacity);
+  bool set_zone_schedule(const char *room_id, bool enabled, uint8_t day_mask,
+                         uint16_t start_min, uint16_t end_min, float setpoint_c,
+                         char *response, size_t capacity);
   bool queue_setpoint_command(const char *room_id, float requested_offset_c, uint32_t ttl_s,
                               const char *reason, char *response, size_t capacity);
   bool set_forecast_location(float latitude, float longitude, const char *mode,
@@ -54,14 +98,20 @@ class LuneTouchCoordinator : public esphome::Component {
   static void poll_task_func_(void *arg);
   void poll_task_();
   void poll_once_();
+  bool perform_forecast_fetch_(char *response, size_t capacity);
   bool poll_node_overview_(size_t node_index, const ::lune_touch::PairedNode &node, uint32_t now_ms);
   bool poll_node_zones_(size_t node_index, const ::lune_touch::PairedNode &node, uint32_t now_ms);
+  void note_node_poll_success_(size_t node_index, const char *host);
+  void note_node_poll_failure_(size_t node_index, const char *reason);
   bool fetch_json_(const char *url, char *body, size_t body_capacity, int *status_code);
-  bool post_json_(const char *url, char *body, size_t body_capacity, int *status_code);
+  bool post_json_(const char *url, const char *payload, char *body, size_t body_capacity, int *status_code);
   bool ingest_v6_zones_(size_t node_index, const char *body, uint32_t now_ms);
   bool fetch_open_meteo_(float latitude, float longitude, char *error, size_t error_len,
                          uint8_t *hours_count, float *min_temp_c, float *max_wind_ms,
-                         float *peak_wind_dir_deg, float *max_solar_wm2);
+                         float *peak_wind_dir_deg, float *max_solar_wm2,
+                         ForecastHourState *hours_out, size_t hours_capacity);
+  void recompute_forecast_decisions_();
+  ForecastDispatchSummary dispatch_forecast_commands_();
   bool send_v6_setpoint_command_(const ::lune_touch::PairedNode &node, uint8_t zone_index,
                                  const ::lune_touch::CommandRecord &request,
                                  uint32_t ttl_s, ::lune_touch::CommandRecord *result);
@@ -70,11 +120,15 @@ class LuneTouchCoordinator : public esphome::Component {
   static constexpr uint32_t POLL_INTERVAL_MS = 15000;
   static constexpr uint32_t POLL_BOOT_DELAY_MS = 9000;
   static constexpr uint32_t HTTP_TIMEOUT_MS = 2500;
-  static constexpr uint32_t POLL_STACK_SIZE = 12288;
+  static constexpr uint32_t POLL_STACK_SIZE = 16384;
   static constexpr UBaseType_t POLL_PRIORITY = 2;
   static constexpr BaseType_t POLL_CORE = 0;
+  static constexpr uint32_t FORECAST_COMMAND_TTL_S = 4500;
+  static constexpr uint32_t FORECAST_COMMAND_DEDUPE_MS = 30UL * 60UL * 1000UL;
+  static constexpr float FORECAST_COMMAND_EPSILON_C = 0.05f;
 
   uint32_t node_stale_after_ms_{300000};
+  esphome::time::RealTimeClock *time_{nullptr};
   mutable SemaphoreHandle_t state_lock_{nullptr};
   TaskHandle_t poll_task_handle_{nullptr};
   uint32_t last_ledger_expire_ms_{0};
@@ -82,6 +136,8 @@ class LuneTouchCoordinator : public esphome::Component {
   uint32_t poll_success_count_{0};
   uint32_t poll_fail_count_{0};
   char last_poll_error_[80]{};
+  char node_last_success_host_[::lune_touch::MAX_NODES][64]{};
+  char node_last_failure_[::lune_touch::MAX_NODES][80]{};
   ::lune_touch::HouseModel model_{};
   ::lune_touch::CommandLedger ledger_{};
   float forecast_latitude_{0.0f};
@@ -90,11 +146,16 @@ class LuneTouchCoordinator : public esphome::Component {
   uint32_t forecast_last_fetch_ms_{0};
   char forecast_status_[16]{"stale"};
   char forecast_last_error_[96]{};
+  bool forecast_fetch_requested_{false};
   uint8_t forecast_hours_count_{0};
+  ForecastHourState forecast_hours_[72]{};
   float forecast_min_temp_c_{0.0f};
   float forecast_max_wind_ms_{0.0f};
   float forecast_peak_wind_dir_deg_{0.0f};
   float forecast_max_solar_wm2_{0.0f};
+  ForecastDecisionState forecast_decisions_[::lune_touch::MAX_HOUSE_ZONES]{};
+  size_t forecast_decision_count_{0};
+  ForecastDispatchSummary last_forecast_dispatch_{};
 };
 
 }  // namespace lune_touch_coordinator

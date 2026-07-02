@@ -18,6 +18,7 @@ firmware skeleton already includes:
 - ESP-IDF/ESPHome board profile with PSRAM, WiFi, coredump, and mbedTLS memory rules
 - network, OTA, safe mode, USB serial provisioning, and diagnostics packages
 - a `lune_touch_coordinator` external component with host-testable coordinator models
+- runtime per-zone temperature / heat-call history exposed through the Touch API
 - LCD/LVGL stability rules documented in `docs/LCD_STABILITY.md`
 
 Useful commands from the repo root:
@@ -28,6 +29,9 @@ make build-lune-touch
 make test-lune-touch
 ```
 
+`make build-lune-touch` also checks the produced firmware against the 0x640000
+OTA slot from `partitions/lune_touch_16mb_ota.csv`.
+
 ## Current Extraction
 
 The first extracted module is the wind-aware forecast preload producer:
@@ -36,6 +40,7 @@ The first extracted module is the wind-aware forecast preload producer:
 - `packages/forecast.yaml` - legacy package wiring kept as reference
 - `tests/forecast/` - host tests for the pure preload model
 - `docs/forecast_preload.md` - coordinator-oriented design note
+- `docs/api_v1.md` - embedded Touch dashboard/API contract
 
 Lune V6 no longer builds or starts the local `hv6_forecast` HTTPS task. It keeps the local
 setpoint-offset command path and firmware clamps, because coordinator commands must still
@@ -49,6 +54,10 @@ Coordinator-owned:
 - Wind / solar / thermal-lead model
 - House-wide preload decisions across one or more V6 nodes
 - Adaptive whole-house learning and zone prioritization
+- Per-room comfort bias, kept as coordinator intent and folded into strategy /
+  forecast decisions before any V6 command is issued
+- Runtime per-zone learning signals: samples, heat-call samples, temperature
+  range, average temperature, and latest temperature rate
 - Command ledger: source, reason, requested value, accepted value, expiry, clamp result
 
 Lune V6-owned:

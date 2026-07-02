@@ -7,9 +7,11 @@ export const state = {
   overview: null,
   nodes: [],
   zones: [],
+  strategy: null,
   forecast: null,
   commands: [],
   diagnostics: null,
+  scanResult: null,
 };
 
 export function subscribe(fn) {
@@ -30,4 +32,3 @@ export function patch(next) {
   Object.assign(state, next);
   notify();
 }
-

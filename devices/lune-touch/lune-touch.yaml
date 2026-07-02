@@ -15,7 +15,7 @@ esphome:
   friendly_name: ${friendly_name}
   comment: "Lune Touch 7-inch house coordinator"
   project:
-    name: guldborg-birkemose.lune-touch
+    name: birkemosen.lune-touch
     version: ${firmware_version}
   on_boot:
     - priority: 800
@@ -70,3 +70,4 @@ time:
 lune_touch_coordinator:
   id: lune_touch_app
   node_stale_after: 300s
+  time_id: sntp_time

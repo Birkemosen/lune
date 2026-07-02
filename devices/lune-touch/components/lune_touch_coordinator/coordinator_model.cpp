@@ -1,5 +1,6 @@
 #include "coordinator_model.h"
 
+#include <cmath>
 #include <cstring>
 
 namespace lune_touch {
@@ -17,6 +18,16 @@ static bool same_text_(const char *a, const char *b) {
   if (a == nullptr || b == nullptr)
     return false;
   return std::strcmp(a, b) == 0;
+}
+
+static float clamp_float_(float value, float lo, float hi, float fallback) {
+  if (!std::isfinite(value))
+    return fallback;
+  if (value < lo)
+    return lo;
+  if (value > hi)
+    return hi;
+  return value;
 }
 
 int HouseModel::upsert_node(const char *node_id, const char *hostname, const char *fallback_ip,
@@ -116,6 +127,27 @@ bool HouseModel::update_node_metadata(size_t node_index, const char *model, cons
   return true;
 }
 
+bool HouseModel::update_node_identity(size_t node_index, const char *pairing_fingerprint) {
+  if (node_index >= node_count_)
+    return false;
+  if (pairing_fingerprint != nullptr && pairing_fingerprint[0] != '\0')
+    copy_text_(nodes_[node_index].pairing_fingerprint,
+               sizeof(nodes_[node_index].pairing_fingerprint), pairing_fingerprint);
+  return true;
+}
+
+bool HouseModel::update_node_trust(const char *node_id, NodeTrust trust) {
+  if (node_id == nullptr || node_id[0] == '\0')
+    return false;
+  for (size_t i = 0; i < node_count_; i++) {
+    if (!same_text_(nodes_[i].node_id, node_id))
+      continue;
+    nodes_[i].trust = trust;
+    return true;
+  }
+  return false;
+}
+
 bool HouseModel::is_node_stale(size_t node_index, uint32_t now_ms) const {
   if (node_index >= node_count_)
     return true;
@@ -156,6 +188,66 @@ bool HouseModel::bind_zone(const char *room_id, const char *room_name, size_t no
   return true;
 }
 
+bool HouseModel::update_zone_forecast_profile_by_binding(size_t node_index, size_t zone_index,
+                                                         uint8_t exterior_walls, float wind_exposure,
+                                                         float solar_gain, uint8_t thermal_lead_h,
+                                                         float max_offset_c) {
+  if (node_index >= node_count_ || zone_index >= ZONES_PER_NODE)
+    return false;
+  for (size_t i = 0; i < zone_count_; i++) {
+    if (!zones_[i].enabled || zones_[i].node_index != node_index || zones_[i].zone_index != zone_index)
+      continue;
+    zones_[i].exterior_walls = exterior_walls & 0x0F;
+    zones_[i].wind_exposure = clamp_float_(wind_exposure, 0.0f, 1.0f, zones_[i].wind_exposure);
+    zones_[i].solar_gain = clamp_float_(solar_gain, 0.0f, 1.0f, zones_[i].solar_gain);
+    zones_[i].thermal_lead_h = thermal_lead_h > 0 ? thermal_lead_h : zones_[i].thermal_lead_h;
+    if (zones_[i].thermal_lead_h > 24)
+      zones_[i].thermal_lead_h = 24;
+    zones_[i].max_offset_c = clamp_float_(max_offset_c, 0.0f, 5.0f, zones_[i].max_offset_c);
+    return true;
+  }
+  return false;
+}
+
+bool HouseModel::update_zone_comfort(const char *room_id, float comfort_setpoint_c, uint8_t priority,
+                                     float comfort_bias_c) {
+  if (room_id == nullptr || room_id[0] == '\0')
+    return false;
+  for (size_t i = 0; i < zone_count_; i++) {
+    if (!zones_[i].enabled || !same_text_(zones_[i].room_id, room_id))
+      continue;
+    zones_[i].comfort_setpoint_c = clamp_float_(comfort_setpoint_c, 5.0f, 35.0f,
+                                                zones_[i].comfort_setpoint_c);
+    zones_[i].comfort_bias_c = clamp_float_(comfort_bias_c, -3.0f, 3.0f, zones_[i].comfort_bias_c);
+    zones_[i].priority = priority > 3 ? 3 : priority;
+    return true;
+  }
+  return false;
+}
+
+bool HouseModel::update_zone_schedule(const char *room_id, bool enabled, uint8_t day_mask,
+                                      uint16_t start_min, uint16_t end_min, float setpoint_c) {
+  if (room_id == nullptr || room_id[0] == '\0')
+    return false;
+  if (start_min > 1439 || end_min > 1440 || start_min >= end_min)
+    return false;
+  day_mask &= 0x7F;
+  if (enabled && day_mask == 0)
+    return false;
+  for (size_t i = 0; i < zone_count_; i++) {
+    if (!zones_[i].enabled || !same_text_(zones_[i].room_id, room_id))
+      continue;
+    zones_[i].schedule_enabled = enabled;
+    zones_[i].schedule_day_mask = day_mask;
+    zones_[i].schedule_start_min = start_min;
+    zones_[i].schedule_end_min = end_min;
+    zones_[i].schedule_setpoint_c = clamp_float_(setpoint_c, 5.0f, 35.0f,
+                                                 zones_[i].schedule_setpoint_c);
+    return true;
+  }
+  return false;
+}
+
 bool HouseModel::update_zone_live(const char *room_id, float temperature_c, bool has_temperature,
                                   float setpoint_c, bool has_setpoint, const char *status,
                                   bool fresh, uint32_t now_ms) {
@@ -172,6 +264,7 @@ bool HouseModel::update_zone_live(const char *room_id, float temperature_c, bool
     copy_text_(live_[i].status, sizeof(live_[i].status), status != nullptr && status[0] != '\0' ? status : "unknown");
     live_[i].fresh = fresh;
     live_[i].updated_at_ms = now_ms;
+    record_zone_history_(i, temperature_c, live_[i].status, fresh && has_temperature, now_ms);
     return true;
   }
   return false;
@@ -232,6 +325,116 @@ size_t HouseModel::stale_zone_count() const {
   return total;
 }
 
+float HouseModel::average_comfort_setpoint_c() const {
+  float sum = 0.0f;
+  size_t count = 0;
+  for (size_t i = 0; i < zone_count_; i++) {
+    if (!zones_[i].enabled)
+      continue;
+    sum += effective_comfort_setpoint_c(zones_[i]);
+    count++;
+  }
+  return count > 0 ? sum / static_cast<float>(count) : 0.0f;
+}
+
+float HouseModel::effective_comfort_setpoint_c(const ZoneBinding &zone) {
+  return clamp_float_(zone.comfort_setpoint_c + zone.comfort_bias_c, 5.0f, 35.0f,
+                      zone.comfort_setpoint_c);
+}
+
+bool HouseModel::scheduled_comfort_setpoint_c(const ZoneBinding &zone, uint8_t day_index,
+                                              uint16_t minute_of_day, float *out) {
+  if (!zone.enabled || !zone.schedule_enabled || day_index > 6 || minute_of_day > 1439)
+    return false;
+  if ((zone.schedule_day_mask & (1u << day_index)) == 0)
+    return false;
+  if (minute_of_day < zone.schedule_start_min || minute_of_day >= zone.schedule_end_min)
+    return false;
+  if (out != nullptr)
+    *out = clamp_float_(zone.schedule_setpoint_c + zone.comfort_bias_c, 5.0f, 35.0f,
+                        zone.schedule_setpoint_c);
+  return true;
+}
+
+StrategySnapshot HouseModel::strategy_snapshot() const {
+  StrategySnapshot snapshot{};
+  snapshot.comfort_average_c = average_comfort_setpoint_c();
+
+  float weighted_temp_sum = 0.0f;
+  float weighted_demand_sum = 0.0f;
+  float weight_sum = 0.0f;
+  float best_weighted_deficit = 0.0f;
+
+  for (size_t i = 0; i < zone_count_; i++) {
+    if (!zones_[i].enabled)
+      continue;
+    const ZoneLiveState &live = live_[i];
+    if (!live.fresh || !live.has_temperature)
+      continue;
+
+    const float priority_weight = 1.0f + static_cast<float>(zones_[i].priority);
+    weighted_temp_sum += live.temperature_c * priority_weight;
+    weight_sum += priority_weight;
+    snapshot.contributing_zones++;
+
+    const float deficit = effective_comfort_setpoint_c(zones_[i]) - live.temperature_c;
+    if (deficit > 0.0f) {
+      weighted_demand_sum += deficit * priority_weight;
+      snapshot.demand_zones++;
+      const float weighted_deficit = deficit * priority_weight;
+      if (weighted_deficit > best_weighted_deficit) {
+        best_weighted_deficit = weighted_deficit;
+        snapshot.driver_deficit_c = deficit;
+        snapshot.driver_priority = zones_[i].priority;
+        copy_text_(snapshot.driver_room_id, sizeof(snapshot.driver_room_id), zones_[i].room_id);
+        copy_text_(snapshot.driver_room_name, sizeof(snapshot.driver_room_name), zones_[i].room_name);
+      }
+    }
+  }
+
+  if (weight_sum > 0.0f) {
+    snapshot.has_physical_temperature = true;
+    snapshot.physical_temperature_c = weighted_temp_sum / weight_sum;
+    snapshot.comfort_demand_c = weighted_demand_sum / weight_sum;
+  }
+  return snapshot;
+}
+
+LearningSnapshot HouseModel::learning_snapshot() const {
+  LearningSnapshot snapshot;
+  float delta_sum = 0.0f;
+
+  for (size_t i = 0; i < zone_count_; i++) {
+    if (!zones_[i].enabled)
+      continue;
+    const ZoneHistory &history = history_[i];
+    if (!history.has_temperature || history.samples == 0)
+      continue;
+
+    snapshot.zones_with_history++;
+    snapshot.total_samples += history.samples;
+    snapshot.total_calling_samples += history.calling_samples;
+
+    if (history.has_delta) {
+      snapshot.zones_with_delta++;
+      delta_sum += history.last_delta_c_per_h;
+      if (history.last_delta_c_per_h > 0.05f)
+        snapshot.warming_zones++;
+      else if (history.last_delta_c_per_h < -0.05f)
+        snapshot.cooling_zones++;
+    }
+  }
+
+  if (snapshot.total_samples > 0) {
+    snapshot.calling_ratio =
+        static_cast<float>(snapshot.total_calling_samples) / static_cast<float>(snapshot.total_samples);
+  }
+  if (snapshot.zones_with_delta > 0) {
+    snapshot.average_delta_c_per_h = delta_sum / static_cast<float>(snapshot.zones_with_delta);
+  }
+  return snapshot;
+}
+
 const PairedNode *HouseModel::node(size_t index) const {
   return index < node_count_ ? &nodes_[index] : nullptr;
 }
@@ -242,6 +445,53 @@ const ZoneBinding *HouseModel::zone(size_t index) const {
 
 const ZoneLiveState *HouseModel::zone_live(size_t index) const {
   return index < zone_count_ ? &live_[index] : nullptr;
+}
+
+const ZoneHistory *HouseModel::zone_history(size_t index) const {
+  return index < zone_count_ ? &history_[index] : nullptr;
+}
+
+void HouseModel::record_zone_history_(size_t zone_index, float temperature_c, const char *status,
+                                      bool fresh, uint32_t now_ms) {
+  if (zone_index >= zone_count_ || !fresh || !std::isfinite(temperature_c))
+    return;
+
+  ZoneHistory &history = history_[zone_index];
+  const bool calling = same_text_(status, "heat") || same_text_(status, "call") ||
+                       same_text_(status, "preheat");
+  if (!history.has_temperature) {
+    history.samples = 1;
+    history.calling_samples = calling ? 1 : 0;
+    history.first_sample_ms = now_ms;
+    history.last_sample_ms = now_ms;
+    history.min_temperature_c = temperature_c;
+    history.max_temperature_c = temperature_c;
+    history.average_temperature_c = temperature_c;
+    history.last_temperature_c = temperature_c;
+    history.last_delta_c_per_h = 0.0f;
+    history.has_temperature = true;
+    history.has_delta = false;
+    return;
+  }
+
+  if (now_ms > history.last_sample_ms) {
+    const float hours = static_cast<float>(now_ms - history.last_sample_ms) / 3600000.0f;
+    if (hours > 0.0f) {
+      history.last_delta_c_per_h = (temperature_c - history.last_temperature_c) / hours;
+      history.has_delta = true;
+    }
+  }
+  history.samples++;
+  if (calling)
+    history.calling_samples++;
+  if (temperature_c < history.min_temperature_c)
+    history.min_temperature_c = temperature_c;
+  if (temperature_c > history.max_temperature_c)
+    history.max_temperature_c = temperature_c;
+  history.average_temperature_c +=
+      (temperature_c - history.average_temperature_c) / static_cast<float>(history.samples);
+  history.last_temperature_c = temperature_c;
+  history.last_sample_ms = now_ms;
 }
 
 bool HouseModel::export_state(PersistedState *out) const {
@@ -268,6 +518,7 @@ bool HouseModel::import_state(const PersistedState &state) {
   std::memset(nodes_, 0, sizeof(nodes_));
   std::memset(zones_, 0, sizeof(zones_));
   std::memset(live_, 0, sizeof(live_));
+  std::memset(history_, 0, sizeof(history_));
   node_count_ = state.node_count;
   zone_count_ = state.zone_count;
   for (size_t i = 0; i < node_count_; i++)
@@ -309,6 +560,29 @@ size_t CommandLedger::count_result(CommandResult result) const {
       total++;
   }
   return total;
+}
+
+bool CommandLedger::has_recent_similar(const char *source, uint8_t node_index, uint8_t zone_index,
+                                       float requested_offset_c, uint32_t now_ms,
+                                       uint32_t min_interval_ms, float epsilon_c) const {
+  if (source == nullptr || source[0] == '\0')
+    return false;
+  for (size_t i = 0; i < count_; i++) {
+    const CommandRecord &record = records_[i];
+    if (!same_text_(record.source, source))
+      continue;
+    if (record.node_index != node_index || record.zone_index != zone_index)
+      continue;
+    if (record.result != CommandResult::PENDING && record.result != CommandResult::ACCEPTED)
+      continue;
+    if (record.expires_at_ms != 0 && static_cast<int32_t>(now_ms - record.expires_at_ms) >= 0)
+      continue;
+    if (min_interval_ms > 0 && static_cast<int32_t>(now_ms - record.created_at_ms) > static_cast<int32_t>(min_interval_ms))
+      continue;
+    if (std::fabs(record.requested_offset_c - requested_offset_c) <= epsilon_c)
+      return true;
+  }
+  return false;
 }
 
 const CommandRecord *CommandLedger::latest() const {
@@ -356,9 +630,27 @@ const char *command_result_name(CommandResult result) {
       return "rejected";
     case CommandResult::EXPIRED:
       return "expired";
+    case CommandResult::BLOCKED_STALE:
+      return "blocked_stale";
+    case CommandResult::BLOCKED_UNREACHABLE:
+      return "blocked_unreachable";
+    case CommandResult::BLOCKED_UNTRUSTED:
+      return "blocked_untrusted";
     default:
       return "pending";
   }
+}
+
+const char *node_trust_name(NodeTrust trust) {
+  switch (trust) {
+    case NodeTrust::UNPAIRED:
+      return "unpaired";
+    case NodeTrust::PAIRED:
+      return "paired";
+    case NodeTrust::TRUSTED:
+      return "trusted";
+  }
+  return "unknown";
 }
 
 }  // namespace lune_touch

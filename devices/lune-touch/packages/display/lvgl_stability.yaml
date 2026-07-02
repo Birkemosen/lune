@@ -5,8 +5,8 @@
 #
 # ESPHome's rpi_dpi_rgb driver keeps the key stable pipeline defaults used by
 # the 4.3-inch reference firmware: one PSRAM framebuffer and a 10-line RGB
-# bounce buffer. The 7B panel is 1024 x 600, so memory/load tests must be run
-# again before promoting this from bringup profile to stable UI profile.
+# bounce buffer. The board profile enables XIP-from-PSRAM so flash/NVS writes do
+# not disable external-memory cache while the RGB ISR is refilling bounce buffers.
 
 i2c:
   - id: waveshare_panel_i2c

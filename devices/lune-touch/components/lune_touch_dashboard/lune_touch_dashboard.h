@@ -35,11 +35,12 @@ class LuneTouchDashboard : public Component, public AsyncWebHandler {
   void send_json_(AsyncWebServerRequest *request, const char *body);
   void send_ok_(AsyncWebServerRequest *request, const char *data = "{}");
   void send_error_(AsyncWebServerRequest *request, int code, const char *err_code, const char *message);
+  void send_write_result_(AsyncWebServerRequest *request, bool accepted, int failure_code = 400);
 
   web_server_base::WebServerBase *base_{nullptr};
   lune_touch_coordinator::LuneTouchCoordinator *coordinator_{nullptr};
-  char data_buf_[3072]{};
-  char response_buf_[3840]{};
+  char data_buf_[12288]{};
+  char response_buf_[13312]{};
 };
 
 }  // namespace lune_touch_dashboard

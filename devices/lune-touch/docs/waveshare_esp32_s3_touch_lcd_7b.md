@@ -47,7 +47,8 @@ Panel profile:
 - Resolution: 1024 x 600
 - RGB data width: 16 bit
 - Pixel format: RGB565
-- Bringup pixel clock: 30 MHz
+- Waveshare demo pixel clock: 30 MHz
+- Active ESPHome stability pixel clock: 30 MHz
 - PCLK active edge: falling edge
 - 7B demo timing:
   - HSYNC pulse/back/front: 162 / 152 / 48

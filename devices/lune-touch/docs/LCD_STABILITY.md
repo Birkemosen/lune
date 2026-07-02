@@ -1,9 +1,11 @@
 # LCD Stability Settings (Lune Touch 7B ESP32-S3)
 
 The first Lune Touch prototype must start from the known-stable RGB/LVGL profile
-proven on the Waveshare 4.3-inch ESP32-S3 display. Do not increase buffers or
-switch render modes until WiFi, touch, HTTPS forecast fetches, and V6 polling
-have passed a soak test.
+proven on the Waveshare 4.3-inch ESP32-S3 display. The 7B profile keeps the
+10-line RGB bounce buffer and enables XIP-from-PSRAM so flash/NVS writes do not
+disable external-memory cache while the RGB ISR is refilling bounce buffers.
+Do not increase buffers or switch render modes until WiFi, touch, HTTPS forecast
+fetches, and V6 polling have passed a soak test.
 
 ## Stable Baseline
 
@@ -11,6 +13,9 @@ have passed a soak test.
 - RGB panel frame buffers: `1`
 - Frame buffer location: PSRAM
 - RGB bounce buffer: enabled, `LCD_HRES * 10`
+- RGB stream recovery: restart in VSYNC enabled
+- External-memory cache during flash/NVS writes: XIP from PSRAM enabled
+- Active pixel clock: `30MHz`
 - LVGL draw buffer target: 10 lines when using the custom ESP-IDF path. ESPHome
   LVGL uses coarser fractional buffering, so the 7B bringup profile must be
   soak-tested separately before increasing UI complexity.
@@ -31,8 +36,10 @@ The active Waveshare 7B hardware profile is documented in
 - Do not enable `CONFIG_MBEDTLS_INTERNAL_MEM_ALLOC`.
 - Keep the internal draw buffer at 10 lines until measured headroom proves a
   larger buffer is safe.
-- Keep the bounce buffer at 10 lines until measured headroom proves a larger
+- Keep the RGB bounce buffer at 10 lines until measured headroom proves a larger
   buffer is safe.
+- Keep `CONFIG_SPIRAM_XIP_FROM_PSRAM=y` while the framebuffer lives in PSRAM.
+- Keep RGB restart in VSYNC enabled for recovery from transient DMA underruns.
 - Do not force `bb_invalidate_cache=true`.
 
 ## Failure Symptoms

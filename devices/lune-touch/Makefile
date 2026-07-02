@@ -12,6 +12,9 @@ PIO ?= $(if $(wildcard $(ROOT_ABS)/.venv313/bin/platformio),$(ROOT_ABS)/.venv313
 PLATFORMIO_CORE_DIR ?= $(ROOT_ABS)/.cache/platformio
 CXX ?= clang++
 BUILD_ROOT ?= $(ROOT_ABS)/$(DEVICE_DIR)/configurations/.esphome/build/$(BUILD_NAME)
+FIRMWARE_BIN ?= $(BUILD_ROOT)/.pio/build/$(BUILD_NAME)/firmware.bin
+OTA_SLOT_BYTES ?= 6553600
+OTA_WARN_PERCENT ?= 85
 PORT ?=
 AUTO_PORT := $(strip $(shell ls /dev/cu.usbmodem* /dev/cu.usbserial* /dev/cu.SLAB_USBtoUART* /dev/cu.wchusbserial* 2>/dev/null | head -n 1))
 SERIAL_PORT := $(if $(PORT),$(PORT),$(AUTO_PORT))
@@ -33,12 +36,13 @@ COORDINATOR_SRCS := $(COORDINATOR_COMPONENT_DIR)/coordinator_model.cpp \
                     $(COORDINATOR_TEST_DIR)/test_coordinator_model.cpp
 COORDINATOR_OUT ?= /tmp/test_lune_touch_coordinator_model
 
-.PHONY: help check ensure-secrets-link config build build-verify deploy monitor dashboard dashboard-tooling dashboard-build dashboard-watch test test-forecast test-coordinator clean
+.PHONY: help check ensure-secrets-link config build build-verify ota-size-check deploy monitor dashboard dashboard-tooling dashboard-build dashboard-watch test test-forecast test-coordinator clean
 
 help:
 	@echo "Lune Touch coordinator tasks"
 	@echo "  make config           Validate Lune Touch ESPHome YAML"
 	@echo "  make build            Compile Lune Touch firmware"
+	@echo "  make ota-size-check   Verify firmware fits the OTA slot"
 	@echo "  make deploy           Build + upload Lune Touch"
 	@echo "  make deploy PORT=/dev/cu.usbmodemXXXX"
 	@echo "  make monitor          Open serial monitor on PORT"
@@ -74,8 +78,26 @@ build: check dashboard-build
 	cd $(ROOT_ABS) && $(ESPHOME) compile --only-generate $(CONFIG_PATH)
 	perl -0pi -e 's/" ".join\(cmd\)/" ".join(map(str, cmd))/g' $(BUILD_ROOT)/post_build.py
 	PLATFORMIO_CORE_DIR=$(PLATFORMIO_CORE_DIR) $(PIO) run -d $(BUILD_ROOT)
+	$(MAKE) ota-size-check
 
 build-verify: build
+
+ota-size-check:
+	@if [ ! -f "$(FIRMWARE_BIN)" ]; then \
+		echo "Firmware binary not found: $(FIRMWARE_BIN)"; \
+		exit 1; \
+	fi
+	@size=$$(wc -c < "$(FIRMWARE_BIN)"); \
+	warn=$$(( $(OTA_SLOT_BYTES) * $(OTA_WARN_PERCENT) / 100 )); \
+	pct=$$(awk "BEGIN { printf \"%.1f\", ($$size / $(OTA_SLOT_BYTES)) * 100 }"); \
+	echo "Lune Touch OTA size: $$size / $(OTA_SLOT_BYTES) bytes ($$pct%)"; \
+	if [ $$size -gt $(OTA_SLOT_BYTES) ]; then \
+		echo "ERROR: firmware.bin exceeds Lune Touch OTA slot"; \
+		exit 1; \
+	fi; \
+	if [ $$size -gt $$warn ]; then \
+		echo "WARNING: firmware.bin exceeds $(OTA_WARN_PERCENT)% of the OTA slot"; \
+	fi
 
 deploy: build
 	@if [ -n "$(PORT)" ]; then \

@@ -1,7 +1,15 @@
 import { api, refreshAll } from '../core/api.js';
-import { state } from '../core/store.js';
+import { patch, state } from '../core/store.js';
+
+const runAction = (action) => {
+  patch({ error: '' });
+  Promise.resolve()
+    .then(action)
+    .catch((error) => patch({ error: error.message || String(error) }));
+};
 
 const fmtC = (value) => value == null || Number.isNaN(value) ? '--.- C' : `${Number(value).toFixed(1)} C`;
+const esc = (value) => String(value ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const v6Name = (index) => `V6-${String.fromCharCode(65 + Number(index || 0))}`;
 const fmtCommandExpiry = (command) => {
   if (!command?.expires_at_ms) return '-';
@@ -26,10 +34,33 @@ const fmtAge = (seconds) => {
   return hours ? `${hours}h ${minutes}m` : `${minutes}m`;
 };
 const fmtValue = (value, suffix = '') => value == null || Number.isNaN(Number(value)) ? '-' : `${Number(value).toFixed(1)}${suffix}`;
+const fmtLearning = (history = {}) => {
+  const samples = Number(history.samples || 0);
+  return samples ? `${samples} / ${fmtValue(history.last_delta_c_per_h, ' C/h')}` : '0 / -';
+};
+const fmtComfortIntent = (comfort = {}, fallback) => {
+  const effective = comfort.effective_setpoint_c ?? comfort.setpoint_c ?? fallback;
+  const bias = Number(comfort.bias_c || 0);
+  const suffix = Math.abs(bias) > 0.05 ? ` (${bias > 0 ? '+' : ''}${bias.toFixed(1)})` : '';
+  return `${fmtC(effective)}${suffix} / P${comfort.priority ?? 1}`;
+};
+const fmtTrust = (node = {}) => node.trust_label || (Number(node.trust) === 2 ? 'trusted' : Number(node.trust) === 1 ? 'paired' : 'unpaired');
+const fmtClock = (minutes) => {
+  const value = Math.max(0, Math.min(1440, Number(minutes || 0)));
+  const hour = Math.floor(value / 60);
+  const minute = value % 60;
+  return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`;
+};
+const parseClock = (value, fallback) => {
+  const [hour, minute] = String(value || '').split(':').map(Number);
+  if (!Number.isFinite(hour) || !Number.isFinite(minute)) return fallback;
+  return Math.max(0, Math.min(1440, hour * 60 + minute));
+};
+const fmtSchedule = (schedule = {}) => schedule.enabled ? `${fmtClock(schedule.start_min)}-${fmtClock(schedule.end_min)} / ${fmtC(schedule.setpoint_c)}` : 'off';
 
 function statusClass(status) {
   if (status === 'heat' || status === 'call' || status === 'preheat') return 'ok';
-  if (status === 'stale') return 'warn';
+  if (status === 'stale' || status === 'rejected' || status === 'expired' || status === 'blocked_stale' || status === 'blocked_unreachable' || status === 'blocked_untrusted') return 'warn';
   if (status === 'unused') return 'muted';
   return '';
 }
@@ -66,10 +97,27 @@ export function renderZones() {
       <input class="input mini-input" id="map-zone" type="number" min="1" max="6" value="1">
       <button class="btn" data-action="save-room-map">Map room</button>
     </div>
+    <div class="inline-form">
+      <input class="input mini-input" id="comfort-room-id" placeholder="room-id">
+      <input class="input mini-input" id="comfort-setpoint" type="number" step="0.1" min="5" max="35" value="21.0">
+      <input class="input mini-input" id="comfort-bias" type="number" step="0.1" min="-3" max="3" value="0.0">
+      <select class="input mini-input" id="comfort-priority"><option value="1">Normal</option><option value="2">High</option><option value="3">Critical</option><option value="0">Low</option></select>
+      <button class="btn" data-action="save-comfort">Save comfort</button>
+    </div>
+    <div class="inline-form">
+      <input class="input mini-input" id="schedule-room-id" placeholder="room-id">
+      <input class="input mini-input" id="schedule-start" type="time" value="06:00">
+      <input class="input mini-input" id="schedule-end" type="time" value="22:00">
+      <input class="input mini-input" id="schedule-setpoint" type="number" step="0.1" min="5" max="35" value="21.0">
+      <input class="input mini-input" id="schedule-day-mask" type="number" min="1" max="127" value="127">
+      <label class="check"><input id="schedule-enabled" type="checkbox" checked> On</label>
+      <button class="btn" data-action="save-schedule">Save schedule</button>
+    </div>
     <div class="data-table">
-      <div class="tr head"><span>Room</span><span>Current</span><span>Setpoint</span><span>Status</span><span>Source</span><span>Command</span></div>
+      <div class="tr head zones"><span>Room</span><span>Current</span><span>Comfort</span><span>Schedule</span><span>Status</span><span>Source</span><span>Learning</span><span>Command</span></div>
       ${state.zones.map((z) => `<div class="tr">
-        <span>${z.name}</span><span>${fmtC(z.temperature_c)}</span><span>${fmtC(z.setpoint_c)}</span><span class="${statusClass(z.status)}">${z.status}</span><span>${v6Name(z.node_index)} / Z${Number(z.zone_index) + 1}</span>
+        <span>${z.name}</span><span>${fmtC(z.temperature_c)}</span><span>${fmtComfortIntent(z.comfort, z.setpoint_c)}</span><span>${fmtSchedule(z.schedule)}</span><span class="${statusClass(z.status)}">${z.status}</span><span>${v6Name(z.node_index)} / Z${Number(z.zone_index) + 1}</span>
+        <span>${fmtLearning(z.history)}</span>
         <span><button class="btn slim" data-command-room="${z.room_id}">+0.5 C / 45m</button></span>
       </div>`).join('')}
     </div>
@@ -81,8 +129,12 @@ export function renderManifolds() {
     <div class="section-head"><h2>Manifolds</h2><button class="btn" data-action="scan">Scan</button></div>
     <div class="card-grid">${state.nodes.map((n) => `<article class="card">
       <h3>${n.id}</h3><p>${n.hostname || n.ip || 'no address'}</p>
-      <dl><dt>Firmware</dt><dd>${n.firmware || '-'}</dd><dt>Status</dt><dd class="${n.reachable ? 'ok' : 'warn'}">${n.reachable ? 'reachable' : 'stale'}</dd><dt>Trust</dt><dd>${n.trust}</dd></dl>
-      <button class="btn slim danger" data-remove-node="${n.id}">Remove</button>
+      <dl><dt>Firmware</dt><dd>${n.firmware || '-'}</dd><dt>Status</dt><dd class="${n.reachable ? 'ok' : 'warn'}">${n.reachable ? 'reachable' : 'stale'}</dd><dt>Trust</dt><dd class="${fmtTrust(n) === 'trusted' ? 'ok' : 'warn'}">${fmtTrust(n)}</dd><dt>Identity</dt><dd>${esc(n.pairing_fingerprint || '-')}</dd><dt>Last host</dt><dd>${esc(n.last_success_host || '-')}</dd><dt>Last error</dt><dd class="${n.last_failure ? 'warn' : 'muted'}">${esc(n.last_failure || '-')}</dd></dl>
+      <div class="inline-form">
+        <button class="btn slim" data-trust-node="${n.id}" data-trust-value="trusted">Trust</button>
+        <button class="btn slim" data-trust-node="${n.id}" data-trust-value="paired">Pair only</button>
+        <button class="btn slim danger" data-remove-node="${n.id}">Remove</button>
+      </div>
     </article>`).join('')}</div>
   </section>`;
 }
@@ -91,6 +143,8 @@ export function renderForecast() {
   const f = state.forecast || {};
   const cache = f.cache || {};
   const location = f.location || {};
+  const commands = f.commands || {};
+  const activeDecisions = (f.decisions || []).filter((d) => d.active);
   return `<section class="panel two-col">
     <div>
       <div class="section-head"><h2>Forecast</h2><button class="btn" data-action="forecast-fetch">Fetch now</button></div>
@@ -106,7 +160,8 @@ export function renderForecast() {
     </div>
     <div>
       <div class="card"><h3>Cache</h3><dl><dt>Hours</dt><dd>${cache.hours || 0}</dd><dt>Min temp</dt><dd>${fmtValue(cache.min_temp_c, ' C')}</dd><dt>Max wind</dt><dd>${fmtValue(cache.max_wind_ms, ' m/s')} from ${Math.round(cache.peak_wind_dir_deg || 0)} deg</dd><dt>Max solar</dt><dd>${fmtValue(cache.max_solar_wm2, ' W/m2')}</dd></dl></div>
-      <div class="card"><h3>Decisions</h3>${(f.decisions || []).map((d) => `<p>${d.room_id}: +${d.offset_c} C, peak in ${d.peak_in_h}h</p>`).join('') || '<p>No active decisions</p>'}</div>
+      <div class="card"><h3>Commands</h3><dl><dt>Active</dt><dd>${commands.active || 0}</dd><dt>Sent</dt><dd>${commands.sent || 0}</dd><dt>Skipped</dt><dd>${commands.skipped || 0}</dd><dt>Failed</dt><dd class="${commands.failed ? 'warn' : 'ok'}">${commands.failed || 0}</dd><dt>Blocked</dt><dd class="${commands.blocked_stale || commands.blocked_unreachable || commands.blocked_untrusted ? 'warn' : 'ok'}">${commands.blocked_stale || 0} stale / ${commands.blocked_unreachable || 0} offline / ${commands.blocked_untrusted || 0} trust</dd></dl></div>
+      <div class="card"><h3>Decisions</h3>${activeDecisions.map((d) => `<p>${d.room_id}: +${fmtValue(d.offset_c, ' C')}, P${d.priority ?? 1}, comfort ${fmtC(d.comfort_setpoint_c)}, peak ${fmtValue(d.peak_load)} in ${d.peak_in_h}h</p>`).join('') || '<p>No active decisions</p>'}</div>
     </div>
   </section>`;
 }
@@ -122,20 +177,35 @@ export function renderCommands() {
 }
 
 export function renderSettings() {
+  const scan = state.scanResult;
+  const found = scan?.found || [];
   return `<section class="panel two-col">
-    <div class="card"><h3>Register V6</h3><label>Hostname/IP<input class="input" id="node-host" placeholder="lune-v6-a.local"></label><button class="btn" data-action="add-node">Add node</button></div>
+    <div class="card"><h3>Register V6</h3><label>Hostname/IP<input class="input" id="node-host" placeholder="lune-v6-a.local"></label><div class="inline-form"><button class="btn" data-action="probe-node">Probe</button><button class="btn" data-action="add-node">Add node</button></div></div>
+    <div class="card"><h3>Last scan</h3><p>${scan?.discovery || 'not run'}</p>${found.map((node) => `<p><strong>${esc(node.id)}</strong> ${esc(node.hostname || node.ip || '')} <span class="${node.reachable ? 'ok' : 'warn'}">${node.reachable ? 'reachable' : 'unreachable'}</span> ${node.firmware ? `<span>${esc(node.firmware)}</span>` : ''} ${node.pairing_fingerprint ? `<span>${esc(node.pairing_fingerprint)}</span>` : ''} <button class="btn slim" data-add-probed-host="${esc(node.hostname || '')}" data-add-probed-ip="${esc(node.ip || '')}" data-add-probed-fingerprint="${esc(node.pairing_fingerprint || '')}">Add</button></p>`).join('') || '<p>No candidates</p>'}</div>
     <div class="card"><h3>Dashboard access</h3><p>Canonical URL is the device root: <strong>http://&lt;touch-ip&gt;/</strong>. The embedded dashboard does not depend on ESPHome's default dashboard UI.</p></div>
+    <div class="card"><h3>Recovery</h3><p>${state.nodes.length} paired nodes, ${state.commands.length} command records</p><button class="btn danger" data-action="reset-registry">Reset registry</button></div>
   </section>`;
 }
 
 export function renderDiagnostics() {
   const d = state.diagnostics || {};
   const polling = d.polling || {};
+  const ota = d.ota || {};
+  const learning = d.learning || {};
+  const strategy = state.strategy || d.strategy || {};
+  const physical = strategy.physical || {};
+  const comfort = strategy.comfort || {};
+  const driver = strategy.driver || {};
+  const schedule = strategy.schedule || {};
   return `<section class="panel">
     <div class="section-head"><h2>Diagnostics</h2><span class="note">${d.api || '/api/lune-touch/v1'}</span></div>
     <div class="card-grid">
       <div class="card"><h3>Coordinator</h3><p>${d.nodes || 0} nodes, ${d.zones || 0} zones, ${d.ledger || 0} ledger records</p></div>
       <div class="card"><h3>V6 polling</h3><p>Last poll at ${fmtUptime(polling.last_poll_ms)} uptime</p><p><span class="ok">${polling.success || 0} ok</span> / <span class="${polling.fail ? 'warn' : 'ok'}">${polling.fail || 0} failed</span></p><p class="${polling.last_error ? 'warn' : 'muted'}">${polling.last_error || 'no current error'}</p></div>
+      <div class="card"><h3>OTA</h3><p>${esc(ota.running_label || 'unknown')} / subtype ${ota.running_subtype ?? '-'}</p><p class="${ota.pending_verify ? 'warn' : 'ok'}">${esc(ota.state || 'undefined')}</p><p>${Math.round(Number(ota.running_slot_size || 0) / 1024)} KB slot</p><p class="${ota.running_slot_size && ota.configured_slot_size && ota.running_slot_size !== ota.configured_slot_size ? 'warn' : 'muted'}">Configured ${Math.round(Number(ota.configured_slot_size || 0) / 1024)} KB</p></div>
+      <div class="card"><h3>Asgard / Odin</h3><p>Physical ${physical.has_temperature ? fmtC(physical.temperature_c) : 'missing'} from ${physical.contributing_zones || 0} zones</p><p>Comfort demand ${fmtValue(comfort.demand_c, ' C')} across ${comfort.demand_zones || 0} zones</p><p>Driver ${esc(driver.name || driver.room_id || d.strategy?.driver_room || '-')} ${driver.priority != null ? `/ P${driver.priority}` : ''}</p></div>
+      <div class="card"><h3>Schedule</h3><p class="${schedule.time_valid ? 'ok' : 'warn'}">${schedule.time_valid ? `${schedule.active_zones || 0} active` : 'time missing'}</p><p>${esc(schedule.driver_name || schedule.driver_room_id || '-')} ${schedule.driver_priority ? `/ P${schedule.driver_priority}` : ''}</p><p>${schedule.driver_setpoint_c ? fmtC(schedule.driver_setpoint_c) : '-'}</p></div>
+      <div class="card"><h3>Learning</h3><p>${learning.zones_with_history || 0} zones, ${learning.total_samples || 0} samples</p><p>Calling ${Math.round(Number(learning.calling_ratio || 0) * 100)}%</p><p>${learning.warming_zones || 0} warming / ${learning.cooling_zones || 0} cooling, avg ${fmtValue(learning.average_delta_c_per_h, ' C/h')}</p></div>
       <div class="card"><h3>Screen</h3><p>${d.screen || 'overview-only'}</p></div>
       <div class="card"><h3>Heap</h3><p>${d.heap || 'watching'}</p></div>
     </div>
@@ -143,37 +213,80 @@ export function renderDiagnostics() {
 }
 
 export function bindActions(root) {
-  root.querySelector('[data-action="refresh"]')?.addEventListener('click', refreshAll);
-  root.querySelector('[data-action="scan"]')?.addEventListener('click', () => api.scanNodes().then(refreshAll));
-  root.querySelector('[data-action="forecast-fetch"]')?.addEventListener('click', () => api.fetchForecast().then(refreshAll));
+  root.querySelector('[data-action="refresh"]')?.addEventListener('click', () => runAction(refreshAll));
+  root.querySelector('[data-action="scan"]')?.addEventListener('click', () => runAction(() => api.scanNodes().then((result) => {
+    patch({ scanResult: result });
+    return refreshAll();
+  })));
+  root.querySelector('[data-action="forecast-fetch"]')?.addEventListener('click', () => runAction(() => api.fetchForecast().then(refreshAll)));
   root.querySelector('[data-action="save-forecast-location"]')?.addEventListener('click', () => {
     const latitude = Number(root.querySelector('#forecast-lat')?.value);
     const longitude = Number(root.querySelector('#forecast-lon')?.value);
     if (Number.isFinite(latitude) && Number.isFinite(longitude)) {
-      api.saveForecast({ latitude, longitude, source: 'manual' }).then(refreshAll);
+      runAction(() => api.saveForecast({ latitude, longitude, source: 'manual' }).then(refreshAll));
     }
   });
   root.querySelector('[data-action="geo"]')?.addEventListener('click', () => {
     if (!navigator.geolocation) return;
     navigator.geolocation.getCurrentPosition((pos) => {
-      api.saveForecast({ latitude: pos.coords.latitude, longitude: pos.coords.longitude, source: 'browser' }).then(refreshAll);
-    });
+      runAction(() => api.saveForecast({ latitude: pos.coords.latitude, longitude: pos.coords.longitude, source: 'browser' }).then(refreshAll));
+    }, (error) => patch({ error: error.message || 'Browser location failed' }));
   });
   root.querySelector('[data-action="add-node"]')?.addEventListener('click', () => {
     const host = root.querySelector('#node-host')?.value?.trim();
-    if (host) api.addNode({ hostname: host }).then(refreshAll);
+    if (host) runAction(() => api.addNode({ hostname: host }).then(refreshAll));
+  });
+  root.querySelector('[data-action="probe-node"]')?.addEventListener('click', () => {
+    const host = root.querySelector('#node-host')?.value?.trim();
+    if (host) runAction(() => api.scanNodes({ hostname: host }).then((result) => patch({ scanResult: result })));
   });
   root.querySelector('[data-action="save-room-map"]')?.addEventListener('click', () => {
     const roomId = root.querySelector('#map-room-id')?.value?.trim();
     const name = root.querySelector('#map-room-name')?.value?.trim() || roomId;
     const nodeIndex = Number(root.querySelector('#map-node')?.value || 0);
     const zoneIndex = Math.max(0, Number(root.querySelector('#map-zone')?.value || 1) - 1);
-    if (roomId) api.saveZone(roomId, { name, node_index: nodeIndex, zone_index: zoneIndex }).then(refreshAll);
+    if (roomId) runAction(() => api.saveZone(roomId, { name, node_index: nodeIndex, zone_index: zoneIndex }).then(refreshAll));
+  });
+  root.querySelector('[data-action="save-comfort"]')?.addEventListener('click', () => {
+    const roomId = root.querySelector('#comfort-room-id')?.value?.trim();
+    const comfort = Number(root.querySelector('#comfort-setpoint')?.value);
+    const bias = Number(root.querySelector('#comfort-bias')?.value || 0);
+    const priority = Number(root.querySelector('#comfort-priority')?.value || 1);
+    if (roomId && Number.isFinite(comfort) && Number.isFinite(bias)) {
+      runAction(() => api.saveComfort(roomId, { comfort_setpoint_c: comfort, comfort_bias_c: bias, priority }).then(refreshAll));
+    }
+  });
+  root.querySelector('[data-action="save-schedule"]')?.addEventListener('click', () => {
+    const roomId = root.querySelector('#schedule-room-id')?.value?.trim();
+    const startMin = parseClock(root.querySelector('#schedule-start')?.value, 360);
+    const endMin = parseClock(root.querySelector('#schedule-end')?.value, 1320);
+    const setpoint = Number(root.querySelector('#schedule-setpoint')?.value);
+    const dayMask = Number(root.querySelector('#schedule-day-mask')?.value || 127);
+    const enabled = root.querySelector('#schedule-enabled')?.checked ? 1 : 0;
+    if (roomId && Number.isFinite(setpoint)) {
+      runAction(() => api.saveSchedule(roomId, { enabled, day_mask: dayMask, start_min: startMin, end_min: endMin, setpoint_c: setpoint }).then(refreshAll));
+    }
   });
   root.querySelectorAll('[data-remove-node]').forEach((btn) => {
-    btn.addEventListener('click', () => api.removeNode(btn.dataset.removeNode).then(refreshAll));
+    btn.addEventListener('click', () => {
+      if (confirm(`Remove ${btn.dataset.removeNode}?`)) runAction(() => api.removeNode(btn.dataset.removeNode).then(refreshAll));
+    });
+  });
+  root.querySelectorAll('[data-trust-node]').forEach((btn) => {
+    btn.addEventListener('click', () => runAction(() => api.trustNode(btn.dataset.trustNode, btn.dataset.trustValue).then(refreshAll)));
+  });
+  root.querySelectorAll('[data-add-probed-host]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const hostname = btn.dataset.addProbedHost || '';
+      const ip = btn.dataset.addProbedIp || '';
+      const pairing_fingerprint = btn.dataset.addProbedFingerprint || '';
+      if (hostname || ip) runAction(() => api.addNode({ hostname, ip, pairing_fingerprint }).then(refreshAll));
+    });
   });
   root.querySelectorAll('[data-command-room]').forEach((btn) => {
-    btn.addEventListener('click', () => api.setpointCommand(btn.dataset.commandRoom, { offset_c: 0.5, ttl_s: 2700, reason: 'dashboard quick boost' }).then(refreshAll));
+    btn.addEventListener('click', () => runAction(() => api.setpointCommand(btn.dataset.commandRoom, { offset_c: 0.5, ttl_s: 2700, reason: 'dashboard quick boost' }).then(refreshAll)));
+  });
+  root.querySelector('[data-action="reset-registry"]')?.addEventListener('click', () => {
+    if (confirm('Reset Lune Touch registry and command ledger?')) runAction(() => api.resetRegistry().then(refreshAll));
   });
 }

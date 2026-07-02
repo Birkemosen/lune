@@ -56,6 +56,8 @@ partition table, ESP32-S3/PSRAM SDK memory profile, network/OTA diagnostics
 packages, LCD/LVGL stability documentation, and a host-testable coordinator model
 for paired V6 nodes, zone registry mapping, stale-node detection, and command
 ledger expiry.
+The Lune Touch build now verifies the produced firmware against the configured
+OTA slot so dashboard growth fails early instead of creating a field update risk.
 
 The first hardware profile targets Waveshare ESP32-S3-Touch-LCD-7B: 1024 x 600
 RGB565 over 16-bit RGB, GT911 touch on GPIO8/GPIO9 I2C, and CH422G-controlled
@@ -65,10 +67,21 @@ are captured in `devices/lune-touch/docs/waveshare_esp32_s3_touch_lcd_7b.md`.
 Coordinator responsibilities:
 
 - Discover and pair Lune V6 nodes
-- Poll `/api/hv6/v1/state`, `/api/hv6/v1/peer`, and future resource-shaped reads
-- Maintain local house model and per-zone history
+- Store a stable V6 identity fingerprint during commissioning and reject later
+  polling responses from a different device on the same hostname/IP
+- Poll `/api/hv6/v1/overview` and `/api/hv6/v1/zones`, while retaining `/state`
+  as a migration/debug snapshot
+- Maintain local house model and runtime per-zone history as the first learning
+  layer for response rate, heat-call frequency, and future comfort tuning
+- Persist a first per-zone schedule primitive (daily window, day mask, and
+  schedule setpoint) alongside comfort intent and bias, ready for the later
+  effective-comfort resolver
 - Issue validated command-path offsets / biases to V6 nodes
 - Expire commands aggressively when data becomes stale
+- Block forecast dispatch to stale or unreachable V6 nodes before send, with
+  diagnostics that distinguish skipped/offline decisions from actual send failures
+- Expose an advisory Asgard / Odin strategy snapshot with priority-weighted
+  physical house temperature and separate comfort demand
 - Persist only coordinator-owned settings and learned model state
 
 Lune V6 responsibilities remain local:
@@ -123,6 +136,8 @@ Core persisted entities:
 - Coordinator identity and install profile
 - Paired V6 nodes with hostname, fallback IP, model, firmware, and trust state
 - Zone registry mapping house rooms to V6 zone indices
+- Per-room comfort intent, schedule, bias, and optimization priority, stored separately
+  from V6's local measured temperature and safety-clamped setpoint command path
 - Per-zone thermal model coefficients
 - Weather and forecast cache metadata
 - Command ledger with source, reason, expiry, requested value, accepted value, and clamp
@@ -144,8 +159,11 @@ recommendations, and local safety results.
 ## Open Decisions
 
 - Whether Lune Touch should remain ESPHome/LVGL-only or run a richer local web UI stack
-- Pairing and trust model between Touch and V6 nodes
+- Stronger pairing/authentication between Touch and V6 nodes beyond the current
+  MAC-derived identity fingerprint
 - Minimum viable local storage for useful house learning
+- Effective resolver ordering for schedule, manual boost, forecast preload, and
+  learned comfort tuning
 - How much weather history is stored locally versus fetched on demand
 - Whether Lune Mini shares identical firmware with display features disabled
 - Long-term migration path from `/api/hv6/v1` to a public Lune API namespace
