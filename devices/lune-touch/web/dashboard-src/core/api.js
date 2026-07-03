@@ -35,18 +35,28 @@ function mockData(path) {
       },
     })) };
   }
-  if (path === '/forecast') return {
+  if (path === '/forecast') {
+    const hours = Array.from({ length: 72 }, (_, h) => {
+      const dayPhase = Math.sin((h - 8) / 24 * Math.PI * 2);
+      const temp = 3.5 + dayPhase * 3.4 - Math.max(0, h - 36) * 0.04;
+      const wind = 4.5 + Math.sin(h / 8) * 2.2 + (h > 18 && h < 34 ? 3.2 : 0);
+      const solar = Math.max(0, Math.sin((h % 24 - 6) / 12 * Math.PI)) * 420;
+      return { h, temp_c: temp, wind_ms: wind, wind_dir_deg: 235 + Math.sin(h / 9) * 55, solar_wm2: solar };
+    });
+    return {
     status: 'ok',
     location: { mode: 'manual', latitude: 55.6761, longitude: 12.5683 },
     last_fetch_age_s: 420,
     cache: { hours: 72, min_temp_c: -2.1, max_wind_ms: 13.4, peak_wind_dir_deg: 275, max_solar_wm2: 180 },
     last_error: '',
     commands: { active: 2, sent: 1, skipped: 1, failed: 0, blocked_stale: 1, blocked_unreachable: 0, blocked_untrusted: 0 },
+    hours,
     decisions: [
       { room_id: 'room-01', name: 'Living', node_index: 0, zone_index: 0, comfort_setpoint_c: 21.5, priority: 3, offset_c: 0.4, peak_load: 1.8, peak_in_h: 3, active: true },
       { room_id: 'room-06', name: 'Bedroom', node_index: 0, zone_index: 5, comfort_setpoint_c: 19.5, priority: 1, offset_c: 0.2, peak_load: 1.4, peak_in_h: 4, active: true },
     ],
   };
+  }
   if (path === '/strategy') return {
     physical: { has_temperature: true, temperature_c: 20.8, contributing_zones: 14 },
     comfort: { average_c: 20.7, demand_c: 0.6, demand_zones: 5 },
@@ -112,9 +122,9 @@ export async function refreshAll(options = {}) {
 }
 
 export async function refreshSection(section) {
-  if (section === 'overview') return refreshPaths(['/overview', '/zones']);
+  if (section === 'overview') return refreshPaths(['/overview', '/zones', '/forecast', '/diagnostics']);
   if (section === 'manifolds') return refreshPaths(['/overview', '/nodes']);
-  if (section === 'forecast') return refreshPaths(['/forecast']);
+  if (section === 'forecast') return refreshPaths(['/forecast', '/diagnostics']);
   if (section === 'commands') return refreshPaths(['/commands']);
   if (section === 'diagnostics') return refreshPaths(['/strategy', '/diagnostics']);
   return Promise.resolve();

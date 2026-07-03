@@ -322,6 +322,22 @@ forecast commands only to fresh reachable V6 nodes, and reports dispatch counts.
 skipped before send; `failed` means Touch attempted a command and did not get an
 accepted response.
 
+`GET /forecast` includes the cached hourly weather window for graphing:
+
+```json
+{
+  "hours": [
+    {
+      "h": 0,
+      "temp_c": 14.1,
+      "wind_ms": 5.2,
+      "wind_dir_deg": 261,
+      "solar_wm2": 0
+    }
+  ]
+}
+```
+
 ### `POST /recovery/reset-registry`
 
 Clears the Touch-owned node registry, zone mappings, in-memory runtime history,

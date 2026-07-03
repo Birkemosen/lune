@@ -1,4 +1,4 @@
-import { api, refreshAll } from '../core/api.js';
+import { api, refreshAll, refreshSection } from '../core/api.js';
 import { patch, state } from '../core/store.js';
 
 const runAction = (action) => {
@@ -57,6 +57,101 @@ const parseClock = (value, fallback) => {
   return Math.max(0, Math.min(1440, hour * 60 + minute));
 };
 const fmtSchedule = (schedule = {}) => schedule.enabled ? `${fmtClock(schedule.start_min)}-${fmtClock(schedule.end_min)} / ${fmtC(schedule.setpoint_c)}` : 'off';
+const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+
+function range(values, fallbackMin, fallbackMax) {
+  const finite = values.filter((value) => Number.isFinite(value));
+  if (!finite.length) return { min: fallbackMin, max: fallbackMax };
+  let min = Math.min(...finite);
+  let max = Math.max(...finite);
+  if (min === max) { min -= 1; max += 1; }
+  const pad = (max - min) * 0.12;
+  return { min: min - pad, max: max + pad };
+}
+
+function smoothPath(points) {
+  if (!points.length) return '';
+  if (points.length < 3) return `M ${points.map((p) => `${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' L ')}`;
+  let d = `M ${points[0].x.toFixed(1)} ${points[0].y.toFixed(1)}`;
+  const tension = 0.16;
+  for (let i = 0; i < points.length - 1; i++) {
+    const p0 = points[i - 1] || points[i];
+    const p1 = points[i];
+    const p2 = points[i + 1];
+    const p3 = points[i + 2] || p2;
+    const c1x = p1.x + (p2.x - p0.x) * tension;
+    const c1y = p1.y + (p2.y - p0.y) * tension;
+    const c2x = p2.x - (p3.x - p1.x) * tension;
+    const c2y = p2.y - (p3.y - p1.y) * tension;
+    d += ` C ${c1x.toFixed(1)} ${c1y.toFixed(1)}, ${c2x.toFixed(1)} ${c2y.toFixed(1)}, ${p2.x.toFixed(1)} ${p2.y.toFixed(1)}`;
+  }
+  return d;
+}
+
+function forecastChart(forecast = {}) {
+  const hours = Array.isArray(forecast.hours) ? forecast.hours.slice(0, 72) : [];
+  const w = 1000;
+  const h = 220;
+  const left = 46;
+  const right = 44;
+  const top = 18;
+  const bottom = 44;
+  const plotW = w - left - right;
+  const plotH = h - top - bottom;
+  const plotB = top + plotH;
+  if (!hours.length) {
+    return `<div class="chart-card"><div class="chart-head"><span class="chart-title">Forecast load</span><span class="chart-sub">no cache</span></div><svg class="forecast-chart" viewBox="0 0 ${w} ${h}"><text x="${w / 2}" y="${h / 2}" text-anchor="middle" class="chart-empty">Fetch weather to populate forecast graph</text></svg></div>`;
+  }
+  const x = (index) => left + (hours.length <= 1 ? 0 : index / (hours.length - 1)) * plotW;
+  const tempRange = range(hours.map((hour) => Number(hour.temp_c)), -5, 15);
+  const windRange = range(hours.map((hour) => Number(hour.wind_ms)), 0, 14);
+  windRange.min = Math.min(0, windRange.min);
+  const yTemp = (value) => top + (1 - (value - tempRange.min) / Math.max(0.001, tempRange.max - tempRange.min)) * plotH;
+  const yWind = (value) => top + (1 - (value - windRange.min) / Math.max(0.001, windRange.max - windRange.min)) * plotH;
+  const ySolar = (value) => top + (1 - clamp(value, 0, 900) / 900) * plotH;
+  const points = {
+    temp: hours.map((hour, index) => ({ x: x(index), y: yTemp(Number(hour.temp_c)) })).filter((p) => Number.isFinite(p.y)),
+    wind: hours.map((hour, index) => ({ x: x(index), y: yWind(Number(hour.wind_ms)) })).filter((p) => Number.isFinite(p.y)),
+    solar: hours.map((hour, index) => ({ x: x(index), y: ySolar(Number(hour.solar_wm2)) })).filter((p) => Number.isFinite(p.y)),
+  };
+  const solarArea = points.solar.length ? `${smoothPath(points.solar)} L ${points.solar[points.solar.length - 1].x.toFixed(1)} ${plotB} L ${points.solar[0].x.toFixed(1)} ${plotB} Z` : '';
+  const grid = [0, 0.5, 1].map((ratio) => {
+    const y = top + ratio * plotH;
+    const temp = tempRange.max - (tempRange.max - tempRange.min) * ratio;
+    const wind = windRange.max - (windRange.max - windRange.min) * ratio;
+    return `<line x1="${left}" y1="${y}" x2="${left + plotW}" y2="${y}" class="chart-grid"></line><text x="${left - 8}" y="${y + 4}" text-anchor="end" class="chart-tick">${temp.toFixed(0)}C</text><text x="${left + plotW + 8}" y="${y + 4}" class="chart-tick">${wind.toFixed(0)}m/s</text>`;
+  }).join('');
+  const hourTicks = hours.map((hour, index) => {
+    if (index % 6 !== 0 && index !== hours.length - 1) return '';
+    const tx = x(index);
+    return `<text x="${tx}" y="${plotB + 18}" text-anchor="middle" class="chart-hour">+${hour.h ?? index}h</text>`;
+  }).join('');
+  return `<div class="chart-card">
+    <div class="chart-head"><span class="chart-title">Forecast load</span><span class="chart-sub">${hours.length} h cache</span></div>
+    <div class="chart-legend">
+      <span class="legend-item" style="color:var(--series-cool)"><span class="legend-dot"></span>Temp</span>
+      <span class="legend-item" style="color:var(--series-warm)"><span class="legend-dot"></span>Wind</span>
+      <span class="legend-item" style="color:var(--series-solar)"><span class="legend-dot"></span>Solar</span>
+    </div>
+    <svg class="forecast-chart" viewBox="0 0 ${w} ${h}" preserveAspectRatio="xMidYMid meet">
+      ${grid}<line x1="${left}" y1="${plotB}" x2="${left + plotW}" y2="${plotB}" class="chart-axis"></line>${hourTicks}
+      ${solarArea ? `<path d="${solarArea}" fill="rgba(255,193,77,.10)" stroke="none"></path>` : ''}
+      <path d="${smoothPath(points.solar)}" fill="none" stroke="var(--series-solar)" stroke-width="1.8" stroke-linecap="round"></path>
+      <path d="${smoothPath(points.temp)}" fill="none" stroke="var(--series-cool)" stroke-width="2.4" stroke-linecap="round"></path>
+      <path d="${smoothPath(points.wind)}" fill="none" stroke="var(--series-warm)" stroke-width="2.2" stroke-linecap="round"></path>
+    </svg>
+  </div>`;
+}
+
+function readinessStrip() {
+  const commissioning = state.diagnostics?.commissioning || {};
+  return `<div class="readiness-strip">
+    <div class="readiness-chip"><span>Next</span><strong class="${commissioning.next_action === 'ready' ? 'ok' : 'warn'}">${esc(commissioning.next_action || 'unknown')}</strong></div>
+    <div class="readiness-chip"><span>Nodes</span><strong>${commissioning.trusted_nodes || 0} trusted / ${commissioning.reachable_nodes || 0} reachable</strong></div>
+    <div class="readiness-chip"><span>Zones</span><strong>${commissioning.fresh_zones || 0} fresh / ${commissioning.bound_zones || 0} mapped</strong></div>
+    <div class="readiness-chip"><span>Commands</span><strong class="${commissioning.ready_for_commands ? 'ok' : 'warn'}">${commissioning.ready_for_commands ? 'ready' : 'blocked'}</strong></div>
+  </div>`;
+}
 
 function statusClass(status) {
   if (status === 'heat' || status === 'call' || status === 'preheat') return 'ok';
@@ -81,8 +176,14 @@ export function renderOverview() {
       <div class="stat"><span>Manifolds</span><strong>${summary.nodes || 0}</strong><em>${summary.stale_nodes || 0} stale</em></div>
       <div class="stat"><span>Forecast</span><strong>${summary.forecast_status || 'unknown'}</strong><em>${summary.latest_command || 'no command'}</em></div>
     </div>
-    <div class="section-head"><h2>House zones</h2><button class="btn" data-action="refresh">Refresh</button></div>
-    <div class="zone-matrix">${state.zones.map(zoneCard).join('')}</div>
+    ${readinessStrip()}
+    <div class="split-main">
+      <div>
+        <div class="section-head"><h2>House zones</h2><button class="btn" data-action="refresh">Refresh</button></div>
+        <div class="zone-matrix">${state.zones.map(zoneCard).join('')}</div>
+      </div>
+      ${forecastChart(state.forecast || {})}
+    </div>
   </section>`;
 }
 
@@ -145,9 +246,11 @@ export function renderForecast() {
   const location = f.location || {};
   const commands = f.commands || {};
   const activeDecisions = (f.decisions || []).filter((d) => d.active);
-  return `<section class="panel two-col">
-    <div>
+  return `<section class="panel">
+    <div class="split-main">
+    <div class="stack">
       <div class="section-head"><h2>Forecast</h2><button class="btn" data-action="forecast-fetch">Fetch now</button></div>
+      ${forecastChart(f)}
       <div class="card"><h3>Status</h3><p class="${f.status === 'ok' ? 'ok' : 'warn'}">${f.status || 'unknown'}</p><p>Last fetch: ${fmtAge(f.last_fetch_age_s)}</p><p class="${f.last_error ? 'warn' : 'muted'}">${f.last_error || 'no current forecast error'}</p></div>
       <div class="card"><h3>Location</h3><p>${location.mode || 'manual'} (${Number(location.latitude || 0).toFixed(5)}, ${Number(location.longitude || 0).toFixed(5)})</p>
         <div class="inline-form forecast-location">
@@ -158,10 +261,11 @@ export function renderForecast() {
         </div>
       </div>
     </div>
-    <div>
+    <div class="stack">
       <div class="card"><h3>Cache</h3><dl><dt>Hours</dt><dd>${cache.hours || 0}</dd><dt>Min temp</dt><dd>${fmtValue(cache.min_temp_c, ' C')}</dd><dt>Max wind</dt><dd>${fmtValue(cache.max_wind_ms, ' m/s')} from ${Math.round(cache.peak_wind_dir_deg || 0)} deg</dd><dt>Max solar</dt><dd>${fmtValue(cache.max_solar_wm2, ' W/m2')}</dd></dl></div>
       <div class="card"><h3>Commands</h3><dl><dt>Active</dt><dd>${commands.active || 0}</dd><dt>Sent</dt><dd>${commands.sent || 0}</dd><dt>Skipped</dt><dd>${commands.skipped || 0}</dd><dt>Failed</dt><dd class="${commands.failed ? 'warn' : 'ok'}">${commands.failed || 0}</dd><dt>Blocked</dt><dd class="${commands.blocked_stale || commands.blocked_unreachable || commands.blocked_untrusted ? 'warn' : 'ok'}">${commands.blocked_stale || 0} stale / ${commands.blocked_unreachable || 0} offline / ${commands.blocked_untrusted || 0} trust</dd></dl></div>
       <div class="card"><h3>Decisions</h3>${activeDecisions.map((d) => `<p>${d.room_id}: +${fmtValue(d.offset_c, ' C')}, P${d.priority ?? 1}, comfort ${fmtC(d.comfort_setpoint_c)}, peak ${fmtValue(d.peak_load)} in ${d.peak_in_h}h</p>`).join('') || '<p>No active decisions</p>'}</div>
+    </div>
     </div>
   </section>`;
 }
@@ -220,7 +324,11 @@ export function bindActions(root) {
     patch({ scanResult: result });
     return refreshAll();
   })));
-  root.querySelector('[data-action="forecast-fetch"]')?.addEventListener('click', () => runAction(() => api.fetchForecast().then(refreshAll)));
+  root.querySelector('[data-action="forecast-fetch"]')?.addEventListener('click', () => runAction(() => api.fetchForecast().then(() => {
+    refreshSection('forecast');
+    setTimeout(() => refreshSection('forecast'), 6000);
+    setTimeout(() => refreshSection('forecast'), 18000);
+  })));
   root.querySelector('[data-action="save-forecast-location"]')?.addEventListener('click', () => {
     const latitude = Number(root.querySelector('#forecast-lat')?.value);
     const longitude = Number(root.querySelector('#forecast-lon')?.value);

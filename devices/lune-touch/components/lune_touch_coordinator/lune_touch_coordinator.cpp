@@ -1917,7 +1917,7 @@ void LuneTouchCoordinator::write_forecast_json(char *buffer, size_t capacity) co
            "\"max_wind_ms\":%.1f,\"peak_wind_dir_deg\":%.0f,\"max_solar_wm2\":%.0f},"
            "\"last_error\":\"%s\",\"commands\":{\"active\":%u,\"sent\":%u,\"skipped\":%u,\"failed\":%u,"
            "\"blocked_stale\":%u,\"blocked_unreachable\":%u,\"blocked_untrusted\":%u},"
-           "\"decisions\":[",
+           "\"hours\":[",
            forecast_status_, forecast_location_mode_, forecast_latitude_, forecast_longitude_,
            forecast_last_fetch_ms_ == 0 ? 0UL : static_cast<unsigned long>((esphome::millis() - forecast_last_fetch_ms_) / 1000UL),
            static_cast<unsigned>(forecast_hours_count_), forecast_min_temp_c_, forecast_max_wind_ms_,
@@ -1929,6 +1929,15 @@ void LuneTouchCoordinator::write_forecast_json(char *buffer, size_t capacity) co
            static_cast<unsigned>(last_forecast_dispatch_.blocked_stale),
            static_cast<unsigned>(last_forecast_dispatch_.blocked_unreachable),
            static_cast<unsigned>(last_forecast_dispatch_.blocked_untrusted));
+  for (size_t i = 0; i < forecast_hours_count_ && i < 72 && off + 96 < capacity; i++) {
+    const ForecastHourState &h = forecast_hours_[i];
+    appendf_(buffer, capacity, off,
+             "%s{\"h\":%u,\"temp_c\":%.1f,\"wind_ms\":%.1f,"
+             "\"wind_dir_deg\":%.0f,\"solar_wm2\":%.0f}",
+             i ? "," : "", static_cast<unsigned>(i), h.temp_c, h.wind_speed_ms,
+             h.wind_dir_deg, h.shortwave_wm2);
+  }
+  appendf_(buffer, capacity, off, "],\"decisions\":[");
   for (size_t i = 0; i < forecast_decision_count_ && off + 180 < capacity; i++) {
     const ForecastDecisionState &d = forecast_decisions_[i];
     appendf_(buffer, capacity, off,
