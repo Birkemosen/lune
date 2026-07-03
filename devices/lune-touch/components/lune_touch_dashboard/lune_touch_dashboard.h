@@ -4,7 +4,9 @@
 #include "esphome/core/component.h"
 #include "esphome/core/progmem.h"
 #include "../lune_touch_coordinator/lune_touch_coordinator.h"
+#include <ArduinoJson.h>
 #include <esp_http_server.h>
+#include <string>
 
 #ifdef LUNE_TOUCH_HAS_DASHBOARD_JS
 extern const uint8_t LUNE_TOUCH_DASHBOARD_JS_DATA[] PROGMEM;
@@ -13,6 +15,14 @@ extern const size_t LUNE_TOUCH_DASHBOARD_JS_SIZE;
 
 namespace esphome {
 namespace lune_touch_dashboard {
+
+struct ApiRequest {
+  AsyncWebServerRequest *async{nullptr};
+  httpd_req_t *raw{nullptr};
+  const char *query{nullptr};
+  const char *form_body{nullptr};
+  const JsonDocument *json_body{nullptr};
+};
 
 class LuneTouchDashboard : public Component, public AsyncWebHandler {
  public:
@@ -36,6 +46,13 @@ class LuneTouchDashboard : public Component, public AsyncWebHandler {
   void send_ok_(AsyncWebServerRequest *request, const char *data = "{}");
   void send_error_(AsyncWebServerRequest *request, int code, const char *err_code, const char *message);
   void send_write_result_(AsyncWebServerRequest *request, bool accepted, int failure_code = 400);
+  void handle_v1_post_(ApiRequest &api, const char *path);
+  void send_json_(ApiRequest &api, const char *body);
+  void send_ok_(ApiRequest &api, const char *data = "{}");
+  void send_error_(ApiRequest &api, int code, const char *err_code, const char *message);
+  void send_write_result_(ApiRequest &api, bool accepted, int failure_code = 400);
+  esp_err_t handle_raw_post_(httpd_req_t *request);
+  static esp_err_t raw_post_handler_(httpd_req_t *request);
 
   web_server_base::WebServerBase *base_{nullptr};
   lune_touch_coordinator::LuneTouchCoordinator *coordinator_{nullptr};
