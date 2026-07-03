@@ -81,6 +81,26 @@ cooling counts. It also includes `ota` runtime data with the running partition
 label/subtype, slot size, rollback state, and `pending_verify` flag so installers
 can confirm OTA recovery assumptions.
 
+Diagnostics includes a `commissioning` readiness block for field testing:
+
+```json
+{
+  "paired_nodes": 1,
+  "trusted_nodes": 1,
+  "reachable_nodes": 1,
+  "stale_nodes": 0,
+  "bound_zones": 6,
+  "fresh_zones": 6,
+  "stale_zones": 0,
+  "ready_for_commands": true,
+  "ready_for_forecast": true,
+  "next_action": "ready"
+}
+```
+
+`next_action` is one of `add_node`, `fix_node_poll`, `trust_node`,
+`map_zones`, `wait_for_fresh_zone_poll`, `set_forecast_location`, or `ready`.
+
 ### `GET /zones`
 
 Each zone includes Touch-owned comfort intent, latest live V6 state, forecast

@@ -1972,6 +1972,48 @@ void LuneTouchCoordinator::write_commands_json(char *buffer, size_t capacity) co
 void LuneTouchCoordinator::write_diagnostics_json(char *buffer, size_t capacity) const {
   const auto strategy = model_.strategy_snapshot();
   const auto learning = model_.learning_snapshot();
+  const uint32_t now_ms = esphome::millis();
+  size_t paired_nodes = 0;
+  size_t trusted_nodes = 0;
+  size_t reachable_nodes = 0;
+  size_t stale_nodes = 0;
+  for (size_t i = 0; i < model_.node_count(); i++) {
+    const auto *node = model_.node(i);
+    if (node == nullptr)
+      continue;
+    if (node->trust == ::lune_touch::NodeTrust::PAIRED)
+      paired_nodes++;
+    if (node->trust == ::lune_touch::NodeTrust::TRUSTED)
+      trusted_nodes++;
+    if (node->reachable)
+      reachable_nodes++;
+    if (model_.is_node_stale(i, now_ms))
+      stale_nodes++;
+  }
+  size_t fresh_zones = 0;
+  for (size_t i = 0; i < model_.zone_count(); i++) {
+    const auto *zone = model_.zone(i);
+    const auto *live = model_.zone_live(i);
+    if (zone != nullptr && zone->enabled && live != nullptr && live->fresh)
+      fresh_zones++;
+  }
+  const size_t bound_zones = model_.active_zone_count();
+  const size_t stale_zones = model_.stale_zone_count();
+  const bool ready_for_commands = trusted_nodes > 0 && bound_zones > 0 && fresh_zones > 0;
+  const bool ready_for_forecast = ready_for_commands && forecast_latitude_ != 0.0f && forecast_longitude_ != 0.0f;
+  const char *next_action = "ready";
+  if (model_.node_count() == 0)
+    next_action = "add_node";
+  else if (reachable_nodes == 0)
+    next_action = "fix_node_poll";
+  else if (trusted_nodes == 0)
+    next_action = "trust_node";
+  else if (bound_zones == 0)
+    next_action = "map_zones";
+  else if (fresh_zones == 0)
+    next_action = "wait_for_fresh_zone_poll";
+  else if (forecast_latitude_ == 0.0f || forecast_longitude_ == 0.0f)
+    next_action = "set_forecast_location";
   const esp_partition_t *running_partition = esp_ota_get_running_partition();
   const char *running_label = running_partition != nullptr ? running_partition->label : "unknown";
   const uint32_t running_size = running_partition != nullptr ? running_partition->size : 0;
@@ -1990,6 +2032,10 @@ void LuneTouchCoordinator::write_diagnostics_json(char *buffer, size_t capacity)
            "{\"heap\":\"watching\",\"nodes\":%u,\"zones\":%u,\"ledger\":%u,"
            "\"screen\":\"overview-only\",\"api\":\"/api/lune-touch/v1\","
            "\"polling\":{\"last_poll_ms\":%lu,\"success\":%lu,\"fail\":%lu,\"last_error\":\"%s\"},"
+           "\"commissioning\":{\"paired_nodes\":%u,\"trusted_nodes\":%u,"
+           "\"reachable_nodes\":%u,\"stale_nodes\":%u,\"bound_zones\":%u,"
+           "\"fresh_zones\":%u,\"stale_zones\":%u,\"ready_for_commands\":%s,"
+           "\"ready_for_forecast\":%s,\"next_action\":\"%s\"},"
            "\"ota\":{\"running_label\":\"%s\",\"running_subtype\":%u,"
            "\"running_slot_size\":%lu,\"configured_slot_size\":%lu,"
            "\"state\":\"%s\",\"pending_verify\":%s},"
@@ -2008,6 +2054,16 @@ void LuneTouchCoordinator::write_diagnostics_json(char *buffer, size_t capacity)
            static_cast<unsigned long>(poll_success_count_),
            static_cast<unsigned long>(poll_fail_count_),
            last_poll_error,
+           static_cast<unsigned>(paired_nodes),
+           static_cast<unsigned>(trusted_nodes),
+           static_cast<unsigned>(reachable_nodes),
+           static_cast<unsigned>(stale_nodes),
+           static_cast<unsigned>(bound_zones),
+           static_cast<unsigned>(fresh_zones),
+           static_cast<unsigned>(stale_zones),
+           ready_for_commands ? "true" : "false",
+           ready_for_forecast ? "true" : "false",
+           next_action,
            ota_label,
            static_cast<unsigned>(running_subtype),
            static_cast<unsigned long>(running_size),

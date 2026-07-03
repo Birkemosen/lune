@@ -190,6 +190,7 @@ export function renderSettings() {
 export function renderDiagnostics() {
   const d = state.diagnostics || {};
   const polling = d.polling || {};
+  const commissioning = d.commissioning || {};
   const ota = d.ota || {};
   const learning = d.learning || {};
   const strategy = state.strategy || d.strategy || {};
@@ -202,6 +203,7 @@ export function renderDiagnostics() {
     <div class="card-grid">
       <div class="card"><h3>Coordinator</h3><p>${d.nodes || 0} nodes, ${d.zones || 0} zones, ${d.ledger || 0} ledger records</p></div>
       <div class="card"><h3>V6 polling</h3><p>Last poll at ${fmtUptime(polling.last_poll_ms)} uptime</p><p><span class="ok">${polling.success || 0} ok</span> / <span class="${polling.fail ? 'warn' : 'ok'}">${polling.fail || 0} failed</span></p><p class="${polling.last_error ? 'warn' : 'muted'}">${polling.last_error || 'no current error'}</p></div>
+      <div class="card"><h3>Commissioning</h3><p class="${commissioning.next_action === 'ready' ? 'ok' : 'warn'}">${esc(commissioning.next_action || 'unknown')}</p><p>${commissioning.trusted_nodes || 0} trusted / ${commissioning.paired_nodes || 0} paired / ${commissioning.reachable_nodes || 0} reachable</p><p>${commissioning.fresh_zones || 0} fresh of ${commissioning.bound_zones || 0} bound zones</p><p class="${commissioning.ready_for_commands ? 'ok' : 'warn'}">Commands ${commissioning.ready_for_commands ? 'ready' : 'blocked'} / forecast ${commissioning.ready_for_forecast ? 'ready' : 'blocked'}</p></div>
       <div class="card"><h3>OTA</h3><p>${esc(ota.running_label || 'unknown')} / subtype ${ota.running_subtype ?? '-'}</p><p class="${ota.pending_verify ? 'warn' : 'ok'}">${esc(ota.state || 'undefined')}</p><p>${Math.round(Number(ota.running_slot_size || 0) / 1024)} KB slot</p><p class="${ota.running_slot_size && ota.configured_slot_size && ota.running_slot_size !== ota.configured_slot_size ? 'warn' : 'muted'}">Configured ${Math.round(Number(ota.configured_slot_size || 0) / 1024)} KB</p></div>
       <div class="card"><h3>Asgard / Odin</h3><p>Physical ${physical.has_temperature ? fmtC(physical.temperature_c) : 'missing'} from ${physical.contributing_zones || 0} zones</p><p>Comfort demand ${fmtValue(comfort.demand_c, ' C')} across ${comfort.demand_zones || 0} zones</p><p>Driver ${esc(driver.name || driver.room_id || d.strategy?.driver_room || '-')} ${driver.priority != null ? `/ P${driver.priority}` : ''}</p></div>
       <div class="card"><h3>Schedule</h3><p class="${schedule.time_valid ? 'ok' : 'warn'}">${schedule.time_valid ? `${schedule.active_zones || 0} active` : 'time missing'}</p><p>${esc(schedule.driver_name || schedule.driver_room_id || '-')} ${schedule.driver_priority ? `/ P${schedule.driver_priority}` : ''}</p><p>${schedule.driver_setpoint_c ? fmtC(schedule.driver_setpoint_c) : '-'}</p></div>
