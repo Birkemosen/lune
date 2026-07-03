@@ -100,7 +100,7 @@ function forecastChart(forecast = {}) {
   const plotH = h - top - bottom;
   const plotB = top + plotH;
   if (!hours.length) {
-    return `<div class="chart-card"><div class="chart-head"><span class="chart-title">Forecast load</span><span class="chart-sub">no cache</span></div><svg class="forecast-chart" viewBox="0 0 ${w} ${h}"><text x="${w / 2}" y="${h / 2}" text-anchor="middle" class="chart-empty">Fetch weather to populate forecast graph</text></svg></div>`;
+    return `<div class="chart-card"><div class="chart-head"><span class="chart-title">Weather load</span><span class="chart-sub">no cache</span></div><svg class="forecast-chart" viewBox="0 0 ${w} ${h}"><text x="${w / 2}" y="${h / 2}" text-anchor="middle" class="chart-empty">Fetch weather to populate forecast graph</text></svg></div>`;
   }
   const x = (index) => left + (hours.length <= 1 ? 0 : index / (hours.length - 1)) * plotW;
   const tempRange = range(hours.map((hour) => Number(hour.temp_c)), -5, 15);
@@ -127,7 +127,7 @@ function forecastChart(forecast = {}) {
     return `<text x="${tx}" y="${plotB + 18}" text-anchor="middle" class="chart-hour">+${hour.h ?? index}h</text>`;
   }).join('');
   return `<div class="chart-card">
-    <div class="chart-head"><span class="chart-title">Forecast load</span><span class="chart-sub">${hours.length} h cache</span></div>
+    <div class="chart-head"><span class="chart-title">Weather load</span><span class="chart-sub">${hours.length} h cache</span></div>
     <div class="chart-legend">
       <span class="legend-item" style="color:var(--series-cool)"><span class="legend-dot"></span>Temp</span>
       <span class="legend-item" style="color:var(--series-warm)"><span class="legend-dot"></span>Wind</span>
@@ -170,16 +170,17 @@ function zoneCard(zone) {
 export function renderOverview() {
   const summary = state.overview?.summary || {};
   return `<section class="panel">
+    <div class="section-head"><h2>House</h2><button class="btn" data-action="refresh">Refresh</button></div>
     <div class="stat-grid">
       <div class="stat"><span>Comfort</span><strong>${fmtC(summary.comfort_avg_c)}</strong></div>
       <div class="stat"><span>Zones</span><strong>${summary.zones || 0}</strong><em>${summary.calling || 0} calling</em></div>
       <div class="stat"><span>Manifolds</span><strong>${summary.nodes || 0}</strong><em>${summary.stale_nodes || 0} stale</em></div>
-      <div class="stat"><span>Forecast</span><strong>${summary.forecast_status || 'unknown'}</strong><em>${summary.latest_command || 'no command'}</em></div>
+      <div class="stat"><span>Weather</span><strong>${summary.forecast_status || 'unknown'}</strong><em>${summary.latest_command || 'no command'}</em></div>
     </div>
     ${readinessStrip()}
     <div class="split-main">
       <div>
-        <div class="section-head"><h2>House zones</h2><button class="btn" data-action="refresh">Refresh</button></div>
+        <div class="section-head"><h2>Zones</h2><span class="note">Heat demand and source freshness</span></div>
         <div class="zone-matrix">${state.zones.map(zoneCard).join('')}</div>
       </div>
       ${forecastChart(state.forecast || {})}
@@ -249,7 +250,7 @@ export function renderForecast() {
   return `<section class="panel">
     <div class="split-main">
     <div class="stack">
-      <div class="section-head"><h2>Forecast</h2><button class="btn" data-action="forecast-fetch">Fetch now</button></div>
+      <div class="section-head"><h2>Weather</h2><button class="btn" data-action="forecast-fetch">Fetch now</button></div>
       ${forecastChart(f)}
       <div class="card"><h3>Status</h3><p class="${f.status === 'ok' ? 'ok' : 'warn'}">${f.status || 'unknown'}</p><p>Last fetch: ${fmtAge(f.last_fetch_age_s)}</p><p class="${f.last_error ? 'warn' : 'muted'}">${f.last_error || 'no current forecast error'}</p></div>
       <div class="card"><h3>Location</h3><p>${location.mode || 'manual'} (${Number(location.latitude || 0).toFixed(5)}, ${Number(location.longitude || 0).toFixed(5)})</p>

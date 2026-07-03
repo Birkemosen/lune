@@ -1,10 +1,10 @@
 import { setSection, state } from '../core/store.js';
 
 const sections = [
-  ['overview', 'Overview'],
+  ['overview', 'House'],
   ['zones', 'Zones'],
   ['manifolds', 'Manifolds'],
-  ['forecast', 'Forecast'],
+  ['forecast', 'Weather'],
   ['commands', 'Commands'],
   ['settings', 'Settings'],
   ['diagnostics', 'Diagnostics'],
