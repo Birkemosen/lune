@@ -33,6 +33,25 @@ or fallback IP, while `last_failure` carries the latest poll failure reason.
 `trust` remains the compact enum value and `trust_label` is the stable human/tool
 label: `paired` or `trusted`. `pairing_fingerprint` is the stored V6 identity
 hint used to detect a different device answering on the same address.
+Each node also includes a Touch-derived `health` block aggregated from mapped
+zones so commissioning tools can show useful manifold status before the richer
+V6 diagnostics poll is promoted:
+
+```json
+{
+  "id": "v6-ground",
+  "reachable": true,
+  "trust_label": "trusted",
+  "health": {
+    "mapped_zones": 6,
+    "fresh_zones": 6,
+    "stale_zones": 0,
+    "calling_zones": 2,
+    "avg_temp_c": 21.0,
+    "avg_setpoint_c": 21.3
+  }
+}
+```
 
 ### `GET /strategy`
 

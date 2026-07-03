@@ -5,9 +5,9 @@ const BASE = '/api/lune-touch/v1';
 function mockData(path) {
   if (path === '/overview') return { summary: { zones: 18, nodes: 3, calling: 5, stale_nodes: 1, comfort_avg_c: 21.1, forecast_status: 'stale', latest_command: 'accepted' } };
   if (path === '/nodes') return { nodes: [
-    { id: 'v6-a', hostname: 'lune-v6-a.local', ip: '192.168.1.51', firmware: 'mock', pairing_fingerprint: 'hv6-mock-a', reachable: true, trust: 2, trust_label: 'trusted', last_success_host: 'lune-v6-a.local', last_failure: '' },
-    { id: 'v6-b', hostname: 'lune-v6-b.local', ip: '192.168.1.52', firmware: 'mock', pairing_fingerprint: 'hv6-mock-b', reachable: true, trust: 2, trust_label: 'trusted', last_success_host: '192.168.1.52', last_failure: '' },
-    { id: 'v6-c', hostname: 'lune-v6-c.local', ip: '192.168.1.53', firmware: 'mock', pairing_fingerprint: 'hv6-mock-c', reachable: false, trust: 1, trust_label: 'paired', last_success_host: '', last_failure: 'overview failed status=0' },
+    { id: 'v6-a', hostname: 'lune-v6-a.local', ip: '192.168.1.51', firmware: 'mock', pairing_fingerprint: 'hv6-mock-a', reachable: true, trust: 2, trust_label: 'trusted', last_success_host: 'lune-v6-a.local', last_failure: '', health: { mapped_zones: 6, fresh_zones: 6, stale_zones: 0, calling_zones: 2, avg_temp_c: 20.9, avg_setpoint_c: 21.0 } },
+    { id: 'v6-b', hostname: 'lune-v6-b.local', ip: '192.168.1.52', firmware: 'mock', pairing_fingerprint: 'hv6-mock-b', reachable: true, trust: 2, trust_label: 'trusted', last_success_host: '192.168.1.52', last_failure: '', health: { mapped_zones: 6, fresh_zones: 6, stale_zones: 0, calling_zones: 2, avg_temp_c: 18.9, avg_setpoint_c: 18.9 } },
+    { id: 'v6-c', hostname: 'lune-v6-c.local', ip: '192.168.1.53', firmware: 'mock', pairing_fingerprint: 'hv6-mock-c', reachable: false, trust: 1, trust_label: 'paired', last_success_host: '', last_failure: 'overview failed status=0', health: { mapped_zones: 6, fresh_zones: 5, stale_zones: 1, calling_zones: 1, avg_temp_c: 19.3, avg_setpoint_c: 18.6 } },
   ] };
   if (path === '/zones') {
     const names = ['Living','Kitchen','Bath','Hall','Office','Bedroom','Guest','Utility','Laundry','Workshop','Pantry','Landing','Kids west','Kids east','Ensuite','Basement','Garage','Spare'];

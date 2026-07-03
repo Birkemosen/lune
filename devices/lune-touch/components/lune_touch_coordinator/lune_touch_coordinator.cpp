@@ -1713,6 +1713,40 @@ void LuneTouchCoordinator::write_nodes_json(char *buffer, size_t capacity) const
     char success_host[96];
     char failure[112];
     char pairing_fingerprint[48];
+    char avg_temp[16] = "null";
+    char avg_setpoint[16] = "null";
+    size_t mapped_zones = 0;
+    size_t fresh_zones = 0;
+    size_t calling_zones = 0;
+    float temp_sum = 0.0f;
+    size_t temp_count = 0;
+    float setpoint_sum = 0.0f;
+    size_t setpoint_count = 0;
+    for (size_t z = 0; z < model_.zone_count(); z++) {
+      const auto *zone = model_.zone(z);
+      const auto *live = model_.zone_live(z);
+      if (zone == nullptr || !zone->enabled || zone->node_index != i)
+        continue;
+      mapped_zones++;
+      if (live != nullptr && live->fresh)
+        fresh_zones++;
+      if (live != nullptr &&
+          (std::strcmp(live->status, "heat") == 0 || std::strcmp(live->status, "call") == 0 ||
+           std::strcmp(live->status, "preheat") == 0))
+        calling_zones++;
+      if (live != nullptr && live->has_temperature) {
+        temp_sum += live->temperature_c;
+        temp_count++;
+      }
+      if (live != nullptr && live->has_setpoint) {
+        setpoint_sum += live->setpoint_c;
+        setpoint_count++;
+      }
+    }
+    if (temp_count > 0)
+      snprintf(avg_temp, sizeof(avg_temp), "%.1f", temp_sum / static_cast<float>(temp_count));
+    if (setpoint_count > 0)
+      snprintf(avg_setpoint, sizeof(avg_setpoint), "%.1f", setpoint_sum / static_cast<float>(setpoint_count));
     json_escape_(node_last_success_host_[i], success_host, sizeof(success_host));
     json_escape_(node_last_failure_[i], failure, sizeof(failure));
     json_escape_(node->pairing_fingerprint, pairing_fingerprint, sizeof(pairing_fingerprint));
@@ -1720,13 +1754,19 @@ void LuneTouchCoordinator::write_nodes_json(char *buffer, size_t capacity) const
                   "%s{\"id\":\"%s\",\"hostname\":\"%s\",\"ip\":\"%s\",\"model\":\"%s\","
                   "\"firmware\":\"%s\",\"reachable\":%s,\"trust\":%u,\"trust_label\":\"%s\","
                   "\"pairing_fingerprint\":\"%s\",\"last_seen_ms\":%lu,"
-                  "\"last_success_host\":\"%s\",\"last_failure\":\"%s\"}",
+                  "\"last_success_host\":\"%s\",\"last_failure\":\"%s\","
+                  "\"health\":{\"mapped_zones\":%u,\"fresh_zones\":%u,\"stale_zones\":%u,"
+                  "\"calling_zones\":%u,\"avg_temp_c\":%s,\"avg_setpoint_c\":%s}}",
                   first ? "" : ",", node->node_id, node->hostname, node->fallback_ip, node->model,
                   node->firmware, node->reachable ? "true" : "false",
                   static_cast<unsigned>(node->trust), ::lune_touch::node_trust_name(node->trust),
                   pairing_fingerprint,
                   static_cast<unsigned long>(node->last_seen_ms),
-                  success_host, failure))
+                  success_host, failure,
+                  static_cast<unsigned>(mapped_zones),
+                  static_cast<unsigned>(fresh_zones),
+                  static_cast<unsigned>(mapped_zones > fresh_zones ? mapped_zones - fresh_zones : 0),
+                  static_cast<unsigned>(calling_zones), avg_temp, avg_setpoint))
       break;
     first = false;
   }

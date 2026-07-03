@@ -229,15 +229,26 @@ export function renderZones() {
 export function renderManifolds() {
   return `<section class="panel">
     <div class="section-head"><h2>Manifolds</h2><button class="btn" data-action="scan">Scan</button></div>
-    <div class="card-grid">${state.nodes.map((n) => `<article class="card">
+    <div class="card-grid">${state.nodes.map((n) => {
+      const h = n.health || {};
+      return `<article class="card">
       <h3>${n.id}</h3><p>${n.hostname || n.ip || 'no address'}</p>
-      <dl><dt>Firmware</dt><dd>${n.firmware || '-'}</dd><dt>Status</dt><dd class="${n.reachable ? 'ok' : 'warn'}">${n.reachable ? 'reachable' : 'stale'}</dd><dt>Trust</dt><dd class="${fmtTrust(n) === 'trusted' ? 'ok' : 'warn'}">${fmtTrust(n)}</dd><dt>Identity</dt><dd>${esc(n.pairing_fingerprint || '-')}</dd><dt>Last host</dt><dd>${esc(n.last_success_host || '-')}</dd><dt>Last error</dt><dd class="${n.last_failure ? 'warn' : 'muted'}">${esc(n.last_failure || '-')}</dd></dl>
+      <div class="health-grid">
+        <div class="health-cell"><span>Zones</span><strong>${h.mapped_zones ?? 0}</strong></div>
+        <div class="health-cell"><span>Fresh</span><strong class="${h.stale_zones ? 'warn' : 'ok'}">${h.fresh_zones ?? 0}/${h.mapped_zones ?? 0}</strong></div>
+        <div class="health-cell"><span>Calling</span><strong>${h.calling_zones ?? 0}</strong></div>
+        <div class="health-cell"><span>Temp</span><strong>${fmtC(h.avg_temp_c)}</strong></div>
+        <div class="health-cell"><span>Setpoint</span><strong>${fmtC(h.avg_setpoint_c)}</strong></div>
+        <div class="health-cell"><span>Trust</span><strong class="${fmtTrust(n) === 'trusted' ? 'ok' : 'warn'}">${fmtTrust(n)}</strong></div>
+      </div>
+      <dl><dt>Firmware</dt><dd>${n.firmware || '-'}</dd><dt>Status</dt><dd class="${n.reachable ? 'ok' : 'warn'}">${n.reachable ? 'reachable' : 'stale'}</dd><dt>Identity</dt><dd>${esc(n.pairing_fingerprint || '-')}</dd><dt>Last host</dt><dd>${esc(n.last_success_host || '-')}</dd><dt>Last error</dt><dd class="${n.last_failure ? 'warn' : 'muted'}">${esc(n.last_failure || '-')}</dd></dl>
       <div class="inline-form">
         <button class="btn slim" data-trust-node="${n.id}" data-trust-value="trusted">Trust</button>
         <button class="btn slim" data-trust-node="${n.id}" data-trust-value="paired">Pair only</button>
         <button class="btn slim danger" data-remove-node="${n.id}">Remove</button>
       </div>
-    </article>`).join('')}</div>
+    </article>`;
+    }).join('')}</div>
   </section>`;
 }
 
