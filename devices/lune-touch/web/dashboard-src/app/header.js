@@ -13,13 +13,13 @@ const sections = [
 export function renderHeader() {
   return `
     <header class="topbar">
-      <nav class="top-menu">
-        ${sections.map(([id, label]) => `<button class="menu-link ${state.section === id ? 'active' : ''}" data-section="${id}">${label}</button>`).join('')}
-      </nav>
       <div class="brand">
         <div class="brand-title">Lune Touch</div>
         <div class="brand-sub">House coordinator</div>
       </div>
+      <nav class="top-menu">
+        ${sections.map(([id, label]) => `<button class="menu-link ${state.section === id ? 'active' : ''}" data-section="${id}">${label}</button>`).join('')}
+      </nav>
       <div class="top-meta">
         <span class="meta-chip ${state.error ? 'warn' : 'ok'}">${state.error ? 'Attention' : 'Live'}</span>
         <span class="meta-chip">${state.overview?.summary?.zones ?? 0} zones</span>
@@ -33,4 +33,3 @@ export function bindHeader(root) {
     button.addEventListener('click', () => setSection(button.dataset.section));
   });
 }
-
