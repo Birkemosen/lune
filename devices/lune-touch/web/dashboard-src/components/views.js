@@ -160,6 +160,21 @@ function statusClass(status) {
   return '';
 }
 
+function commandStats(commands = []) {
+  const blockingResults = new Set(['rejected', 'failed', 'blocked_stale', 'blocked_unreachable', 'blocked_untrusted']);
+  return commands.reduce((stats, command) => {
+    if (command.result === 'pending') stats.pending += 1;
+    if (command.result === 'accepted') stats.accepted += 1;
+    if (command.clamp_applied) stats.clamped += 1;
+    if (blockingResults.has(command.result)) stats.blocked += 1;
+    return stats;
+  }, { pending: 0, accepted: 0, clamped: 0, blocked: 0 });
+}
+
+function commandNeedsAttention(command = {}) {
+  return command.clamp_applied || ['rejected', 'failed', 'blocked_stale', 'blocked_unreachable', 'blocked_untrusted'].includes(command.result);
+}
+
 function zoneCard(zone) {
   return `<article class="zone-card ${statusClass(zone.status)}">
     <div class="zone-top"><strong>${zone.name}</strong><span>${fmtC(zone.temperature_c)}</span></div>
@@ -324,23 +339,86 @@ export function renderDiagnostics() {
   const commissioning = d.commissioning || {};
   const ota = d.ota || {};
   const learning = d.learning || {};
+  const forecastCommands = d.forecast_commands || state.forecast?.commands || {};
+  const stats = commandStats(state.commands);
+  const attentionCommands = state.commands.filter(commandNeedsAttention).slice(-5).reverse();
   const strategy = state.strategy || d.strategy || {};
   const physical = strategy.physical || {};
   const comfort = strategy.comfort || {};
   const driver = strategy.driver || {};
   const schedule = strategy.schedule || {};
   return `<section class="panel">
-    <div class="section-head"><h2>Diagnostics</h2><span class="note">${d.api || '/api/lune-touch/v1'}</span></div>
-    <div class="card-grid">
-      <div class="card"><h3>Coordinator</h3><p>${d.nodes || 0} nodes, ${d.zones || 0} zones, ${d.ledger || 0} ledger records</p></div>
-      <div class="card"><h3>V6 polling</h3><p>Last poll at ${fmtUptime(polling.last_poll_ms)} uptime</p><p><span class="ok">${polling.success || 0} ok</span> / <span class="${polling.fail ? 'warn' : 'ok'}">${polling.fail || 0} failed</span></p><p class="${polling.last_error ? 'warn' : 'muted'}">${polling.last_error || 'no current error'}</p></div>
-      <div class="card"><h3>Commissioning</h3><p class="${commissioning.next_action === 'ready' ? 'ok' : 'warn'}">${esc(commissioning.next_action || 'unknown')}</p><p>${commissioning.trusted_nodes || 0} trusted / ${commissioning.paired_nodes || 0} paired / ${commissioning.reachable_nodes || 0} reachable</p><p>${commissioning.fresh_zones || 0} fresh of ${commissioning.bound_zones || 0} bound zones</p><p class="${commissioning.ready_for_commands ? 'ok' : 'warn'}">Commands ${commissioning.ready_for_commands ? 'ready' : 'blocked'} / forecast ${commissioning.ready_for_forecast ? 'ready' : 'blocked'}</p></div>
-      <div class="card"><h3>OTA</h3><p>${esc(ota.running_label || 'unknown')} / subtype ${ota.running_subtype ?? '-'}</p><p class="${ota.pending_verify ? 'warn' : 'ok'}">${esc(ota.state || 'undefined')}</p><p>${Math.round(Number(ota.running_slot_size || 0) / 1024)} KB slot</p><p class="${ota.running_slot_size && ota.configured_slot_size && ota.running_slot_size !== ota.configured_slot_size ? 'warn' : 'muted'}">Configured ${Math.round(Number(ota.configured_slot_size || 0) / 1024)} KB</p></div>
-      <div class="card"><h3>Asgard / Odin</h3><p>Physical ${physical.has_temperature ? fmtC(physical.temperature_c) : 'missing'} from ${physical.contributing_zones || 0} zones</p><p>Comfort demand ${fmtValue(comfort.demand_c, ' C')} across ${comfort.demand_zones || 0} zones</p><p>Driver ${esc(driver.name || driver.room_id || d.strategy?.driver_room || '-')} ${driver.priority != null ? `/ P${driver.priority}` : ''}</p></div>
-      <div class="card"><h3>Schedule</h3><p class="${schedule.time_valid ? 'ok' : 'warn'}">${schedule.time_valid ? `${schedule.active_zones || 0} active` : 'time missing'}</p><p>${esc(schedule.driver_name || schedule.driver_room_id || '-')} ${schedule.driver_priority ? `/ P${schedule.driver_priority}` : ''}</p><p>${schedule.driver_setpoint_c ? fmtC(schedule.driver_setpoint_c) : '-'}</p></div>
-      <div class="card"><h3>Learning</h3><p>${learning.zones_with_history || 0} zones, ${learning.total_samples || 0} samples</p><p>Calling ${Math.round(Number(learning.calling_ratio || 0) * 100)}%</p><p>${learning.warming_zones || 0} warming / ${learning.cooling_zones || 0} cooling, avg ${fmtValue(learning.average_delta_c_per_h, ' C/h')}</p></div>
-      <div class="card"><h3>Screen</h3><p>${d.screen || 'overview-only'}</p></div>
-      <div class="card"><h3>Heap</h3><p>${d.heap || 'watching'}</p></div>
+    <div class="section-head"><h2>Diagnostics</h2><button class="btn" data-action="refresh">Refresh</button></div>
+    <div class="metric-strip">
+      <div class="metric"><span>API</span><strong>${d.api || '/api/lune-touch/v1'}</strong></div>
+      <div class="metric"><span>Coordinator</span><strong>${d.nodes || 0} nodes / ${d.zones || 0} zones</strong></div>
+      <div class="metric"><span>Ledger</span><strong>${d.ledger || 0} records</strong></div>
+      <div class="metric"><span>Heap</span><strong>${d.heap || 'watching'}</strong></div>
+    </div>
+    <div class="diagnostics-layout">
+      <div class="ops-panel wide">
+        <h3>Command attention</h3>
+        <div class="metric-strip compact">
+          <div class="metric"><span>Accepted</span><strong class="ok">${stats.accepted}</strong></div>
+          <div class="metric"><span>Pending</span><strong>${stats.pending}</strong></div>
+          <div class="metric"><span>Clamped</span><strong class="${stats.clamped ? 'warn' : 'ok'}">${stats.clamped}</strong></div>
+          <div class="metric"><span>Blocked</span><strong class="${stats.blocked ? 'warn' : 'ok'}">${stats.blocked}</strong></div>
+        </div>
+        <div class="data-table diagnostics-table">
+          <div class="tr head diagnostics"><span>Source</span><span>Target</span><span>Request</span><span>Result</span><span>Reason</span></div>
+          ${attentionCommands.map((c) => `<div class="tr diagnostics"><span>${esc(c.source)}</span><span>${v6Name(c.node_index)} / Z${Number(c.zone_index) + 1}</span><span>${fmtValue(c.requested_offset_c, ' C')}</span><span class="${statusClass(c.result)}">${esc(c.result)}${c.clamp_applied ? ' / clamp' : ''}</span><span>${esc(c.reason || c.request_id || '-')}</span></div>`).join('') || '<div class="empty-row">No failed, blocked, or clamped commands</div>'}
+        </div>
+        <button class="btn slim" data-section="commands">Open ledger</button>
+      </div>
+      <div class="ops-panel">
+        <h3>V6 polling</h3>
+        <p>Last poll at ${fmtUptime(polling.last_poll_ms)} uptime</p>
+        <p><span class="ok">${polling.success || 0} ok</span> / <span class="${polling.fail ? 'warn' : 'ok'}">${polling.fail || 0} failed</span></p>
+        <p class="${polling.last_error ? 'warn' : 'muted'}">${esc(polling.last_error || 'no current error')}</p>
+      </div>
+      <div class="ops-panel">
+        <h3>Commissioning</h3>
+        <p class="${commissioning.next_action === 'ready' ? 'ok' : 'warn'}">${esc(commissioning.next_action || 'unknown')}</p>
+        <p>${commissioning.trusted_nodes || 0} trusted / ${commissioning.paired_nodes || 0} paired / ${commissioning.reachable_nodes || 0} reachable</p>
+        <p>${commissioning.fresh_zones || 0} fresh of ${commissioning.bound_zones || 0} bound zones</p>
+        <p class="${commissioning.ready_for_commands ? 'ok' : 'warn'}">Commands ${commissioning.ready_for_commands ? 'ready' : 'blocked'} / forecast ${commissioning.ready_for_forecast ? 'ready' : 'blocked'}</p>
+      </div>
+      <div class="ops-panel">
+        <h3>Forecast dispatch</h3>
+        <p>${forecastCommands.active || 0} active / ${forecastCommands.sent || 0} sent / ${forecastCommands.skipped || 0} skipped</p>
+        <p class="${forecastCommands.failed ? 'warn' : 'ok'}">${forecastCommands.failed || 0} failed</p>
+        <p class="${forecastCommands.blocked_stale || forecastCommands.blocked_unreachable || forecastCommands.blocked_untrusted ? 'warn' : 'muted'}">${forecastCommands.blocked_stale || 0} stale / ${forecastCommands.blocked_unreachable || 0} offline / ${forecastCommands.blocked_untrusted || 0} trust</p>
+        <button class="btn slim" data-action="forecast-fetch">Fetch now</button>
+      </div>
+      <div class="ops-panel">
+        <h3>OTA</h3>
+        <p>${esc(ota.running_label || 'unknown')} / subtype ${ota.running_subtype ?? '-'}</p>
+        <p class="${ota.pending_verify ? 'warn' : 'ok'}">${esc(ota.state || 'undefined')}</p>
+        <p>${Math.round(Number(ota.running_slot_size || 0) / 1024)} KB slot</p>
+        <p class="${ota.running_slot_size && ota.configured_slot_size && ota.running_slot_size !== ota.configured_slot_size ? 'warn' : 'muted'}">Configured ${Math.round(Number(ota.configured_slot_size || 0) / 1024)} KB</p>
+      </div>
+      <div class="ops-panel">
+        <h3>Asgard / Odin</h3>
+        <p>Physical ${physical.has_temperature ? fmtC(physical.temperature_c) : 'missing'} from ${physical.contributing_zones || 0} zones</p>
+        <p>Comfort demand ${fmtValue(comfort.demand_c, ' C')} across ${comfort.demand_zones || 0} zones</p>
+        <p>Driver ${esc(driver.name || driver.room_id || d.strategy?.driver_room || '-')} ${driver.priority != null ? `/ P${driver.priority}` : ''}</p>
+      </div>
+      <div class="ops-panel">
+        <h3>Schedule</h3>
+        <p class="${schedule.time_valid ? 'ok' : 'warn'}">${schedule.time_valid ? `${schedule.active_zones || 0} active` : 'time missing'}</p>
+        <p>${esc(schedule.driver_name || schedule.driver_room_id || '-')} ${schedule.driver_priority ? `/ P${schedule.driver_priority}` : ''}</p>
+        <p>${schedule.driver_setpoint_c ? fmtC(schedule.driver_setpoint_c) : '-'}</p>
+      </div>
+      <div class="ops-panel">
+        <h3>Learning</h3>
+        <p>${learning.zones_with_history || 0} zones, ${learning.total_samples || 0} samples</p>
+        <p>Calling ${Math.round(Number(learning.calling_ratio || 0) * 100)}%</p>
+        <p>${learning.warming_zones || 0} warming / ${learning.cooling_zones || 0} cooling, avg ${fmtValue(learning.average_delta_c_per_h, ' C/h')}</p>
+      </div>
+      <div class="ops-panel">
+        <h3>Screen</h3>
+        <p>${d.screen || 'overview-only'}</p>
+      </div>
     </div>
   </section>`;
 }

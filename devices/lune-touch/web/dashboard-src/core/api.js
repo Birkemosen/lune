@@ -69,18 +69,23 @@ function mockData(path) {
       mode: 'advisory',
     },
   };
-  if (path === '/commands') return { commands: [{ request_id: 'mock-forecast-1', source: 'forecast', reason: 'wind preload', node_index: 0, zone_index: 0, requested_offset_c: 0.4, accepted_offset_c: 0.4, created_at_ms: Date.now() - 600000, expires_at_ms: Date.now() + 2100000, result: 'accepted', clamp_applied: false }] };
+  if (path === '/commands') return { commands: [
+    { request_id: 'mock-forecast-1', source: 'forecast', reason: 'wind preload', node_index: 0, zone_index: 0, requested_offset_c: 0.4, accepted_offset_c: 0.4, created_at_ms: Date.now() - 600000, expires_at_ms: Date.now() + 2100000, result: 'accepted', clamp_applied: false },
+    { request_id: 'mock-dashboard-1', source: 'dashboard', reason: 'quick boost', node_index: 1, zone_index: 3, requested_offset_c: 1.1, accepted_offset_c: 0.8, created_at_ms: Date.now() - 420000, expires_at_ms: Date.now() + 900000, result: 'accepted', clamp_applied: true },
+    { request_id: 'mock-forecast-2', source: 'forecast', reason: 'wind preload', node_index: 2, zone_index: 1, requested_offset_c: 0.3, accepted_offset_c: 0.0, created_at_ms: Date.now() - 240000, expires_at_ms: Date.now() + 1800000, result: 'blocked_unreachable', clamp_applied: false },
+  ] };
   if (path === '/diagnostics') return {
     heap: 'watching',
     nodes: 3,
     zones: 18,
-    ledger: 1,
+    ledger: 3,
     screen: 'overview-only',
     api: BASE,
     polling: { last_poll_ms: Date.now() % 900000, success: 42, fail: 1, last_error: 'mock stale node' },
     commissioning: { paired_nodes: 1, trusted_nodes: 2, reachable_nodes: 2, stale_nodes: 1, bound_zones: 18, fresh_zones: 17, stale_zones: 1, ready_for_commands: true, ready_for_forecast: true, next_action: 'ready' },
     ota: { running_label: 'app0', running_subtype: 16, running_slot_size: 6553600, configured_slot_size: 6553600, state: 'valid', pending_verify: false },
     learning: { zones_with_history: 16, total_samples: 692, total_calling_samples: 101, calling_ratio: 0.146, zones_with_delta: 14, warming_zones: 5, cooling_zones: 3, average_delta_c_per_h: 0.12 },
+    forecast_commands: { active: 2, sent: 1, skipped: 1, failed: 0, blocked_stale: 1, blocked_unreachable: 0, blocked_untrusted: 0 },
   };
   return {};
 }
@@ -128,7 +133,7 @@ export async function refreshSection(section) {
   if (section === 'forecast') return refreshPaths(['/forecast', '/diagnostics']);
   if (section === 'commands') return refreshPaths(['/commands']);
   if (section === 'settings') return refreshPaths(['/overview', '/nodes', '/strategy', '/diagnostics']);
-  if (section === 'diagnostics') return refreshPaths(['/strategy', '/diagnostics']);
+  if (section === 'diagnostics') return refreshPaths(['/strategy', '/forecast', '/commands', '/diagnostics']);
   return Promise.resolve();
 }
 
