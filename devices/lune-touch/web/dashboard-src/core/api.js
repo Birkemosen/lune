@@ -42,6 +42,12 @@ function mockData(path) {
         max_temp_c: [21.5,21.2,22.4,20.3,21.0,19.9,20.1,19.0,18.9,18.2,18.3,20.5,20.8,20.3,22.0,null,12.6,null][i],
         last_delta_c_per_h: statuses[i] === 'unused' || statuses[i] === 'stale' ? null : [0.4,-0.1,0.2,0.0,-0.2,0.3,0.1,0.5,-0.1,0.6,0.0,-0.1,0.2,0.4,0.3,null,0.1,null][i],
       },
+      thermal_model: {
+        samples: statuses[i] === 'unused' || statuses[i] === 'stale' ? 0 : 8 + i,
+        heat_gain_c_per_h: statuses[i] === 'unused' || statuses[i] === 'stale' ? 0 : 0.18 + (i % 5) * 0.08,
+        cool_loss_c_per_h: statuses[i] === 'unused' || statuses[i] === 'stale' ? 0 : 0.08 + (i % 4) * 0.04,
+        confidence: statuses[i] === 'unused' || statuses[i] === 'stale' ? 0 : Math.min(1, (8 + i) / 24),
+      },
     })) };
   }
   if (path === '/forecast') {

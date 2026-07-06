@@ -10,7 +10,8 @@ static constexpr size_t ZONES_PER_NODE = 6;
 static constexpr size_t MAX_HOUSE_ZONES = MAX_NODES * ZONES_PER_NODE;
 static constexpr size_t LEDGER_CAPACITY = 32;
 static constexpr uint32_t PERSISTED_STATE_MAGIC = 0x4C544348;  // LTCH
-static constexpr uint16_t PERSISTED_STATE_VERSION = 7;
+static constexpr uint16_t PERSISTED_STATE_VERSION = 8;
+static constexpr uint16_t PERSISTED_STATE_VERSION_V7 = 7;
 static constexpr uint16_t PERSISTED_STATE_VERSION_V6 = 6;
 static constexpr uint16_t PERSISTED_STATE_VERSION_V5 = 5;
 static constexpr uint16_t PERSISTED_STATE_VERSION_V4 = 4;
@@ -63,6 +64,9 @@ struct ZoneBinding {
   uint16_t schedule_end_min{1320};
   uint8_t schedule_day_mask{0x7F};
   uint8_t priority{1};
+  uint16_t thermal_samples{0};
+  float learned_heat_gain_c_per_h{0.0f};
+  float learned_cool_loss_c_per_h{0.0f};
   bool enabled{false};
   bool schedule_enabled{false};
 };

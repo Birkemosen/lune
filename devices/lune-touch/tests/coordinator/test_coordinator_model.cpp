@@ -189,6 +189,7 @@ static void test_persisted_state_roundtrip() {
   model.update_zone_comfort("living", 21.8f, 2, 0.4f);
   model.update_zone_schedule("living", true, 0x7F, 360, 1320, 21.2f);
   model.update_zone_live("living", 21.4f, true, 21.0f, true, "heat", true, 1234);
+  model.update_zone_live("living", 21.9f, true, 21.0f, true, "heat", true, 3601234);
 
   PersistedState state{};
   expect(model.export_state(&state), "persist: export succeeds");
@@ -213,11 +214,14 @@ static void test_persisted_state_roundtrip() {
              living.binding->schedule_end_min == 1320 &&
              living.binding->schedule_setpoint_c > 21.1f,
          "persist: schedule restored");
+  expect(living.binding != nullptr && living.binding->thermal_samples == 1 &&
+             living.binding->learned_heat_gain_c_per_h > 0.4f,
+         "persist: thermal model restored");
   expect(living.live != nullptr && !living.live->fresh && std::strcmp(living.live->status, "unknown") == 0,
          "persist: live state is runtime-only");
   const ZoneHistory *living_history = restored.zone_history(0);
   expect(living_history != nullptr && living_history->has_temperature &&
-             living_history->samples == 1 && living_history->calling_samples == 1 &&
+             living_history->samples == 2 && living_history->calling_samples == 2 &&
              living_history->average_temperature_c > 21.3f,
          "persist: learning history restored");
 
@@ -268,6 +272,24 @@ static void test_zone_live_state() {
   expect(learning.zones_with_delta == 1 && learning.warming_zones == 1 &&
              learning.cooling_zones == 0 && learning.average_delta_c_per_h > 0.9f,
          "learning: summarizes temperature rate");
+  const ZoneBinding *living_binding = model.zone(0);
+  expect(living_binding != nullptr && living_binding->thermal_samples == 1,
+         "thermal: counts learned samples");
+  expect(living_binding != nullptr && living_binding->learned_heat_gain_c_per_h == 0.0f &&
+             living_binding->learned_cool_loss_c_per_h == 0.0f,
+         "thermal: ignores idle warming as passive noise");
+  expect(model.update_zone_live("living", 20.9f, true, 21.5f, true, "idle", true, 7205000),
+         "thermal: passive cooling sample update");
+  living_binding = model.zone(0);
+  expect(living_binding != nullptr && living_binding->thermal_samples == 2 &&
+             living_binding->learned_cool_loss_c_per_h > 0.9f,
+         "thermal: learns passive cooling rate");
+  expect(model.update_zone_live("living", 21.9f, true, 21.5f, true, "heat", true, 10805000),
+         "thermal: warming sample update");
+  living_binding = model.zone(0);
+  expect(living_binding != nullptr && living_binding->thermal_samples == 3 &&
+             living_binding->learned_heat_gain_c_per_h > 0.9f,
+         "thermal: learns heat gain rate");
 
   ResolvedZone living = model.resolve_room("living");
   expect(living.live != nullptr && living.live->has_temperature && living.live->temperature_c > 21.8f,

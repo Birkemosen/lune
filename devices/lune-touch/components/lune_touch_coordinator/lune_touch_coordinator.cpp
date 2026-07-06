@@ -195,6 +195,27 @@ struct ZoneBindingV4 {
   bool enabled{false};
 };
 
+struct ZoneBindingV7 {
+  char room_id[32]{};
+  char room_name[48]{};
+  uint8_t node_index{0};
+  uint8_t zone_index{0};
+  uint8_t exterior_walls{0};
+  float wind_exposure{0.5f};
+  float solar_gain{0.3f};
+  uint8_t thermal_lead_h{4};
+  float max_offset_c{1.5f};
+  float comfort_setpoint_c{21.0f};
+  float comfort_bias_c{0.0f};
+  float schedule_setpoint_c{21.0f};
+  uint16_t schedule_start_min{360};
+  uint16_t schedule_end_min{1320};
+  uint8_t schedule_day_mask{0x7F};
+  uint8_t priority{1};
+  bool enabled{false};
+  bool schedule_enabled{false};
+};
+
 struct PersistedStateV4 {
   uint32_t magic{::lune_touch::PERSISTED_STATE_MAGIC};
   uint16_t version{::lune_touch::PERSISTED_STATE_VERSION_V4};
@@ -212,7 +233,7 @@ struct PersistedStateV5 {
   uint32_t node_count{0};
   uint32_t zone_count{0};
   PairedNodeV5 nodes[::lune_touch::MAX_NODES]{};
-  ::lune_touch::ZoneBinding zones[::lune_touch::MAX_HOUSE_ZONES]{};
+  ZoneBindingV7 zones[::lune_touch::MAX_HOUSE_ZONES]{};
 };
 
 struct PersistedStateV6 {
@@ -222,7 +243,18 @@ struct PersistedStateV6 {
   uint32_t node_count{0};
   uint32_t zone_count{0};
   ::lune_touch::PairedNode nodes[::lune_touch::MAX_NODES]{};
-  ::lune_touch::ZoneBinding zones[::lune_touch::MAX_HOUSE_ZONES]{};
+  ZoneBindingV7 zones[::lune_touch::MAX_HOUSE_ZONES]{};
+};
+
+struct PersistedStateV7 {
+  uint32_t magic{::lune_touch::PERSISTED_STATE_MAGIC};
+  uint16_t version{::lune_touch::PERSISTED_STATE_VERSION_V7};
+  uint16_t reserved{0};
+  uint32_t node_count{0};
+  uint32_t zone_count{0};
+  ::lune_touch::PairedNode nodes[::lune_touch::MAX_NODES]{};
+  ZoneBindingV7 zones[::lune_touch::MAX_HOUSE_ZONES]{};
+  ::lune_touch::ZoneHistory histories[::lune_touch::MAX_HOUSE_ZONES]{};
 };
 
 void copy_legacy_node_(::lune_touch::PairedNode &dest, const PairedNodeV5 &src) {
@@ -234,6 +266,27 @@ void copy_legacy_node_(::lune_touch::PairedNode &dest, const PairedNodeV5 &src) 
   dest.trust = src.trust;
   dest.last_seen_ms = src.last_seen_ms;
   dest.reachable = src.reachable;
+}
+
+void copy_legacy_zone_(::lune_touch::ZoneBinding &dest, const ZoneBindingV7 &src) {
+  std::strncpy(dest.room_id, src.room_id, sizeof(dest.room_id) - 1);
+  std::strncpy(dest.room_name, src.room_name, sizeof(dest.room_name) - 1);
+  dest.node_index = src.node_index;
+  dest.zone_index = src.zone_index;
+  dest.exterior_walls = src.exterior_walls;
+  dest.wind_exposure = src.wind_exposure;
+  dest.solar_gain = src.solar_gain;
+  dest.thermal_lead_h = src.thermal_lead_h;
+  dest.max_offset_c = src.max_offset_c;
+  dest.comfort_setpoint_c = src.comfort_setpoint_c;
+  dest.comfort_bias_c = src.comfort_bias_c;
+  dest.schedule_setpoint_c = src.schedule_setpoint_c;
+  dest.schedule_start_min = src.schedule_start_min;
+  dest.schedule_end_min = src.schedule_end_min;
+  dest.schedule_day_mask = src.schedule_day_mask;
+  dest.priority = src.priority;
+  dest.enabled = src.enabled;
+  dest.schedule_enabled = src.schedule_enabled;
 }
 
 float wind_alignment_(uint8_t exterior_walls, float wind_dir_deg) {
@@ -1199,6 +1252,26 @@ bool LuneTouchCoordinator::load_registry_() {
     nvs_close(handle);
     if (err != ESP_OK)
       return false;
+  } else if (len == sizeof(PersistedStateV7)) {
+    static PersistedStateV7 legacy;
+    std::memset(&legacy, 0, sizeof(legacy));
+    err = nvs_get_blob(handle, "registry", &legacy, &len);
+    nvs_close(handle);
+    if (err != ESP_OK || legacy.magic != ::lune_touch::PERSISTED_STATE_MAGIC ||
+        legacy.version != ::lune_touch::PERSISTED_STATE_VERSION_V7 ||
+        legacy.node_count > ::lune_touch::MAX_NODES ||
+        legacy.zone_count > ::lune_touch::MAX_HOUSE_ZONES) {
+      return false;
+    }
+    state.node_count = legacy.node_count;
+    state.zone_count = legacy.zone_count;
+    for (size_t i = 0; i < legacy.node_count; i++)
+      state.nodes[i] = legacy.nodes[i];
+    for (size_t i = 0; i < legacy.zone_count; i++) {
+      copy_legacy_zone_(state.zones[i], legacy.zones[i]);
+      state.histories[i] = legacy.histories[i];
+    }
+    ESP_LOGI(TAG, "Migrated Touch registry from v7 to v8");
   } else if (len == sizeof(PersistedStateV6)) {
     static PersistedStateV6 legacy;
     std::memset(&legacy, 0, sizeof(legacy));
@@ -1215,8 +1288,8 @@ bool LuneTouchCoordinator::load_registry_() {
     for (size_t i = 0; i < legacy.node_count; i++)
       state.nodes[i] = legacy.nodes[i];
     for (size_t i = 0; i < legacy.zone_count; i++)
-      state.zones[i] = legacy.zones[i];
-    ESP_LOGI(TAG, "Migrated Touch registry from v6 to v7");
+      copy_legacy_zone_(state.zones[i], legacy.zones[i]);
+    ESP_LOGI(TAG, "Migrated Touch registry from v6 to v8");
   } else if (len == sizeof(PersistedStateV5)) {
     static PersistedStateV5 legacy;
     std::memset(&legacy, 0, sizeof(legacy));
@@ -1233,8 +1306,8 @@ bool LuneTouchCoordinator::load_registry_() {
     for (size_t i = 0; i < legacy.node_count; i++)
       copy_legacy_node_(state.nodes[i], legacy.nodes[i]);
     for (size_t i = 0; i < legacy.zone_count; i++)
-      state.zones[i] = legacy.zones[i];
-    ESP_LOGI(TAG, "Migrated Touch registry from v5 to v7");
+      copy_legacy_zone_(state.zones[i], legacy.zones[i]);
+    ESP_LOGI(TAG, "Migrated Touch registry from v5 to v8");
   } else if (len == sizeof(PersistedStateV4)) {
     static PersistedStateV4 legacy;
     std::memset(&legacy, 0, sizeof(legacy));
@@ -1269,7 +1342,7 @@ bool LuneTouchCoordinator::load_registry_() {
       std::strncpy(state.zones[i].room_name, legacy.zones[i].room_name,
                    sizeof(state.zones[i].room_name) - 1);
     }
-    ESP_LOGI(TAG, "Migrated Touch registry from v4 to v7");
+    ESP_LOGI(TAG, "Migrated Touch registry from v4 to v8");
   } else if (len == sizeof(PersistedStateV3)) {
     static PersistedStateV3 legacy;
     std::memset(&legacy, 0, sizeof(legacy));
@@ -1304,7 +1377,7 @@ bool LuneTouchCoordinator::load_registry_() {
       std::strncpy(state.zones[i].room_name, legacy.zones[i].room_name,
                    sizeof(state.zones[i].room_name) - 1);
     }
-    ESP_LOGI(TAG, "Migrated Touch registry from v3 to v7");
+    ESP_LOGI(TAG, "Migrated Touch registry from v3 to v8");
   } else {
     nvs_close(handle);
     return false;
@@ -2347,6 +2420,8 @@ void LuneTouchCoordinator::write_zones_json(char *buffer, size_t capacity) const
     const char *status = live != nullptr && live->status[0] != '\0' ? live->status : (zone->enabled ? "unknown" : "unused");
     const auto effective = ::lune_touch::HouseModel::effective_comfort(*zone, time_valid,
                                                                        day_index, minute_of_day);
+    const float thermal_confidence = zone->thermal_samples >= 24 ? 1.0f :
+        static_cast<float>(zone->thermal_samples) / 24.0f;
     if (!appendf_(buffer, capacity, off,
                   "%s{\"room_id\":\"%s\",\"name\":\"%s\",\"node_index\":%u,\"zone_index\":%u,"
                   "\"temperature_c\":%s,\"setpoint_c\":%s,\"status\":\"%s\",\"fresh\":%s,"
@@ -2358,6 +2433,8 @@ void LuneTouchCoordinator::write_zones_json(char *buffer, size_t capacity) const
                   "\"history\":{\"samples\":%lu,\"calling_samples\":%lu,"
                   "\"avg_temp_c\":%s,\"min_temp_c\":%s,\"max_temp_c\":%s,"
                   "\"last_delta_c_per_h\":%s},"
+                  "\"thermal_model\":{\"samples\":%u,\"heat_gain_c_per_h\":%.3f,"
+                  "\"cool_loss_c_per_h\":%.3f,\"confidence\":%.2f},"
                   "\"forecast\":{\"exterior_walls\":%u,"
                   "\"wind_exposure\":%.2f,\"solar_gain\":%.2f,\"thermal_lead_h\":%u,"
                   "\"max_offset_c\":%.2f}}",
@@ -2380,6 +2457,10 @@ void LuneTouchCoordinator::write_zones_json(char *buffer, size_t capacity) const
                   static_cast<unsigned long>(history != nullptr ? history->samples : 0),
                   static_cast<unsigned long>(history != nullptr ? history->calling_samples : 0),
                   hist_avg_buf, hist_min_buf, hist_max_buf, hist_delta_buf,
+                  static_cast<unsigned>(zone->thermal_samples),
+                  zone->learned_heat_gain_c_per_h,
+                  zone->learned_cool_loss_c_per_h,
+                  thermal_confidence,
                   static_cast<unsigned>(zone->exterior_walls), zone->wind_exposure,
                   zone->solar_gain, static_cast<unsigned>(zone->thermal_lead_h),
                   zone->max_offset_c))

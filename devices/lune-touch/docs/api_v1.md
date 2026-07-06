@@ -172,13 +172,21 @@ valve state still resets on reboot; history survives registry import/export:
     "min_temp_c": 20.58,
     "max_temp_c": 21.54,
     "last_delta_c_per_h": 0.36
+  },
+  "thermal_model": {
+    "samples": 12,
+    "heat_gain_c_per_h": 0.42,
+    "cool_loss_c_per_h": 0.18,
+    "confidence": 0.5
   }
 }
 ```
 
 `comfort.effective_setpoint_c` is resolved by Touch. When local time is valid and
 the room schedule is active, `effective_source` is `schedule`; otherwise it is
-`comfort`. The stored comfort bias is applied in both cases.
+`comfort`. The stored comfort bias is applied in both cases. `thermal_model`
+contains Touch-learned, persisted coefficients derived from fresh temperature
+history; it is observational and does not yet override local V6 safety behavior.
 
 ## Writes
 

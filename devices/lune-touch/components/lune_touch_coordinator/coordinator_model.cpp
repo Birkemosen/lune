@@ -30,6 +30,13 @@ static float clamp_float_(float value, float lo, float hi, float fallback) {
   return value;
 }
 
+static float rolling_average_(float current, float sample, uint16_t count) {
+  if (count == 0 || current <= 0.0f)
+    return sample;
+  const uint16_t effective_count = count > 200 ? 200 : count;
+  return current + (sample - current) / static_cast<float>(effective_count + 1);
+}
+
 int HouseModel::upsert_node(const char *node_id, const char *hostname, const char *fallback_ip,
                             const char *model, const char *firmware, NodeTrust trust) {
   if (node_id == nullptr || node_id[0] == '\0')
@@ -510,6 +517,18 @@ void HouseModel::record_zone_history_(size_t zone_index, float temperature_c, co
     if (hours > 0.0f) {
       history.last_delta_c_per_h = (temperature_c - history.last_temperature_c) / hours;
       history.has_delta = true;
+      ZoneBinding &zone = zones_[zone_index];
+      const uint16_t previous_samples = zone.thermal_samples;
+      const float delta = history.last_delta_c_per_h;
+      if (calling && delta > 0.02f) {
+        zone.learned_heat_gain_c_per_h =
+            rolling_average_(zone.learned_heat_gain_c_per_h, delta, previous_samples);
+      } else if (!calling && delta < -0.02f) {
+        zone.learned_cool_loss_c_per_h =
+            rolling_average_(zone.learned_cool_loss_c_per_h, -delta, previous_samples);
+      }
+      if (zone.thermal_samples < 65535)
+        zone.thermal_samples++;
     }
   }
   history.samples++;
