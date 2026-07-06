@@ -106,6 +106,8 @@ class LuneTouchCoordinator : public esphome::Component {
   bool fetch_json_(const char *url, char *body, size_t body_capacity, int *status_code);
   bool post_json_(const char *url, const char *payload, char *body, size_t body_capacity, int *status_code);
   bool ingest_v6_zones_(size_t node_index, const char *body, uint32_t now_ms);
+  bool ingest_v6_legacy_state_(size_t node_index, const ::lune_touch::PairedNode &node,
+                               const char *body, uint32_t now_ms);
   bool fetch_open_meteo_(float latitude, float longitude, char *error, size_t error_len,
                          uint8_t *hours_count, float *min_temp_c, float *max_wind_ms,
                          float *peak_wind_dir_deg, float *max_solar_wm2,

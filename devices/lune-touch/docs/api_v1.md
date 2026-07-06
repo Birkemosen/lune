@@ -237,6 +237,12 @@ With `hostname` or `ip`, Touch probes that V6 candidate's
 
 Response:
 
+During migration from older V6 firmware, Touch first tries the resource-shaped
+`/api/hv6/v1/zones` endpoint and then falls back to the legacy
+`/api/hv6/v1/state` snapshot. If no room mapping exists yet, legacy state ingest
+creates provisional `v6N-zM` room ids so the first manifold can be tested before
+the installer renames or remaps rooms.
+
 ```json
 {
   "scan": "probe",

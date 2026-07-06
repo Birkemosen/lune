@@ -67,6 +67,57 @@ bool appendf_(char *buffer, size_t capacity, size_t &offset, const char *fmt, ..
   return true;
 }
 
+bool entity_number_(JsonDocument &doc, const char *key, float *out) {
+  if (out == nullptr || key == nullptr)
+    return false;
+  JsonVariant value = doc[key]["value"];
+  if (value.isNull())
+    value = doc[key];
+  if (value.isNull())
+    return false;
+  *out = value | 0.0f;
+  return true;
+}
+
+const char *entity_state_(JsonDocument &doc, const char *key) {
+  if (key == nullptr)
+    return nullptr;
+  const char *state = doc[key]["state"] | nullptr;
+  if (state == nullptr)
+    state = doc[key]["value"] | nullptr;
+  return state;
+}
+
+bool state_is_on_(const char *state) {
+  return state == nullptr || std::strcmp(state, "on") == 0 || std::strcmp(state, "ON") == 0 ||
+         std::strcmp(state, "true") == 0 || std::strcmp(state, "1") == 0;
+}
+
+void legacy_zone_status_(const char *raw, bool enabled, bool has_temp, float temp,
+                         bool has_setpoint, float setpoint, char *out, size_t out_len) {
+  if (out == nullptr || out_len == 0)
+    return;
+  const char *status = "idle";
+  if (!enabled) {
+    status = "unused";
+  } else if (raw != nullptr && raw[0] != '\0') {
+    if (std::strcmp(raw, "HEATING") == 0 || std::strcmp(raw, "heat") == 0 ||
+        std::strcmp(raw, "CALL") == 0 || std::strcmp(raw, "call") == 0) {
+      status = "heat";
+    } else if (std::strcmp(raw, "PREHEAT") == 0 || std::strcmp(raw, "preheat") == 0) {
+      status = "preheat";
+    } else if (std::strcmp(raw, "HOLD") == 0 || std::strcmp(raw, "hold") == 0) {
+      status = "hold";
+    } else if (std::strcmp(raw, "STALE") == 0 || std::strcmp(raw, "stale") == 0) {
+      status = "stale";
+    }
+  } else if (has_temp && has_setpoint && temp < setpoint - 0.2f) {
+    status = "call";
+  }
+  std::strncpy(out, status, out_len - 1);
+  out[out_len - 1] = '\0';
+}
+
 struct ZoneBindingV3 {
   char room_id[32]{};
   char room_name[48]{};
@@ -409,6 +460,28 @@ bool LuneTouchCoordinator::poll_node_zones_(size_t node_index, const ::lune_touc
     return true;
   }
 
+  for (size_t h = 0; h < host_count; h++) {
+    char url[160];
+    snprintf(url, sizeof(url), "http://%s/api/hv6/v1/state", hosts[h]);
+
+    constexpr size_t LEGACY_BODY_CAP = 14336;
+    char *body = static_cast<char *>(heap_caps_malloc(LEGACY_BODY_CAP, MALLOC_CAP_SPIRAM));
+    if (body == nullptr)
+      body = static_cast<char *>(heap_caps_malloc(LEGACY_BODY_CAP, MALLOC_CAP_8BIT));
+    if (body == nullptr)
+      continue;
+
+    int status = 0;
+    const bool fetched = fetch_json_(url, body, LEGACY_BODY_CAP, &status);
+    if (fetched && ingest_v6_legacy_state_(node_index, node, body, now_ms)) {
+      free(body);
+      note_node_poll_success_(node_index, hosts[h]);
+      return true;
+    }
+    last_status = status;
+    free(body);
+  }
+
   char reason[80];
   snprintf(reason, sizeof(reason), "zones failed status=%d", last_status);
   note_node_poll_failure_(node_index, reason);
@@ -564,6 +637,77 @@ bool LuneTouchCoordinator::ingest_v6_zones_(size_t node_index, const char *body,
                                                    exterior_walls, wind_exposure, solar_gain,
                                                    thermal_lead_h, max_offset_c);
   }
+  if (updated > 0)
+    model_.mark_node_seen(node_index, now_ms);
+  give_state_lock_();
+  return updated > 0;
+}
+
+bool LuneTouchCoordinator::ingest_v6_legacy_state_(size_t node_index, const ::lune_touch::PairedNode &node,
+                                                   const char *body, uint32_t now_ms) {
+  if (body == nullptr || body[0] == '\0')
+    return false;
+
+  JsonDocument doc;
+  DeserializationError err = deserializeJson(doc, body);
+  if (err) {
+    ESP_LOGW(TAG, "V6 legacy state JSON parse failed: %s", err.c_str());
+    return false;
+  }
+
+  if (!take_state_lock_(100))
+    return false;
+
+  const char *firmware = entity_state_(doc, "text_sensor-firmware_version");
+  const char *identity = entity_state_(doc, "text_sensor-mac_address");
+  model_.update_node_metadata(node_index, "lune-v6", firmware, nullptr);
+  model_.update_node_identity(node_index, identity);
+
+  size_t updated = 0;
+  for (size_t zone_number = 1; zone_number <= ::lune_touch::ZONES_PER_NODE; zone_number++) {
+    char temp_key[40];
+    char setpoint_key[40];
+    char state_key[40];
+    char enabled_key[40];
+    snprintf(temp_key, sizeof(temp_key), "sensor-zone_%u_temperature", static_cast<unsigned>(zone_number));
+    snprintf(setpoint_key, sizeof(setpoint_key), "number-zone_%u_setpoint", static_cast<unsigned>(zone_number));
+    snprintf(state_key, sizeof(state_key), "text_sensor-zone_%u_state", static_cast<unsigned>(zone_number));
+    snprintf(enabled_key, sizeof(enabled_key), "switch-zone_%u_enabled", static_cast<unsigned>(zone_number));
+
+    float temp = 0.0f;
+    float setpoint = 0.0f;
+    const bool has_temp = entity_number_(doc, temp_key, &temp);
+    const bool has_setpoint = entity_number_(doc, setpoint_key, &setpoint);
+    const bool enabled = state_is_on_(entity_state_(doc, enabled_key));
+    if (!has_temp && !has_setpoint)
+      continue;
+
+    char status[16];
+    legacy_zone_status_(entity_state_(doc, state_key), enabled, has_temp, temp, has_setpoint, setpoint,
+                        status, sizeof(status));
+
+    const size_t zone_index = zone_number - 1;
+    bool stored = model_.update_zone_live_by_binding(node_index, zone_index, temp, has_temp,
+                                                     setpoint, has_setpoint, status,
+                                                     enabled && has_temp, now_ms);
+    if (!stored) {
+      char room_id[32];
+      char room_name[48];
+      snprintf(room_id, sizeof(room_id), "v6%u-z%u", static_cast<unsigned>(node_index + 1),
+               static_cast<unsigned>(zone_number));
+      snprintf(room_name, sizeof(room_name), "%s Z%u",
+               node.node_id[0] != '\0' ? node.node_id : "V6",
+               static_cast<unsigned>(zone_number));
+      if (model_.bind_zone(room_id, room_name, node_index, zone_index)) {
+        stored = model_.update_zone_live_by_binding(node_index, zone_index, temp, has_temp,
+                                                    setpoint, has_setpoint, status,
+                                                    enabled && has_temp, now_ms);
+      }
+    }
+    if (stored)
+      updated++;
+  }
+
   if (updated > 0)
     model_.mark_node_seen(node_index, now_ms);
   give_state_lock_();
