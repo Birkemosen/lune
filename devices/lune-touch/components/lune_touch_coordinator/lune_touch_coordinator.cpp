@@ -93,6 +93,16 @@ bool state_is_on_(const char *state) {
          std::strcmp(state, "true") == 0 || std::strcmp(state, "1") == 0;
 }
 
+void nullable_float_(char *out, size_t out_len, bool has_value, float value) {
+  if (out == nullptr || out_len == 0)
+    return;
+  if (has_value)
+    snprintf(out, out_len, "%.1f", value);
+  else
+    std::strncpy(out, "null", out_len - 1);
+  out[out_len - 1] = '\0';
+}
+
 void legacy_zone_status_(const char *raw, bool enabled, bool has_temp, float temp,
                          bool has_setpoint, float setpoint, char *out, size_t out_len) {
   if (out == nullptr || out_len == 0)
@@ -417,6 +427,34 @@ bool LuneTouchCoordinator::poll_node_overview_(size_t node_index, const ::lune_t
     model_.update_node_metadata(node_index, model, firmware, ip);
     model_.update_node_identity(node_index, pairing_fingerprint);
     model_.mark_node_seen(node_index, now_ms);
+    if (node_index < ::lune_touch::MAX_NODES) {
+      NodeTelemetryState &telemetry = node_telemetry_[node_index];
+      if (!data["manifold"]["flow_c"].isNull()) {
+        telemetry.flow_c = data["manifold"]["flow_c"] | 0.0f;
+        telemetry.has_flow = true;
+      }
+      if (!data["manifold"]["return_c"].isNull()) {
+        telemetry.return_c = data["manifold"]["return_c"] | 0.0f;
+        telemetry.has_return = true;
+      }
+      if (!data["avg_valve_pct"].isNull()) {
+        telemetry.avg_valve_pct = data["avg_valve_pct"] | 0.0f;
+        telemetry.has_avg_valve = true;
+      }
+      telemetry.active_zones = static_cast<uint8_t>(std::min(255, data["active_zones"] | 0));
+      if (!data["motor"]["drivers_enabled"].isNull()) {
+        telemetry.drivers_enabled = data["motor"]["drivers_enabled"] | false;
+        telemetry.has_drivers_enabled = true;
+      }
+      if (!data["motor"]["fault"].isNull()) {
+        telemetry.motor_fault = data["motor"]["fault"] | false;
+        telemetry.has_motor_fault = true;
+      }
+      if (!data["motor"]["current_ma"].isNull()) {
+        telemetry.motor_current_ma = data["motor"]["current_ma"] | 0.0f;
+        telemetry.has_motor_current = true;
+      }
+    }
     give_state_lock_();
     note_node_poll_success_(node_index, hosts[h]);
     return true;
@@ -662,22 +700,51 @@ bool LuneTouchCoordinator::ingest_v6_legacy_state_(size_t node_index, const ::lu
   const char *identity = entity_state_(doc, "text_sensor-mac_address");
   model_.update_node_metadata(node_index, "lune-v6", firmware, nullptr);
   model_.update_node_identity(node_index, identity);
+  NodeTelemetryState &telemetry = node_telemetry_[node_index];
+  if (entity_number_(doc, "sensor-manifold_flow_temperature", &telemetry.flow_c))
+    telemetry.has_flow = true;
+  if (entity_number_(doc, "sensor-manifold_return_temperature", &telemetry.return_c))
+    telemetry.has_return = true;
+  telemetry.drivers_enabled = state_is_on_(entity_state_(doc, "switch-motor_drivers_enabled"));
+  telemetry.has_drivers_enabled = true;
+  telemetry.motor_fault = false;
+  telemetry.has_motor_fault = true;
 
   size_t updated = 0;
+  float valve_sum = 0.0f;
+  size_t valve_count = 0;
+  uint8_t active_zones = 0;
   for (size_t zone_number = 1; zone_number <= ::lune_touch::ZONES_PER_NODE; zone_number++) {
     char temp_key[40];
     char setpoint_key[40];
     char state_key[40];
     char enabled_key[40];
+    char valve_key[40];
+    char fault_key[48];
     snprintf(temp_key, sizeof(temp_key), "sensor-zone_%u_temperature", static_cast<unsigned>(zone_number));
     snprintf(setpoint_key, sizeof(setpoint_key), "number-zone_%u_setpoint", static_cast<unsigned>(zone_number));
     snprintf(state_key, sizeof(state_key), "text_sensor-zone_%u_state", static_cast<unsigned>(zone_number));
     snprintf(enabled_key, sizeof(enabled_key), "switch-zone_%u_enabled", static_cast<unsigned>(zone_number));
+    snprintf(valve_key, sizeof(valve_key), "sensor-zone_%u_valve_pct", static_cast<unsigned>(zone_number));
+    snprintf(fault_key, sizeof(fault_key), "text_sensor-motor_%u_last_fault", static_cast<unsigned>(zone_number));
 
     float temp = 0.0f;
     float setpoint = 0.0f;
+    float valve_pct = 0.0f;
     const bool has_temp = entity_number_(doc, temp_key, &temp);
     const bool has_setpoint = entity_number_(doc, setpoint_key, &setpoint);
+    if (entity_number_(doc, valve_key, &valve_pct)) {
+      valve_sum += valve_pct;
+      valve_count++;
+      if (valve_pct > 0.5f)
+        active_zones++;
+    }
+    const char *fault = entity_state_(doc, fault_key);
+    if (fault != nullptr && fault[0] != '\0' && std::strcmp(fault, "NONE") != 0 &&
+        std::strcmp(fault, "none") != 0 && std::strcmp(fault, "OK") != 0 &&
+        std::strcmp(fault, "ok") != 0) {
+      telemetry.motor_fault = true;
+    }
     const bool enabled = state_is_on_(entity_state_(doc, enabled_key));
     if (!has_temp && !has_setpoint)
       continue;
@@ -706,6 +773,11 @@ bool LuneTouchCoordinator::ingest_v6_legacy_state_(size_t node_index, const ::lu
     }
     if (stored)
       updated++;
+  }
+  if (valve_count > 0) {
+    telemetry.avg_valve_pct = valve_sum / static_cast<float>(valve_count);
+    telemetry.has_avg_valve = true;
+    telemetry.active_zones = active_zones;
   }
 
   if (updated > 0)
@@ -1859,6 +1931,10 @@ void LuneTouchCoordinator::write_nodes_json(char *buffer, size_t capacity) const
     char pairing_fingerprint[48];
     char avg_temp[16] = "null";
     char avg_setpoint[16] = "null";
+    char flow_c[16];
+    char return_c[16];
+    char avg_valve_pct[16];
+    char motor_current_ma[16];
     size_t mapped_zones = 0;
     size_t fresh_zones = 0;
     size_t calling_zones = 0;
@@ -1891,6 +1967,11 @@ void LuneTouchCoordinator::write_nodes_json(char *buffer, size_t capacity) const
       snprintf(avg_temp, sizeof(avg_temp), "%.1f", temp_sum / static_cast<float>(temp_count));
     if (setpoint_count > 0)
       snprintf(avg_setpoint, sizeof(avg_setpoint), "%.1f", setpoint_sum / static_cast<float>(setpoint_count));
+    const NodeTelemetryState &telemetry = node_telemetry_[i];
+    nullable_float_(flow_c, sizeof(flow_c), telemetry.has_flow, telemetry.flow_c);
+    nullable_float_(return_c, sizeof(return_c), telemetry.has_return, telemetry.return_c);
+    nullable_float_(avg_valve_pct, sizeof(avg_valve_pct), telemetry.has_avg_valve, telemetry.avg_valve_pct);
+    nullable_float_(motor_current_ma, sizeof(motor_current_ma), telemetry.has_motor_current, telemetry.motor_current_ma);
     json_escape_(node_last_success_host_[i], success_host, sizeof(success_host));
     json_escape_(node_last_failure_[i], failure, sizeof(failure));
     json_escape_(node->pairing_fingerprint, pairing_fingerprint, sizeof(pairing_fingerprint));
@@ -1900,7 +1981,10 @@ void LuneTouchCoordinator::write_nodes_json(char *buffer, size_t capacity) const
                   "\"pairing_fingerprint\":\"%s\",\"last_seen_ms\":%lu,"
                   "\"last_success_host\":\"%s\",\"last_failure\":\"%s\","
                   "\"health\":{\"mapped_zones\":%u,\"fresh_zones\":%u,\"stale_zones\":%u,"
-                  "\"calling_zones\":%u,\"avg_temp_c\":%s,\"avg_setpoint_c\":%s}}",
+                  "\"calling_zones\":%u,\"avg_temp_c\":%s,\"avg_setpoint_c\":%s},"
+                  "\"runtime\":{\"active_zones\":%u,\"avg_valve_pct\":%s,"
+                  "\"flow_c\":%s,\"return_c\":%s,\"drivers_enabled\":%s,"
+                  "\"motor_fault\":%s,\"motor_current_ma\":%s}}",
                   first ? "" : ",", node->node_id, node->hostname, node->fallback_ip, node->model,
                   node->firmware, node->reachable ? "true" : "false",
                   static_cast<unsigned>(node->trust), ::lune_touch::node_trust_name(node->trust),
@@ -1910,7 +1994,11 @@ void LuneTouchCoordinator::write_nodes_json(char *buffer, size_t capacity) const
                   static_cast<unsigned>(mapped_zones),
                   static_cast<unsigned>(fresh_zones),
                   static_cast<unsigned>(mapped_zones > fresh_zones ? mapped_zones - fresh_zones : 0),
-                  static_cast<unsigned>(calling_zones), avg_temp, avg_setpoint))
+                  static_cast<unsigned>(calling_zones), avg_temp, avg_setpoint,
+                  static_cast<unsigned>(telemetry.active_zones), avg_valve_pct, flow_c, return_c,
+                  telemetry.has_drivers_enabled && telemetry.drivers_enabled ? "true" : "false",
+                  telemetry.has_motor_fault && telemetry.motor_fault ? "true" : "false",
+                  motor_current_ma))
       break;
     first = false;
   }

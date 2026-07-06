@@ -42,6 +42,22 @@ struct ForecastDispatchSummary {
   uint8_t blocked_untrusted{0};
 };
 
+struct NodeTelemetryState {
+  float flow_c{0.0f};
+  float return_c{0.0f};
+  float avg_valve_pct{0.0f};
+  float motor_current_ma{0.0f};
+  uint8_t active_zones{0};
+  bool has_flow{false};
+  bool has_return{false};
+  bool has_avg_valve{false};
+  bool has_motor_current{false};
+  bool drivers_enabled{false};
+  bool has_drivers_enabled{false};
+  bool motor_fault{false};
+  bool has_motor_fault{false};
+};
+
 class LuneTouchCoordinator : public esphome::Component {
  public:
   float get_setup_priority() const override { return esphome::setup_priority::AFTER_WIFI; }
@@ -140,6 +156,7 @@ class LuneTouchCoordinator : public esphome::Component {
   char last_poll_error_[80]{};
   char node_last_success_host_[::lune_touch::MAX_NODES][64]{};
   char node_last_failure_[::lune_touch::MAX_NODES][80]{};
+  NodeTelemetryState node_telemetry_[::lune_touch::MAX_NODES]{};
   ::lune_touch::HouseModel model_{};
   ::lune_touch::CommandLedger ledger_{};
   float forecast_latitude_{0.0f};

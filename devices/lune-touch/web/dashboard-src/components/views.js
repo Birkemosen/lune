@@ -231,6 +231,7 @@ export function renderManifolds() {
     <div class="section-head"><h2>Manifolds</h2><button class="btn" data-action="scan">Scan</button></div>
     <div class="card-grid">${state.nodes.map((n) => {
       const h = n.health || {};
+      const r = n.runtime || {};
       return `<article class="card">
       <h3>${n.id}</h3><p>${n.hostname || n.ip || 'no address'}</p>
       <div class="health-grid">
@@ -240,6 +241,12 @@ export function renderManifolds() {
         <div class="health-cell"><span>Temp</span><strong>${fmtC(h.avg_temp_c)}</strong></div>
         <div class="health-cell"><span>Setpoint</span><strong>${fmtC(h.avg_setpoint_c)}</strong></div>
         <div class="health-cell"><span>Trust</span><strong class="${fmtTrust(n) === 'trusted' ? 'ok' : 'warn'}">${fmtTrust(n)}</strong></div>
+        <div class="health-cell"><span>Flow</span><strong>${fmtC(r.flow_c)}</strong></div>
+        <div class="health-cell"><span>Return</span><strong>${fmtC(r.return_c)}</strong></div>
+        <div class="health-cell"><span>Valve</span><strong>${fmtValue(r.avg_valve_pct, '%')}</strong></div>
+        <div class="health-cell"><span>Active</span><strong>${r.active_zones ?? 0}</strong></div>
+        <div class="health-cell"><span>Drivers</span><strong class="${r.drivers_enabled ? 'ok' : 'warn'}">${r.drivers_enabled ? 'on' : 'off'}</strong></div>
+        <div class="health-cell"><span>Fault</span><strong class="${r.motor_fault ? 'warn' : 'ok'}">${r.motor_fault ? 'yes' : 'none'}</strong></div>
       </div>
       <dl><dt>Firmware</dt><dd>${n.firmware || '-'}</dd><dt>Status</dt><dd class="${n.reachable ? 'ok' : 'warn'}">${n.reachable ? 'reachable' : 'stale'}</dd><dt>Identity</dt><dd>${esc(n.pairing_fingerprint || '-')}</dd><dt>Last host</dt><dd>${esc(n.last_success_host || '-')}</dd><dt>Last error</dt><dd class="${n.last_failure ? 'warn' : 'muted'}">${esc(n.last_failure || '-')}</dd></dl>
       <div class="inline-form">

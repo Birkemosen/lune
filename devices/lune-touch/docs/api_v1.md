@@ -49,6 +49,15 @@ V6 diagnostics poll is promoted:
     "calling_zones": 2,
     "avg_temp_c": 21.0,
     "avg_setpoint_c": 21.3
+  },
+  "runtime": {
+    "active_zones": 6,
+    "avg_valve_pct": 15.0,
+    "flow_c": 33.8,
+    "return_c": 30.6,
+    "drivers_enabled": true,
+    "motor_fault": false,
+    "motor_current_ma": null
   }
 }
 ```
