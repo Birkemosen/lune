@@ -2880,6 +2880,21 @@ void LuneTouchCoordinator::write_diagnostics_json(char *buffer, size_t capacity)
     if (zone != nullptr && zone->enabled && live != nullptr && live->fresh)
       fresh_zones++;
   }
+  const size_t pending_commands = ledger_.count_result(::lune_touch::CommandResult::PENDING);
+  const size_t accepted_commands = ledger_.count_result(::lune_touch::CommandResult::ACCEPTED);
+  const size_t rejected_commands = ledger_.count_result(::lune_touch::CommandResult::REJECTED);
+  const size_t failed_commands = ledger_.count_result(::lune_touch::CommandResult::FAILED);
+  const size_t expired_commands = ledger_.count_result(::lune_touch::CommandResult::EXPIRED);
+  const size_t blocked_stale_commands = ledger_.count_result(::lune_touch::CommandResult::BLOCKED_STALE);
+  const size_t blocked_unreachable_commands = ledger_.count_result(::lune_touch::CommandResult::BLOCKED_UNREACHABLE);
+  const size_t blocked_untrusted_commands = ledger_.count_result(::lune_touch::CommandResult::BLOCKED_UNTRUSTED);
+  const size_t blocked_commands = blocked_stale_commands + blocked_unreachable_commands + blocked_untrusted_commands;
+  size_t clamped_commands = 0;
+  for (size_t i = 0; i < ledger_.count(); i++) {
+    const auto *record = ledger_.at(i);
+    if (record != nullptr && record->clamp_applied)
+      clamped_commands++;
+  }
   const size_t bound_zones = model_.active_zone_count();
   const size_t stale_zones = model_.stale_zone_count();
   const bool ready_for_commands = trusted_nodes > 0 && trusted_identity_missing_nodes == 0 &&
@@ -2917,6 +2932,9 @@ void LuneTouchCoordinator::write_diagnostics_json(char *buffer, size_t capacity)
   snprintf(buffer, capacity,
            "{\"heap\":\"watching\",\"nodes\":%u,\"zones\":%u,\"ledger\":%u,"
            "\"screen\":\"overview-only\",\"api\":\"/api/lune-touch/v1\","
+           "\"command_results\":{\"pending\":%u,\"accepted\":%u,\"rejected\":%u,"
+           "\"failed\":%u,\"expired\":%u,\"blocked\":%u,\"blocked_stale\":%u,"
+           "\"blocked_unreachable\":%u,\"blocked_untrusted\":%u,\"clamped\":%u},"
            "\"polling\":{\"last_poll_ms\":%lu,\"success\":%lu,\"fail\":%lu,\"last_error\":\"%s\"},"
            "\"commissioning\":{\"paired_nodes\":%u,\"trusted_nodes\":%u,"
            "\"reachable_nodes\":%u,\"stale_nodes\":%u,\"identity_missing_nodes\":%u,"
@@ -2937,6 +2955,16 @@ void LuneTouchCoordinator::write_diagnostics_json(char *buffer, size_t capacity)
            static_cast<unsigned>(model_.node_count()),
            static_cast<unsigned>(model_.zone_count()),
            static_cast<unsigned>(ledger_.count()),
+           static_cast<unsigned>(pending_commands),
+           static_cast<unsigned>(accepted_commands),
+           static_cast<unsigned>(rejected_commands),
+           static_cast<unsigned>(failed_commands),
+           static_cast<unsigned>(expired_commands),
+           static_cast<unsigned>(blocked_commands),
+           static_cast<unsigned>(blocked_stale_commands),
+           static_cast<unsigned>(blocked_unreachable_commands),
+           static_cast<unsigned>(blocked_untrusted_commands),
+           static_cast<unsigned>(clamped_commands),
            static_cast<unsigned long>(last_poll_ms_),
            static_cast<unsigned long>(poll_success_count_),
            static_cast<unsigned long>(poll_fail_count_),

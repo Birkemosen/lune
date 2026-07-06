@@ -112,6 +112,7 @@ function mockData(path) {
     ledger: 3,
     screen: 'overview-only',
     api: BASE,
+    command_results: { pending: 0, accepted: 2, rejected: 0, failed: 0, expired: 0, blocked: 1, blocked_stale: 0, blocked_unreachable: 1, blocked_untrusted: 0, clamped: 1 },
     polling: { last_poll_ms: Date.now() % 900000, success: 42, fail: 1, last_error: 'mock stale node' },
     commissioning: { paired_nodes: 1, trusted_nodes: 2, reachable_nodes: 2, stale_nodes: 1, identity_missing_nodes: 0, bound_zones: 18, fresh_zones: 17, stale_zones: 1, ready_for_commands: true, ready_for_forecast: true, next_action: 'ready' },
     ota: { running_label: 'app0', running_subtype: 16, running_slot_size: 6553600, configured_slot_size: 6553600, state: 'valid', pending_verify: false },

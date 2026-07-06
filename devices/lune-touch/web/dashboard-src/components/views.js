@@ -188,7 +188,7 @@ function readinessStrip() {
 
 function statusClass(status) {
   if (status === 'heat' || status === 'call' || status === 'preheat') return 'ok';
-  if (status === 'stale' || status === 'rejected' || status === 'expired' || status === 'blocked_stale' || status === 'blocked_unreachable' || status === 'blocked_untrusted') return 'warn';
+  if (status === 'stale' || status === 'rejected' || status === 'failed' || status === 'expired' || status === 'blocked_stale' || status === 'blocked_unreachable' || status === 'blocked_untrusted') return 'warn';
   if (status === 'unused') return 'muted';
   return '';
 }
@@ -198,10 +198,27 @@ function commandStats(commands = []) {
   return commands.reduce((stats, command) => {
     if (command.result === 'pending') stats.pending += 1;
     if (command.result === 'accepted') stats.accepted += 1;
+    if (command.result === 'rejected') stats.rejected += 1;
+    if (command.result === 'failed') stats.failed += 1;
+    if (command.result === 'expired') stats.expired += 1;
+    if (command.result === 'blocked_stale') stats.blocked_stale += 1;
+    if (command.result === 'blocked_unreachable') stats.blocked_unreachable += 1;
+    if (command.result === 'blocked_untrusted') stats.blocked_untrusted += 1;
     if (command.clamp_applied) stats.clamped += 1;
     if (blockingResults.has(command.result)) stats.blocked += 1;
     return stats;
-  }, { pending: 0, accepted: 0, clamped: 0, blocked: 0 });
+  }, {
+    pending: 0,
+    accepted: 0,
+    rejected: 0,
+    failed: 0,
+    expired: 0,
+    blocked: 0,
+    blocked_stale: 0,
+    blocked_unreachable: 0,
+    blocked_untrusted: 0,
+    clamped: 0,
+  });
 }
 
 function commandNeedsAttention(command = {}) {
@@ -399,7 +416,7 @@ export function renderDiagnostics() {
   const ota = d.ota || {};
   const learning = d.learning || {};
   const forecastCommands = d.forecast_commands || state.forecast?.commands || {};
-  const stats = commandStats(state.commands);
+  const stats = d.command_results || commandStats(state.commands);
   const attentionCommands = state.commands.filter(commandNeedsAttention).slice(-5).reverse();
   const events = state.events.slice(0, 10);
   const recoveryOptions = state.zones
@@ -428,6 +445,8 @@ export function renderDiagnostics() {
           <div class="metric"><span>Clamped</span><strong class="${stats.clamped ? 'warn' : 'ok'}">${stats.clamped}</strong></div>
           <div class="metric"><span>Blocked</span><strong class="${stats.blocked ? 'warn' : 'ok'}">${stats.blocked}</strong></div>
         </div>
+        <p class="${stats.failed || stats.rejected || stats.expired ? 'warn' : 'muted'}">${stats.failed || 0} failed / ${stats.rejected || 0} rejected / ${stats.expired || 0} expired</p>
+        <p class="${stats.blocked_stale || stats.blocked_unreachable || stats.blocked_untrusted ? 'warn' : 'muted'}">${stats.blocked_stale || 0} stale / ${stats.blocked_unreachable || 0} offline / ${stats.blocked_untrusted || 0} trust</p>
         <div class="data-table diagnostics-table">
           <div class="tr head diagnostics"><span>Source</span><span>Target</span><span>Request</span><span>Result</span><span>Reason</span></div>
           ${attentionCommands.map((c) => `<div class="tr diagnostics"><span>${esc(c.source)}</span><span>${v6Name(c.node_index)} / Z${Number(c.zone_index) + 1}</span><span>${fmtValue(c.requested_offset_c, ' C')}</span><span class="${statusClass(c.result)}">${esc(c.result)}${c.clamp_applied ? ' / clamp' : ''}</span><span>${esc(c.reason || c.request_id || '-')}</span></div>`).join('') || '<div class="empty-row">No failed, blocked, or clamped commands</div>'}

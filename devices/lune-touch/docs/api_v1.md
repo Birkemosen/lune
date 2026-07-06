@@ -111,6 +111,28 @@ cooling counts. It also includes `ota` runtime data with the running partition
 label/subtype, slot size, rollback state, and `pending_verify` flag so installers
 can confirm OTA recovery assumptions.
 
+Diagnostics also includes `command_results`, a compact command-ledger summary for
+field troubleshooting:
+
+```json
+{
+  "pending": 0,
+  "accepted": 2,
+  "rejected": 0,
+  "failed": 0,
+  "expired": 0,
+  "blocked": 1,
+  "blocked_stale": 0,
+  "blocked_unreachable": 1,
+  "blocked_untrusted": 0,
+  "clamped": 1
+}
+```
+
+`failed` means Touch attempted to send the command and did not get a successful
+V6 response; `rejected` means V6 answered but declined the command. `blocked`
+is the sum of the local stale, unreachable, and untrusted safety blocks.
+
 Diagnostics includes a `commissioning` readiness block for field testing:
 
 ```json
