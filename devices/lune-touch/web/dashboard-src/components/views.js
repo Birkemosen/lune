@@ -163,7 +163,7 @@ function statusClass(status) {
 function zoneCard(zone) {
   return `<article class="zone-card ${statusClass(zone.status)}">
     <div class="zone-top"><strong>${zone.name}</strong><span>${fmtC(zone.temperature_c)}</span></div>
-    <div class="zone-bottom"><span>Set ${fmtC(zone.setpoint_c)}</span><span>${zone.status}</span><span>${v6Name(zone.node_index)}</span></div>
+    <div class="zone-bottom"><span>Set ${fmtC(zone.setpoint_c)}</span><span>${fmtValue(zone.valve_pct, '%')}</span><span>${zone.status}</span><span>${v6Name(zone.node_index)}</span></div>
   </article>`;
 }
 
@@ -216,9 +216,10 @@ export function renderZones() {
       <button class="btn" data-action="save-schedule">Save schedule</button>
     </div>
     <div class="data-table">
-      <div class="tr head zones"><span>Room</span><span>Current</span><span>Comfort</span><span>Schedule</span><span>Status</span><span>Source</span><span>Learning</span><span>Command</span></div>
+      <div class="tr head zones"><span>Room</span><span>Current</span><span>Comfort</span><span>Schedule</span><span>Status</span><span>Source</span><span>Valve</span><span>Learning</span><span>Command</span></div>
       ${state.zones.map((z) => `<div class="tr">
         <span>${z.name}</span><span>${fmtC(z.temperature_c)}</span><span>${fmtComfortIntent(z.comfort, z.setpoint_c)}</span><span>${fmtSchedule(z.schedule)}</span><span class="${statusClass(z.status)}">${z.status}</span><span>${v6Name(z.node_index)} / Z${Number(z.zone_index) + 1}</span>
+        <span>${fmtValue(z.valve_pct, '%')}</span>
         <span>${fmtLearning(z.history)}</span>
         <span><button class="btn slim" data-command-room="${z.room_id}">+0.5 C / 45m</button></span>
       </div>`).join('')}

@@ -70,10 +70,12 @@ struct ZoneLiveState {
   char room_id[32]{};
   float temperature_c{0.0f};
   float setpoint_c{0.0f};
+  float valve_pct{0.0f};
   char status[16]{"unknown"};
   uint32_t updated_at_ms{0};
   bool has_temperature{false};
   bool has_setpoint{false};
+  bool has_valve{false};
   bool fresh{false};
 };
 
@@ -181,11 +183,13 @@ class HouseModel {
                             uint16_t start_min, uint16_t end_min, float setpoint_c);
   bool update_zone_live(const char *room_id, float temperature_c, bool has_temperature,
                         float setpoint_c, bool has_setpoint, const char *status,
-                        bool fresh, uint32_t now_ms);
+                        bool fresh, uint32_t now_ms, float valve_pct = 0.0f,
+                        bool has_valve = false);
   bool update_zone_live_by_binding(size_t node_index, size_t zone_index,
                                    float temperature_c, bool has_temperature,
                                    float setpoint_c, bool has_setpoint, const char *status,
-                                   bool fresh, uint32_t now_ms);
+                                   bool fresh, uint32_t now_ms, float valve_pct = 0.0f,
+                                   bool has_valve = false);
   ResolvedZone resolve_room(const char *room_id) const;
   size_t active_zone_count() const;
   size_t calling_zone_count() const;

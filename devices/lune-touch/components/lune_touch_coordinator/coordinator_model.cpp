@@ -250,7 +250,7 @@ bool HouseModel::update_zone_schedule(const char *room_id, bool enabled, uint8_t
 
 bool HouseModel::update_zone_live(const char *room_id, float temperature_c, bool has_temperature,
                                   float setpoint_c, bool has_setpoint, const char *status,
-                                  bool fresh, uint32_t now_ms) {
+                                  bool fresh, uint32_t now_ms, float valve_pct, bool has_valve) {
   if (room_id == nullptr || room_id[0] == '\0')
     return false;
   for (size_t i = 0; i < zone_count_; i++) {
@@ -259,8 +259,10 @@ bool HouseModel::update_zone_live(const char *room_id, float temperature_c, bool
     copy_text_(live_[i].room_id, sizeof(live_[i].room_id), room_id);
     live_[i].temperature_c = temperature_c;
     live_[i].setpoint_c = setpoint_c;
+    live_[i].valve_pct = clamp_float_(valve_pct, 0.0f, 100.0f, 0.0f);
     live_[i].has_temperature = has_temperature;
     live_[i].has_setpoint = has_setpoint;
+    live_[i].has_valve = has_valve;
     copy_text_(live_[i].status, sizeof(live_[i].status), status != nullptr && status[0] != '\0' ? status : "unknown");
     live_[i].fresh = fresh;
     live_[i].updated_at_ms = now_ms;
@@ -273,12 +275,12 @@ bool HouseModel::update_zone_live(const char *room_id, float temperature_c, bool
 bool HouseModel::update_zone_live_by_binding(size_t node_index, size_t zone_index,
                                              float temperature_c, bool has_temperature,
                                              float setpoint_c, bool has_setpoint, const char *status,
-                                             bool fresh, uint32_t now_ms) {
+                                             bool fresh, uint32_t now_ms, float valve_pct, bool has_valve) {
   for (size_t i = 0; i < zone_count_; i++) {
     if (!zones_[i].enabled || zones_[i].node_index != node_index || zones_[i].zone_index != zone_index)
       continue;
     return update_zone_live(zones_[i].room_id, temperature_c, has_temperature,
-                            setpoint_c, has_setpoint, status, fresh, now_ms);
+                            setpoint_c, has_setpoint, status, fresh, now_ms, valve_pct, has_valve);
   }
   return false;
 }

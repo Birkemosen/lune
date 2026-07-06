@@ -224,7 +224,8 @@ static void test_zone_live_state() {
 
   expect(model.update_zone_live("living", 20.9f, true, 21.5f, true, "heat", true, 5000),
          "live: update mapped room");
-  expect(model.update_zone_live("bath", 19.0f, true, 20.0f, true, "stale", false, 5000),
+  expect(model.update_zone_live("bath", 19.0f, true, 20.0f, true, "stale", false, 5000,
+                                42.5f, true),
          "live: update stale room");
   expect(!model.update_zone_live("missing", 0.0f, false, 0.0f, false, "idle", false, 5000),
          "live: reject unknown room");
@@ -262,11 +263,18 @@ static void test_zone_live_state() {
   ResolvedZone living = model.resolve_room("living");
   expect(living.live != nullptr && living.live->has_temperature && living.live->temperature_c > 21.8f,
          "live: resolve includes snapshot");
-  expect(model.update_zone_live_by_binding(0, 1, 22.0f, true, 22.5f, true, "call", true, 6000),
-         "live: update by node/zone binding");
   ResolvedZone bath = model.resolve_room("bath");
+  expect(bath.live != nullptr && bath.live->has_valve && bath.live->valve_pct > 42.4f &&
+             bath.live->valve_pct < 42.6f,
+         "live: tracks valve position");
+  expect(model.update_zone_live_by_binding(0, 1, 22.0f, true, 22.5f, true, "call", true,
+                                           6000, 125.0f, true),
+         "live: update by node/zone binding");
+  bath = model.resolve_room("bath");
   expect(bath.live != nullptr && std::strcmp(bath.live->status, "call") == 0,
          "live: binding update changes mapped room");
+  expect(bath.live != nullptr && bath.live->has_valve && bath.live->valve_pct == 100.0f,
+         "live: clamps valve position");
   expect(!model.update_zone_live_by_binding(2, 1, 0.0f, false, 0.0f, false, "idle", false, 6000),
          "live: reject unmapped binding");
   expect(model.update_zone_comfort("bath", 80.0f, 9, -8.0f), "live: comfort clamp update");

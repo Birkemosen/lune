@@ -655,15 +655,17 @@ bool LuneTouchCoordinator::ingest_v6_zones_(size_t node_index, const char *body,
 
     const bool has_temp = !zone["temperature_c"].isNull();
     const bool has_setpoint = !zone["setpoint_c"].isNull();
+    const bool has_valve = !zone["valve_pct"].isNull();
     const float temp = has_temp ? (zone["temperature_c"] | 0.0f) : 0.0f;
     const float setpoint = has_setpoint ? (zone["setpoint_c"] | 0.0f) : 0.0f;
+    const float valve = has_valve ? (zone["valve_pct"] | 0.0f) : 0.0f;
     const char *status = zone["state"] | nullptr;
     if (status == nullptr)
       status = zone["status"] | "unknown";
     const bool fresh = zone["fresh"] | true;
     if (model_.update_zone_live_by_binding(node_index, static_cast<size_t>(zone_number - 1),
                                            temp, has_temp, setpoint, has_setpoint,
-                                           status, fresh, now_ms))
+                                           status, fresh, now_ms, valve, has_valve))
       updated++;
     JsonVariant forecast = zone["forecast"];
     const uint8_t exterior_walls = forecast["exterior_walls"] | zone["exterior_walls"] | 0;
@@ -733,7 +735,8 @@ bool LuneTouchCoordinator::ingest_v6_legacy_state_(size_t node_index, const ::lu
     float valve_pct = 0.0f;
     const bool has_temp = entity_number_(doc, temp_key, &temp);
     const bool has_setpoint = entity_number_(doc, setpoint_key, &setpoint);
-    if (entity_number_(doc, valve_key, &valve_pct)) {
+    const bool has_valve = entity_number_(doc, valve_key, &valve_pct);
+    if (has_valve) {
       valve_sum += valve_pct;
       valve_count++;
       if (valve_pct > 0.5f)
@@ -756,7 +759,7 @@ bool LuneTouchCoordinator::ingest_v6_legacy_state_(size_t node_index, const ::lu
     const size_t zone_index = zone_number - 1;
     bool stored = model_.update_zone_live_by_binding(node_index, zone_index, temp, has_temp,
                                                      setpoint, has_setpoint, status,
-                                                     enabled && has_temp, now_ms);
+                                                     enabled && has_temp, now_ms, valve_pct, has_valve);
     if (!stored) {
       char room_id[32];
       char room_name[48];
@@ -768,7 +771,7 @@ bool LuneTouchCoordinator::ingest_v6_legacy_state_(size_t node_index, const ::lu
       if (model_.bind_zone(room_id, room_name, node_index, zone_index)) {
         stored = model_.update_zone_live_by_binding(node_index, zone_index, temp, has_temp,
                                                     setpoint, has_setpoint, status,
-                                                    enabled && has_temp, now_ms);
+                                                    enabled && has_temp, now_ms, valve_pct, has_valve);
       }
     }
     if (stored)
@@ -2045,12 +2048,14 @@ void LuneTouchCoordinator::write_zones_json(char *buffer, size_t capacity) const
       continue;
     char temp_buf[16];
     char sp_buf[16];
+    char valve_buf[16];
     char hist_avg_buf[16];
     char hist_min_buf[16];
     char hist_max_buf[16];
     char hist_delta_buf[16];
     if (live != nullptr && live->has_temperature) snprintf(temp_buf, sizeof(temp_buf), "%.1f", live->temperature_c); else std::strncpy(temp_buf, "null", sizeof(temp_buf));
     if (live != nullptr && live->has_setpoint) snprintf(sp_buf, sizeof(sp_buf), "%.1f", live->setpoint_c); else std::strncpy(sp_buf, "null", sizeof(sp_buf));
+    if (live != nullptr && live->has_valve) snprintf(valve_buf, sizeof(valve_buf), "%.1f", live->valve_pct); else std::strncpy(valve_buf, "null", sizeof(valve_buf));
     if (history != nullptr && history->has_temperature) {
       snprintf(hist_avg_buf, sizeof(hist_avg_buf), "%.2f", history->average_temperature_c);
       snprintf(hist_min_buf, sizeof(hist_min_buf), "%.2f", history->min_temperature_c);
@@ -2066,6 +2071,7 @@ void LuneTouchCoordinator::write_zones_json(char *buffer, size_t capacity) const
       std::strncpy(hist_delta_buf, "null", sizeof(hist_delta_buf));
     temp_buf[sizeof(temp_buf) - 1] = '\0';
     sp_buf[sizeof(sp_buf) - 1] = '\0';
+    valve_buf[sizeof(valve_buf) - 1] = '\0';
     hist_avg_buf[sizeof(hist_avg_buf) - 1] = '\0';
     hist_min_buf[sizeof(hist_min_buf) - 1] = '\0';
     hist_max_buf[sizeof(hist_max_buf) - 1] = '\0';
@@ -2074,7 +2080,7 @@ void LuneTouchCoordinator::write_zones_json(char *buffer, size_t capacity) const
     if (!appendf_(buffer, capacity, off,
                   "%s{\"room_id\":\"%s\",\"name\":\"%s\",\"node_index\":%u,\"zone_index\":%u,"
                   "\"temperature_c\":%s,\"setpoint_c\":%s,\"status\":\"%s\",\"fresh\":%s,"
-                  "\"updated_at_ms\":%lu,\"comfort\":{\"setpoint_c\":%.1f,"
+                  "\"valve_pct\":%s,\"updated_at_ms\":%lu,\"comfort\":{\"setpoint_c\":%.1f,"
                   "\"bias_c\":%.1f,\"effective_setpoint_c\":%.1f,\"priority\":%u},"
                   "\"schedule\":{\"enabled\":%s,\"day_mask\":%u,\"start_min\":%u,"
                   "\"end_min\":%u,\"setpoint_c\":%.1f},"
@@ -2087,6 +2093,7 @@ void LuneTouchCoordinator::write_zones_json(char *buffer, size_t capacity) const
                   first ? "" : ",", zone->room_id, zone->room_name,
                   static_cast<unsigned>(zone->node_index), static_cast<unsigned>(zone->zone_index),
                   temp_buf, sp_buf, status, live != nullptr && live->fresh && zone->enabled ? "true" : "false",
+                  valve_buf,
                   static_cast<unsigned long>(live != nullptr ? live->updated_at_ms : 0),
                   zone->comfort_setpoint_c, zone->comfort_bias_c,
                   ::lune_touch::HouseModel::effective_comfort_setpoint_c(*zone),

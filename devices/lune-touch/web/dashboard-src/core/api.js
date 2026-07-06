@@ -21,6 +21,7 @@ function mockData(path) {
       zone_index: i % 6,
       temperature_c: [21.3,20.9,22.2,20.1,20.8,19.4,19.8,18.9,18.7,17.6,18.1,20.3,20.5,20.0,21.8,null,12.4,null][i],
       setpoint_c: [21.0,21.0,22.5,20.0,21.0,19.5,20.0,19.0,18.5,18.0,18.0,20.0,20.5,20.5,22.0,18.0,12.0,null][i],
+      valve_pct: [45,18,28,15,15,35,10,42,15,58,12,15,16,38,30,null,15,null][i],
       status: statuses[i],
       fresh: statuses[i] !== 'stale',
       comfort: { setpoint_c: comfortSetpoints[i], bias_c: comfortBiases[i], effective_setpoint_c: comfortSetpoints[i] + comfortBiases[i], priority: i < 3 ? 3 : 1 },

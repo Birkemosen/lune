@@ -143,6 +143,7 @@ learning foundation for now and resets on reboot/import:
   "zone_index": 1,
   "temperature_c": 21.3,
   "setpoint_c": 21.0,
+  "valve_pct": 47.0,
   "status": "heat",
   "fresh": true,
   "comfort": {
