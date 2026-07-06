@@ -69,6 +69,16 @@ const parseClock = (value, fallback) => {
 };
 const fmtSchedule = (schedule = {}) => schedule.enabled ? `${fmtClock(schedule.start_min)}-${fmtClock(schedule.end_min)} / ${fmtC(schedule.setpoint_c)}` : 'off';
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+const nodePayloadFromCandidate = (input, candidate = {}) => {
+  const value = String(input || '');
+  const isIp = /^\d+\.\d+\.\d+\.\d+$/.test(value);
+  return {
+    node_id: candidate.id || undefined,
+    hostname: candidate.hostname || (isIp ? '' : value),
+    ip: candidate.ip || (isIp ? value : ''),
+    pairing_fingerprint: candidate.pairing_fingerprint || '',
+  };
+};
 
 function range(values, fallbackMin, fallbackMax) {
   const finite = values.filter((value) => Number.isFinite(value));
@@ -474,7 +484,11 @@ export function bindActions(root) {
   });
   root.querySelector('[data-action="add-node"]')?.addEventListener('click', () => {
     const host = root.querySelector('#node-host')?.value?.trim();
-    if (host) runAction(() => api.addNode({ hostname: host }).then(refreshAll));
+    if (host) runAction(() => api.scanNodes({ hostname: host }).then((result) => {
+      patch({ scanResult: result });
+      const candidate = result?.found?.[0] || {};
+      return api.addNode(nodePayloadFromCandidate(host, candidate));
+    }).then(refreshAll));
   });
   root.querySelector('[data-action="probe-node"]')?.addEventListener('click', () => {
     const host = root.querySelector('#node-host')?.value?.trim();
