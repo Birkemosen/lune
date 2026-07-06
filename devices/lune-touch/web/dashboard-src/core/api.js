@@ -134,6 +134,14 @@ async function get(path) {
   return json.data || json;
 }
 
+function queryUrl(path, params = {}) {
+  const query = new URLSearchParams();
+  Object.entries(params).forEach(([key, value]) => {
+    if (value !== undefined && value !== null) query.set(key, String(value));
+  });
+  return `${BASE}${path}${query.toString() ? `?${query}` : ''}`;
+}
+
 async function refreshPaths(paths, { loading = false } = {}) {
   if (loading) patch({ loading: true, error: '' });
   try {
@@ -184,12 +192,14 @@ async function post(path, body = {}) {
     if (path.includes('/motor-action')) return { result: 'accepted', action: body.action || 'reset_fault', target_node: 'v6-a', zone_index: 0 };
     return { result: 'mock' };
   }
-  const query = new URLSearchParams();
-  Object.entries(body).forEach(([key, value]) => {
-    if (value !== undefined && value !== null) query.set(key, String(value));
+  let response = await fetch(BASE + path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body || {}),
   });
-  const url = `${BASE}${path}${query.toString() ? `?${query}` : ''}`;
-  const response = await fetch(url, { method: 'POST', body: '' });
+  if (!response.ok && [400, 404, 415].includes(response.status)) {
+    response = await fetch(queryUrl(path, body), { method: 'POST', body: '' });
+  }
   if (!response.ok) {
     let message = `${path} failed: ${response.status}`;
     try {
