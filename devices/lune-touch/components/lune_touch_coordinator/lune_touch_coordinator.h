@@ -58,6 +58,13 @@ struct NodeTelemetryState {
   bool has_motor_fault{false};
 };
 
+struct EventRecord {
+  uint32_t ts_ms{0};
+  char level[8]{};
+  char source[20]{};
+  char message[96]{};
+};
+
 class LuneTouchCoordinator : public esphome::Component {
  public:
   float get_setup_priority() const override { return esphome::setup_priority::AFTER_WIFI; }
@@ -79,6 +86,7 @@ class LuneTouchCoordinator : public esphome::Component {
   void write_commands_json(char *buffer, size_t capacity) const;
   void write_diagnostics_json(char *buffer, size_t capacity) const;
   void write_settings_json(char *buffer, size_t capacity) const;
+  void write_events_json(char *buffer, size_t capacity) const;
 
   bool add_node(const char *node_id, const char *hostname, const char *fallback_ip,
                 const char *pairing_fingerprint, char *response, size_t capacity);
@@ -146,6 +154,7 @@ class LuneTouchCoordinator : public esphome::Component {
                                  const ::lune_touch::CommandRecord &request,
                                  uint32_t ttl_s, ::lune_touch::CommandRecord *result);
   void url_encode_(const char *src, char *out, size_t out_len) const;
+  void log_event_(const char *level, const char *source, const char *message);
 
   static constexpr uint32_t POLL_INTERVAL_MS = 15000;
   static constexpr uint32_t POLL_BOOT_DELAY_MS = 9000;
@@ -157,6 +166,7 @@ class LuneTouchCoordinator : public esphome::Component {
   static constexpr uint32_t FORECAST_COMMAND_TTL_S = 4500;
   static constexpr uint32_t FORECAST_COMMAND_DEDUPE_MS = 30UL * 60UL * 1000UL;
   static constexpr float FORECAST_COMMAND_EPSILON_C = 0.05f;
+  static constexpr size_t EVENT_CAPACITY = 32;
 
   uint32_t node_stale_after_ms_{300000};
   esphome::time::RealTimeClock *time_{nullptr};
@@ -172,6 +182,9 @@ class LuneTouchCoordinator : public esphome::Component {
   char node_last_success_host_[::lune_touch::MAX_NODES][64]{};
   char node_last_failure_[::lune_touch::MAX_NODES][80]{};
   NodeTelemetryState node_telemetry_[::lune_touch::MAX_NODES]{};
+  EventRecord events_[EVENT_CAPACITY]{};
+  size_t event_next_{0};
+  size_t event_count_{0};
   ::lune_touch::HouseModel model_{};
   ::lune_touch::CommandLedger ledger_{};
   float forecast_latitude_{0.0f};

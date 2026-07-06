@@ -10,6 +10,7 @@ export const state = {
   strategy: null,
   forecast: null,
   commands: [],
+  events: [],
   diagnostics: null,
   settings: null,
   scanResult: null,

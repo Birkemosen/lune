@@ -363,6 +363,7 @@ void LuneTouchCoordinator::setup() {
   load_forecast_settings_();
   load_settings_();
   load_forecast_cache_();
+  log_event_("info", "boot", "coordinator ready");
   if (!loaded_registry)
     ESP_LOGI(TAG, "No persisted Touch registry; waiting for dashboard pairing");
   ESP_LOGI(TAG, "Lune Touch coordinator model ready");
@@ -402,6 +403,26 @@ bool LuneTouchCoordinator::take_state_lock_(uint32_t timeout_ms) const {
 void LuneTouchCoordinator::give_state_lock_() const {
   if (state_lock_ != nullptr)
     xSemaphoreGive(state_lock_);
+}
+
+void LuneTouchCoordinator::log_event_(const char *level, const char *source, const char *message) {
+  if (!take_state_lock_(5))
+    return;
+  EventRecord &event = events_[event_next_];
+  event.ts_ms = esphome::millis();
+  std::strncpy(event.level, level != nullptr && level[0] != '\0' ? level : "info",
+               sizeof(event.level) - 1);
+  event.level[sizeof(event.level) - 1] = '\0';
+  std::strncpy(event.source, source != nullptr && source[0] != '\0' ? source : "touch",
+               sizeof(event.source) - 1);
+  event.source[sizeof(event.source) - 1] = '\0';
+  std::strncpy(event.message, message != nullptr && message[0] != '\0' ? message : "-",
+               sizeof(event.message) - 1);
+  event.message[sizeof(event.message) - 1] = '\0';
+  event_next_ = (event_next_ + 1) % EVENT_CAPACITY;
+  if (event_count_ < EVENT_CAPACITY)
+    event_count_++;
+  give_state_lock_();
 }
 
 void LuneTouchCoordinator::poll_task_func_(void *arg) {
@@ -643,9 +664,16 @@ void LuneTouchCoordinator::note_node_poll_success_(size_t node_index, const char
 void LuneTouchCoordinator::note_node_poll_failure_(size_t node_index, const char *reason) {
   if (node_index >= ::lune_touch::MAX_NODES)
     return;
+  const char *next_reason = reason != nullptr ? reason : "poll failed";
+  const bool changed = std::strcmp(node_last_failure_[node_index], next_reason) != 0;
   std::strncpy(node_last_failure_[node_index], reason != nullptr ? reason : "poll failed",
                sizeof(node_last_failure_[node_index]) - 1);
   node_last_failure_[node_index][sizeof(node_last_failure_[node_index]) - 1] = '\0';
+  if (changed) {
+    char message[112];
+    snprintf(message, sizeof(message), "node %u %s", static_cast<unsigned>(node_index), next_reason);
+    log_event_("warn", "poll", message);
+  }
 }
 
 bool LuneTouchCoordinator::fetch_json_(const char *url, char *body, size_t body_capacity, int *status_code) {
@@ -1677,6 +1705,9 @@ bool LuneTouchCoordinator::add_node(const char *node_id, const char *hostname, c
   snprintf(response, capacity, "{\"result\":\"stored\",\"node_id\":\"%s\",\"node_index\":%d,"
            "\"pairing_fingerprint\":\"%s\"}",
            node_id, index, pairing_fingerprint_esc);
+  char event[112];
+  snprintf(event, sizeof(event), "paired node %s", node_id);
+  log_event_("info", "commissioning", event);
   return true;
 }
 
@@ -1800,6 +1831,10 @@ bool LuneTouchCoordinator::set_node_trust(const char *node_id, ::lune_touch::Nod
   save_registry_();
   snprintf(response, capacity, "{\"result\":\"stored\",\"node_id\":\"%s\",\"trust\":\"%s\"}",
            node_id != nullptr ? node_id : "", ::lune_touch::node_trust_name(trust));
+  char event[112];
+  snprintf(event, sizeof(event), "node %s trust %s",
+           node_id != nullptr ? node_id : "", ::lune_touch::node_trust_name(trust));
+  log_event_("info", "commissioning", event);
   return true;
 }
 
@@ -1810,6 +1845,9 @@ bool LuneTouchCoordinator::remove_node(const char *node_id, char *response, size
   }
   save_registry_();
   snprintf(response, capacity, "{\"result\":\"removed\",\"node_id\":\"%s\"}", node_id != nullptr ? node_id : "");
+  char event[112];
+  snprintf(event, sizeof(event), "removed node %s", node_id != nullptr ? node_id : "");
+  log_event_("warn", "commissioning", event);
   return true;
 }
 
@@ -1845,6 +1883,7 @@ bool LuneTouchCoordinator::reset_registry(const char *confirmation, char *respon
   }
   snprintf(response, capacity,
            "{\"result\":\"reset\",\"registry\":\"cleared\",\"ledger\":\"cleared\"}");
+  log_event_("warn", "recovery", "registry and ledger reset");
   return true;
 }
 
@@ -1858,6 +1897,11 @@ bool LuneTouchCoordinator::bind_room(const char *room_id, const char *room_name,
   snprintf(response, capacity,
            "{\"result\":\"stored\",\"room_id\":\"%s\",\"node_index\":%u,\"zone_index\":%u}",
            room_id != nullptr ? room_id : "", static_cast<unsigned>(node_index), static_cast<unsigned>(zone_index));
+  char event[112];
+  snprintf(event, sizeof(event), "mapped %s to node %u zone %u",
+           room_id != nullptr ? room_id : "", static_cast<unsigned>(node_index),
+           static_cast<unsigned>(zone_index));
+  log_event_("info", "zones", event);
   return true;
 }
 
@@ -2005,6 +2049,11 @@ bool LuneTouchCoordinator::queue_setpoint_command(const char *room_id, float req
            target_node.node_id, static_cast<unsigned>(final_record.zone_index),
            final_record.requested_offset_c, final_record.accepted_offset_c,
            final_record.clamp_applied ? "true" : "false", static_cast<unsigned long>(ttl_s));
+  char event[112];
+  snprintf(event, sizeof(event), "setpoint %s %s",
+           final_record.request_id, ::lune_touch::command_result_name(final_record.result));
+  log_event_(final_record.result == ::lune_touch::CommandResult::ACCEPTED ? "info" : "warn",
+             "commands", event);
   return true;
 }
 
@@ -2092,6 +2141,9 @@ bool LuneTouchCoordinator::request_motor_action(const char *room_id, const char 
            "\"target_node\":\"%s\",\"zone_index\":%u,\"error\":\"%s\"}",
            result, action != nullptr ? action : "", v6_command, target_node.node_id,
            static_cast<unsigned>(target_zone), error);
+  char event[112];
+  snprintf(event, sizeof(event), "motor %s %s", action != nullptr ? action : "", result);
+  log_event_(std::strcmp(result, "accepted") == 0 ? "info" : "warn", "recovery", event);
   return true;
 }
 
@@ -2123,6 +2175,7 @@ bool LuneTouchCoordinator::set_forecast_location(float latitude, float longitude
   clear_forecast_cache_();
   snprintf(response, capacity, "{\"result\":\"saved\",\"latitude\":%.6f,\"longitude\":%.6f}",
            latitude, longitude);
+  log_event_("info", "forecast", "location updated");
   return true;
 }
 
@@ -2186,6 +2239,7 @@ bool LuneTouchCoordinator::set_settings(const char *coordinator_name, const char
   snprintf(response, capacity, "{\"result\":\"saved\",\"install_mode\":\"%s\","
            "\"asgard_enabled\":%s,\"asgard_mode\":\"%s\"}",
            install_mode_, asgard_enabled_ ? "true" : "false", asgard_mode_);
+  log_event_("info", "settings", "coordinator settings updated");
   return true;
 }
 
@@ -2226,6 +2280,7 @@ bool LuneTouchCoordinator::request_forecast_fetch(char *response, size_t capacit
   forecast_last_error_[0] = '\0';
   give_state_lock_();
   snprintf(response, capacity, "{\"result\":\"queued\",\"status\":\"queued\"}");
+  log_event_("info", "forecast", "fetch queued");
   return true;
 }
 
@@ -2313,6 +2368,7 @@ bool LuneTouchCoordinator::perform_forecast_fetch_(char *response, size_t capaci
   if (!ok) {
     snprintf(response, capacity, "{\"result\":\"rejected\",\"status\":\"error\",\"error\":\"%s\"}",
              error[0] != '\0' ? error : "fetch_failed");
+    log_event_("warn", "forecast", error[0] != '\0' ? error : "fetch_failed");
     return false;
   }
   snprintf(response, capacity,
@@ -2326,6 +2382,7 @@ bool LuneTouchCoordinator::perform_forecast_fetch_(char *response, size_t capaci
            static_cast<unsigned>(dispatch.blocked_stale),
            static_cast<unsigned>(dispatch.blocked_unreachable),
            static_cast<unsigned>(dispatch.blocked_untrusted));
+  log_event_("info", "forecast", "fetch completed");
   return true;
 }
 
@@ -2720,6 +2777,31 @@ void LuneTouchCoordinator::write_commands_json(char *buffer, size_t capacity) co
                   record->clamp_applied ? "true" : "false"))
       break;
     first = false;
+  }
+  appendf_(buffer, capacity, off, "]}");
+}
+
+void LuneTouchCoordinator::write_events_json(char *buffer, size_t capacity) const {
+  size_t off = 0;
+  appendf_(buffer, capacity, off, "{\"events\":[");
+  if (take_state_lock_(50)) {
+    for (size_t i = 0; i < event_count_; i++) {
+      const size_t idx = (event_next_ + EVENT_CAPACITY - 1 - i) % EVENT_CAPACITY;
+      const EventRecord &event = events_[idx];
+      char level[16];
+      char source[32];
+      char message[128];
+      json_escape_(event.level, level, sizeof(level));
+      json_escape_(event.source, source, sizeof(source));
+      json_escape_(event.message, message, sizeof(message));
+      if (!appendf_(buffer, capacity, off,
+                    "%s{\"ts_ms\":%lu,\"level\":\"%s\",\"source\":\"%s\","
+                    "\"message\":\"%s\"}",
+                    i ? "," : "", static_cast<unsigned long>(event.ts_ms),
+                    level, source, message))
+        break;
+    }
+    give_state_lock_();
   }
   appendf_(buffer, capacity, off, "]}");
 }

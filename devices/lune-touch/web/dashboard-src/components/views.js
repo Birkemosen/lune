@@ -385,6 +385,7 @@ export function renderDiagnostics() {
   const forecastCommands = d.forecast_commands || state.forecast?.commands || {};
   const stats = commandStats(state.commands);
   const attentionCommands = state.commands.filter(commandNeedsAttention).slice(-5).reverse();
+  const events = state.events.slice(0, 10);
   const recoveryOptions = state.zones
     .filter((zone) => zone.room_id && zone.status !== 'unused')
     .map((zone) => `<option value="${esc(zone.room_id)}">${esc(zone.name || zone.room_id)} (${v6Name(zone.node_index)} / Z${Number(zone.zone_index) + 1})</option>`)
@@ -416,6 +417,13 @@ export function renderDiagnostics() {
           ${attentionCommands.map((c) => `<div class="tr diagnostics"><span>${esc(c.source)}</span><span>${v6Name(c.node_index)} / Z${Number(c.zone_index) + 1}</span><span>${fmtValue(c.requested_offset_c, ' C')}</span><span class="${statusClass(c.result)}">${esc(c.result)}${c.clamp_applied ? ' / clamp' : ''}</span><span>${esc(c.reason || c.request_id || '-')}</span></div>`).join('') || '<div class="empty-row">No failed, blocked, or clamped commands</div>'}
         </div>
         <button class="btn slim" data-section="commands">Open ledger</button>
+      </div>
+      <div class="ops-panel wide">
+        <h3>Event log</h3>
+        <div class="data-table diagnostics-table">
+          <div class="tr head events"><span>Time</span><span>Level</span><span>Source</span><span>Message</span></div>
+          ${events.map((event) => `<div class="tr events"><span>${fmtUptime(event.ts_ms)}</span><span class="${event.level === 'warn' || event.level === 'error' ? 'warn' : 'ok'}">${esc(event.level || 'info')}</span><span>${esc(event.source || 'touch')}</span><span>${esc(event.message || '-')}</span></div>`).join('') || '<div class="empty-row">No runtime events</div>'}
+        </div>
       </div>
       <div class="ops-panel">
         <h3>V6 polling</h3>

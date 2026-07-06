@@ -509,6 +509,14 @@ void LuneTouchDashboard::handle_v1_(AsyncWebServerRequest *request, const char *
       send_ok_(request, data_buf_);
       return;
     }
+    if (strcmp(path, "/events") == 0) {
+      if (coordinator_)
+        coordinator_->write_events_json(data_buf_, sizeof(data_buf_));
+      else
+        snprintf(data_buf_, sizeof(data_buf_), "{\"events\":[]}");
+      send_ok_(request, data_buf_);
+      return;
+    }
     if (strcmp(path, "/diagnostics") == 0) {
       if (coordinator_)
         coordinator_->write_diagnostics_json(data_buf_, sizeof(data_buf_));

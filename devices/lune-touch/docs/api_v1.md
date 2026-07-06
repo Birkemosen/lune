@@ -25,6 +25,7 @@ Read endpoints return the standard envelope:
 - `GET /strategy`
 - `GET /forecast`
 - `GET /commands`
+- `GET /events`
 - `GET /diagnostics`
 - `GET /settings`
 
@@ -131,6 +132,26 @@ Diagnostics includes a `commissioning` readiness block for field testing:
 `next_action` is one of `add_node`, `fix_node_poll`,
 `verify_node_identity`, `trust_node`, `map_zones`,
 `wait_for_fresh_zone_poll`, `set_forecast_location`, or `ready`.
+
+### `GET /events`
+
+Returns the volatile runtime event ring, newest first, for dashboard diagnostics
+and field troubleshooting. The log is intentionally small and reboot-local; it
+captures coordinator lifecycle, commissioning changes, V6 poll failures,
+forecast fetch outcomes, command dispatch results, and recovery actions:
+
+```json
+{
+  "events": [
+    {
+      "ts_ms": 12345,
+      "level": "warn",
+      "source": "poll",
+      "message": "node 2 overview failed status=0"
+    }
+  ]
+}
+```
 
 ### `GET /zones`
 

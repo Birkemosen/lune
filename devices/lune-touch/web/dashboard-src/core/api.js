@@ -88,6 +88,13 @@ function mockData(path) {
     { request_id: 'mock-dashboard-1', source: 'dashboard', reason: 'quick boost', node_index: 1, zone_index: 3, requested_offset_c: 1.1, accepted_offset_c: 0.8, created_at_ms: Date.now() - 420000, expires_at_ms: Date.now() + 900000, result: 'accepted', clamp_applied: true },
     { request_id: 'mock-forecast-2', source: 'forecast', reason: 'wind preload', node_index: 2, zone_index: 1, requested_offset_c: 0.3, accepted_offset_c: 0.0, created_at_ms: Date.now() - 240000, expires_at_ms: Date.now() + 1800000, result: 'blocked_unreachable', clamp_applied: false },
   ] };
+  if (path === '/events') return { events: [
+    { ts_ms: 694200, level: 'info', source: 'forecast', message: 'fetch completed' },
+    { ts_ms: 613100, level: 'warn', source: 'poll', message: 'node 2 overview failed status=0' },
+    { ts_ms: 511000, level: 'info', source: 'commands', message: 'setpoint room-01 accepted' },
+    { ts_ms: 492500, level: 'info', source: 'commissioning', message: 'node v6-a trust trusted' },
+    { ts_ms: 440100, level: 'info', source: 'boot', message: 'coordinator ready' },
+  ] };
   if (path === '/diagnostics') return {
     heap: 'watching',
     nodes: 3,
@@ -130,6 +137,7 @@ async function refreshPaths(paths, { loading = false } = {}) {
       if (path === '/strategy') next.strategy = value;
       if (path === '/forecast') next.forecast = value;
       if (path === '/commands') next.commands = value.commands || [];
+      if (path === '/events') next.events = value.events || [];
       if (path === '/diagnostics') next.diagnostics = value;
       if (path === '/settings') next.settings = value;
     });
@@ -141,7 +149,7 @@ async function refreshPaths(paths, { loading = false } = {}) {
 }
 
 export async function refreshAll(options = {}) {
-  return refreshPaths(['/overview', '/nodes', '/zones', '/strategy', '/forecast', '/commands', '/diagnostics', '/settings'], {
+  return refreshPaths(['/overview', '/nodes', '/zones', '/strategy', '/forecast', '/commands', '/events', '/diagnostics', '/settings'], {
     loading: options.loading ?? true,
   });
 }
@@ -150,9 +158,9 @@ export async function refreshSection(section) {
   if (section === 'overview') return refreshPaths(['/overview', '/zones', '/forecast', '/diagnostics']);
   if (section === 'manifolds') return refreshPaths(['/overview', '/nodes']);
   if (section === 'forecast') return refreshPaths(['/forecast', '/diagnostics']);
-  if (section === 'commands') return refreshPaths(['/commands']);
+  if (section === 'commands') return refreshPaths(['/commands', '/events']);
   if (section === 'settings') return refreshPaths(['/overview', '/nodes', '/strategy', '/diagnostics', '/settings']);
-  if (section === 'diagnostics') return refreshPaths(['/strategy', '/forecast', '/commands', '/diagnostics']);
+  if (section === 'diagnostics') return refreshPaths(['/strategy', '/forecast', '/commands', '/events', '/diagnostics']);
   return Promise.resolve();
 }
 
