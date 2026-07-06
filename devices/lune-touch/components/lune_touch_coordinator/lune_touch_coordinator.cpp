@@ -2739,7 +2739,9 @@ void LuneTouchCoordinator::write_settings_json(char *buffer, size_t capacity) co
 void LuneTouchCoordinator::write_forecast_json(char *buffer, size_t capacity) const {
   size_t off = 0;
   char forecast_last_error[128];
+  char forecast_location_mode[32];
   json_escape_(forecast_last_error_, forecast_last_error, sizeof(forecast_last_error));
+  json_escape_(forecast_location_mode_, forecast_location_mode, sizeof(forecast_location_mode));
   appendf_(buffer, capacity, off,
            "{\"status\":\"%s\",\"location\":{\"mode\":\"%s\",\"latitude\":%.6f,\"longitude\":%.6f},"
            "\"last_fetch_age_s\":%lu,\"cache\":{\"hours\":%u,\"min_temp_c\":%.1f,"
@@ -2748,7 +2750,7 @@ void LuneTouchCoordinator::write_forecast_json(char *buffer, size_t capacity) co
            "\"last_error\":\"%s\",\"commands\":{\"active\":%u,\"sent\":%u,\"skipped\":%u,\"failed\":%u,"
            "\"blocked_stale\":%u,\"blocked_unreachable\":%u,\"blocked_untrusted\":%u},"
            "\"hours\":[",
-           forecast_status_, forecast_location_mode_, forecast_latitude_, forecast_longitude_,
+           forecast_status_, forecast_location_mode, forecast_latitude_, forecast_longitude_,
            forecast_last_fetch_ms_ == 0 ? 0UL : static_cast<unsigned long>((esphome::millis() - forecast_last_fetch_ms_) / 1000UL),
            static_cast<unsigned>(forecast_hours_count_), forecast_min_temp_c_, forecast_max_wind_ms_,
            forecast_peak_wind_dir_deg_, forecast_max_solar_wm2_,
@@ -2771,11 +2773,15 @@ void LuneTouchCoordinator::write_forecast_json(char *buffer, size_t capacity) co
   appendf_(buffer, capacity, off, "],\"decisions\":[");
   for (size_t i = 0; i < forecast_decision_count_ && off + 180 < capacity; i++) {
     const ForecastDecisionState &d = forecast_decisions_[i];
+    char room_id[48];
+    char room_name[80];
+    json_escape_(d.room_id, room_id, sizeof(room_id));
+    json_escape_(d.room_name, room_name, sizeof(room_name));
     appendf_(buffer, capacity, off,
              "%s{\"room_id\":\"%s\",\"name\":\"%s\",\"node_index\":%u,\"zone_index\":%u,"
              "\"comfort_setpoint_c\":%.1f,\"priority\":%u,\"offset_c\":%.2f,"
              "\"peak_load\":%.2f,\"peak_in_h\":%d,\"active\":%s}",
-             i ? "," : "", d.room_id, d.room_name, static_cast<unsigned>(d.node_index),
+             i ? "," : "", room_id, room_name, static_cast<unsigned>(d.node_index),
              static_cast<unsigned>(d.zone_index), d.comfort_setpoint_c,
              static_cast<unsigned>(d.priority), d.offset_c, d.peak_load,
              static_cast<int>(d.peak_in_h), d.active ? "true" : "false");
