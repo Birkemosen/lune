@@ -123,6 +123,9 @@ function smoothPath(points) {
 
 function forecastChart(forecast = {}) {
   const hours = Array.isArray(forecast.hours) ? forecast.hours.slice(0, 72) : [];
+  const activeDecisions = Array.isArray(forecast.decisions)
+    ? forecast.decisions.filter((decision) => decision.active && Number.isFinite(Number(decision.peak_in_h))).slice(0, 8)
+    : [];
   const w = 1000;
   const h = 220;
   const left = 46;
@@ -133,9 +136,14 @@ function forecastChart(forecast = {}) {
   const plotH = h - top - bottom;
   const plotB = top + plotH;
   if (!hours.length) {
-    return `<div class="chart-card"><div class="chart-head"><span class="chart-title">Weather load</span><span class="chart-sub">no cache</span></div><svg class="forecast-chart" viewBox="0 0 ${w} ${h}"><text x="${w / 2}" y="${h / 2}" text-anchor="middle" class="chart-empty">Fetch weather to populate forecast graph</text></svg></div>`;
+    return `<div class="chart-card"><div class="chart-head"><span class="chart-title">Forecast / preload</span><span class="chart-sub">no cache</span></div><svg class="forecast-chart" viewBox="0 0 ${w} ${h}"><text x="${w / 2}" y="${h / 2}" text-anchor="middle" class="chart-empty">Fetch weather to populate forecast graph</text></svg></div>`;
   }
   const x = (index) => left + (hours.length <= 1 ? 0 : index / (hours.length - 1)) * plotW;
+  const closestHourIndex = (targetHour) => hours.reduce((best, hour, index) => {
+    const current = Number(hour.h ?? index);
+    const previous = Number(hours[best]?.h ?? best);
+    return Math.abs(current - targetHour) < Math.abs(previous - targetHour) ? index : best;
+  }, 0);
   const tempRange = range(hours.map((hour) => Number(hour.temp_c)), -5, 15);
   const windRange = range(hours.map((hour) => Number(hour.wind_ms)), 0, 14);
   windRange.min = Math.min(0, windRange.min);
@@ -159,12 +167,26 @@ function forecastChart(forecast = {}) {
     const tx = x(index);
     return `<text x="${tx}" y="${plotB + 18}" text-anchor="middle" class="chart-hour">+${hour.h ?? index}h</text>`;
   }).join('');
+  const preloadMarkers = activeDecisions.map((decision, index) => {
+    const targetHour = Number(decision.peak_in_h);
+    const markerX = x(closestHourIndex(targetHour));
+    const labelY = top + 11 + (index % 3) * 15;
+    const labelLeft = markerX > w - 190;
+    const labelX = labelLeft ? markerX - 6 : markerX + 6;
+    const label = decision.name || decision.room_id || `Z${Number(decision.zone_index || 0) + 1}`;
+    return `<g class="chart-preload">
+      <line x1="${markerX}" y1="${top}" x2="${markerX}" y2="${plotB}" class="chart-preload-line"></line>
+      <circle cx="${markerX}" cy="${labelY - 4}" r="3.5" class="chart-preload-dot"></circle>
+      <text x="${labelX}" y="${labelY}" text-anchor="${labelLeft ? 'end' : 'start'}" class="chart-preload-label">${esc(label)} +${fmtValue(decision.offset_c, ' C')}</text>
+    </g>`;
+  }).join('');
   return `<div class="chart-card">
-    <div class="chart-head"><span class="chart-title">Weather load</span><span class="chart-sub">${hours.length} h cache</span></div>
+    <div class="chart-head"><span class="chart-title">Forecast / preload</span><span class="chart-sub">${hours.length} h cache</span></div>
     <div class="chart-legend">
       <span class="legend-item" style="color:var(--series-cool)"><span class="legend-dot"></span>Temp</span>
       <span class="legend-item" style="color:var(--series-warm)"><span class="legend-dot"></span>Wind</span>
       <span class="legend-item" style="color:var(--series-solar)"><span class="legend-dot"></span>Solar</span>
+      ${activeDecisions.length ? '<span class="legend-item" style="color:var(--ok)"><span class="legend-dot"></span>Preload</span>' : ''}
     </div>
     <svg class="forecast-chart" viewBox="0 0 ${w} ${h}" preserveAspectRatio="xMidYMid meet">
       ${grid}<line x1="${left}" y1="${plotB}" x2="${left + plotW}" y2="${plotB}" class="chart-axis"></line>${hourTicks}
@@ -172,6 +194,7 @@ function forecastChart(forecast = {}) {
       <path d="${smoothPath(points.solar)}" fill="none" stroke="var(--series-solar)" stroke-width="1.8" stroke-linecap="round"></path>
       <path d="${smoothPath(points.temp)}" fill="none" stroke="var(--series-cool)" stroke-width="2.4" stroke-linecap="round"></path>
       <path d="${smoothPath(points.wind)}" fill="none" stroke="var(--series-warm)" stroke-width="2.2" stroke-linecap="round"></path>
+      ${preloadMarkers}
     </svg>
   </div>`;
 }
