@@ -373,6 +373,22 @@ accepted response.
 }
 ```
 
+### `POST /zones/{room_id}/motor-action`
+
+Requests a bounded V6-local motor recovery action for the mapped room:
+
+```json
+{
+  "action": "relearn"
+}
+```
+
+Accepted actions are `reset_fault`, `reset_learned`, and `relearn`. Touch resolves
+the room mapping and only sends the corresponding V6-local command when the target
+node is trusted, reachable, and fresh. Blocked outcomes are returned as successful
+write responses with `result` set to `blocked_untrusted`, `blocked_unreachable`, or
+`blocked_stale`; invalid actions and unmapped rooms return `4xx`.
+
 ### `POST /recovery/reset-registry`
 
 Clears the Touch-owned node registry, zone mappings, in-memory runtime history,

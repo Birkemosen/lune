@@ -144,6 +144,7 @@ async function post(path, body = {}) {
       discovery: body.hostname || body.ip ? 'manual_probe' : 'manual_or_known_nodes',
       found: [{ id: 'v6-a', hostname: body.hostname || 'lune-v6-a.local', ip: body.ip || '192.168.1.51', model: 'lune-v6', firmware: 'mock', pairing_fingerprint: 'hv6-mock-a', reachable: true, stale: false, source: body.hostname || body.ip ? 'manual_probe' : 'known_node' }],
     };
+    if (path.includes('/motor-action')) return { result: 'accepted', action: body.action || 'reset_fault', target_node: 'v6-a', zone_index: 0 };
     return { result: 'mock' };
   }
   const query = new URLSearchParams();
@@ -177,6 +178,7 @@ export const api = {
   saveComfort: (roomId, data) => post(`/zones/${encodeURIComponent(roomId)}/comfort`, data),
   saveSchedule: (roomId, data) => post(`/zones/${encodeURIComponent(roomId)}/schedule`, data),
   setpointCommand: (roomId, data) => post(`/zones/${encodeURIComponent(roomId)}/setpoint-command`, data),
+  motorAction: (roomId, data) => post(`/zones/${encodeURIComponent(roomId)}/motor-action`, data),
   saveForecast: (data) => post('/forecast/settings', data),
   fetchForecast: () => post('/forecast/fetch'),
 };

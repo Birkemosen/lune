@@ -1736,6 +1736,93 @@ bool LuneTouchCoordinator::queue_setpoint_command(const char *room_id, float req
   return true;
 }
 
+bool LuneTouchCoordinator::request_motor_action(const char *room_id, const char *action, char *response,
+                                                size_t capacity) {
+  const char *v6_command = nullptr;
+  if (std::strcmp(action != nullptr ? action : "", "reset_fault") == 0) {
+    v6_command = "motor_reset_fault";
+  } else if (std::strcmp(action != nullptr ? action : "", "reset_learned") == 0) {
+    v6_command = "motor_reset_learned_factors";
+  } else if (std::strcmp(action != nullptr ? action : "", "relearn") == 0) {
+    v6_command = "motor_reset_and_relearn";
+  } else {
+    snprintf(response, capacity, "{\"result\":\"rejected\",\"error\":\"invalid_motor_action\"}");
+    return false;
+  }
+
+  const uint32_t now = esphome::millis();
+  ::lune_touch::PairedNode target_node{};
+  uint8_t target_node_index = 0;
+  uint8_t target_zone = 0;
+  bool target_stale = true;
+  if (!take_state_lock_(100)) {
+    snprintf(response, capacity, "{\"result\":\"rejected\",\"error\":\"coordinator_busy\"}");
+    return false;
+  }
+  const auto resolved = model_.resolve_room(room_id);
+  if (resolved.node == nullptr || resolved.binding == nullptr) {
+    give_state_lock_();
+    snprintf(response, capacity, "{\"result\":\"rejected\",\"error\":\"room_not_mapped\"}");
+    return false;
+  }
+  target_node = *resolved.node;
+  target_node_index = resolved.binding->node_index;
+  target_zone = resolved.binding->zone_index;
+  target_stale = model_.is_node_stale(target_node_index, now);
+  give_state_lock_();
+
+  const bool is_mock_node = std::strcmp(target_node.firmware, "mock") == 0;
+  const char *result = "accepted";
+  const char *error = "";
+  if (!target_node.reachable && !is_mock_node) {
+    result = "blocked_unreachable";
+    error = "node_unreachable";
+  } else if (target_node.trust != ::lune_touch::NodeTrust::TRUSTED) {
+    result = "blocked_untrusted";
+    error = "node_not_trusted";
+  } else if (target_stale && !is_mock_node) {
+    result = "blocked_stale";
+    error = "node_stale";
+  } else if (!is_mock_node) {
+    if (!esphome::network::is_connected()) {
+      result = "failed";
+      error = "network_offline";
+    } else {
+      const char *host = target_node.hostname[0] != '\0' ? target_node.hostname : target_node.fallback_ip;
+      if (host == nullptr || host[0] == '\0') {
+        result = "failed";
+        error = "missing_host";
+      } else {
+        char url[288];
+        snprintf(url, sizeof(url), "http://%s/api/hv6/v1/commands", host);
+        char payload[128];
+        snprintf(payload, sizeof(payload), "{\"command\":\"%s\",\"zone\":%u}",
+                 v6_command, static_cast<unsigned>(target_zone + 1));
+        char body[384];
+        int status = 0;
+        if (!post_json_(url, payload, body, sizeof(body), &status)) {
+          result = "failed";
+          error = "post_failed";
+        } else {
+          JsonDocument doc;
+          const DeserializationError err = deserializeJson(doc, body);
+          if (err || doc["ok"] == false) {
+            result = "failed";
+            error = "v6_rejected";
+          }
+        }
+      }
+    }
+  }
+
+  snprintf(response, capacity,
+           "{\"result\":\"%s\",\"action\":\"%s\",\"v6_command\":\"%s\","
+           "\"target_node\":\"%s\",\"zone_index\":%u,\"error\":\"%s\"}",
+           result, action != nullptr ? action : "", v6_command, target_node.node_id,
+           static_cast<unsigned>(target_zone), error);
+  return true;
+}
+
 bool LuneTouchCoordinator::set_forecast_location(float latitude, float longitude, const char *mode,
                                                  char *response, size_t capacity) {
   if (!std::isfinite(latitude) || !std::isfinite(longitude) ||

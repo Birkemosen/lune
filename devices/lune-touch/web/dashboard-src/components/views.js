@@ -342,6 +342,10 @@ export function renderDiagnostics() {
   const forecastCommands = d.forecast_commands || state.forecast?.commands || {};
   const stats = commandStats(state.commands);
   const attentionCommands = state.commands.filter(commandNeedsAttention).slice(-5).reverse();
+  const recoveryOptions = state.zones
+    .filter((zone) => zone.room_id && zone.status !== 'unused')
+    .map((zone) => `<option value="${esc(zone.room_id)}">${esc(zone.name || zone.room_id)} (${v6Name(zone.node_index)} / Z${Number(zone.zone_index) + 1})</option>`)
+    .join('');
   const strategy = state.strategy || d.strategy || {};
   const physical = strategy.physical || {};
   const comfort = strategy.comfort || {};
@@ -414,6 +418,15 @@ export function renderDiagnostics() {
         <p>${learning.zones_with_history || 0} zones, ${learning.total_samples || 0} samples</p>
         <p>Calling ${Math.round(Number(learning.calling_ratio || 0) * 100)}%</p>
         <p>${learning.warming_zones || 0} warming / ${learning.cooling_zones || 0} cooling, avg ${fmtValue(learning.average_delta_c_per_h, ' C/h')}</p>
+      </div>
+      <div class="ops-panel">
+        <h3>Recovery actions</h3>
+        <select class="input mini-input" id="recovery-room">${recoveryOptions || '<option value="">No mapped zones</option>'}</select>
+        <div class="action-row">
+          <button class="btn slim" data-motor-action="reset_fault">Reset fault</button>
+          <button class="btn slim" data-motor-action="reset_learned">Reset learned</button>
+          <button class="btn slim danger" data-motor-action="relearn">Relearn</button>
+        </div>
       </div>
       <div class="ops-panel">
         <h3>Screen</h3>
@@ -500,6 +513,16 @@ export function bindActions(root) {
   });
   root.querySelectorAll('[data-command-room]').forEach((btn) => {
     btn.addEventListener('click', () => runAction(() => api.setpointCommand(btn.dataset.commandRoom, { offset_c: 0.5, ttl_s: 2700, reason: 'dashboard quick boost' }).then(refreshAll)));
+  });
+  root.querySelectorAll('[data-motor-action]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const roomId = root.querySelector('#recovery-room')?.value;
+      if (!roomId) return;
+      const action = btn.dataset.motorAction;
+      if (confirm(`${btn.textContent.trim()} for ${roomId}?`)) {
+        runAction(() => api.motorAction(roomId, { action }).then(refreshAll));
+      }
+    });
   });
   root.querySelector('[data-action="reset-registry"]')?.addEventListener('click', () => {
     if (confirm('Reset Lune Touch registry and command ledger?')) runAction(() => api.resetRegistry().then(refreshAll));

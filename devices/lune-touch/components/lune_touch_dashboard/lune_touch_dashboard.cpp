@@ -605,6 +605,20 @@ void LuneTouchDashboard::handle_v1_post_(ApiRequest &api, const char *path) {
     parse_text_param(api, api.json_body, "reason", reason, sizeof(reason));
     const bool accepted = coordinator_->queue_setpoint_command(room_id, offset, ttl_s, reason, data_buf_, sizeof(data_buf_));
     send_write_result_(api, accepted, 400);
+  } else if (strstr(path, "/motor-action") != nullptr) {
+    char room_id[40]{};
+    if (!extract_middle_segment(path, "/zones/", "/motor-action", room_id, sizeof(room_id))) {
+      send_error_(api, 404, "unknown_route", "Unknown zone motor action route");
+      return;
+    }
+    char action[24];
+    parse_text_param(api, api.json_body, "action", action, sizeof(action));
+    if (action[0] == '\0') {
+      send_error_(api, 400, "missing_param", "action is required");
+      return;
+    }
+    const bool accepted = coordinator_->request_motor_action(room_id, action, data_buf_, sizeof(data_buf_));
+    send_write_result_(api, accepted, 400);
   } else if (strstr(path, "/schedule") != nullptr) {
     char room_id[40]{};
     if (!extract_middle_segment(path, "/zones/", "/schedule", room_id, sizeof(room_id))) {

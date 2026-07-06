@@ -96,6 +96,7 @@ class LuneTouchCoordinator : public esphome::Component {
                          char *response, size_t capacity);
   bool queue_setpoint_command(const char *room_id, float requested_offset_c, uint32_t ttl_s,
                               const char *reason, char *response, size_t capacity);
+  bool request_motor_action(const char *room_id, const char *action, char *response, size_t capacity);
   bool set_forecast_location(float latitude, float longitude, const char *mode,
                              char *response, size_t capacity);
   bool request_forecast_fetch(char *response, size_t capacity);
