@@ -315,25 +315,34 @@ export function renderForecast() {
   const commands = f.commands || {};
   const activeDecisions = (f.decisions || []).filter((d) => d.active);
   return `<section class="panel">
+    <div class="section-head"><h2>Weather</h2><button class="btn" data-action="forecast-fetch">Fetch now</button></div>
+    <div class="metric-strip">
+      <div class="metric"><span>Status</span><strong class="${f.status === 'ok' || f.status === 'cached' ? 'ok' : 'warn'}">${f.status || 'unknown'}</strong></div>
+      <div class="metric"><span>Cache</span><strong>${cache.hours || 0} h / ${cache.restored ? 'restored' : 'live'}</strong></div>
+      <div class="metric"><span>Wind</span><strong>${fmtValue(cache.max_wind_ms, ' m/s')} / ${Math.round(cache.peak_wind_dir_deg || 0)} deg</strong></div>
+      <div class="metric"><span>Dispatch</span><strong class="${commands.failed ? 'warn' : 'ok'}">${commands.sent || 0} sent / ${commands.failed || 0} failed</strong></div>
+    </div>
     <div class="split-main">
-    <div class="stack">
-      <div class="section-head"><h2>Weather</h2><button class="btn" data-action="forecast-fetch">Fetch now</button></div>
-      ${forecastChart(f)}
-      <div class="card"><h3>Status</h3><p class="${f.status === 'ok' ? 'ok' : 'warn'}">${f.status || 'unknown'}</p><p>Last fetch: ${fmtAge(f.last_fetch_age_s)}</p><p class="${f.last_error ? 'warn' : 'muted'}">${f.last_error || 'no current forecast error'}</p></div>
-      <div class="card"><h3>Location</h3><p>${location.mode || 'manual'} (${Number(location.latitude || 0).toFixed(5)}, ${Number(location.longitude || 0).toFixed(5)})</p>
-        <div class="inline-form forecast-location">
-          <input class="input mini-input" id="forecast-lat" type="number" step="0.000001" placeholder="Latitude" value="${location.latitude || ''}">
-          <input class="input mini-input" id="forecast-lon" type="number" step="0.000001" placeholder="Longitude" value="${location.longitude || ''}">
-          <button class="btn" data-action="save-forecast-location">Save</button>
-          <button class="btn" data-action="geo">Use browser</button>
+      <div class="stack">
+        ${forecastChart(f)}
+        <div class="ops-panel">
+          <h3>Location</h3><p>${location.mode || 'manual'} (${Number(location.latitude || 0).toFixed(5)}, ${Number(location.longitude || 0).toFixed(5)})</p>
+          <div class="inline-form forecast-location">
+            <input class="input mini-input" id="forecast-lat" type="number" step="0.000001" placeholder="Latitude" value="${location.latitude || ''}">
+            <input class="input mini-input" id="forecast-lon" type="number" step="0.000001" placeholder="Longitude" value="${location.longitude || ''}">
+            <button class="btn" data-action="save-forecast-location">Save</button>
+            <button class="btn" data-action="geo">Use browser</button>
+          </div>
+        </div>
+        <div class="diagnostics-layout">
+          <div class="ops-panel"><h3>Status</h3><p class="${f.status === 'ok' || f.status === 'cached' ? 'ok' : 'warn'}">${f.status || 'unknown'} / last fetch ${fmtAge(f.last_fetch_age_s)}</p><p class="${f.last_error ? 'warn' : 'muted'}">${f.last_error || 'no current forecast error'}</p></div>
+          <div class="ops-panel"><h3>Cache</h3><p>${cache.hours || 0} hours, min ${fmtValue(cache.min_temp_c, ' C')}</p><p>Wind ${fmtValue(cache.max_wind_ms, ' m/s')} from ${Math.round(cache.peak_wind_dir_deg || 0)} deg</p><p>Solar ${fmtValue(cache.max_solar_wm2, ' W/m2')}</p></div>
+          <div class="ops-panel"><h3>Commands</h3><p>${commands.active || 0} active / ${commands.sent || 0} sent / ${commands.skipped || 0} skipped</p><p class="${commands.blocked_stale || commands.blocked_unreachable || commands.blocked_untrusted ? 'warn' : 'muted'}">${commands.blocked_stale || 0} stale / ${commands.blocked_unreachable || 0} offline / ${commands.blocked_untrusted || 0} trust</p></div>
         </div>
       </div>
-    </div>
-    <div class="stack">
-      <div class="card"><h3>Cache</h3><dl><dt>Hours</dt><dd>${cache.hours || 0}</dd><dt>Source</dt><dd>${cache.restored ? 'restored' : 'live'}</dd><dt>Min temp</dt><dd>${fmtValue(cache.min_temp_c, ' C')}</dd><dt>Max wind</dt><dd>${fmtValue(cache.max_wind_ms, ' m/s')} from ${Math.round(cache.peak_wind_dir_deg || 0)} deg</dd><dt>Max solar</dt><dd>${fmtValue(cache.max_solar_wm2, ' W/m2')}</dd></dl></div>
-      <div class="card"><h3>Commands</h3><dl><dt>Active</dt><dd>${commands.active || 0}</dd><dt>Sent</dt><dd>${commands.sent || 0}</dd><dt>Skipped</dt><dd>${commands.skipped || 0}</dd><dt>Failed</dt><dd class="${commands.failed ? 'warn' : 'ok'}">${commands.failed || 0}</dd><dt>Blocked</dt><dd class="${commands.blocked_stale || commands.blocked_unreachable || commands.blocked_untrusted ? 'warn' : 'ok'}">${commands.blocked_stale || 0} stale / ${commands.blocked_unreachable || 0} offline / ${commands.blocked_untrusted || 0} trust</dd></dl></div>
-      <div class="card"><h3>Decisions</h3>${activeDecisions.map((d) => `<p>${d.room_id}: +${fmtValue(d.offset_c, ' C')}, P${d.priority ?? 1}, comfort ${fmtC(d.comfort_setpoint_c)}, peak ${fmtValue(d.peak_load)} in ${d.peak_in_h}h</p>`).join('') || '<p>No active decisions</p>'}</div>
-    </div>
+      <div class="stack">
+        <div class="ops-panel"><h3>Active preload decisions</h3>${activeDecisions.map((d) => `<p>${esc(d.room_id)}: +${fmtValue(d.offset_c, ' C')}, P${d.priority ?? 1}, comfort ${fmtC(d.comfort_setpoint_c)}, peak ${fmtValue(d.peak_load)} in ${d.peak_in_h}h</p>`).join('') || '<p>No active decisions</p>'}</div>
+      </div>
     </div>
   </section>`;
 }
