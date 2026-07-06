@@ -10,7 +10,17 @@ function isMock() {
   return !!(window.HV6_DASHBOARD_CONFIG && window.HV6_DASHBOARD_CONFIG.mock);
 }
 
-// POST to a /api/hv6/v1 write endpoint (query params per devices/lune-v6/docs/hv6_api_v1.md).
+function queryUrl(path, params) {
+  const qs = new URLSearchParams();
+  for (const [k, v] of Object.entries(params || {})) {
+    if (v !== undefined && v !== null) qs.append(k, v);
+  }
+  const query = qs.toString();
+  return BASE + path + (query ? '?' + query : '');
+}
+
+// POST to a /api/hv6/v1 write endpoint. JSON bodies are the primary contract;
+// query params remain as a fallback for older firmware during migration.
 // mockBody carries the legacy {key, value, zone?} action shape consumed by core/mock.js.
 function postV1(path, params, mockBody) {
   beginPendingWrite();
@@ -24,14 +34,15 @@ function postV1(path, params, mockBody) {
     }
   }
 
-  const qs = new URLSearchParams();
-  for (const [k, v] of Object.entries(params || {})) {
-    if (v !== undefined && v !== null) qs.append(k, v);
-  }
-  const query = qs.toString();
-  const url = BASE + path + (query ? '?' + query : '');
-
-  return fetch(url, { method: 'POST' }).then(resp => {
+  const body = JSON.stringify(params || {});
+  return fetch(BASE + path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body,
+  }).then(resp => {
+    if (!resp.ok && [400, 404, 415].includes(resp.status)) {
+      return fetch(queryUrl(path, params), { method: 'POST' });
+    }
     if (!resp.ok) {
       console.warn(`API call failed: POST ${path} status=${resp.status}`);
     }
