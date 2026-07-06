@@ -133,6 +133,22 @@ field troubleshooting:
 V6 response; `rejected` means V6 answered but declined the command. `blocked`
 is the sum of the local stale, unreachable, and untrusted safety blocks.
 
+The diagnostics `forecast` block mirrors the current weather-fetch state:
+
+```json
+{
+  "status": "queued",
+  "fetch_pending": true,
+  "last_fetch_age_s": 420,
+  "last_error": ""
+}
+```
+
+`fetch_pending` is true after `POST /forecast/fetch` queues a background fetch
+and false once the poll task has picked it up. The full `GET /forecast` response
+exposes the same `fetch_pending` field alongside cache metadata, hourly weather,
+preload decisions, and dispatch counts.
+
 Diagnostics includes a `commissioning` readiness block for field testing:
 
 ```json

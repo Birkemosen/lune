@@ -71,6 +71,7 @@ function mockData(path) {
     return {
     status: 'ok',
     location: { mode: 'manual', latitude: 55.6761, longitude: 12.5683 },
+    fetch_pending: false,
     last_fetch_age_s: 420,
     cache: { hours: 72, min_temp_c: -2.1, max_wind_ms: 13.4, peak_wind_dir_deg: 275, max_solar_wm2: 180, restored: false },
     last_error: '',
@@ -117,6 +118,7 @@ function mockData(path) {
     commissioning: { paired_nodes: 1, trusted_nodes: 2, reachable_nodes: 2, stale_nodes: 1, identity_missing_nodes: 0, bound_zones: 18, fresh_zones: 17, stale_zones: 1, ready_for_commands: true, ready_for_forecast: true, next_action: 'ready' },
     ota: { running_label: 'app0', running_subtype: 16, running_slot_size: 6553600, configured_slot_size: 6553600, state: 'valid', pending_verify: false },
     learning: { zones_with_history: 16, total_samples: 692, total_calling_samples: 101, calling_ratio: 0.146, zones_with_delta: 14, warming_zones: 5, cooling_zones: 3, average_delta_c_per_h: 0.12 },
+    forecast: { status: 'ok', fetch_pending: false, last_fetch_age_s: 420, last_error: '' },
     forecast_commands: { active: 2, sent: 1, skipped: 1, failed: 0, blocked_stale: 1, blocked_unreachable: 0, blocked_untrusted: 0 },
   };
   if (path === '/settings') return {

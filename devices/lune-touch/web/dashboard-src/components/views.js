@@ -354,10 +354,12 @@ export function renderForecast() {
   const location = f.location || {};
   const commands = f.commands || {};
   const activeDecisions = (f.decisions || []).filter((d) => d.active);
+  const forecastHealthy = f.status === 'ok' || f.status === 'cached';
+  const statusLabel = `${f.status || 'unknown'}${f.fetch_pending ? ' / pending' : ''}`;
   return `<section class="panel">
     <div class="section-head"><h2>Weather</h2><button class="btn" data-action="forecast-fetch">Fetch now</button></div>
     <div class="metric-strip">
-      <div class="metric"><span>Status</span><strong class="${f.status === 'ok' || f.status === 'cached' ? 'ok' : 'warn'}">${f.status || 'unknown'}</strong></div>
+      <div class="metric"><span>Status</span><strong class="${forecastHealthy ? 'ok' : 'warn'}">${statusLabel}</strong></div>
       <div class="metric"><span>Cache</span><strong>${cache.hours || 0} h / ${cache.restored ? 'restored' : 'live'}</strong></div>
       <div class="metric"><span>Wind</span><strong>${fmtValue(cache.max_wind_ms, ' m/s')} / ${Math.round(cache.peak_wind_dir_deg || 0)} deg</strong></div>
       <div class="metric"><span>Dispatch</span><strong class="${commands.failed ? 'warn' : 'ok'}">${commands.sent || 0} sent / ${commands.failed || 0} failed</strong></div>
@@ -375,7 +377,7 @@ export function renderForecast() {
           </div>
         </div>
         <div class="diagnostics-layout">
-          <div class="ops-panel"><h3>Status</h3><p class="${f.status === 'ok' || f.status === 'cached' ? 'ok' : 'warn'}">${f.status || 'unknown'} / last fetch ${fmtAge(f.last_fetch_age_s)}</p><p class="${f.last_error ? 'warn' : 'muted'}">${f.last_error || 'no current forecast error'}</p></div>
+          <div class="ops-panel"><h3>Status</h3><p class="${forecastHealthy ? 'ok' : 'warn'}">${statusLabel} / last fetch ${fmtAge(f.last_fetch_age_s)}</p><p class="${f.fetch_pending ? 'warn' : 'muted'}">${f.fetch_pending ? 'fetch queued; waiting for poll task' : 'fetch queue idle'}</p><p class="${f.last_error ? 'warn' : 'muted'}">${f.last_error || 'no current forecast error'}</p></div>
           <div class="ops-panel"><h3>Cache</h3><p>${cache.hours || 0} hours, min ${fmtValue(cache.min_temp_c, ' C')}</p><p>Wind ${fmtValue(cache.max_wind_ms, ' m/s')} from ${Math.round(cache.peak_wind_dir_deg || 0)} deg</p><p>Solar ${fmtValue(cache.max_solar_wm2, ' W/m2')}</p></div>
           <div class="ops-panel"><h3>Commands</h3><p>${commands.active || 0} active / ${commands.sent || 0} sent / ${commands.skipped || 0} skipped</p><p class="${commands.blocked_stale || commands.blocked_unreachable || commands.blocked_untrusted ? 'warn' : 'muted'}">${commands.blocked_stale || 0} stale / ${commands.blocked_unreachable || 0} offline / ${commands.blocked_untrusted || 0} trust</p></div>
         </div>
@@ -438,6 +440,7 @@ export function renderDiagnostics() {
   const commissioning = d.commissioning || {};
   const ota = d.ota || {};
   const learning = d.learning || {};
+  const forecastStatus = d.forecast || state.forecast || {};
   const forecastCommands = d.forecast_commands || state.forecast?.commands || {};
   const stats = d.command_results || commandStats(state.commands);
   const attentionCommands = state.commands.filter(commandNeedsAttention).slice(-5).reverse();
@@ -499,6 +502,8 @@ export function renderDiagnostics() {
       </div>
       <div class="ops-panel">
         <h3>Forecast dispatch</h3>
+        <p class="${forecastStatus.status === 'ok' || forecastStatus.status === 'cached' ? 'ok' : 'warn'}">${forecastStatus.status || 'unknown'}${forecastStatus.fetch_pending ? ' / pending' : ''} / ${fmtAge(forecastStatus.last_fetch_age_s)}</p>
+        <p class="${forecastStatus.last_error ? 'warn' : 'muted'}">${forecastStatus.last_error || 'no current forecast error'}</p>
         <p>${forecastCommands.active || 0} active / ${forecastCommands.sent || 0} sent / ${forecastCommands.skipped || 0} skipped</p>
         <p class="${forecastCommands.failed ? 'warn' : 'ok'}">${forecastCommands.failed || 0} failed</p>
         <p class="${forecastCommands.blocked_stale || forecastCommands.blocked_unreachable || forecastCommands.blocked_untrusted ? 'warn' : 'muted'}">${forecastCommands.blocked_stale || 0} stale / ${forecastCommands.blocked_unreachable || 0} offline / ${forecastCommands.blocked_untrusted || 0} trust</p>

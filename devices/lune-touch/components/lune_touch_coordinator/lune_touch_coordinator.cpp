@@ -2744,13 +2744,14 @@ void LuneTouchCoordinator::write_forecast_json(char *buffer, size_t capacity) co
   json_escape_(forecast_location_mode_, forecast_location_mode, sizeof(forecast_location_mode));
   appendf_(buffer, capacity, off,
            "{\"status\":\"%s\",\"location\":{\"mode\":\"%s\",\"latitude\":%.6f,\"longitude\":%.6f},"
-           "\"last_fetch_age_s\":%lu,\"cache\":{\"hours\":%u,\"min_temp_c\":%.1f,"
+           "\"fetch_pending\":%s,\"last_fetch_age_s\":%lu,\"cache\":{\"hours\":%u,\"min_temp_c\":%.1f,"
            "\"max_wind_ms\":%.1f,\"peak_wind_dir_deg\":%.0f,\"max_solar_wm2\":%.0f,"
            "\"restored\":%s},"
            "\"last_error\":\"%s\",\"commands\":{\"active\":%u,\"sent\":%u,\"skipped\":%u,\"failed\":%u,"
            "\"blocked_stale\":%u,\"blocked_unreachable\":%u,\"blocked_untrusted\":%u},"
            "\"hours\":[",
            forecast_status_, forecast_location_mode, forecast_latitude_, forecast_longitude_,
+           forecast_fetch_requested_ ? "true" : "false",
            forecast_last_fetch_ms_ == 0 ? 0UL : static_cast<unsigned long>((esphome::millis() - forecast_last_fetch_ms_) / 1000UL),
            static_cast<unsigned>(forecast_hours_count_), forecast_min_temp_c_, forecast_max_wind_ms_,
            forecast_peak_wind_dir_deg_, forecast_max_solar_wm2_,
@@ -2924,9 +2925,11 @@ void LuneTouchCoordinator::write_diagnostics_json(char *buffer, size_t capacity)
     esp_ota_get_state_partition(running_partition, &ota_state);
   char driver_room_id[64];
   char last_poll_error[112];
+  char forecast_last_error[128];
   char ota_label[32];
   json_escape_(strategy.driver_room_id, driver_room_id, sizeof(driver_room_id));
   json_escape_(last_poll_error_, last_poll_error, sizeof(last_poll_error));
+  json_escape_(forecast_last_error_, forecast_last_error, sizeof(forecast_last_error));
   json_escape_(running_label, ota_label, sizeof(ota_label));
 
   snprintf(buffer, capacity,
@@ -2950,6 +2953,8 @@ void LuneTouchCoordinator::write_diagnostics_json(char *buffer, size_t capacity)
            "\"total_calling_samples\":%lu,\"calling_ratio\":%.3f,"
            "\"zones_with_delta\":%lu,\"warming_zones\":%lu,\"cooling_zones\":%lu,"
            "\"average_delta_c_per_h\":%.3f},"
+           "\"forecast\":{\"status\":\"%s\",\"fetch_pending\":%s,"
+           "\"last_fetch_age_s\":%lu,\"last_error\":\"%s\"},"
            "\"forecast_commands\":{\"active\":%u,\"sent\":%u,\"skipped\":%u,\"failed\":%u,"
            "\"blocked_stale\":%u,\"blocked_unreachable\":%u,\"blocked_untrusted\":%u}}",
            static_cast<unsigned>(model_.node_count()),
@@ -2998,6 +3003,10 @@ void LuneTouchCoordinator::write_diagnostics_json(char *buffer, size_t capacity)
            static_cast<unsigned long>(learning.warming_zones),
            static_cast<unsigned long>(learning.cooling_zones),
            learning.average_delta_c_per_h,
+           forecast_status_,
+           forecast_fetch_requested_ ? "true" : "false",
+           forecast_last_fetch_ms_ == 0 ? 0UL : static_cast<unsigned long>((esphome::millis() - forecast_last_fetch_ms_) / 1000UL),
+           forecast_last_error,
            static_cast<unsigned>(last_forecast_dispatch_.active),
            static_cast<unsigned>(last_forecast_dispatch_.sent),
            static_cast<unsigned>(last_forecast_dispatch_.skipped),
