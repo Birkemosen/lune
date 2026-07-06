@@ -10,7 +10,8 @@ static constexpr size_t ZONES_PER_NODE = 6;
 static constexpr size_t MAX_HOUSE_ZONES = MAX_NODES * ZONES_PER_NODE;
 static constexpr size_t LEDGER_CAPACITY = 32;
 static constexpr uint32_t PERSISTED_STATE_MAGIC = 0x4C544348;  // LTCH
-static constexpr uint16_t PERSISTED_STATE_VERSION = 6;
+static constexpr uint16_t PERSISTED_STATE_VERSION = 7;
+static constexpr uint16_t PERSISTED_STATE_VERSION_V6 = 6;
 static constexpr uint16_t PERSISTED_STATE_VERSION_V5 = 5;
 static constexpr uint16_t PERSISTED_STATE_VERSION_V4 = 4;
 static constexpr uint16_t PERSISTED_STATE_VERSION_V3 = 3;
@@ -152,6 +153,7 @@ struct PersistedState {
   uint32_t zone_count{0};
   PairedNode nodes[MAX_NODES]{};
   ZoneBinding zones[MAX_HOUSE_ZONES]{};
+  ZoneHistory histories[MAX_HOUSE_ZONES]{};
 };
 
 struct PersistedLedger {

@@ -214,6 +214,16 @@ struct PersistedStateV5 {
   ::lune_touch::ZoneBinding zones[::lune_touch::MAX_HOUSE_ZONES]{};
 };
 
+struct PersistedStateV6 {
+  uint32_t magic{::lune_touch::PERSISTED_STATE_MAGIC};
+  uint16_t version{::lune_touch::PERSISTED_STATE_VERSION_V6};
+  uint16_t reserved{0};
+  uint32_t node_count{0};
+  uint32_t zone_count{0};
+  ::lune_touch::PairedNode nodes[::lune_touch::MAX_NODES]{};
+  ::lune_touch::ZoneBinding zones[::lune_touch::MAX_HOUSE_ZONES]{};
+};
+
 void copy_legacy_node_(::lune_touch::PairedNode &dest, const PairedNodeV5 &src) {
   std::strncpy(dest.node_id, src.node_id, sizeof(dest.node_id) - 1);
   std::strncpy(dest.hostname, src.hostname, sizeof(dest.hostname) - 1);
@@ -363,6 +373,7 @@ void LuneTouchCoordinator::poll_once_() {
 
   const uint32_t now = esphome::millis();
   last_poll_ms_ = now;
+  bool any_success = false;
   for (size_t i = 0; i < count; i++) {
     if (nodes[i].hostname[0] == '\0' && nodes[i].fallback_ip[0] == '\0')
       continue;
@@ -378,9 +389,17 @@ void LuneTouchCoordinator::poll_once_() {
         give_state_lock_();
       }
     } else {
+      any_success = true;
       poll_success_count_++;
       last_poll_error_[0] = '\0';
     }
+  }
+  if (any_success && learning_dirty_ &&
+      (last_learning_save_ms_ == 0 ||
+       static_cast<int32_t>(now - last_learning_save_ms_) >= static_cast<int32_t>(LEARNING_SAVE_INTERVAL_MS))) {
+    save_registry_();
+    learning_dirty_ = false;
+    last_learning_save_ms_ = now;
   }
 }
 
@@ -691,8 +710,10 @@ bool LuneTouchCoordinator::ingest_v6_zones_(size_t node_index, const char *body,
                                                    exterior_walls, wind_exposure, solar_gain,
                                                    thermal_lead_h, max_offset_c);
   }
-  if (updated > 0)
+  if (updated > 0) {
     model_.mark_node_seen(node_index, now_ms);
+    learning_dirty_ = true;
+  }
   give_state_lock_();
   return updated > 0;
 }
@@ -797,8 +818,10 @@ bool LuneTouchCoordinator::ingest_v6_legacy_state_(size_t node_index, const ::lu
     telemetry.active_zones = active_zones;
   }
 
-  if (updated > 0)
+  if (updated > 0) {
     model_.mark_node_seen(node_index, now_ms);
+    learning_dirty_ = true;
+  }
   give_state_lock_();
   return updated > 0;
 }
@@ -1174,6 +1197,24 @@ bool LuneTouchCoordinator::load_registry_() {
     nvs_close(handle);
     if (err != ESP_OK)
       return false;
+  } else if (len == sizeof(PersistedStateV6)) {
+    static PersistedStateV6 legacy;
+    std::memset(&legacy, 0, sizeof(legacy));
+    err = nvs_get_blob(handle, "registry", &legacy, &len);
+    nvs_close(handle);
+    if (err != ESP_OK || legacy.magic != ::lune_touch::PERSISTED_STATE_MAGIC ||
+        legacy.version != ::lune_touch::PERSISTED_STATE_VERSION_V6 ||
+        legacy.node_count > ::lune_touch::MAX_NODES ||
+        legacy.zone_count > ::lune_touch::MAX_HOUSE_ZONES) {
+      return false;
+    }
+    state.node_count = legacy.node_count;
+    state.zone_count = legacy.zone_count;
+    for (size_t i = 0; i < legacy.node_count; i++)
+      state.nodes[i] = legacy.nodes[i];
+    for (size_t i = 0; i < legacy.zone_count; i++)
+      state.zones[i] = legacy.zones[i];
+    ESP_LOGI(TAG, "Migrated Touch registry from v6 to v7");
   } else if (len == sizeof(PersistedStateV5)) {
     static PersistedStateV5 legacy;
     std::memset(&legacy, 0, sizeof(legacy));
@@ -1191,7 +1232,7 @@ bool LuneTouchCoordinator::load_registry_() {
       copy_legacy_node_(state.nodes[i], legacy.nodes[i]);
     for (size_t i = 0; i < legacy.zone_count; i++)
       state.zones[i] = legacy.zones[i];
-    ESP_LOGI(TAG, "Migrated Touch registry from v5 to v6");
+    ESP_LOGI(TAG, "Migrated Touch registry from v5 to v7");
   } else if (len == sizeof(PersistedStateV4)) {
     static PersistedStateV4 legacy;
     std::memset(&legacy, 0, sizeof(legacy));
@@ -1226,7 +1267,7 @@ bool LuneTouchCoordinator::load_registry_() {
       std::strncpy(state.zones[i].room_name, legacy.zones[i].room_name,
                    sizeof(state.zones[i].room_name) - 1);
     }
-    ESP_LOGI(TAG, "Migrated Touch registry from v4 to v6");
+    ESP_LOGI(TAG, "Migrated Touch registry from v4 to v7");
   } else if (len == sizeof(PersistedStateV3)) {
     static PersistedStateV3 legacy;
     std::memset(&legacy, 0, sizeof(legacy));
@@ -1261,7 +1302,7 @@ bool LuneTouchCoordinator::load_registry_() {
       std::strncpy(state.zones[i].room_name, legacy.zones[i].room_name,
                    sizeof(state.zones[i].room_name) - 1);
     }
-    ESP_LOGI(TAG, "Migrated Touch registry from v3 to v6");
+    ESP_LOGI(TAG, "Migrated Touch registry from v3 to v7");
   } else {
     nvs_close(handle);
     return false;

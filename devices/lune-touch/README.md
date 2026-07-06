@@ -56,7 +56,7 @@ Coordinator-owned:
 - Adaptive whole-house learning and zone prioritization
 - Per-room comfort bias, kept as coordinator intent and folded into strategy /
   forecast decisions before any V6 command is issued
-- Runtime per-zone learning signals: samples, heat-call samples, temperature
+- Persisted per-zone learning signals: samples, heat-call samples, temperature
   range, average temperature, and latest temperature rate
 - Command ledger: source, reason, requested value, accepted value, expiry, clamp result
 

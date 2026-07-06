@@ -533,8 +533,10 @@ bool HouseModel::export_state(PersistedState *out) const {
   out->zone_count = static_cast<uint32_t>(zone_count_);
   for (size_t i = 0; i < node_count_; i++)
     out->nodes[i] = nodes_[i];
-  for (size_t i = 0; i < zone_count_; i++)
+  for (size_t i = 0; i < zone_count_; i++) {
     out->zones[i] = zones_[i];
+    out->histories[i] = history_[i];
+  }
   return true;
 }
 
@@ -554,10 +556,13 @@ bool HouseModel::import_state(const PersistedState &state) {
     nodes_[i] = state.nodes[i];
   for (size_t i = 0; i < zone_count_; i++) {
     zones_[i] = state.zones[i];
+    history_[i] = state.histories[i];
     copy_text_(live_[i].room_id, sizeof(live_[i].room_id), zones_[i].room_id);
     copy_text_(live_[i].status, sizeof(live_[i].status), "unknown");
-    if (zones_[i].node_index >= node_count_)
+    if (zones_[i].node_index >= node_count_) {
       zones_[i].enabled = false;
+      history_[i] = {};
+    }
   }
   return true;
 }

@@ -71,8 +71,8 @@ Coordinator responsibilities:
   polling responses from a different device on the same hostname/IP
 - Poll `/api/hv6/v1/overview` and `/api/hv6/v1/zones`, while retaining `/state`
   as a migration/debug snapshot
-- Maintain local house model and runtime per-zone history as the first learning
-  layer for response rate, heat-call frequency, and future comfort tuning
+- Maintain local house model and persisted lightweight per-zone history as the
+  first learning layer for response rate, heat-call frequency, and future comfort tuning
 - Persist a first per-zone schedule primitive (daily window, day mask, and
   schedule setpoint) alongside comfort intent and bias, ready for the later
   effective-comfort resolver
@@ -161,7 +161,8 @@ recommendations, and local safety results.
 - Whether Lune Touch should remain ESPHome/LVGL-only or run a richer local web UI stack
 - Stronger pairing/authentication between Touch and V6 nodes beyond the current
   MAC-derived identity fingerprint
-- Minimum viable local storage for useful house learning
+- Long-term shape of local storage for useful house learning beyond the
+  lightweight persisted zone-history layer
 - Effective resolver ordering for schedule, manual boost, forecast preload, and
   learned comfort tuning
 - How much weather history is stored locally versus fetched on demand

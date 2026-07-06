@@ -142,6 +142,7 @@ class LuneTouchCoordinator : public esphome::Component {
   static constexpr uint32_t POLL_STACK_SIZE = 16384;
   static constexpr UBaseType_t POLL_PRIORITY = 2;
   static constexpr BaseType_t POLL_CORE = 0;
+  static constexpr uint32_t LEARNING_SAVE_INTERVAL_MS = 10UL * 60UL * 1000UL;
   static constexpr uint32_t FORECAST_COMMAND_TTL_S = 4500;
   static constexpr uint32_t FORECAST_COMMAND_DEDUPE_MS = 30UL * 60UL * 1000UL;
   static constexpr float FORECAST_COMMAND_EPSILON_C = 0.05f;
@@ -151,9 +152,11 @@ class LuneTouchCoordinator : public esphome::Component {
   mutable SemaphoreHandle_t state_lock_{nullptr};
   TaskHandle_t poll_task_handle_{nullptr};
   uint32_t last_ledger_expire_ms_{0};
+  uint32_t last_learning_save_ms_{0};
   uint32_t last_poll_ms_{0};
   uint32_t poll_success_count_{0};
   uint32_t poll_fail_count_{0};
+  bool learning_dirty_{false};
   char last_poll_error_[80]{};
   char node_last_success_host_[::lune_touch::MAX_NODES][64]{};
   char node_last_failure_[::lune_touch::MAX_NODES][80]{};

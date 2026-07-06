@@ -211,6 +211,11 @@ static void test_persisted_state_roundtrip() {
          "persist: schedule restored");
   expect(living.live != nullptr && !living.live->fresh && std::strcmp(living.live->status, "unknown") == 0,
          "persist: live state is runtime-only");
+  const ZoneHistory *living_history = restored.zone_history(0);
+  expect(living_history != nullptr && living_history->has_temperature &&
+             living_history->samples == 1 && living_history->calling_samples == 1 &&
+             living_history->average_temperature_c > 21.3f,
+         "persist: learning history restored");
 
   state.magic = 0;
   expect(!restored.import_state(state), "persist: reject invalid magic");

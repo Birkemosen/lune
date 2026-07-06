@@ -103,7 +103,7 @@ bridges do not have to overload one thermostat value with two meanings:
 ```
 
 `GET /diagnostics` also exposes a compact `learning` summary derived from the
-same runtime zone history, including zones with samples, total samples, heat-call
+same persisted zone history, including zones with samples, total samples, heat-call
 sample count, calling ratio, zones with temperature-rate estimates, and warming /
 cooling counts. It also includes `ota` runtime data with the running partition
 label/subtype, slot size, rollback state, and `pending_verify` flag so installers
@@ -132,8 +132,8 @@ Diagnostics includes a `commissioning` readiness block for field testing:
 ### `GET /zones`
 
 Each zone includes Touch-owned comfort intent, latest live V6 state, forecast
-tuning, and a lightweight runtime history block. The history is an in-memory
-learning foundation for now and resets on reboot/import:
+tuning, and a lightweight persisted learning history block. Live temperature /
+valve state still resets on reboot; history survives registry import/export:
 
 ```json
 {
@@ -398,7 +398,7 @@ write responses with `result` set to `blocked_untrusted`, `blocked_unreachable`,
 
 ### `POST /recovery/reset-registry`
 
-Clears the Touch-owned node registry, zone mappings, in-memory runtime history,
+Clears the Touch-owned node registry, zone mappings, persisted learning history,
 and persisted command ledger. Forecast location settings are intentionally kept.
 The request must include the confirmation token:
 
