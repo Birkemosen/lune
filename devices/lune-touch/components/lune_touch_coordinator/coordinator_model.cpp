@@ -640,6 +640,31 @@ bool CommandLedger::has_recent_similar(const char *source, uint8_t node_index, u
   return false;
 }
 
+bool CommandLedger::active_offset_for(const char *source, uint8_t node_index, uint8_t zone_index,
+                                      uint32_t now_ms, float *offset_c) const {
+  if (source == nullptr || source[0] == '\0')
+    return false;
+  const CommandRecord *best = nullptr;
+  for (size_t i = 0; i < count_; i++) {
+    const CommandRecord &record = records_[i];
+    if (!same_text_(record.source, source))
+      continue;
+    if (record.node_index != node_index || record.zone_index != zone_index)
+      continue;
+    if (record.result != CommandResult::PENDING && record.result != CommandResult::ACCEPTED)
+      continue;
+    if (record.expires_at_ms != 0 && static_cast<int32_t>(now_ms - record.expires_at_ms) >= 0)
+      continue;
+    if (best == nullptr || static_cast<int32_t>(record.created_at_ms - best->created_at_ms) > 0)
+      best = &record;
+  }
+  if (best == nullptr)
+    return false;
+  if (offset_c != nullptr)
+    *offset_c = best->result == CommandResult::ACCEPTED ? best->accepted_offset_c : best->requested_offset_c;
+  return true;
+}
+
 const CommandRecord *CommandLedger::latest() const {
   if (count_ == 0)
     return nullptr;

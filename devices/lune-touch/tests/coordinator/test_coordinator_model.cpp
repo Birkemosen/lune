@@ -433,6 +433,7 @@ static void test_command_ledger() {
   forecast.node_index = 1;
   forecast.zone_index = 3;
   forecast.requested_offset_c = 0.5f;
+  forecast.accepted_offset_c = 0.5f;
   forecast.result = CommandResult::ACCEPTED;
   ledger.append(forecast);
   expect(ledger.has_recent_similar("forecast", 1, 3, 0.52f, 110000, 1800000, 0.05f),
@@ -443,6 +444,13 @@ static void test_command_ledger() {
          "ledger: source separates forecast from dashboard");
   expect(!ledger.has_recent_similar("forecast", 1, 3, 0.52f, 2000000, 1800000, 0.05f),
          "ledger: old similar command no longer blocks");
+
+  float active_offset = 0.0f;
+  expect(ledger.active_offset_for("forecast", 1, 3, 110000, &active_offset) &&
+             active_offset > 0.49f && active_offset < 0.51f,
+         "ledger: active offset by source");
+  expect(!ledger.active_offset_for("forecast", 1, 3, 3700000, &active_offset),
+         "ledger: expired active offset ignored");
 }
 
 static void test_ledger_ring_capacity() {

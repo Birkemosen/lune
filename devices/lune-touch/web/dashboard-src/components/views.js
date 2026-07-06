@@ -73,6 +73,13 @@ const parseClock = (value, fallback) => {
   return Math.max(0, Math.min(1440, hour * 60 + minute));
 };
 const fmtSchedule = (schedule = {}) => schedule.enabled ? `${fmtClock(schedule.start_min)}-${fmtClock(schedule.end_min)} / ${fmtC(schedule.setpoint_c)}` : 'off';
+const fmtResolver = (resolver = {}) => {
+  const source = resolver.command_source || 'none';
+  const offset = Number(resolver.command_offset_c || 0);
+  const target = resolver.target_setpoint_c;
+  if (source === 'none' || Math.abs(offset) < 0.01) return `target ${fmtC(target)}`;
+  return `${source} ${offset > 0 ? '+' : ''}${offset.toFixed(2)} C -> ${fmtC(target)}`;
+};
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 const nodePayloadFromCandidate = (input, candidate = {}) => {
   const value = String(input || '');
@@ -262,7 +269,7 @@ export function renderZones() {
         <span>${z.name}</span><span>${fmtC(z.temperature_c)}</span><span>${fmtComfortIntent(z.comfort, z.setpoint_c)}</span><span>${fmtSchedule(z.schedule)}</span><span class="${statusClass(z.status)}">${z.status}</span><span>${v6Name(z.node_index)} / Z${Number(z.zone_index) + 1}</span>
         <span>${fmtValue(z.valve_pct, '%')}</span>
         <span>${fmtLearning(z.history)} / ${fmtThermal(z.thermal_model)}</span>
-        <span><button class="btn slim" data-command-room="${z.room_id}">+0.5 C / 45m</button></span>
+        <span><button class="btn slim" data-command-room="${z.room_id}">+0.5 C / 45m</button><small class="resolver-note">${fmtResolver(z.resolver)}</small></span>
       </div>`).join('')}
     </div>
   </section>`;

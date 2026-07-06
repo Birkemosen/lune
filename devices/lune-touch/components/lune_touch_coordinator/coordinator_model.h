@@ -249,6 +249,8 @@ class CommandLedger {
   bool has_recent_similar(const char *source, uint8_t node_index, uint8_t zone_index,
                           float requested_offset_c, uint32_t now_ms,
                           uint32_t min_interval_ms, float epsilon_c) const;
+  bool active_offset_for(const char *source, uint8_t node_index, uint8_t zone_index,
+                         uint32_t now_ms, float *offset_c) const;
   const CommandRecord *latest() const;
   const CommandRecord *at(size_t index) const;
   bool export_state(PersistedLedger *out) const;

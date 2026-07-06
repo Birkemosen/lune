@@ -33,6 +33,16 @@ function mockData(path) {
         time_valid: true,
         priority: i < 3 ? 3 : 1,
       },
+      resolver: {
+        base_setpoint_c: comfortSetpoints[i] + comfortBiases[i],
+        base_source: i < 8 ? 'schedule' : 'comfort',
+        manual_offset_c: i === 0 ? 0.5 : 0,
+        forecast_offset_c: i === 5 ? 0.2 : 0,
+        learned_offset_c: 0,
+        command_offset_c: i === 0 ? 0.5 : (i === 5 ? 0.2 : 0),
+        command_source: i === 0 ? 'manual' : (i === 5 ? 'forecast' : 'none'),
+        target_setpoint_c: comfortSetpoints[i] + comfortBiases[i] + (i === 0 ? 0.5 : (i === 5 ? 0.2 : 0)),
+      },
       schedule: { enabled: i < 8, day_mask: i < 8 ? 31 : 127, start_min: 360, end_min: 1320, setpoint_c: comfortSetpoints[i] },
       history: {
         samples: statuses[i] === 'unused' || statuses[i] === 'stale' ? 0 : 36 + i,

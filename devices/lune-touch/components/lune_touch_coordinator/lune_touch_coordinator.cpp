@@ -2567,6 +2567,22 @@ void LuneTouchCoordinator::write_zones_json(char *buffer, size_t capacity) const
     const char *status = live != nullptr && live->status[0] != '\0' ? live->status : (zone->enabled ? "unknown" : "unused");
     const auto effective = ::lune_touch::HouseModel::effective_comfort(*zone, time_valid,
                                                                        day_index, minute_of_day);
+    const uint32_t now_ms = esphome::millis();
+    float manual_offset_c = 0.0f;
+    float forecast_offset_c = 0.0f;
+    const bool has_manual_offset = ledger_.active_offset_for("dashboard", zone->node_index,
+                                                             zone->zone_index, now_ms,
+                                                             &manual_offset_c);
+    const bool has_forecast_offset = ledger_.active_offset_for("forecast", zone->node_index,
+                                                               zone->zone_index, now_ms,
+                                                               &forecast_offset_c);
+    const float learned_offset_c = 0.0f;
+    const float command_offset_c = has_manual_offset ? manual_offset_c :
+        (has_forecast_offset ? forecast_offset_c : 0.0f);
+    const char *command_source = has_manual_offset ? "manual" :
+        (has_forecast_offset ? "forecast" : "none");
+    const float resolved_target_c = std::fmin(35.0f, std::fmax(5.0f,
+        effective.setpoint_c + command_offset_c + learned_offset_c));
     const float thermal_confidence = zone->thermal_samples >= 24 ? 1.0f :
         static_cast<float>(zone->thermal_samples) / 24.0f;
     if (!appendf_(buffer, capacity, off,
@@ -2575,6 +2591,10 @@ void LuneTouchCoordinator::write_zones_json(char *buffer, size_t capacity) const
                   "\"valve_pct\":%s,\"updated_at_ms\":%lu,\"comfort\":{\"setpoint_c\":%.1f,"
                   "\"bias_c\":%.1f,\"effective_setpoint_c\":%.1f,\"effective_source\":\"%s\","
                   "\"schedule_active\":%s,\"time_valid\":%s,\"priority\":%u},"
+                  "\"resolver\":{\"base_setpoint_c\":%.1f,\"base_source\":\"%s\","
+                  "\"manual_offset_c\":%.2f,\"forecast_offset_c\":%.2f,"
+                  "\"learned_offset_c\":%.2f,\"command_offset_c\":%.2f,"
+                  "\"command_source\":\"%s\",\"target_setpoint_c\":%.1f},"
                   "\"schedule\":{\"enabled\":%s,\"day_mask\":%u,\"start_min\":%u,"
                   "\"end_min\":%u,\"setpoint_c\":%.1f},"
                   "\"history\":{\"samples\":%lu,\"calling_samples\":%lu,"
@@ -2596,6 +2616,14 @@ void LuneTouchCoordinator::write_zones_json(char *buffer, size_t capacity) const
                   effective.schedule_active ? "true" : "false",
                   effective.time_valid ? "true" : "false",
                   static_cast<unsigned>(zone->priority),
+                  effective.setpoint_c,
+                  effective.source,
+                  has_manual_offset ? manual_offset_c : 0.0f,
+                  has_forecast_offset ? forecast_offset_c : 0.0f,
+                  learned_offset_c,
+                  command_offset_c,
+                  command_source,
+                  resolved_target_c,
                   zone->schedule_enabled ? "true" : "false",
                   static_cast<unsigned>(zone->schedule_day_mask),
                   static_cast<unsigned>(zone->schedule_start_min),

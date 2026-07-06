@@ -179,6 +179,16 @@ valve state still resets on reboot; history survives registry import/export:
     "time_valid": true,
     "priority": 3
   },
+  "resolver": {
+    "base_setpoint_c": 21.7,
+    "base_source": "schedule",
+    "manual_offset_c": 0.5,
+    "forecast_offset_c": 0.3,
+    "learned_offset_c": 0.0,
+    "command_offset_c": 0.5,
+    "command_source": "manual",
+    "target_setpoint_c": 22.2
+  },
   "schedule": {
     "enabled": true,
     "day_mask": 127,
@@ -208,6 +218,14 @@ the room schedule is active, `effective_source` is `schedule`; otherwise it is
 `comfort`. The stored comfort bias is applied in both cases. `thermal_model`
 contains Touch-learned, persisted coefficients derived from fresh temperature
 history; it is observational and does not yet override local V6 safety behavior.
+
+`resolver` is the read-only ordering view used by the dashboard for field
+debugging. It starts with the comfort/schedule base, then chooses an active
+manual dashboard offset over an active forecast preload offset. `learned_offset_c`
+is intentionally exposed as `0.0` until learned tuning becomes an enabled policy;
+the learned coefficients remain visible in `thermal_model`. `target_setpoint_c`
+is the resolved advisory target after the winning offset, still subject to V6
+local clamps and safety validation when commands are sent.
 
 ## Writes
 
