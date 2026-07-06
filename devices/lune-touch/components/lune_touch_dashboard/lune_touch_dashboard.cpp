@@ -517,6 +517,14 @@ void LuneTouchDashboard::handle_v1_(AsyncWebServerRequest *request, const char *
       send_ok_(request, data_buf_);
       return;
     }
+    if (strcmp(path, "/settings") == 0) {
+      if (coordinator_)
+        coordinator_->write_settings_json(data_buf_, sizeof(data_buf_));
+      else
+        snprintf(data_buf_, sizeof(data_buf_), "{}");
+      send_ok_(request, data_buf_);
+      return;
+    }
     send_error_(request, 404, "unknown_route", "Unknown route");
     return;
   }
@@ -676,6 +684,18 @@ void LuneTouchDashboard::handle_v1_post_(ApiRequest &api, const char *path) {
     char source[24];
     parse_text_param(api, api.json_body, "source", source, sizeof(source));
     const bool accepted = coordinator_->set_forecast_location(latitude, longitude, source, data_buf_, sizeof(data_buf_));
+    send_write_result_(api, accepted, 400);
+  } else if (strcmp(path, "/settings") == 0) {
+    char coordinator_name[40];
+    char install_id[40];
+    char site_label[64];
+    char install_mode[24];
+    parse_text_param(api, api.json_body, "name", coordinator_name, sizeof(coordinator_name));
+    parse_text_param(api, api.json_body, "install_id", install_id, sizeof(install_id));
+    parse_text_param(api, api.json_body, "site_label", site_label, sizeof(site_label));
+    parse_text_param(api, api.json_body, "install_mode", install_mode, sizeof(install_mode));
+    const bool accepted = coordinator_->set_settings(coordinator_name, install_id, site_label,
+                                                     install_mode, data_buf_, sizeof(data_buf_));
     send_write_result_(api, accepted, 400);
   } else if (strcmp(path, "/forecast/fetch") == 0) {
     const bool accepted = coordinator_->request_forecast_fetch(data_buf_, sizeof(data_buf_));

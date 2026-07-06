@@ -26,6 +26,7 @@ Read endpoints return the standard envelope:
 - `GET /forecast`
 - `GET /commands`
 - `GET /diagnostics`
+- `GET /settings`
 
 `GET /nodes` reports both configured hostname/IP and runtime poll evidence:
 `last_success_host` shows whether the latest successful poll used mDNS hostname
@@ -359,6 +360,23 @@ in that case.
   "source": "manual"
 }
 ```
+
+### `POST /settings`
+
+Stores coordinator-owned identity and install profile fields:
+
+```json
+{
+  "name": "Lune Touch",
+  "install_id": "house-main",
+  "site_label": "Birkemosen",
+  "install_mode": "commissioning"
+}
+```
+
+All fields are optional, but at least one must be present. `install_mode` is one
+of `commissioning`, `active`, or `service`. `GET /settings` returns the same
+coordinator block plus the current Asgard / Odin advisory integration mode.
 
 ### `POST /forecast/fetch`
 

@@ -21,6 +21,7 @@ static const char *const TAG = "lune_touch";
 static const char *const TOUCH_NAMESPACE = "touch";
 static const char *const WEATHER_NAMESPACE = "weather";
 static const char *const LEDGER_NAMESPACE = "ledger";
+static const char *const SETTINGS_NAMESPACE = "touch_settings";
 
 namespace {
 
@@ -291,6 +292,7 @@ void LuneTouchCoordinator::setup() {
   const bool loaded_registry = load_registry_();
   load_ledger_();
   load_forecast_settings_();
+  load_settings_();
   if (!loaded_registry)
     ESP_LOGI(TAG, "No persisted Touch registry; waiting for dashboard pairing");
   ESP_LOGI(TAG, "Lune Touch coordinator model ready");
@@ -1392,6 +1394,33 @@ void LuneTouchCoordinator::save_forecast_settings_() {
   nvs_close(handle);
 }
 
+void LuneTouchCoordinator::load_settings_() {
+  nvs_handle_t handle;
+  if (nvs_open(SETTINGS_NAMESPACE, NVS_READONLY, &handle) != ESP_OK)
+    return;
+  size_t len = sizeof(coordinator_name_);
+  nvs_get_str(handle, "name", coordinator_name_, &len);
+  len = sizeof(install_id_);
+  nvs_get_str(handle, "install_id", install_id_, &len);
+  len = sizeof(site_label_);
+  nvs_get_str(handle, "site", site_label_, &len);
+  len = sizeof(install_mode_);
+  nvs_get_str(handle, "mode", install_mode_, &len);
+  nvs_close(handle);
+}
+
+void LuneTouchCoordinator::save_settings_() {
+  nvs_handle_t handle;
+  if (nvs_open(SETTINGS_NAMESPACE, NVS_READWRITE, &handle) != ESP_OK)
+    return;
+  nvs_set_str(handle, "name", coordinator_name_);
+  nvs_set_str(handle, "install_id", install_id_);
+  nvs_set_str(handle, "site", site_label_);
+  nvs_set_str(handle, "mode", install_mode_);
+  nvs_commit(handle);
+  nvs_close(handle);
+}
+
 void LuneTouchCoordinator::make_node_id_(const char *hostname, const char *fallback_ip, char *out, size_t out_len) const {
   if (out_len == 0)
     return;
@@ -1930,6 +1959,49 @@ bool LuneTouchCoordinator::set_forecast_location(float latitude, float longitude
   return true;
 }
 
+bool LuneTouchCoordinator::set_settings(const char *coordinator_name, const char *install_id,
+                                        const char *site_label, const char *install_mode,
+                                        char *response, size_t capacity) {
+  if ((coordinator_name == nullptr || coordinator_name[0] == '\0') &&
+      (install_id == nullptr || install_id[0] == '\0') &&
+      (site_label == nullptr || site_label[0] == '\0') &&
+      (install_mode == nullptr || install_mode[0] == '\0')) {
+    snprintf(response, capacity, "{\"result\":\"rejected\",\"error\":\"settings_required\"}");
+    return false;
+  }
+  if (install_mode != nullptr && install_mode[0] != '\0' &&
+      std::strcmp(install_mode, "commissioning") != 0 &&
+      std::strcmp(install_mode, "active") != 0 &&
+      std::strcmp(install_mode, "service") != 0) {
+    snprintf(response, capacity, "{\"result\":\"rejected\",\"error\":\"invalid_install_mode\"}");
+    return false;
+  }
+  if (!take_state_lock_(100)) {
+    snprintf(response, capacity, "{\"result\":\"rejected\",\"error\":\"coordinator_busy\"}");
+    return false;
+  }
+  if (coordinator_name != nullptr && coordinator_name[0] != '\0') {
+    std::strncpy(coordinator_name_, coordinator_name, sizeof(coordinator_name_) - 1);
+    coordinator_name_[sizeof(coordinator_name_) - 1] = '\0';
+  }
+  if (install_id != nullptr && install_id[0] != '\0') {
+    std::strncpy(install_id_, install_id, sizeof(install_id_) - 1);
+    install_id_[sizeof(install_id_) - 1] = '\0';
+  }
+  if (site_label != nullptr && site_label[0] != '\0') {
+    std::strncpy(site_label_, site_label, sizeof(site_label_) - 1);
+    site_label_[sizeof(site_label_) - 1] = '\0';
+  }
+  if (install_mode != nullptr && install_mode[0] != '\0') {
+    std::strncpy(install_mode_, install_mode, sizeof(install_mode_) - 1);
+    install_mode_[sizeof(install_mode_) - 1] = '\0';
+  }
+  save_settings_();
+  give_state_lock_();
+  snprintf(response, capacity, "{\"result\":\"saved\",\"install_mode\":\"%s\"}", install_mode_);
+  return true;
+}
+
 bool LuneTouchCoordinator::request_forecast_fetch(char *response, size_t capacity) {
   float latitude = 0.0f;
   float longitude = 0.0f;
@@ -2355,6 +2427,24 @@ void LuneTouchCoordinator::write_strategy_json(char *buffer, size_t capacity) co
            schedule_driver_room_name,
            schedule_driver_setpoint,
            static_cast<unsigned>(schedule_driver_priority));
+}
+
+void LuneTouchCoordinator::write_settings_json(char *buffer, size_t capacity) const {
+  char name[64];
+  char install_id[64];
+  char site[96];
+  char mode[32];
+  json_escape_(coordinator_name_, name, sizeof(name));
+  json_escape_(install_id_, install_id, sizeof(install_id));
+  json_escape_(site_label_, site, sizeof(site));
+  json_escape_(install_mode_, mode, sizeof(mode));
+  snprintf(buffer, capacity,
+           "{\"coordinator\":{\"name\":\"%s\",\"install_id\":\"%s\","
+           "\"site_label\":\"%s\",\"install_mode\":\"%s\"},"
+           "\"asgard_odin\":{\"enabled\":true,\"mode\":\"advisory\","
+           "\"physical_signal\":\"priority_weighted_house_temp\","
+           "\"comfort_signal\":\"separate_weighted_demand\"}}",
+           name, install_id, site, mode);
 }
 
 void LuneTouchCoordinator::write_forecast_json(char *buffer, size_t capacity) const {

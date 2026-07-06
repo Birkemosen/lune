@@ -78,6 +78,7 @@ class LuneTouchCoordinator : public esphome::Component {
   void write_forecast_json(char *buffer, size_t capacity) const;
   void write_commands_json(char *buffer, size_t capacity) const;
   void write_diagnostics_json(char *buffer, size_t capacity) const;
+  void write_settings_json(char *buffer, size_t capacity) const;
 
   bool add_node(const char *node_id, const char *hostname, const char *fallback_ip,
                 const char *pairing_fingerprint, char *response, size_t capacity);
@@ -100,6 +101,9 @@ class LuneTouchCoordinator : public esphome::Component {
   bool set_forecast_location(float latitude, float longitude, const char *mode,
                              char *response, size_t capacity);
   bool request_forecast_fetch(char *response, size_t capacity);
+  bool set_settings(const char *coordinator_name, const char *install_id,
+                    const char *site_label, const char *install_mode,
+                    char *response, size_t capacity);
 
  protected:
   bool load_registry_();
@@ -108,6 +112,8 @@ class LuneTouchCoordinator : public esphome::Component {
   void save_ledger_();
   void load_forecast_settings_();
   void save_forecast_settings_();
+  void load_settings_();
+  void save_settings_();
   void seed_mock_house_();
   void make_node_id_(const char *hostname, const char *fallback_ip, char *out, size_t out_len) const;
   bool take_state_lock_(uint32_t timeout_ms = 100) const;
@@ -166,6 +172,10 @@ class LuneTouchCoordinator : public esphome::Component {
   float forecast_latitude_{0.0f};
   float forecast_longitude_{0.0f};
   char forecast_location_mode_[16]{"manual"};
+  char coordinator_name_[32]{"Lune Touch"};
+  char install_id_[32]{"unassigned"};
+  char site_label_[48]{"House"};
+  char install_mode_[16]{"commissioning"};
   uint32_t forecast_last_fetch_ms_{0};
   char forecast_status_[16]{"stale"};
   char forecast_last_error_[96]{};
