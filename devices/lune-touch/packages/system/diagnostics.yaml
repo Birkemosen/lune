@@ -7,31 +7,31 @@ debug:
 sensor:
   - platform: wifi_signal
     id: wifi_signal_dbm
-    name: "Lune Touch WiFi Signal"
+    name: "${friendly_name} WiFi Signal"
     update_interval: 60s
   - platform: uptime
     id: lune_touch_uptime
-    name: "Lune Touch Uptime"
+    name: "${friendly_name} Uptime"
     update_interval: 60s
   - platform: debug
     free:
-      name: "Lune Touch Heap Free"
+      name: "${friendly_name} Heap Free"
     block:
-      name: "Lune Touch Heap Max Block"
+      name: "${friendly_name} Heap Max Block"
     loop_time:
-      name: "Lune Touch Loop Time"
+      name: "${friendly_name} Loop Time"
 
 text_sensor:
   - platform: version
     id: firmware_version_text
-    name: "Lune Touch Firmware Version"
+    name: "${friendly_name} Firmware Version"
   - platform: wifi_info
     ip_address:
       id: ip_address_text
-      name: "Lune Touch IP Address"
+      name: "${friendly_name} IP Address"
     ssid:
       id: connected_ssid_text
-      name: "Lune Touch Connected SSID"
+      name: "${friendly_name} Connected SSID"
     mac_address:
       id: mac_address_text
-      name: "Lune Touch MAC Address"
+      name: "${friendly_name} MAC Address"

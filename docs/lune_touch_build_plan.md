@@ -64,6 +64,12 @@ RGB565 over 16-bit RGB, GT911 touch on GPIO8/GPIO9 I2C, and CH422G-controlled
 LCD/touch reset, VDD/VCOM enable, and backlight lines. The pin map and timings
 are captured in `devices/lune-touch/docs/waveshare_esp32_s3_touch_lcd_7b.md`.
 
+Lune Mini now has a headless coordinator entrypoint at
+`devices/lune-touch/configurations/lune-mini.yaml`. It shares the same
+coordinator/API/dashboard runtime as Touch and leaves display/LVGL out at the
+entrypoint level, so Mini can be tested without introducing a separate runtime
+branch.
+
 Coordinator responsibilities:
 
 - Discover and pair Lune V6 nodes
@@ -166,5 +172,5 @@ recommendations, and local safety results.
 - Effective resolver ordering for schedule, manual boost, forecast preload, and
   learned comfort tuning
 - How much weather history is stored locally versus fetched on demand
-- Whether Lune Mini shares identical firmware with display features disabled
+- Long-term product split between Lune Touch and the headless Lune Mini profile
 - Long-term migration path from `/api/hv6/v1` to a public Lune API namespace

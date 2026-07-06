@@ -36,12 +36,15 @@ COORDINATOR_SRCS := $(COORDINATOR_COMPONENT_DIR)/coordinator_model.cpp \
                     $(COORDINATOR_TEST_DIR)/test_coordinator_model.cpp
 COORDINATOR_OUT ?= /tmp/test_lune_touch_coordinator_model
 
-.PHONY: help check ensure-secrets-link config build build-verify ota-size-check deploy monitor dashboard dashboard-tooling dashboard-build dashboard-watch test test-forecast test-coordinator clean
+.PHONY: help check ensure-secrets-link config build build-verify ota-size-check deploy monitor \
+        config-mini build-mini dashboard dashboard-tooling dashboard-build dashboard-watch \
+        test test-forecast test-coordinator clean
 
 help:
 	@echo "Lune Touch coordinator tasks"
 	@echo "  make config           Validate Lune Touch ESPHome YAML"
 	@echo "  make build            Compile Lune Touch firmware"
+	@echo "  make build-mini       Compile Lune Mini headless coordinator firmware"
 	@echo "  make ota-size-check   Verify firmware fits the OTA slot"
 	@echo "  make deploy           Build + upload Lune Touch"
 	@echo "  make deploy PORT=/dev/cu.usbmodemXXXX"
@@ -81,6 +84,12 @@ build: check dashboard-build
 	$(MAKE) ota-size-check
 
 build-verify: build
+
+config-mini:
+	$(MAKE) CONFIG=configurations/lune-mini.yaml BUILD_NAME=lune-mini config
+
+build-mini:
+	$(MAKE) CONFIG=configurations/lune-mini.yaml BUILD_NAME=lune-mini build
 
 ota-size-check:
 	@if [ ! -f "$(FIRMWARE_BIN)" ]; then \

@@ -26,11 +26,24 @@ Useful commands from the repo root:
 ```bash
 make config-lune-touch
 make build-lune-touch
+make config-lune-mini
+make build-lune-mini
 make test-lune-touch
 ```
 
 `make build-lune-touch` also checks the produced firmware against the 0x640000
 OTA slot from `partitions/lune_touch_16mb_ota.csv`.
+
+The headless Lune Mini entrypoint is:
+
+```text
+devices/lune-touch/configurations/lune-mini.yaml
+```
+
+It includes the same coordinator, API, OTA, diagnostics, and local web dashboard
+runtime as Lune Touch, but omits the display/LVGL package. This keeps the
+Touch/Mini coordinator behavior shared while making display hardware an
+entrypoint-level feature.
 
 ## Current Extraction
 
