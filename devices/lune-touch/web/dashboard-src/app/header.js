@@ -12,7 +12,7 @@ const sections = [
 
 export function renderHeader() {
   return `
-    <header class="topbar">
+    <header class="sidebar">
       <div class="brand">
         <div class="brand-title">Lune Touch</div>
         <div class="brand-sub">House coordinator</div>
