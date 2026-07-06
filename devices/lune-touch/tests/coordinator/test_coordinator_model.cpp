@@ -416,16 +416,22 @@ static void test_command_ledger() {
              std::strcmp(command_result_name(CommandResult::BLOCKED_UNREACHABLE), "blocked_unreachable") == 0 &&
              std::strcmp(command_result_name(CommandResult::BLOCKED_UNTRUSTED), "blocked_untrusted") == 0,
          "ledger: blocked result names");
+  expect(std::strcmp(command_result_name(CommandResult::FAILED), "failed") == 0,
+         "ledger: failed result name");
 
   CommandRecord accepted = command("cmd-3", 3000, 10000);
   accepted.result = CommandResult::ACCEPTED;
   accepted.accepted_offset_c = 1.0f;
   accepted.clamp_applied = true;
   ledger.append(accepted);
+  CommandRecord failed = command("cmd-failed", 3200, 10000);
+  failed.result = CommandResult::FAILED;
+  ledger.append(failed);
+  expect(ledger.count_result(CommandResult::FAILED) == 1, "ledger: failed count");
 
   const CommandRecord *latest = ledger.latest();
-  expect(latest != nullptr && std::strcmp(latest->request_id, "cmd-3") == 0, "ledger: latest record");
-  expect(latest && latest->clamp_applied && latest->accepted_offset_c == 1.0f,
+  expect(latest != nullptr && std::strcmp(latest->request_id, "cmd-failed") == 0, "ledger: latest record");
+  expect(ledger.at(2) && ledger.at(2)->clamp_applied && ledger.at(2)->accepted_offset_c == 1.0f,
          "ledger: clamp result preserved");
 
   CommandRecord forecast = command("cmd-4", 100000, 3600000);

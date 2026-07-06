@@ -716,6 +716,8 @@ const char *command_result_name(CommandResult result) {
       return "blocked_unreachable";
     case CommandResult::BLOCKED_UNTRUSTED:
       return "blocked_untrusted";
+    case CommandResult::FAILED:
+      return "failed";
     default:
       return "pending";
   }

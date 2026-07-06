@@ -229,12 +229,13 @@ local clamps and safety validation when commands are sent.
 
 ## Writes
 
-Write endpoints accept query parameters and JSON request bodies. The embedded
-dashboard uses query-parameter POSTs for small form writes, while external
-commissioning tools can send normal JSON bodies. Invalid writes return HTTP `4xx`
-with the standard `ok:false` envelope. Valid safety outcomes, such as a setpoint
-command blocked because its V6 node is stale, are returned as successful write
-responses and recorded in the command ledger.
+Write endpoints accept JSON request bodies and retain query-parameter
+compatibility for migration/debug tooling. The embedded dashboard sends JSON
+bodies first and falls back to query parameters only when talking to older
+firmware. Invalid writes return HTTP `4xx` with the standard `ok:false`
+envelope. Valid safety outcomes, such as a setpoint command blocked because its
+V6 node is stale, are returned as successful write responses and recorded in the
+command ledger.
 
 ### `POST /nodes`
 
@@ -396,7 +397,9 @@ Touch resolves the room mapping, sends an expiring V6 command, and stores the
 accepted/clamped result in the command ledger. Dashboard commands are blocked
 before send when the mapped V6 node is stale, unreachable, or not trusted; the
 ledger result is `blocked_stale`, `blocked_unreachable`, or `blocked_untrusted`
-in that case.
+in that case. If Touch attempts the send but cannot get a usable V6 response,
+the ledger result is `failed`; if V6 responds and declines the command, the
+ledger result is `rejected`.
 
 ### `POST /forecast/settings`
 

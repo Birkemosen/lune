@@ -33,6 +33,7 @@ enum class CommandResult : uint8_t {
   BLOCKED_STALE = 4,
   BLOCKED_UNREACHABLE = 5,
   BLOCKED_UNTRUSTED = 6,
+  FAILED = 7,
 };
 
 struct PairedNode {

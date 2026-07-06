@@ -1164,7 +1164,7 @@ ForecastDispatchSummary LuneTouchCoordinator::dispatch_forecast_commands_() {
     const bool sent = send_v6_setpoint_command_(node, decision.zone_index, record,
                                                 FORECAST_COMMAND_TTL_S, &final_record);
     if (!sent)
-      final_record.result = ::lune_touch::CommandResult::REJECTED;
+      final_record.result = ::lune_touch::CommandResult::FAILED;
 
     if (final_record.result == ::lune_touch::CommandResult::ACCEPTED ||
         final_record.result == ::lune_touch::CommandResult::PENDING) {
@@ -2030,7 +2030,7 @@ bool LuneTouchCoordinator::queue_setpoint_command(const char *room_id, float req
   } else {
     const bool sent = send_v6_setpoint_command_(target_node, target_zone, record, ttl_s, &final_record);
     if (!sent)
-      final_record.result = ::lune_touch::CommandResult::REJECTED;
+      final_record.result = ::lune_touch::CommandResult::FAILED;
   }
 
   if (take_state_lock_(100)) {
