@@ -103,6 +103,8 @@ class LuneTouchCoordinator : public esphome::Component {
   bool request_forecast_fetch(char *response, size_t capacity);
   bool set_settings(const char *coordinator_name, const char *install_id,
                     const char *site_label, const char *install_mode,
+                    bool has_asgard_enabled, bool asgard_enabled,
+                    const char *asgard_mode,
                     char *response, size_t capacity);
 
  protected:
@@ -176,6 +178,8 @@ class LuneTouchCoordinator : public esphome::Component {
   char install_id_[32]{"unassigned"};
   char site_label_[48]{"House"};
   char install_mode_[16]{"commissioning"};
+  bool asgard_enabled_{true};
+  char asgard_mode_[16]{"advisory"};
   uint32_t forecast_last_fetch_ms_{0};
   char forecast_status_[16]{"stale"};
   char forecast_last_error_[96]{};

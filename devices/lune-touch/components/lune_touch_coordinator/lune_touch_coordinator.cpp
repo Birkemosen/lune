@@ -1406,6 +1406,11 @@ void LuneTouchCoordinator::load_settings_() {
   nvs_get_str(handle, "site", site_label_, &len);
   len = sizeof(install_mode_);
   nvs_get_str(handle, "mode", install_mode_, &len);
+  uint8_t asgard_enabled = asgard_enabled_ ? 1 : 0;
+  if (nvs_get_u8(handle, "asgard_en", &asgard_enabled) == ESP_OK)
+    asgard_enabled_ = asgard_enabled != 0;
+  len = sizeof(asgard_mode_);
+  nvs_get_str(handle, "asgard_mode", asgard_mode_, &len);
   nvs_close(handle);
 }
 
@@ -1417,6 +1422,8 @@ void LuneTouchCoordinator::save_settings_() {
   nvs_set_str(handle, "install_id", install_id_);
   nvs_set_str(handle, "site", site_label_);
   nvs_set_str(handle, "mode", install_mode_);
+  nvs_set_u8(handle, "asgard_en", asgard_enabled_ ? 1 : 0);
+  nvs_set_str(handle, "asgard_mode", asgard_mode_);
   nvs_commit(handle);
   nvs_close(handle);
 }
@@ -1961,11 +1968,15 @@ bool LuneTouchCoordinator::set_forecast_location(float latitude, float longitude
 
 bool LuneTouchCoordinator::set_settings(const char *coordinator_name, const char *install_id,
                                         const char *site_label, const char *install_mode,
+                                        bool has_asgard_enabled, bool asgard_enabled,
+                                        const char *asgard_mode,
                                         char *response, size_t capacity) {
   if ((coordinator_name == nullptr || coordinator_name[0] == '\0') &&
       (install_id == nullptr || install_id[0] == '\0') &&
       (site_label == nullptr || site_label[0] == '\0') &&
-      (install_mode == nullptr || install_mode[0] == '\0')) {
+      (install_mode == nullptr || install_mode[0] == '\0') &&
+      !has_asgard_enabled &&
+      (asgard_mode == nullptr || asgard_mode[0] == '\0')) {
     snprintf(response, capacity, "{\"result\":\"rejected\",\"error\":\"settings_required\"}");
     return false;
   }
@@ -1974,6 +1985,12 @@ bool LuneTouchCoordinator::set_settings(const char *coordinator_name, const char
       std::strcmp(install_mode, "active") != 0 &&
       std::strcmp(install_mode, "service") != 0) {
     snprintf(response, capacity, "{\"result\":\"rejected\",\"error\":\"invalid_install_mode\"}");
+    return false;
+  }
+  if (asgard_mode != nullptr && asgard_mode[0] != '\0' &&
+      std::strcmp(asgard_mode, "advisory") != 0 &&
+      std::strcmp(asgard_mode, "disabled") != 0) {
+    snprintf(response, capacity, "{\"result\":\"rejected\",\"error\":\"invalid_asgard_mode\"}");
     return false;
   }
   if (!take_state_lock_(100)) {
@@ -1996,9 +2013,19 @@ bool LuneTouchCoordinator::set_settings(const char *coordinator_name, const char
     std::strncpy(install_mode_, install_mode, sizeof(install_mode_) - 1);
     install_mode_[sizeof(install_mode_) - 1] = '\0';
   }
+  if (has_asgard_enabled)
+    asgard_enabled_ = asgard_enabled;
+  if (asgard_mode != nullptr && asgard_mode[0] != '\0') {
+    std::strncpy(asgard_mode_, asgard_mode, sizeof(asgard_mode_) - 1);
+    asgard_mode_[sizeof(asgard_mode_) - 1] = '\0';
+    if (std::strcmp(asgard_mode_, "disabled") == 0)
+      asgard_enabled_ = false;
+  }
   save_settings_();
   give_state_lock_();
-  snprintf(response, capacity, "{\"result\":\"saved\",\"install_mode\":\"%s\"}", install_mode_);
+  snprintf(response, capacity, "{\"result\":\"saved\",\"install_mode\":\"%s\","
+           "\"asgard_enabled\":%s,\"asgard_mode\":\"%s\"}",
+           install_mode_, asgard_enabled_ ? "true" : "false", asgard_mode_);
   return true;
 }
 
@@ -2396,10 +2423,12 @@ void LuneTouchCoordinator::write_strategy_json(char *buffer, size_t capacity) co
   char driver_room_name[96];
   char schedule_driver_room_id[64];
   char schedule_driver_room_name[96];
+  char asgard_mode[32];
   json_escape_(strategy.driver_room_id, driver_room_id, sizeof(driver_room_id));
   json_escape_(strategy.driver_room_name, driver_room_name, sizeof(driver_room_name));
   json_escape_(schedule_driver_room_id_raw, schedule_driver_room_id, sizeof(schedule_driver_room_id));
   json_escape_(schedule_driver_room_name_raw, schedule_driver_room_name, sizeof(schedule_driver_room_name));
+  json_escape_(asgard_mode_, asgard_mode, sizeof(asgard_mode));
 
   snprintf(buffer, capacity,
            "{\"physical\":{\"has_temperature\":%s,\"temperature_c\":%.2f,"
@@ -2409,8 +2438,8 @@ void LuneTouchCoordinator::write_strategy_json(char *buffer, size_t capacity) co
            "\"schedule\":{\"time_valid\":%s,\"active_zones\":%u,"
            "\"driver_room_id\":\"%s\",\"driver_name\":\"%s\","
            "\"driver_setpoint_c\":%.1f,\"driver_priority\":%u},"
-           "\"asgard_odin\":{\"physical_signal\":\"priority_weighted_house_temp\","
-           "\"comfort_signal\":\"separate_weighted_demand\",\"mode\":\"advisory\"}}",
+           "\"asgard_odin\":{\"enabled\":%s,\"physical_signal\":\"priority_weighted_house_temp\","
+           "\"comfort_signal\":\"separate_weighted_demand\",\"mode\":\"%s\"}}",
            strategy.has_physical_temperature ? "true" : "false",
            strategy.physical_temperature_c,
            static_cast<unsigned>(strategy.contributing_zones),
@@ -2426,7 +2455,9 @@ void LuneTouchCoordinator::write_strategy_json(char *buffer, size_t capacity) co
            schedule_driver_room_id,
            schedule_driver_room_name,
            schedule_driver_setpoint,
-           static_cast<unsigned>(schedule_driver_priority));
+           static_cast<unsigned>(schedule_driver_priority),
+           asgard_enabled_ ? "true" : "false",
+           asgard_mode);
 }
 
 void LuneTouchCoordinator::write_settings_json(char *buffer, size_t capacity) const {
@@ -2438,13 +2469,15 @@ void LuneTouchCoordinator::write_settings_json(char *buffer, size_t capacity) co
   json_escape_(install_id_, install_id, sizeof(install_id));
   json_escape_(site_label_, site, sizeof(site));
   json_escape_(install_mode_, mode, sizeof(mode));
+  char asgard_mode[32];
+  json_escape_(asgard_mode_, asgard_mode, sizeof(asgard_mode));
   snprintf(buffer, capacity,
            "{\"coordinator\":{\"name\":\"%s\",\"install_id\":\"%s\","
            "\"site_label\":\"%s\",\"install_mode\":\"%s\"},"
-           "\"asgard_odin\":{\"enabled\":true,\"mode\":\"advisory\","
+           "\"asgard_odin\":{\"enabled\":%s,\"mode\":\"%s\","
            "\"physical_signal\":\"priority_weighted_house_temp\","
            "\"comfort_signal\":\"separate_weighted_demand\"}}",
-           name, install_id, site, mode);
+           name, install_id, site, mode, asgard_enabled_ ? "true" : "false", asgard_mode);
 }
 
 void LuneTouchCoordinator::write_forecast_json(char *buffer, size_t capacity) const {

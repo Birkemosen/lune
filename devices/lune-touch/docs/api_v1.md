@@ -370,13 +370,17 @@ Stores coordinator-owned identity and install profile fields:
   "name": "Lune Touch",
   "install_id": "house-main",
   "site_label": "Birkemosen",
-  "install_mode": "commissioning"
+  "install_mode": "commissioning",
+  "asgard_enabled": 1,
+  "asgard_mode": "advisory"
 }
 ```
 
 All fields are optional, but at least one must be present. `install_mode` is one
-of `commissioning`, `active`, or `service`. `GET /settings` returns the same
-coordinator block plus the current Asgard / Odin advisory integration mode.
+of `commissioning`, `active`, or `service`. `asgard_mode` is `advisory` or
+`disabled`; writing `disabled` also clears `asgard_enabled`. `GET /settings`
+returns the same coordinator block plus the current Asgard / Odin integration
+settings.
 
 ### `POST /forecast/fetch`
 

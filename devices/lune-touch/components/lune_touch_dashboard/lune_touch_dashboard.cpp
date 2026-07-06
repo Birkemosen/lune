@@ -690,12 +690,18 @@ void LuneTouchDashboard::handle_v1_post_(ApiRequest &api, const char *path) {
     char install_id[40];
     char site_label[64];
     char install_mode[24];
+    char asgard_mode[24];
+    uint32_t asgard_enabled = 0;
     parse_text_param(api, api.json_body, "name", coordinator_name, sizeof(coordinator_name));
     parse_text_param(api, api.json_body, "install_id", install_id, sizeof(install_id));
     parse_text_param(api, api.json_body, "site_label", site_label, sizeof(site_label));
     parse_text_param(api, api.json_body, "install_mode", install_mode, sizeof(install_mode));
+    parse_text_param(api, api.json_body, "asgard_mode", asgard_mode, sizeof(asgard_mode));
+    const bool has_asgard_enabled = parse_uint_param(api, api.json_body, "asgard_enabled", &asgard_enabled);
     const bool accepted = coordinator_->set_settings(coordinator_name, install_id, site_label,
-                                                     install_mode, data_buf_, sizeof(data_buf_));
+                                                     install_mode, has_asgard_enabled,
+                                                     asgard_enabled != 0, asgard_mode,
+                                                     data_buf_, sizeof(data_buf_));
     send_write_result_(api, accepted, 400);
   } else if (strcmp(path, "/forecast/fetch") == 0) {
     const bool accepted = coordinator_->request_forecast_fetch(data_buf_, sizeof(data_buf_));
