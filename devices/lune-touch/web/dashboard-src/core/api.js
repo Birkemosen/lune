@@ -62,7 +62,7 @@ function mockData(path) {
     status: 'ok',
     location: { mode: 'manual', latitude: 55.6761, longitude: 12.5683 },
     last_fetch_age_s: 420,
-    cache: { hours: 72, min_temp_c: -2.1, max_wind_ms: 13.4, peak_wind_dir_deg: 275, max_solar_wm2: 180 },
+    cache: { hours: 72, min_temp_c: -2.1, max_wind_ms: 13.4, peak_wind_dir_deg: 275, max_solar_wm2: 180, restored: false },
     last_error: '',
     commands: { active: 2, sent: 1, skipped: 1, failed: 0, blocked_stale: 1, blocked_unreachable: 0, blocked_untrusted: 0 },
     hours,

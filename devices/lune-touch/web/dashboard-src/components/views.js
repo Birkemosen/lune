@@ -323,7 +323,7 @@ export function renderForecast() {
       </div>
     </div>
     <div class="stack">
-      <div class="card"><h3>Cache</h3><dl><dt>Hours</dt><dd>${cache.hours || 0}</dd><dt>Min temp</dt><dd>${fmtValue(cache.min_temp_c, ' C')}</dd><dt>Max wind</dt><dd>${fmtValue(cache.max_wind_ms, ' m/s')} from ${Math.round(cache.peak_wind_dir_deg || 0)} deg</dd><dt>Max solar</dt><dd>${fmtValue(cache.max_solar_wm2, ' W/m2')}</dd></dl></div>
+      <div class="card"><h3>Cache</h3><dl><dt>Hours</dt><dd>${cache.hours || 0}</dd><dt>Source</dt><dd>${cache.restored ? 'restored' : 'live'}</dd><dt>Min temp</dt><dd>${fmtValue(cache.min_temp_c, ' C')}</dd><dt>Max wind</dt><dd>${fmtValue(cache.max_wind_ms, ' m/s')} from ${Math.round(cache.peak_wind_dir_deg || 0)} deg</dd><dt>Max solar</dt><dd>${fmtValue(cache.max_solar_wm2, ' W/m2')}</dd></dl></div>
       <div class="card"><h3>Commands</h3><dl><dt>Active</dt><dd>${commands.active || 0}</dd><dt>Sent</dt><dd>${commands.sent || 0}</dd><dt>Skipped</dt><dd>${commands.skipped || 0}</dd><dt>Failed</dt><dd class="${commands.failed ? 'warn' : 'ok'}">${commands.failed || 0}</dd><dt>Blocked</dt><dd class="${commands.blocked_stale || commands.blocked_unreachable || commands.blocked_untrusted ? 'warn' : 'ok'}">${commands.blocked_stale || 0} stale / ${commands.blocked_unreachable || 0} offline / ${commands.blocked_untrusted || 0} trust</dd></dl></div>
       <div class="card"><h3>Decisions</h3>${activeDecisions.map((d) => `<p>${d.room_id}: +${fmtValue(d.offset_c, ' C')}, P${d.priority ?? 1}, comfort ${fmtC(d.comfort_setpoint_c)}, peak ${fmtValue(d.peak_load)} in ${d.peak_in_h}h</p>`).join('') || '<p>No active decisions</p>'}</div>
     </div>

@@ -410,9 +410,17 @@ accepted response.
       "wind_dir_deg": 261,
       "solar_wm2": 0
     }
-  ]
+  ],
+  "cache": {
+    "hours": 72,
+    "restored": false
+  }
 }
 ```
+
+The hourly forecast cache is persisted in Touch NVS after a successful fetch.
+After reboot, `status` is `cached` and `cache.restored` is `true` until the next
+successful live fetch or location change.
 
 ### `POST /zones/{room_id}/motor-action`
 

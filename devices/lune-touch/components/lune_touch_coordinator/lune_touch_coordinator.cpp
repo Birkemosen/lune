@@ -32,6 +32,22 @@ static constexpr float SOLAR_REF_WM2 = 800.0f;
 static constexpr float LOAD_THRESHOLD = 1.0f;
 static constexpr float GAIN_C_PER_LOAD = 0.5f;
 static constexpr uint32_t OTA_SLOT_BYTES = 0x640000;
+static constexpr uint32_t FORECAST_CACHE_MAGIC = 0x4C544657;  // LTFW
+static constexpr uint16_t FORECAST_CACHE_VERSION = 1;
+
+struct PersistedForecastCache {
+  uint32_t magic{FORECAST_CACHE_MAGIC};
+  uint16_t version{FORECAST_CACHE_VERSION};
+  uint16_t reserved{0};
+  uint8_t hours_count{0};
+  uint8_t reserved2[3]{};
+  uint32_t saved_at_ms{0};
+  float min_temp_c{0.0f};
+  float max_wind_ms{0.0f};
+  float peak_wind_dir_deg{0.0f};
+  float max_solar_wm2{0.0f};
+  ForecastHourState hours[72]{};
+};
 
 const char *ota_state_name_(esp_ota_img_states_t state) {
   switch (state) {
@@ -346,6 +362,7 @@ void LuneTouchCoordinator::setup() {
   load_ledger_();
   load_forecast_settings_();
   load_settings_();
+  load_forecast_cache_();
   if (!loaded_registry)
     ESP_LOGI(TAG, "No persisted Touch registry; waiting for dashboard pairing");
   ESP_LOGI(TAG, "Lune Touch coordinator model ready");
@@ -1467,6 +1484,73 @@ void LuneTouchCoordinator::save_forecast_settings_() {
   nvs_close(handle);
 }
 
+void LuneTouchCoordinator::load_forecast_cache_() {
+  nvs_handle_t handle;
+  if (nvs_open(WEATHER_NAMESPACE, NVS_READONLY, &handle) != ESP_OK)
+    return;
+  static PersistedForecastCache cache;
+  std::memset(&cache, 0, sizeof(cache));
+  size_t len = sizeof(cache);
+  const esp_err_t err = nvs_get_blob(handle, "cache", &cache, &len);
+  nvs_close(handle);
+  if (err != ESP_OK || len != sizeof(cache) || cache.magic != FORECAST_CACHE_MAGIC ||
+      cache.version != FORECAST_CACHE_VERSION || cache.hours_count == 0 ||
+      cache.hours_count > 72) {
+    return;
+  }
+  forecast_hours_count_ = cache.hours_count;
+  for (uint8_t i = 0; i < forecast_hours_count_; i++)
+    forecast_hours_[i] = cache.hours[i];
+  forecast_min_temp_c_ = cache.min_temp_c;
+  forecast_max_wind_ms_ = cache.max_wind_ms;
+  forecast_peak_wind_dir_deg_ = cache.peak_wind_dir_deg;
+  forecast_max_solar_wm2_ = cache.max_solar_wm2;
+  forecast_last_fetch_ms_ = esphome::millis();
+  forecast_cache_restored_ = true;
+  std::strncpy(forecast_status_, "cached", sizeof(forecast_status_) - 1);
+  forecast_status_[sizeof(forecast_status_) - 1] = '\0';
+  std::strncpy(forecast_last_error_, "restored_cache", sizeof(forecast_last_error_) - 1);
+  forecast_last_error_[sizeof(forecast_last_error_) - 1] = '\0';
+  recompute_forecast_decisions_();
+  ESP_LOGI(TAG, "Restored Touch forecast cache: hours=%u", static_cast<unsigned>(forecast_hours_count_));
+}
+
+void LuneTouchCoordinator::save_forecast_cache_() {
+  static PersistedForecastCache cache;
+  std::memset(&cache, 0, sizeof(cache));
+  cache.magic = FORECAST_CACHE_MAGIC;
+  cache.version = FORECAST_CACHE_VERSION;
+  if (!take_state_lock_(100))
+    return;
+  cache.hours_count = forecast_hours_count_;
+  cache.saved_at_ms = esphome::millis();
+  cache.min_temp_c = forecast_min_temp_c_;
+  cache.max_wind_ms = forecast_max_wind_ms_;
+  cache.peak_wind_dir_deg = forecast_peak_wind_dir_deg_;
+  cache.max_solar_wm2 = forecast_max_solar_wm2_;
+  for (uint8_t i = 0; i < forecast_hours_count_ && i < 72; i++)
+    cache.hours[i] = forecast_hours_[i];
+  give_state_lock_();
+  if (cache.hours_count == 0)
+    return;
+
+  nvs_handle_t handle;
+  if (nvs_open(WEATHER_NAMESPACE, NVS_READWRITE, &handle) != ESP_OK)
+    return;
+  if (nvs_set_blob(handle, "cache", &cache, sizeof(cache)) == ESP_OK)
+    nvs_commit(handle);
+  nvs_close(handle);
+}
+
+void LuneTouchCoordinator::clear_forecast_cache_() {
+  nvs_handle_t handle;
+  if (nvs_open(WEATHER_NAMESPACE, NVS_READWRITE, &handle) != ESP_OK)
+    return;
+  nvs_erase_key(handle, "cache");
+  nvs_commit(handle);
+  nvs_close(handle);
+}
+
 void LuneTouchCoordinator::load_settings_() {
   nvs_handle_t handle;
   if (nvs_open(SETTINGS_NAMESPACE, NVS_READONLY, &handle) != ESP_OK)
@@ -2030,10 +2114,13 @@ bool LuneTouchCoordinator::set_forecast_location(float latitude, float longitude
   std::strncpy(forecast_status_, "stale", sizeof(forecast_status_) - 1);
   forecast_status_[sizeof(forecast_status_) - 1] = '\0';
   forecast_last_error_[0] = '\0';
+  forecast_hours_count_ = 0;
   forecast_decision_count_ = 0;
+  forecast_cache_restored_ = false;
   last_forecast_dispatch_ = {};
   save_forecast_settings_();
   give_state_lock_();
+  clear_forecast_cache_();
   snprintf(response, capacity, "{\"result\":\"saved\",\"latitude\":%.6f,\"longitude\":%.6f}",
            latitude, longitude);
   return true;
@@ -2204,6 +2291,7 @@ bool LuneTouchCoordinator::perform_forecast_fetch_(char *response, size_t capaci
       forecast_max_wind_ms_ = max_wind;
       forecast_peak_wind_dir_deg_ = wind_dir;
       forecast_max_solar_wm2_ = max_solar;
+      forecast_cache_restored_ = false;
       recompute_forecast_decisions_();
     } else {
       std::strncpy(forecast_status_, "error", sizeof(forecast_status_) - 1);
@@ -2219,6 +2307,8 @@ bool LuneTouchCoordinator::perform_forecast_fetch_(char *response, size_t capaci
   ForecastDispatchSummary dispatch{};
   if (ok)
     dispatch = dispatch_forecast_commands_();
+  if (ok)
+    save_forecast_cache_();
 
   if (!ok) {
     snprintf(response, capacity, "{\"result\":\"rejected\",\"status\":\"error\",\"error\":\"%s\"}",
@@ -2568,14 +2658,16 @@ void LuneTouchCoordinator::write_forecast_json(char *buffer, size_t capacity) co
   appendf_(buffer, capacity, off,
            "{\"status\":\"%s\",\"location\":{\"mode\":\"%s\",\"latitude\":%.6f,\"longitude\":%.6f},"
            "\"last_fetch_age_s\":%lu,\"cache\":{\"hours\":%u,\"min_temp_c\":%.1f,"
-           "\"max_wind_ms\":%.1f,\"peak_wind_dir_deg\":%.0f,\"max_solar_wm2\":%.0f},"
+           "\"max_wind_ms\":%.1f,\"peak_wind_dir_deg\":%.0f,\"max_solar_wm2\":%.0f,"
+           "\"restored\":%s},"
            "\"last_error\":\"%s\",\"commands\":{\"active\":%u,\"sent\":%u,\"skipped\":%u,\"failed\":%u,"
            "\"blocked_stale\":%u,\"blocked_unreachable\":%u,\"blocked_untrusted\":%u},"
            "\"hours\":[",
            forecast_status_, forecast_location_mode_, forecast_latitude_, forecast_longitude_,
            forecast_last_fetch_ms_ == 0 ? 0UL : static_cast<unsigned long>((esphome::millis() - forecast_last_fetch_ms_) / 1000UL),
            static_cast<unsigned>(forecast_hours_count_), forecast_min_temp_c_, forecast_max_wind_ms_,
-           forecast_peak_wind_dir_deg_, forecast_max_solar_wm2_, forecast_last_error,
+           forecast_peak_wind_dir_deg_, forecast_max_solar_wm2_,
+           forecast_cache_restored_ ? "true" : "false", forecast_last_error,
            static_cast<unsigned>(last_forecast_dispatch_.active),
            static_cast<unsigned>(last_forecast_dispatch_.sent),
            static_cast<unsigned>(last_forecast_dispatch_.skipped),

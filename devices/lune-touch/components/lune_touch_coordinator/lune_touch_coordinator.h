@@ -114,6 +114,9 @@ class LuneTouchCoordinator : public esphome::Component {
   void save_ledger_();
   void load_forecast_settings_();
   void save_forecast_settings_();
+  void load_forecast_cache_();
+  void save_forecast_cache_();
+  void clear_forecast_cache_();
   void load_settings_();
   void save_settings_();
   void seed_mock_house_();
@@ -184,6 +187,7 @@ class LuneTouchCoordinator : public esphome::Component {
   char forecast_status_[16]{"stale"};
   char forecast_last_error_[96]{};
   bool forecast_fetch_requested_{false};
+  bool forecast_cache_restored_{false};
   uint8_t forecast_hours_count_{0};
   ForecastHourState forecast_hours_[72]{};
   float forecast_min_temp_c_{0.0f};
