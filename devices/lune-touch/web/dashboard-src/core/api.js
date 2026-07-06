@@ -127,6 +127,7 @@ export async function refreshSection(section) {
   if (section === 'manifolds') return refreshPaths(['/overview', '/nodes']);
   if (section === 'forecast') return refreshPaths(['/forecast', '/diagnostics']);
   if (section === 'commands') return refreshPaths(['/commands']);
+  if (section === 'settings') return refreshPaths(['/overview', '/nodes', '/strategy', '/diagnostics']);
   if (section === 'diagnostics') return refreshPaths(['/strategy', '/diagnostics']);
   return Promise.resolve();
 }
