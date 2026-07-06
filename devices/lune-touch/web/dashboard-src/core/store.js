@@ -11,6 +11,7 @@ export const state = {
   forecast: null,
   commands: [],
   diagnostics: null,
+  settings: null,
   scanResult: null,
 };
 

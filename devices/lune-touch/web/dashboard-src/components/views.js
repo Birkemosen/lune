@@ -340,14 +340,26 @@ export function renderSettings() {
   const scan = state.scanResult;
   const found = scan?.found || [];
   const strategy = state.strategy || {};
+  const settings = state.settings || {};
+  const coordinator = settings.coordinator || {};
+  const asgard = settings.asgard_odin || strategy.asgard_odin || {};
   const physical = strategy.physical || {};
   const comfort = strategy.comfort || {};
   const driver = strategy.driver || {};
   const commissioning = state.diagnostics?.commissioning || {};
   return `<section class="panel two-col">
+    <div class="card"><h3>Coordinator</h3>
+      <label>Name<input class="input" id="settings-name" value="${esc(coordinator.name || '')}" placeholder="Lune Touch"></label>
+      <label>Install ID<input class="input" id="settings-install-id" value="${esc(coordinator.install_id || '')}" placeholder="house-main"></label>
+      <label>Site<input class="input" id="settings-site-label" value="${esc(coordinator.site_label || '')}" placeholder="House"></label>
+      <label>Mode<select class="input" id="settings-install-mode">
+        ${['commissioning', 'active', 'service'].map((mode) => `<option value="${mode}" ${coordinator.install_mode === mode ? 'selected' : ''}>${mode}</option>`).join('')}
+      </select></label>
+      <button class="btn" data-action="save-settings">Save</button>
+    </div>
     <div class="card"><h3>Register V6</h3><label>Hostname/IP<input class="input" id="node-host" placeholder="lune-v6-a.local"></label><div class="inline-form"><button class="btn" data-action="probe-node">Probe</button><button class="btn" data-action="add-node">Add node</button></div></div>
     <div class="card"><h3>Last scan</h3><p>${scan?.discovery || 'not run'}</p>${found.map((node) => `<p><strong>${esc(node.id)}</strong> ${esc(node.hostname || node.ip || '')} <span class="${node.reachable ? 'ok' : 'warn'}">${node.reachable ? 'reachable' : 'unreachable'}</span> ${node.firmware ? `<span>${esc(node.firmware)}</span>` : ''} ${node.pairing_fingerprint ? `<span>${esc(node.pairing_fingerprint)}</span>` : ''} <button class="btn slim" data-add-probed-host="${esc(node.hostname || '')}" data-add-probed-ip="${esc(node.ip || '')}" data-add-probed-fingerprint="${esc(node.pairing_fingerprint || '')}">Add</button></p>`).join('') || '<p>No candidates</p>'}</div>
-    <div class="card"><h3>Asgard / Odin</h3><p>Physical ${physical.has_temperature ? fmtC(physical.temperature_c) : 'missing'} from ${physical.contributing_zones || 0} zones</p><p>Comfort demand ${fmtValue(comfort.demand_c, ' C')} across ${comfort.demand_zones || 0} zones</p><p>Driver ${esc(driver.name || driver.room_id || '-')} ${driver.priority != null ? `/ P${driver.priority}` : ''}</p><p class="note">${esc(strategy.asgard_odin?.mode || 'advisory')}</p></div>
+    <div class="card"><h3>Asgard / Odin</h3><p>Physical ${physical.has_temperature ? fmtC(physical.temperature_c) : 'missing'} from ${physical.contributing_zones || 0} zones</p><p>Comfort demand ${fmtValue(comfort.demand_c, ' C')} across ${comfort.demand_zones || 0} zones</p><p>Driver ${esc(driver.name || driver.room_id || '-')} ${driver.priority != null ? `/ P${driver.priority}` : ''}</p><p class="note">${esc(asgard.mode || 'advisory')} / ${asgard.enabled === false ? 'disabled' : 'enabled'}</p></div>
     <div class="card"><h3>Commissioning</h3><p class="${commissioning.next_action === 'ready' ? 'ok' : 'warn'}">${esc(fmtNextAction(commissioning.next_action))}</p><p>${commissioning.trusted_nodes || 0} trusted / ${commissioning.paired_nodes || 0} paired / ${commissioning.reachable_nodes || 0} reachable</p><p class="${commissioning.identity_missing_nodes ? 'warn' : 'ok'}">${commissioning.identity_missing_nodes || 0} missing identities</p><p>${commissioning.fresh_zones || 0} fresh of ${commissioning.bound_zones || 0} mapped zones</p></div>
     <div class="card"><h3>Dashboard access</h3><p>Canonical URL is the device root: <strong>http://&lt;touch-ip&gt;/</strong>. The embedded dashboard does not depend on ESPHome's default dashboard UI.</p></div>
     <div class="card"><h3>Recovery</h3><p>${state.nodes.length} paired nodes, ${state.commands.length} command records</p><button class="btn danger" data-action="reset-registry">Reset registry</button></div>
@@ -481,6 +493,13 @@ export function bindActions(root) {
     navigator.geolocation.getCurrentPosition((pos) => {
       runAction(() => api.saveForecast({ latitude: pos.coords.latitude, longitude: pos.coords.longitude, source: 'browser' }).then(refreshAll));
     }, (error) => patch({ error: error.message || 'Browser location failed' }));
+  });
+  root.querySelector('[data-action="save-settings"]')?.addEventListener('click', () => {
+    const name = root.querySelector('#settings-name')?.value?.trim();
+    const install_id = root.querySelector('#settings-install-id')?.value?.trim();
+    const site_label = root.querySelector('#settings-site-label')?.value?.trim();
+    const install_mode = root.querySelector('#settings-install-mode')?.value;
+    runAction(() => api.saveSettings({ name, install_id, site_label, install_mode }).then(refreshAll));
   });
   root.querySelector('[data-action="add-node"]')?.addEventListener('click', () => {
     const host = root.querySelector('#node-host')?.value?.trim();

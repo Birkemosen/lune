@@ -95,6 +95,10 @@ function mockData(path) {
     learning: { zones_with_history: 16, total_samples: 692, total_calling_samples: 101, calling_ratio: 0.146, zones_with_delta: 14, warming_zones: 5, cooling_zones: 3, average_delta_c_per_h: 0.12 },
     forecast_commands: { active: 2, sent: 1, skipped: 1, failed: 0, blocked_stale: 1, blocked_unreachable: 0, blocked_untrusted: 0 },
   };
+  if (path === '/settings') return {
+    coordinator: { name: 'Lune Touch', install_id: 'house-main', site_label: 'Birkemosen', install_mode: 'commissioning' },
+    asgard_odin: { enabled: true, mode: 'advisory', physical_signal: 'priority_weighted_house_temp', comfort_signal: 'separate_weighted_demand' },
+  };
   return {};
 }
 
@@ -121,6 +125,7 @@ async function refreshPaths(paths, { loading = false } = {}) {
       if (path === '/forecast') next.forecast = value;
       if (path === '/commands') next.commands = value.commands || [];
       if (path === '/diagnostics') next.diagnostics = value;
+      if (path === '/settings') next.settings = value;
     });
     if (loading) next.loading = false;
     patch(next);
@@ -130,7 +135,7 @@ async function refreshPaths(paths, { loading = false } = {}) {
 }
 
 export async function refreshAll(options = {}) {
-  return refreshPaths(['/overview', '/nodes', '/zones', '/strategy', '/forecast', '/commands', '/diagnostics'], {
+  return refreshPaths(['/overview', '/nodes', '/zones', '/strategy', '/forecast', '/commands', '/diagnostics', '/settings'], {
     loading: options.loading ?? true,
   });
 }
@@ -140,7 +145,7 @@ export async function refreshSection(section) {
   if (section === 'manifolds') return refreshPaths(['/overview', '/nodes']);
   if (section === 'forecast') return refreshPaths(['/forecast', '/diagnostics']);
   if (section === 'commands') return refreshPaths(['/commands']);
-  if (section === 'settings') return refreshPaths(['/overview', '/nodes', '/strategy', '/diagnostics']);
+  if (section === 'settings') return refreshPaths(['/overview', '/nodes', '/strategy', '/diagnostics', '/settings']);
   if (section === 'diagnostics') return refreshPaths(['/strategy', '/forecast', '/commands', '/diagnostics']);
   return Promise.resolve();
 }
@@ -191,5 +196,6 @@ export const api = {
   setpointCommand: (roomId, data) => post(`/zones/${encodeURIComponent(roomId)}/setpoint-command`, data),
   motorAction: (roomId, data) => post(`/zones/${encodeURIComponent(roomId)}/motor-action`, data),
   saveForecast: (data) => post('/forecast/settings', data),
+  saveSettings: (data) => post('/settings', data),
   fetchForecast: () => post('/forecast/fetch'),
 };
