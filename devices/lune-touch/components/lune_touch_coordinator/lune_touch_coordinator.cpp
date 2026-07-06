@@ -103,6 +103,20 @@ void nullable_float_(char *out, size_t out_len, bool has_value, float value) {
   out[out_len - 1] = '\0';
 }
 
+bool current_schedule_time_(esphome::time::RealTimeClock *time, uint8_t *day_index,
+                            uint16_t *minute_of_day) {
+  if (time == nullptr)
+    return false;
+  const auto now = time->now();
+  if (!now.is_valid())
+    return false;
+  if (day_index != nullptr)
+    *day_index = now.day_of_week == 1 ? 6 : static_cast<uint8_t>(now.day_of_week - 2);
+  if (minute_of_day != nullptr)
+    *minute_of_day = static_cast<uint16_t>(now.hour) * 60 + now.minute;
+  return true;
+}
+
 void legacy_zone_status_(const char *raw, bool enabled, bool has_temp, float temp,
                          bool has_setpoint, float setpoint, char *out, size_t out_len) {
   if (out == nullptr || out_len == 0)
@@ -909,6 +923,10 @@ void LuneTouchCoordinator::recompute_forecast_decisions_() {
   if (forecast_hours_count_ == 0)
     return;
 
+  uint8_t day_index = 0;
+  uint16_t minute_of_day = 0;
+  const bool time_valid = current_schedule_time_(time_, &day_index, &minute_of_day);
+
   for (size_t i = 0; i < model_.zone_count() &&
                      forecast_decision_count_ < ::lune_touch::MAX_HOUSE_ZONES; i++) {
     const auto *zone = model_.zone(i);
@@ -923,7 +941,9 @@ void LuneTouchCoordinator::recompute_forecast_decisions_() {
     out.room_name[sizeof(out.room_name) - 1] = '\0';
     out.node_index = zone->node_index;
     out.zone_index = zone->zone_index;
-    out.comfort_setpoint_c = ::lune_touch::HouseModel::effective_comfort_setpoint_c(*zone);
+    const auto effective = ::lune_touch::HouseModel::effective_comfort(*zone, time_valid,
+                                                                       day_index, minute_of_day);
+    out.comfort_setpoint_c = effective.setpoint_c;
     out.priority = zone->priority;
     if (live == nullptr || !live->fresh)
       continue;
@@ -2125,6 +2145,9 @@ void LuneTouchCoordinator::write_node_scan_json(char *buffer, size_t capacity) c
 
 void LuneTouchCoordinator::write_zones_json(char *buffer, size_t capacity) const {
   size_t off = 0;
+  uint8_t day_index = 0;
+  uint16_t minute_of_day = 0;
+  const bool time_valid = current_schedule_time_(time_, &day_index, &minute_of_day);
   appendf_(buffer, capacity, off, "{\"count\":%u,\"zones\":[", static_cast<unsigned>(model_.active_zone_count()));
   bool first = true;
   for (size_t i = 0; i < model_.zone_count() && i < 18; i++) {
@@ -2164,11 +2187,14 @@ void LuneTouchCoordinator::write_zones_json(char *buffer, size_t capacity) const
     hist_max_buf[sizeof(hist_max_buf) - 1] = '\0';
     hist_delta_buf[sizeof(hist_delta_buf) - 1] = '\0';
     const char *status = live != nullptr && live->status[0] != '\0' ? live->status : (zone->enabled ? "unknown" : "unused");
+    const auto effective = ::lune_touch::HouseModel::effective_comfort(*zone, time_valid,
+                                                                       day_index, minute_of_day);
     if (!appendf_(buffer, capacity, off,
                   "%s{\"room_id\":\"%s\",\"name\":\"%s\",\"node_index\":%u,\"zone_index\":%u,"
                   "\"temperature_c\":%s,\"setpoint_c\":%s,\"status\":\"%s\",\"fresh\":%s,"
                   "\"valve_pct\":%s,\"updated_at_ms\":%lu,\"comfort\":{\"setpoint_c\":%.1f,"
-                  "\"bias_c\":%.1f,\"effective_setpoint_c\":%.1f,\"priority\":%u},"
+                  "\"bias_c\":%.1f,\"effective_setpoint_c\":%.1f,\"effective_source\":\"%s\","
+                  "\"schedule_active\":%s,\"time_valid\":%s,\"priority\":%u},"
                   "\"schedule\":{\"enabled\":%s,\"day_mask\":%u,\"start_min\":%u,"
                   "\"end_min\":%u,\"setpoint_c\":%.1f},"
                   "\"history\":{\"samples\":%lu,\"calling_samples\":%lu,"
@@ -2183,7 +2209,10 @@ void LuneTouchCoordinator::write_zones_json(char *buffer, size_t capacity) const
                   valve_buf,
                   static_cast<unsigned long>(live != nullptr ? live->updated_at_ms : 0),
                   zone->comfort_setpoint_c, zone->comfort_bias_c,
-                  ::lune_touch::HouseModel::effective_comfort_setpoint_c(*zone),
+                  effective.setpoint_c,
+                  effective.source,
+                  effective.schedule_active ? "true" : "false",
+                  effective.time_valid ? "true" : "false",
                   static_cast<unsigned>(zone->priority),
                   zone->schedule_enabled ? "true" : "false",
                   static_cast<unsigned>(zone->schedule_day_mask),
@@ -2203,36 +2232,32 @@ void LuneTouchCoordinator::write_zones_json(char *buffer, size_t capacity) const
 }
 
 void LuneTouchCoordinator::write_strategy_json(char *buffer, size_t capacity) const {
-  const auto strategy = model_.strategy_snapshot();
-  bool schedule_time_valid = false;
+  uint8_t day_index = 0;
+  uint16_t minute_of_day = 0;
+  const bool schedule_time_valid = current_schedule_time_(time_, &day_index, &minute_of_day);
+  const auto strategy = model_.strategy_snapshot(schedule_time_valid, day_index, minute_of_day);
   uint8_t schedule_active = 0;
   uint8_t schedule_driver_priority = 0;
   float schedule_driver_setpoint = 0.0f;
   char schedule_driver_room_id_raw[32]{};
   char schedule_driver_room_name_raw[48]{};
-  if (time_ != nullptr) {
-    const auto now = time_->now();
-    if (now.is_valid()) {
-      schedule_time_valid = true;
-      const uint8_t day_index = now.day_of_week == 1 ? 6 : static_cast<uint8_t>(now.day_of_week - 2);
-      const uint16_t minute_of_day = static_cast<uint16_t>(now.hour) * 60 + now.minute;
-      for (size_t i = 0; i < model_.zone_count(); i++) {
-        const auto *zone = model_.zone(i);
-        if (zone == nullptr)
-          continue;
-        float scheduled = 0.0f;
-        if (!::lune_touch::HouseModel::scheduled_comfort_setpoint_c(*zone, day_index,
-                                                                     minute_of_day, &scheduled))
-          continue;
-        schedule_active++;
-        if (zone->priority >= schedule_driver_priority) {
-          schedule_driver_priority = zone->priority;
-          schedule_driver_setpoint = scheduled;
-          std::strncpy(schedule_driver_room_id_raw, zone->room_id,
-                       sizeof(schedule_driver_room_id_raw) - 1);
-          std::strncpy(schedule_driver_room_name_raw, zone->room_name,
-                       sizeof(schedule_driver_room_name_raw) - 1);
-        }
+  if (schedule_time_valid) {
+    for (size_t i = 0; i < model_.zone_count(); i++) {
+      const auto *zone = model_.zone(i);
+      if (zone == nullptr)
+        continue;
+      const auto effective = ::lune_touch::HouseModel::effective_comfort(*zone, true,
+                                                                         day_index, minute_of_day);
+      if (!effective.schedule_active)
+        continue;
+      schedule_active++;
+      if (zone->priority >= schedule_driver_priority) {
+        schedule_driver_priority = zone->priority;
+        schedule_driver_setpoint = effective.setpoint_c;
+        std::strncpy(schedule_driver_room_id_raw, zone->room_id,
+                     sizeof(schedule_driver_room_id_raw) - 1);
+        std::strncpy(schedule_driver_room_name_raw, zone->room_name,
+                     sizeof(schedule_driver_room_name_raw) - 1);
       }
     }
   }
@@ -2345,7 +2370,10 @@ void LuneTouchCoordinator::write_commands_json(char *buffer, size_t capacity) co
 }
 
 void LuneTouchCoordinator::write_diagnostics_json(char *buffer, size_t capacity) const {
-  const auto strategy = model_.strategy_snapshot();
+  uint8_t day_index = 0;
+  uint16_t minute_of_day = 0;
+  const bool schedule_time_valid = current_schedule_time_(time_, &day_index, &minute_of_day);
+  const auto strategy = model_.strategy_snapshot(schedule_time_valid, day_index, minute_of_day);
   const auto learning = model_.learning_snapshot();
   const uint32_t now_ms = esphome::millis();
   size_t paired_nodes = 0;

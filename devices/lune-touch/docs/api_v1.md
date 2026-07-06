@@ -150,6 +150,9 @@ learning foundation for now and resets on reboot/import:
     "setpoint_c": 21.5,
     "bias_c": 0.2,
     "effective_setpoint_c": 21.7,
+    "effective_source": "schedule",
+    "schedule_active": true,
+    "time_valid": true,
     "priority": 3
   },
   "schedule": {
@@ -169,6 +172,10 @@ learning foundation for now and resets on reboot/import:
   }
 }
 ```
+
+`comfort.effective_setpoint_c` is resolved by Touch. When local time is valid and
+the room schedule is active, `effective_source` is `schedule`; otherwise it is
+`comfort`. The stored comfort bias is applied in both cases.
 
 ## Writes
 

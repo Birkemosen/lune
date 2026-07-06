@@ -340,8 +340,23 @@ float HouseModel::average_comfort_setpoint_c() const {
 }
 
 float HouseModel::effective_comfort_setpoint_c(const ZoneBinding &zone) {
-  return clamp_float_(zone.comfort_setpoint_c + zone.comfort_bias_c, 5.0f, 35.0f,
-                      zone.comfort_setpoint_c);
+  return effective_comfort(zone, false, 0, 0).setpoint_c;
+}
+
+EffectiveComfort HouseModel::effective_comfort(const ZoneBinding &zone, bool time_valid,
+                                               uint8_t day_index, uint16_t minute_of_day) {
+  EffectiveComfort result{};
+  result.time_valid = time_valid;
+  result.setpoint_c = clamp_float_(zone.comfort_setpoint_c + zone.comfort_bias_c, 5.0f, 35.0f,
+                                   zone.comfort_setpoint_c);
+  copy_text_(result.source, sizeof(result.source), "comfort");
+  float scheduled = 0.0f;
+  if (time_valid && scheduled_comfort_setpoint_c(zone, day_index, minute_of_day, &scheduled)) {
+    result.setpoint_c = scheduled;
+    result.schedule_active = true;
+    copy_text_(result.source, sizeof(result.source), "schedule");
+  }
+  return result;
 }
 
 bool HouseModel::scheduled_comfort_setpoint_c(const ZoneBinding &zone, uint8_t day_index,
@@ -359,17 +374,27 @@ bool HouseModel::scheduled_comfort_setpoint_c(const ZoneBinding &zone, uint8_t d
 }
 
 StrategySnapshot HouseModel::strategy_snapshot() const {
+  return strategy_snapshot(false, 0, 0);
+}
+
+StrategySnapshot HouseModel::strategy_snapshot(bool time_valid, uint8_t day_index,
+                                               uint16_t minute_of_day) const {
   StrategySnapshot snapshot{};
-  snapshot.comfort_average_c = average_comfort_setpoint_c();
 
   float weighted_temp_sum = 0.0f;
   float weighted_demand_sum = 0.0f;
   float weight_sum = 0.0f;
   float best_weighted_deficit = 0.0f;
+  float comfort_sum = 0.0f;
+  size_t comfort_count = 0;
 
   for (size_t i = 0; i < zone_count_; i++) {
     if (!zones_[i].enabled)
       continue;
+    const EffectiveComfort effective = effective_comfort(zones_[i], time_valid,
+                                                         day_index, minute_of_day);
+    comfort_sum += effective.setpoint_c;
+    comfort_count++;
     const ZoneLiveState &live = live_[i];
     if (!live.fresh || !live.has_temperature)
       continue;
@@ -379,7 +404,7 @@ StrategySnapshot HouseModel::strategy_snapshot() const {
     weight_sum += priority_weight;
     snapshot.contributing_zones++;
 
-    const float deficit = effective_comfort_setpoint_c(zones_[i]) - live.temperature_c;
+    const float deficit = effective.setpoint_c - live.temperature_c;
     if (deficit > 0.0f) {
       weighted_demand_sum += deficit * priority_weight;
       snapshot.demand_zones++;
@@ -394,6 +419,8 @@ StrategySnapshot HouseModel::strategy_snapshot() const {
     }
   }
 
+  if (comfort_count > 0)
+    snapshot.comfort_average_c = comfort_sum / static_cast<float>(comfort_count);
   if (weight_sum > 0.0f) {
     snapshot.has_physical_temperature = true;
     snapshot.physical_temperature_c = weighted_temp_sum / weight_sum;

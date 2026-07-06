@@ -24,7 +24,15 @@ function mockData(path) {
       valve_pct: [45,18,28,15,15,35,10,42,15,58,12,15,16,38,30,null,15,null][i],
       status: statuses[i],
       fresh: statuses[i] !== 'stale',
-      comfort: { setpoint_c: comfortSetpoints[i], bias_c: comfortBiases[i], effective_setpoint_c: comfortSetpoints[i] + comfortBiases[i], priority: i < 3 ? 3 : 1 },
+      comfort: {
+        setpoint_c: comfortSetpoints[i],
+        bias_c: comfortBiases[i],
+        effective_setpoint_c: comfortSetpoints[i] + comfortBiases[i],
+        effective_source: i < 8 ? 'schedule' : 'comfort',
+        schedule_active: i < 8,
+        time_valid: true,
+        priority: i < 3 ? 3 : 1,
+      },
       schedule: { enabled: i < 8, day_mask: i < 8 ? 31 : 127, start_min: 360, end_min: 1320, setpoint_c: comfortSetpoints[i] },
       history: {
         samples: statuses[i] === 'unused' || statuses[i] === 'stale' ? 0 : 36 + i,

@@ -285,6 +285,31 @@ static void test_zone_live_state() {
   expect(!model.update_zone_comfort("missing", 21.0f, 1), "live: reject missing comfort room");
 }
 
+static void test_effective_comfort_resolver() {
+  HouseModel model;
+  model.upsert_node("v6-a", "a.local", "", "lune-v6", "1.0", NodeTrust::TRUSTED);
+  model.bind_zone("living", "Living", 0, 0);
+  model.update_zone_comfort("living", 20.0f, 2, 0.4f);
+  model.update_zone_schedule("living", true, 0x01, 360, 540, 22.0f);
+  const auto *living = model.resolve_room("living").binding;
+  expect(living != nullptr, "effective: mapped room exists");
+
+  EffectiveComfort no_time = HouseModel::effective_comfort(*living, false, 0, 420);
+  expect(no_time.setpoint_c > 20.3f && no_time.setpoint_c < 20.5f &&
+             std::strcmp(no_time.source, "comfort") == 0 && !no_time.schedule_active,
+         "effective: comfort used without valid time");
+
+  EffectiveComfort active = HouseModel::effective_comfort(*living, true, 0, 420);
+  expect(active.setpoint_c > 22.3f && active.setpoint_c < 22.5f &&
+             std::strcmp(active.source, "schedule") == 0 && active.schedule_active,
+         "effective: schedule overrides comfort inside window");
+
+  EffectiveComfort outside = HouseModel::effective_comfort(*living, true, 0, 600);
+  expect(outside.setpoint_c > 20.3f && outside.setpoint_c < 20.5f &&
+             std::strcmp(outside.source, "comfort") == 0 && !outside.schedule_active,
+         "effective: comfort used outside schedule window");
+}
+
 static void test_strategy_snapshot() {
   HouseModel model;
   model.upsert_node("v6-a", "a.local", "", "lune-v6", "1.0", NodeTrust::TRUSTED);
@@ -308,6 +333,13 @@ static void test_strategy_snapshot() {
          "strategy: separates comfort demand");
   expect(std::strcmp(strategy.driver_room_id, "bath") == 0 && strategy.driver_priority == 3,
          "strategy: selects strongest demand driver");
+
+  model.update_zone_schedule("living", true, 0x01, 0, 1440, 25.0f);
+  strategy = model.strategy_snapshot(true, 0, 720);
+  expect(strategy.comfort_average_c > 22.2f && strategy.comfort_average_c < 22.5f,
+         "strategy: schedule affects comfort average");
+  expect(std::strcmp(strategy.driver_room_id, "living") == 0,
+         "strategy: active schedule can drive demand");
 }
 
 static void test_zone_forecast_profile() {
@@ -428,6 +460,7 @@ int main() {
   test_remove_node_remaps_zones();
   test_persisted_state_roundtrip();
   test_zone_live_state();
+  test_effective_comfort_resolver();
   test_strategy_snapshot();
   test_zone_forecast_profile();
   test_command_ledger();

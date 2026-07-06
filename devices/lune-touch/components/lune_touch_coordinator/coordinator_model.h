@@ -104,6 +104,13 @@ struct LearningSnapshot {
   float average_delta_c_per_h{0.0f};
 };
 
+struct EffectiveComfort {
+  float setpoint_c{21.0f};
+  char source[12]{"comfort"};
+  bool time_valid{false};
+  bool schedule_active{false};
+};
+
 struct ResolvedZone {
   const PairedNode *node{nullptr};
   const ZoneBinding *binding{nullptr};
@@ -196,6 +203,10 @@ class HouseModel {
   size_t stale_zone_count() const;
   float average_comfort_setpoint_c() const;
   static float effective_comfort_setpoint_c(const ZoneBinding &zone);
+  static EffectiveComfort effective_comfort(const ZoneBinding &zone, bool time_valid,
+                                            uint8_t day_index, uint16_t minute_of_day);
+  StrategySnapshot strategy_snapshot(bool time_valid, uint8_t day_index,
+                                     uint16_t minute_of_day) const;
   static bool scheduled_comfort_setpoint_c(const ZoneBinding &zone, uint8_t day_index,
                                            uint16_t minute_of_day, float *out);
   StrategySnapshot strategy_snapshot() const;

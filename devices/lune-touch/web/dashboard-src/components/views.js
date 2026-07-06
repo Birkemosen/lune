@@ -42,7 +42,8 @@ const fmtComfortIntent = (comfort = {}, fallback) => {
   const effective = comfort.effective_setpoint_c ?? comfort.setpoint_c ?? fallback;
   const bias = Number(comfort.bias_c || 0);
   const suffix = Math.abs(bias) > 0.05 ? ` (${bias > 0 ? '+' : ''}${bias.toFixed(1)})` : '';
-  return `${fmtC(effective)}${suffix} / P${comfort.priority ?? 1}`;
+  const source = comfort.effective_source === 'schedule' ? 'schedule' : 'comfort';
+  return `${fmtC(effective)}${suffix} / P${comfort.priority ?? 1} / ${source}`;
 };
 const fmtTrust = (node = {}) => node.trust_label || (Number(node.trust) === 2 ? 'trusted' : Number(node.trust) === 1 ? 'paired' : 'unpaired');
 const fmtClock = (minutes) => {
