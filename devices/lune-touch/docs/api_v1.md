@@ -117,6 +117,7 @@ Diagnostics includes a `commissioning` readiness block for field testing:
   "trusted_nodes": 1,
   "reachable_nodes": 1,
   "stale_nodes": 0,
+  "identity_missing_nodes": 0,
   "bound_zones": 6,
   "fresh_zones": 6,
   "stale_zones": 0,
@@ -126,8 +127,9 @@ Diagnostics includes a `commissioning` readiness block for field testing:
 }
 ```
 
-`next_action` is one of `add_node`, `fix_node_poll`, `trust_node`,
-`map_zones`, `wait_for_fresh_zone_poll`, `set_forecast_location`, or `ready`.
+`next_action` is one of `add_node`, `fix_node_poll`,
+`verify_node_identity`, `trust_node`, `map_zones`,
+`wait_for_fresh_zone_poll`, `set_forecast_location`, or `ready`.
 
 ### `GET /zones`
 
@@ -214,7 +216,9 @@ Promotes or demotes a stored node between commissioning trust states:
 }
 ```
 
-Accepted values are `paired` and `trusted`. Use `POST /nodes/{node_id}/remove`
+Accepted values are `paired` and `trusted`. Promotion to `trusted` requires a
+stored `pairing_fingerprint`; if the node was added without one, probe or re-add
+the candidate after V6 identity is available. Use `POST /nodes/{node_id}/remove`
 to remove a node from the registry instead of writing `unpaired`.
 
 ### `POST /nodes/scan`

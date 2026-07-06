@@ -142,6 +142,8 @@ bool HouseModel::update_node_trust(const char *node_id, NodeTrust trust) {
   for (size_t i = 0; i < node_count_; i++) {
     if (!same_text_(nodes_[i].node_id, node_id))
       continue;
+    if (trust == NodeTrust::TRUSTED && nodes_[i].pairing_fingerprint[0] == '\0')
+      return false;
     nodes_[i].trust = trust;
     return true;
   }

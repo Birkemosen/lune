@@ -83,8 +83,12 @@ static void test_node_trust_updates() {
   model.upsert_node("v6-a", "a.local", "", "lune-v6", "1.0", NodeTrust::PAIRED);
   expect(model.node(0) != nullptr && model.node(0)->trust == NodeTrust::PAIRED,
          "trust: node starts paired");
+  expect(!model.update_node_trust("v6-a", NodeTrust::TRUSTED),
+         "trust: reject trusted promotion without identity");
+  expect(model.update_node_identity(0, "hv6-aabbccddeeff"),
+         "trust: identity must be stored before promotion");
   expect(model.update_node_trust("v6-a", NodeTrust::TRUSTED),
-         "trust: promote paired node");
+         "trust: promote identified paired node");
   expect(model.node(0) != nullptr && model.node(0)->trust == NodeTrust::TRUSTED,
          "trust: node promoted to trusted");
   expect(std::strcmp(node_trust_name(model.node(0)->trust), "trusted") == 0,

@@ -1580,6 +1580,24 @@ bool LuneTouchCoordinator::set_node_trust(const char *node_id, ::lune_touch::Nod
     snprintf(response, capacity, "{\"result\":\"rejected\",\"error\":\"coordinator_busy\"}");
     return false;
   }
+  const ::lune_touch::PairedNode *target = nullptr;
+  for (size_t i = 0; i < model_.node_count(); i++) {
+    const auto *node = model_.node(i);
+    if (node != nullptr && node_id != nullptr && std::strcmp(node->node_id, node_id) == 0) {
+      target = node;
+      break;
+    }
+  }
+  if (target == nullptr) {
+    give_state_lock_();
+    snprintf(response, capacity, "{\"result\":\"rejected\",\"error\":\"node_not_found\"}");
+    return false;
+  }
+  if (trust == ::lune_touch::NodeTrust::TRUSTED && target->pairing_fingerprint[0] == '\0') {
+    give_state_lock_();
+    snprintf(response, capacity, "{\"result\":\"rejected\",\"error\":\"identity_required\"}");
+    return false;
+  }
   if (!model_.update_node_trust(node_id, trust)) {
     give_state_lock_();
     snprintf(response, capacity, "{\"result\":\"rejected\",\"error\":\"node_not_found\"}");
@@ -2421,6 +2439,8 @@ void LuneTouchCoordinator::write_diagnostics_json(char *buffer, size_t capacity)
   size_t trusted_nodes = 0;
   size_t reachable_nodes = 0;
   size_t stale_nodes = 0;
+  size_t identity_missing_nodes = 0;
+  size_t trusted_identity_missing_nodes = 0;
   for (size_t i = 0; i < model_.node_count(); i++) {
     const auto *node = model_.node(i);
     if (node == nullptr)
@@ -2429,6 +2449,13 @@ void LuneTouchCoordinator::write_diagnostics_json(char *buffer, size_t capacity)
       paired_nodes++;
     if (node->trust == ::lune_touch::NodeTrust::TRUSTED)
       trusted_nodes++;
+    if ((node->trust == ::lune_touch::NodeTrust::PAIRED ||
+         node->trust == ::lune_touch::NodeTrust::TRUSTED) &&
+        node->pairing_fingerprint[0] == '\0') {
+      identity_missing_nodes++;
+      if (node->trust == ::lune_touch::NodeTrust::TRUSTED)
+        trusted_identity_missing_nodes++;
+    }
     if (node->reachable)
       reachable_nodes++;
     if (model_.is_node_stale(i, now_ms))
@@ -2443,13 +2470,16 @@ void LuneTouchCoordinator::write_diagnostics_json(char *buffer, size_t capacity)
   }
   const size_t bound_zones = model_.active_zone_count();
   const size_t stale_zones = model_.stale_zone_count();
-  const bool ready_for_commands = trusted_nodes > 0 && bound_zones > 0 && fresh_zones > 0;
+  const bool ready_for_commands = trusted_nodes > 0 && trusted_identity_missing_nodes == 0 &&
+                                  bound_zones > 0 && fresh_zones > 0;
   const bool ready_for_forecast = ready_for_commands && forecast_latitude_ != 0.0f && forecast_longitude_ != 0.0f;
   const char *next_action = "ready";
   if (model_.node_count() == 0)
     next_action = "add_node";
   else if (reachable_nodes == 0)
     next_action = "fix_node_poll";
+  else if (trusted_identity_missing_nodes > 0 || (trusted_nodes == 0 && identity_missing_nodes > 0))
+    next_action = "verify_node_identity";
   else if (trusted_nodes == 0)
     next_action = "trust_node";
   else if (bound_zones == 0)
@@ -2477,7 +2507,8 @@ void LuneTouchCoordinator::write_diagnostics_json(char *buffer, size_t capacity)
            "\"screen\":\"overview-only\",\"api\":\"/api/lune-touch/v1\","
            "\"polling\":{\"last_poll_ms\":%lu,\"success\":%lu,\"fail\":%lu,\"last_error\":\"%s\"},"
            "\"commissioning\":{\"paired_nodes\":%u,\"trusted_nodes\":%u,"
-           "\"reachable_nodes\":%u,\"stale_nodes\":%u,\"bound_zones\":%u,"
+           "\"reachable_nodes\":%u,\"stale_nodes\":%u,\"identity_missing_nodes\":%u,"
+           "\"bound_zones\":%u,"
            "\"fresh_zones\":%u,\"stale_zones\":%u,\"ready_for_commands\":%s,"
            "\"ready_for_forecast\":%s,\"next_action\":\"%s\"},"
            "\"ota\":{\"running_label\":\"%s\",\"running_subtype\":%u,"
@@ -2502,6 +2533,7 @@ void LuneTouchCoordinator::write_diagnostics_json(char *buffer, size_t capacity)
            static_cast<unsigned>(trusted_nodes),
            static_cast<unsigned>(reachable_nodes),
            static_cast<unsigned>(stale_nodes),
+           static_cast<unsigned>(identity_missing_nodes),
            static_cast<unsigned>(bound_zones),
            static_cast<unsigned>(fresh_zones),
            static_cast<unsigned>(stale_zones),
