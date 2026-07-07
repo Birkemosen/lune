@@ -2399,6 +2399,57 @@ bool LuneTouchCoordinator::perform_forecast_fetch_(char *response, size_t capaci
   return true;
 }
 
+std::string LuneTouchCoordinator::house_summary_text() const {
+  if (!take_state_lock_(50))
+    return "coordinator busy";
+  const uint32_t now = esphome::millis();
+  size_t stale_nodes = 0;
+  for (size_t i = 0; i < model_.node_count(); i++) {
+    if (model_.is_node_stale(i, now))
+      stale_nodes++;
+  }
+  char buffer[96];
+  snprintf(buffer, sizeof(buffer), "%u zones / %u nodes / %u stale / %u calling",
+           static_cast<unsigned>(model_.active_zone_count()),
+           static_cast<unsigned>(model_.node_count()),
+           static_cast<unsigned>(stale_nodes),
+           static_cast<unsigned>(model_.calling_zone_count()));
+  give_state_lock_();
+  return buffer;
+}
+
+std::string LuneTouchCoordinator::forecast_summary_text() const {
+  if (!take_state_lock_(50))
+    return "forecast busy";
+  char buffer[112];
+  snprintf(buffer, sizeof(buffer), "%s%s / %u h cache / %lu min old",
+           forecast_status_, forecast_fetch_requested_ ? " pending" : "",
+           static_cast<unsigned>(forecast_hours_count_),
+           forecast_last_fetch_ms_ == 0 ? 0UL :
+               static_cast<unsigned long>((esphome::millis() - forecast_last_fetch_ms_) / 60000UL));
+  give_state_lock_();
+  return buffer;
+}
+
+std::string LuneTouchCoordinator::command_summary_text() const {
+  if (!take_state_lock_(50))
+    return "commands busy";
+  const size_t accepted = ledger_.count_result(::lune_touch::CommandResult::ACCEPTED);
+  const size_t failed = ledger_.count_result(::lune_touch::CommandResult::FAILED);
+  const size_t rejected = ledger_.count_result(::lune_touch::CommandResult::REJECTED);
+  const size_t blocked = ledger_.count_result(::lune_touch::CommandResult::BLOCKED_STALE) +
+                         ledger_.count_result(::lune_touch::CommandResult::BLOCKED_UNREACHABLE) +
+                         ledger_.count_result(::lune_touch::CommandResult::BLOCKED_UNTRUSTED);
+  char buffer[96];
+  snprintf(buffer, sizeof(buffer), "%u accepted / %u failed / %u rejected / %u blocked",
+           static_cast<unsigned>(accepted),
+           static_cast<unsigned>(failed),
+           static_cast<unsigned>(rejected),
+           static_cast<unsigned>(blocked));
+  give_state_lock_();
+  return buffer;
+}
+
 void LuneTouchCoordinator::write_overview_json(char *buffer, size_t capacity) const {
   size_t stale_nodes = 0;
   const uint32_t now = esphome::millis();

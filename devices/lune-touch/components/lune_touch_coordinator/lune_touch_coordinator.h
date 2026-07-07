@@ -8,6 +8,7 @@
 #include <freertos/task.h>
 #include <cstddef>
 #include <cstdint>
+#include <string>
 
 namespace esphome {
 namespace lune_touch_coordinator {
@@ -87,6 +88,9 @@ class LuneTouchCoordinator : public esphome::Component {
   void write_diagnostics_json(char *buffer, size_t capacity) const;
   void write_settings_json(char *buffer, size_t capacity) const;
   void write_events_json(char *buffer, size_t capacity) const;
+  std::string house_summary_text() const;
+  std::string forecast_summary_text() const;
+  std::string command_summary_text() const;
 
   bool add_node(const char *node_id, const char *hostname, const char *fallback_ip,
                 const char *pairing_fingerprint, char *response, size_t capacity);
