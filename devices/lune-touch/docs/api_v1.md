@@ -205,6 +205,34 @@ forecast fetch outcomes, command dispatch results, and recovery actions:
 }
 ```
 
+### `GET /commands`
+
+Returns the persisted command ledger. `room_id` and `name` are resolved from the
+current zone registry when the command is read; older records still retain their
+node/zone target even if a room mapping has since been removed:
+
+```json
+{
+  "commands": [
+    {
+      "request_id": "touch-12345",
+      "source": "forecast",
+      "reason": "wind preload",
+      "room_id": "living",
+      "name": "Living",
+      "node_index": 0,
+      "zone_index": 1,
+      "requested_offset_c": 0.4,
+      "accepted_offset_c": 0.3,
+      "created_at_ms": 12000,
+      "expires_at_ms": 2712000,
+      "result": "accepted",
+      "clamp_applied": true
+    }
+  ]
+}
+```
+
 ### `GET /zones`
 
 Each zone includes Touch-owned comfort intent, latest live V6 state, forecast

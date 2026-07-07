@@ -95,9 +95,9 @@ function mockData(path) {
     },
   };
   if (path === '/commands') return { commands: [
-    { request_id: 'mock-forecast-1', source: 'forecast', reason: 'wind preload', node_index: 0, zone_index: 0, requested_offset_c: 0.4, accepted_offset_c: 0.4, created_at_ms: Date.now() - 600000, expires_at_ms: Date.now() + 2100000, result: 'accepted', clamp_applied: false },
-    { request_id: 'mock-dashboard-1', source: 'dashboard', reason: 'quick boost', node_index: 1, zone_index: 3, requested_offset_c: 1.1, accepted_offset_c: 0.8, created_at_ms: Date.now() - 420000, expires_at_ms: Date.now() + 900000, result: 'accepted', clamp_applied: true },
-    { request_id: 'mock-forecast-2', source: 'forecast', reason: 'wind preload', node_index: 2, zone_index: 1, requested_offset_c: 0.3, accepted_offset_c: 0.0, created_at_ms: Date.now() - 240000, expires_at_ms: Date.now() + 1800000, result: 'blocked_unreachable', clamp_applied: false },
+    { request_id: 'mock-forecast-1', source: 'forecast', reason: 'wind preload', room_id: 'room-01', name: 'Living', node_index: 0, zone_index: 0, requested_offset_c: 0.4, accepted_offset_c: 0.4, created_at_ms: Date.now() - 600000, expires_at_ms: Date.now() + 2100000, result: 'accepted', clamp_applied: false },
+    { request_id: 'mock-dashboard-1', source: 'dashboard', reason: 'quick boost', room_id: 'room-10', name: 'Workshop', node_index: 1, zone_index: 3, requested_offset_c: 1.1, accepted_offset_c: 0.8, created_at_ms: Date.now() - 420000, expires_at_ms: Date.now() + 900000, result: 'accepted', clamp_applied: true },
+    { request_id: 'mock-forecast-2', source: 'forecast', reason: 'wind preload', room_id: 'room-14', name: 'Kids east', node_index: 2, zone_index: 1, requested_offset_c: 0.3, accepted_offset_c: 0.0, created_at_ms: Date.now() - 240000, expires_at_ms: Date.now() + 1800000, result: 'blocked_unreachable', clamp_applied: false },
   ] };
   if (path === '/events') return { events: [
     { ts_ms: 694200, level: 'info', source: 'forecast', message: 'fetch completed' },

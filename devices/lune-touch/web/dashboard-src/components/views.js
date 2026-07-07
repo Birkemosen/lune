@@ -107,6 +107,11 @@ const fmtDecisionLead = (decision = {}) => {
   if (!active) return '';
   return learned > 0 && learned >= active ? ` / lead ${active}h learned` : ` / lead ${active}h`;
 };
+const fmtCommandTarget = (command = {}) => {
+  const room = command.name || command.room_id;
+  const binding = `${v6Name(command.node_index)} / Z${Number(command.zone_index) + 1}`;
+  return room ? `${room} (${binding})` : binding;
+};
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 const nodePayloadFromCandidate = (input, candidate = {}) => {
   const value = String(input || '');
@@ -466,7 +471,7 @@ export function renderCommands() {
     <div class="section-head"><h2>Command ledger</h2><span class="note">Requested vs accepted/clamped values</span></div>
     <div class="data-table">
       <div class="tr head commands"><span>ID</span><span>Source</span><span>Reason</span><span>Target</span><span>Request</span><span>Accept</span><span>Clamp</span><span>Expiry</span></div>
-      ${state.commands.map((c) => `<div class="tr commands"><span>${esc(c.request_id)}</span><span>${esc(c.source)}</span><span>${esc(c.reason || '-')}</span><span>${v6Name(c.node_index)} / Z${Number(c.zone_index) + 1}</span><span>${fmtValue(c.requested_offset_c, ' C')}</span><span>${fmtValue(c.accepted_offset_c, ' C')}</span><span class="${c.clamp_applied ? 'warn' : 'ok'}">${c.clamp_applied ? 'yes' : 'no'}</span><span class="${statusClass(c.result === 'accepted' ? 'heat' : c.result)}">${esc(c.result)} / ${fmtCommandExpiry(c)}</span></div>`).join('')}
+      ${state.commands.map((c) => `<div class="tr commands"><span>${esc(c.request_id)}</span><span>${esc(c.source)}</span><span>${esc(c.reason || '-')}</span><span>${esc(fmtCommandTarget(c))}</span><span>${fmtValue(c.requested_offset_c, ' C')}</span><span>${fmtValue(c.accepted_offset_c, ' C')}</span><span class="${c.clamp_applied ? 'warn' : 'ok'}">${c.clamp_applied ? 'yes' : 'no'}</span><span class="${statusClass(c.result === 'accepted' ? 'heat' : c.result)}">${esc(c.result)} / ${fmtCommandExpiry(c)}</span></div>`).join('')}
     </div>
   </section>`;
 }
@@ -550,7 +555,7 @@ export function renderDiagnostics() {
         <p class="${stats.blocked_stale || stats.blocked_unreachable || stats.blocked_untrusted ? 'warn' : 'muted'}">${stats.blocked_stale || 0} stale / ${stats.blocked_unreachable || 0} offline / ${stats.blocked_untrusted || 0} trust</p>
         <div class="data-table diagnostics-table">
           <div class="tr head diagnostics"><span>Source</span><span>Target</span><span>Request</span><span>Result</span><span>Reason</span></div>
-          ${attentionCommands.map((c) => `<div class="tr diagnostics"><span>${esc(c.source)}</span><span>${v6Name(c.node_index)} / Z${Number(c.zone_index) + 1}</span><span>${fmtValue(c.requested_offset_c, ' C')}</span><span class="${statusClass(c.result)}">${esc(c.result)}${c.clamp_applied ? ' / clamp' : ''}</span><span>${esc(c.reason || c.request_id || '-')}</span></div>`).join('') || '<div class="empty-row">No failed, blocked, or clamped commands</div>'}
+          ${attentionCommands.map((c) => `<div class="tr diagnostics"><span>${esc(c.source)}</span><span>${esc(fmtCommandTarget(c))}</span><span>${fmtValue(c.requested_offset_c, ' C')}</span><span class="${statusClass(c.result)}">${esc(c.result)}${c.clamp_applied ? ' / clamp' : ''}</span><span>${esc(c.reason || c.request_id || '-')}</span></div>`).join('') || '<div class="empty-row">No failed, blocked, or clamped commands</div>'}
         </div>
         <button class="btn slim" data-section="commands">Open ledger</button>
       </div>

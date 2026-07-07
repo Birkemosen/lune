@@ -3132,15 +3132,31 @@ void LuneTouchCoordinator::write_commands_json(char *buffer, size_t capacity) co
     char request_id[32];
     char source[32];
     char reason[96];
+    char room_id[48];
+    char room_name[80];
+    const char *target_room_id = "";
+    const char *target_room_name = "";
+    for (size_t zone_index = 0; zone_index < model_.zone_count(); zone_index++) {
+      const auto *zone = model_.zone(zone_index);
+      if (zone == nullptr || !zone->enabled || zone->node_index != record->node_index ||
+          zone->zone_index != record->zone_index)
+        continue;
+      target_room_id = zone->room_id;
+      target_room_name = zone->room_name;
+      break;
+    }
     json_escape_(record->request_id, request_id, sizeof(request_id));
     json_escape_(record->source, source, sizeof(source));
     json_escape_(record->reason, reason, sizeof(reason));
+    json_escape_(target_room_id, room_id, sizeof(room_id));
+    json_escape_(target_room_name, room_name, sizeof(room_name));
     if (!appendf_(buffer, capacity, off,
                   "%s{\"request_id\":\"%s\",\"source\":\"%s\",\"reason\":\"%s\","
-                  "\"node_index\":%u,\"zone_index\":%u,\"requested_offset_c\":%.2f,"
+                  "\"room_id\":\"%s\",\"name\":\"%s\",\"node_index\":%u,\"zone_index\":%u,"
+                  "\"requested_offset_c\":%.2f,"
                   "\"accepted_offset_c\":%.2f,\"created_at_ms\":%lu,\"expires_at_ms\":%lu,"
                   "\"result\":\"%s\",\"clamp_applied\":%s}",
-                  first ? "" : ",", request_id, source, reason,
+                  first ? "" : ",", request_id, source, reason, room_id, room_name,
                   static_cast<unsigned>(record->node_index), static_cast<unsigned>(record->zone_index),
                   record->requested_offset_c, record->accepted_offset_c,
                   static_cast<unsigned long>(record->created_at_ms),
