@@ -497,6 +497,7 @@ static void test_command_ledger() {
   failed.result = CommandResult::FAILED;
   ledger.append(failed);
   expect(ledger.count_result(CommandResult::FAILED) == 1, "ledger: failed count");
+  expect(ledger.count_clamped() == 1, "ledger: clamped count");
 
   const CommandRecord *latest = ledger.latest();
   expect(latest != nullptr && std::strcmp(latest->request_id, "cmd-failed") == 0, "ledger: latest record");
@@ -511,6 +512,9 @@ static void test_command_ledger() {
   forecast.accepted_offset_c = 0.5f;
   forecast.result = CommandResult::ACCEPTED;
   ledger.append(forecast);
+  const CommandRecord *active_latest = ledger.latest_active(110000);
+  expect(active_latest != nullptr && std::strcmp(active_latest->request_id, "cmd-4") == 0,
+         "ledger: latest active command skips inactive failures");
   expect(ledger.has_recent_similar("forecast", 1, 3, 0.52f, 110000, 1800000, 0.05f),
          "ledger: detects recent similar forecast command");
   expect(!ledger.has_recent_similar("forecast", 1, 3, 0.7f, 110000, 1800000, 0.05f),
@@ -526,6 +530,8 @@ static void test_command_ledger() {
          "ledger: active offset by source");
   expect(!ledger.active_offset_for("forecast", 1, 3, 3700000, &active_offset),
          "ledger: expired active offset ignored");
+  expect(ledger.latest_active(4000000) == nullptr,
+         "ledger: latest active command ignores expired accepted commands");
 
   CommandOffsetResolution resolved = ledger.resolve_command_offset(1, 3, 110000);
   expect(resolved.has_forecast_offset && !resolved.has_manual_offset &&
@@ -554,6 +560,11 @@ static void test_command_ledger() {
              resolved.command_offset_c == 0.0f &&
              std::strcmp(resolved.command_source, "none") == 0,
          "resolver: expired offsets resolve to none");
+
+  CommandRecord blocked = command("cmd-blocked", 5000000, 1000);
+  blocked.result = CommandResult::BLOCKED_UNTRUSTED;
+  ledger.append(blocked);
+  expect(ledger.count_blocked() == 1, "ledger: blocked count");
 }
 
 static void test_ledger_ring_capacity() {

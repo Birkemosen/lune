@@ -263,6 +263,8 @@ class CommandLedger {
   size_t expire_pending(uint32_t now_ms);
   size_t count() const { return count_; }
   size_t count_result(CommandResult result) const;
+  size_t count_clamped() const;
+  size_t count_blocked() const;
   bool has_recent_similar(const char *source, uint8_t node_index, uint8_t zone_index,
                           float requested_offset_c, uint32_t now_ms,
                           uint32_t min_interval_ms, float epsilon_c) const;
@@ -271,6 +273,7 @@ class CommandLedger {
   CommandOffsetResolution resolve_command_offset(uint8_t node_index, uint8_t zone_index,
                                                  uint32_t now_ms) const;
   const CommandRecord *latest() const;
+  const CommandRecord *latest_active(uint32_t now_ms) const;
   const CommandRecord *at(size_t index) const;
   bool export_state(PersistedLedger *out) const;
   bool import_state(const PersistedLedger &state);

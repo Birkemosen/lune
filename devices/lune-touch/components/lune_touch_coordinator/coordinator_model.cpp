@@ -669,6 +669,21 @@ size_t CommandLedger::count_result(CommandResult result) const {
   return total;
 }
 
+size_t CommandLedger::count_clamped() const {
+  size_t total = 0;
+  for (size_t i = 0; i < count_; i++) {
+    if (records_[i].clamp_applied)
+      total++;
+  }
+  return total;
+}
+
+size_t CommandLedger::count_blocked() const {
+  return count_result(CommandResult::BLOCKED_STALE) +
+         count_result(CommandResult::BLOCKED_UNREACHABLE) +
+         count_result(CommandResult::BLOCKED_UNTRUSTED);
+}
+
 bool CommandLedger::has_recent_similar(const char *source, uint8_t node_index, uint8_t zone_index,
                                        float requested_offset_c, uint32_t now_ms,
                                        uint32_t min_interval_ms, float epsilon_c) const {
@@ -740,6 +755,19 @@ const CommandRecord *CommandLedger::latest() const {
     return nullptr;
   const size_t latest_index = (next_ + LEDGER_CAPACITY - 1) % LEDGER_CAPACITY;
   return &records_[latest_index];
+}
+
+const CommandRecord *CommandLedger::latest_active(uint32_t now_ms) const {
+  for (size_t n = 0; n < count_; n++) {
+    const size_t index = (next_ + LEDGER_CAPACITY - 1 - n) % LEDGER_CAPACITY;
+    const CommandRecord &record = records_[index];
+    if (record.result != CommandResult::PENDING && record.result != CommandResult::ACCEPTED)
+      continue;
+    if (record.expires_at_ms != 0 && static_cast<int32_t>(now_ms - record.expires_at_ms) >= 0)
+      continue;
+    return &record;
+  }
+  return nullptr;
 }
 
 const CommandRecord *CommandLedger::at(size_t index) const {

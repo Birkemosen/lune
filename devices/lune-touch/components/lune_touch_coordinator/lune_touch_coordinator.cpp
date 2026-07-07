@@ -2659,8 +2659,17 @@ std::string LuneTouchCoordinator::zone_line_text(uint8_t row) const {
   const uint32_t now = esphome::millis();
   const auto *live = model_.zone_live(zone_index);
   const auto offset = ledger_.resolve_command_offset(zone->node_index, zone->zone_index, now);
+  uint8_t day_index = 0;
+  uint16_t minute_of_day = 0;
+  const bool time_valid = current_schedule_time_(time_, &day_index, &minute_of_day);
+  const auto effective = ::lune_touch::HouseModel::effective_comfort(*zone, time_valid,
+                                                                     day_index, minute_of_day);
+  const float learned_offset =
+      ::lune_touch::HouseModel::learned_comfort_offset_c(*zone, live, effective.setpoint_c);
+  const float target_c = std::clamp(effective.setpoint_c + offset.command_offset_c + learned_offset,
+                                    5.0f, 35.0f);
   const char *name = zone->room_name[0] != '\0' ? zone->room_name : zone->room_id;
-  const char *status = live != nullptr ? live->status : "unknown";
+  const char *status = live != nullptr && live->fresh ? live->status : "stale";
   char temp[16];
   if (live != nullptr && live->has_temperature)
     snprintf(temp, sizeof(temp), "%.1f C", live->temperature_c);
@@ -2670,13 +2679,15 @@ std::string LuneTouchCoordinator::zone_line_text(uint8_t row) const {
   char command[32];
   if (offset.command_offset_c > 0.01f)
     snprintf(command, sizeof(command), "%s +%.1f C", offset.command_source, offset.command_offset_c);
+  else if (learned_offset > 0.01f)
+    snprintf(command, sizeof(command), "learned +%.1f C", learned_offset);
   else
-    snprintf(command, sizeof(command), "local");
+    snprintf(command, sizeof(command), "%s", effective.source);
 
   char buffer[128];
-  snprintf(buffer, sizeof(buffer), "%-12.12s V6 %u / Z%u  %s  %-8.8s  %s",
+  snprintf(buffer, sizeof(buffer), "%-12.12s V6 %u/Z%u  %s -> %.1f  %-8.8s  %s",
            name, static_cast<unsigned>(zone->node_index + 1),
-           static_cast<unsigned>(zone->zone_index + 1), temp, status, command);
+           static_cast<unsigned>(zone->zone_index + 1), temp, target_c, status, command);
   give_state_lock_();
   return buffer;
 }
@@ -2710,9 +2721,10 @@ std::string LuneTouchCoordinator::forecast_decision_text(uint8_t row) const {
     decision_index = forecast_decision_count_ - 1;
   const auto &decision = forecast_decisions_[decision_index];
   const char *name = decision.room_name[0] != '\0' ? decision.room_name : decision.room_id;
-  snprintf(buffer, sizeof(buffer), "%s: %s %.1f C / peak %.1f in %dh / P%u",
+  snprintf(buffer, sizeof(buffer), "%s: %s %.1f C / peak %.1f in %dh / lead %uh / P%u",
            name, decision.active ? "preload" : "watch", decision.offset_c,
            decision.peak_load, static_cast<int>(decision.peak_in_h),
+           static_cast<unsigned>(decision.active_thermal_lead_h),
            static_cast<unsigned>(decision.priority));
   give_state_lock_();
   return buffer;
@@ -2721,18 +2733,33 @@ std::string LuneTouchCoordinator::forecast_decision_text(uint8_t row) const {
 std::string LuneTouchCoordinator::command_summary_text() const {
   if (!take_state_lock_(50))
     return "commands busy";
+  const uint32_t now = esphome::millis();
+  const auto *active = ledger_.latest_active(now);
+  if (active != nullptr) {
+    const uint32_t remaining_s = active->expires_at_ms > now ? (active->expires_at_ms - now) / 1000UL : 0UL;
+    const float accepted_display =
+        active->result == ::lune_touch::CommandResult::ACCEPTED ? active->accepted_offset_c : active->requested_offset_c;
+    char buffer[128];
+    snprintf(buffer, sizeof(buffer), "%s V6 %u/Z%u %.1f->%.1f C %lum %s",
+             active->source, static_cast<unsigned>(active->node_index + 1),
+             static_cast<unsigned>(active->zone_index + 1), active->requested_offset_c,
+             accepted_display, static_cast<unsigned long>((remaining_s + 59UL) / 60UL),
+             active->clamp_applied ? "clamped" : ::lune_touch::command_result_name(active->result));
+    give_state_lock_();
+    return buffer;
+  }
   const size_t accepted = ledger_.count_result(::lune_touch::CommandResult::ACCEPTED);
   const size_t failed = ledger_.count_result(::lune_touch::CommandResult::FAILED);
   const size_t rejected = ledger_.count_result(::lune_touch::CommandResult::REJECTED);
-  const size_t blocked = ledger_.count_result(::lune_touch::CommandResult::BLOCKED_STALE) +
-                         ledger_.count_result(::lune_touch::CommandResult::BLOCKED_UNREACHABLE) +
-                         ledger_.count_result(::lune_touch::CommandResult::BLOCKED_UNTRUSTED);
+  const size_t blocked = ledger_.count_blocked();
+  const size_t clamped = ledger_.count_clamped();
   char buffer[96];
-  snprintf(buffer, sizeof(buffer), "%u accepted / %u failed / %u rejected / %u blocked",
+  snprintf(buffer, sizeof(buffer), "%u accepted / %u blocked / %u clamped / %u failed / %u rejected",
            static_cast<unsigned>(accepted),
+           static_cast<unsigned>(blocked),
+           static_cast<unsigned>(clamped),
            static_cast<unsigned>(failed),
-           static_cast<unsigned>(rejected),
-           static_cast<unsigned>(blocked));
+           static_cast<unsigned>(rejected));
   give_state_lock_();
   return buffer;
 }
