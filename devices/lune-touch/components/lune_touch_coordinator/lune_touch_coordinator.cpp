@@ -392,7 +392,7 @@ void LuneTouchCoordinator::loop() {
 void LuneTouchCoordinator::dump_config() {
   ESP_LOGCONFIG(TAG, "Lune Touch Coordinator:");
   ESP_LOGCONFIG(TAG, "  Node stale after: %u ms", static_cast<unsigned>(node_stale_after_ms_));
-  ESP_LOGCONFIG(TAG, "  V6 endpoints: /api/hv6/v1/overview, /zones, /logs");
+  ESP_LOGCONFIG(TAG, "  V6 endpoints: /api/hv6/v1/overview, /zones, /events");
   ESP_LOGCONFIG(TAG, "  Command path: expiring coordinator commands, clamped by Lune V6");
 }
 
@@ -2915,13 +2915,16 @@ void LuneTouchCoordinator::write_diagnostics_json(char *buffer, size_t capacity)
   size_t paired_nodes = 0;
   size_t trusted_nodes = 0;
   size_t reachable_nodes = 0;
+  size_t reachable_trusted_nodes = 0;
   size_t stale_nodes = 0;
+  size_t trusted_stale_nodes = 0;
   size_t identity_missing_nodes = 0;
   size_t trusted_identity_missing_nodes = 0;
   for (size_t i = 0; i < model_.node_count(); i++) {
     const auto *node = model_.node(i);
     if (node == nullptr)
       continue;
+    const bool node_stale = model_.is_node_stale(i, now_ms);
     if (node->trust == ::lune_touch::NodeTrust::PAIRED)
       paired_nodes++;
     if (node->trust == ::lune_touch::NodeTrust::TRUSTED)
@@ -2935,8 +2938,13 @@ void LuneTouchCoordinator::write_diagnostics_json(char *buffer, size_t capacity)
     }
     if (node->reachable)
       reachable_nodes++;
-    if (model_.is_node_stale(i, now_ms))
+    if (node->trust == ::lune_touch::NodeTrust::TRUSTED && node->reachable && !node_stale)
+      reachable_trusted_nodes++;
+    if (node_stale) {
       stale_nodes++;
+      if (node->trust == ::lune_touch::NodeTrust::TRUSTED)
+        trusted_stale_nodes++;
+    }
   }
   size_t fresh_zones = 0;
   for (size_t i = 0; i < model_.zone_count(); i++) {
@@ -2962,18 +2970,18 @@ void LuneTouchCoordinator::write_diagnostics_json(char *buffer, size_t capacity)
   }
   const size_t bound_zones = model_.active_zone_count();
   const size_t stale_zones = model_.stale_zone_count();
-  const bool ready_for_commands = trusted_nodes > 0 && trusted_identity_missing_nodes == 0 &&
+  const bool ready_for_commands = reachable_trusted_nodes > 0 && trusted_identity_missing_nodes == 0 &&
                                   bound_zones > 0 && fresh_zones > 0;
   const bool ready_for_forecast = ready_for_commands && forecast_latitude_ != 0.0f && forecast_longitude_ != 0.0f;
   const char *next_action = "ready";
   if (model_.node_count() == 0)
     next_action = "add_node";
-  else if (reachable_nodes == 0)
-    next_action = "fix_node_poll";
   else if (trusted_identity_missing_nodes > 0 || (trusted_nodes == 0 && identity_missing_nodes > 0))
     next_action = "verify_node_identity";
   else if (trusted_nodes == 0)
     next_action = "trust_node";
+  else if (reachable_trusted_nodes == 0)
+    next_action = "fix_node_poll";
   else if (bound_zones == 0)
     next_action = "map_zones";
   else if (fresh_zones == 0)
@@ -3004,7 +3012,8 @@ void LuneTouchCoordinator::write_diagnostics_json(char *buffer, size_t capacity)
            "\"blocked_unreachable\":%u,\"blocked_untrusted\":%u,\"clamped\":%u},"
            "\"polling\":{\"last_poll_ms\":%lu,\"success\":%lu,\"fail\":%lu,\"last_error\":\"%s\"},"
            "\"commissioning\":{\"paired_nodes\":%u,\"trusted_nodes\":%u,"
-           "\"reachable_nodes\":%u,\"stale_nodes\":%u,\"identity_missing_nodes\":%u,"
+           "\"reachable_nodes\":%u,\"reachable_trusted_nodes\":%u,"
+           "\"stale_nodes\":%u,\"trusted_stale_nodes\":%u,\"identity_missing_nodes\":%u,"
            "\"bound_zones\":%u,"
            "\"fresh_zones\":%u,\"stale_zones\":%u,\"ready_for_commands\":%s,"
            "\"ready_for_forecast\":%s,\"next_action\":\"%s\"},"
@@ -3041,7 +3050,9 @@ void LuneTouchCoordinator::write_diagnostics_json(char *buffer, size_t capacity)
            static_cast<unsigned>(paired_nodes),
            static_cast<unsigned>(trusted_nodes),
            static_cast<unsigned>(reachable_nodes),
+           static_cast<unsigned>(reachable_trusted_nodes),
            static_cast<unsigned>(stale_nodes),
+           static_cast<unsigned>(trusted_stale_nodes),
            static_cast<unsigned>(identity_missing_nodes),
            static_cast<unsigned>(bound_zones),
            static_cast<unsigned>(fresh_zones),

@@ -201,9 +201,11 @@ function forecastChart(forecast = {}) {
 
 function readinessStrip() {
   const commissioning = state.diagnostics?.commissioning || {};
+  const readyTrusted = commissioning.reachable_trusted_nodes ?? 0;
+  const trustedNodes = commissioning.trusted_nodes || 0;
   return `<div class="readiness-strip">
     <div class="readiness-chip"><span>Next</span><strong class="${commissioning.next_action === 'ready' ? 'ok' : 'warn'}">${esc(fmtNextAction(commissioning.next_action))}</strong></div>
-    <div class="readiness-chip"><span>Nodes</span><strong>${commissioning.trusted_nodes || 0} trusted / ${commissioning.reachable_nodes || 0} reachable</strong></div>
+    <div class="readiness-chip"><span>Nodes</span><strong class="${readyTrusted > 0 ? 'ok' : 'warn'}">${readyTrusted} ready / ${trustedNodes} trusted</strong></div>
     <div class="readiness-chip"><span>Identity</span><strong class="${commissioning.identity_missing_nodes ? 'warn' : 'ok'}">${commissioning.identity_missing_nodes || 0} missing</strong></div>
     <div class="readiness-chip"><span>Commands</span><strong class="${commissioning.ready_for_commands ? 'ok' : 'warn'}">${commissioning.ready_for_commands ? 'ready' : 'blocked'}</strong></div>
   </div>`;
@@ -428,7 +430,7 @@ export function renderSettings() {
     <div class="card"><h3>Register V6</h3><label>Hostname/IP<input class="input" id="node-host" placeholder="lune-v6-a.local"></label><div class="inline-form"><button class="btn" data-action="probe-node">Probe</button><button class="btn" data-action="add-node">Add node</button></div></div>
     <div class="card"><h3>Last scan</h3><p>${scan?.discovery || 'not run'}</p>${found.map((node) => `<p><strong>${esc(node.id)}</strong> ${esc(node.hostname || node.ip || '')} <span class="${node.reachable ? 'ok' : 'warn'}">${node.reachable ? 'reachable' : 'unreachable'}</span> ${node.firmware ? `<span>${esc(node.firmware)}</span>` : ''} ${node.pairing_fingerprint ? `<span>${esc(node.pairing_fingerprint)}</span>` : ''} <button class="btn slim" data-add-probed-host="${esc(node.hostname || '')}" data-add-probed-ip="${esc(node.ip || '')}" data-add-probed-fingerprint="${esc(node.pairing_fingerprint || '')}">Add</button></p>`).join('') || '<p>No candidates</p>'}</div>
     <div class="card"><h3>Asgard / Odin</h3><p>Physical ${physical.has_temperature ? fmtC(physical.temperature_c) : 'missing'} from ${physical.contributing_zones || 0} zones</p><p>Comfort demand ${fmtValue(comfort.demand_c, ' C')} across ${comfort.demand_zones || 0} zones</p><p>Driver ${esc(driver.name || driver.room_id || '-')} ${driver.priority != null ? `/ P${driver.priority}` : ''}</p><p class="note">${esc(asgardMode)} / ${asgard.enabled === false ? 'disabled' : 'enabled'}</p></div>
-    <div class="card"><h3>Commissioning</h3><p class="${commissioning.next_action === 'ready' ? 'ok' : 'warn'}">${esc(fmtNextAction(commissioning.next_action))}</p><p>${commissioning.trusted_nodes || 0} trusted / ${commissioning.paired_nodes || 0} paired / ${commissioning.reachable_nodes || 0} reachable</p><p class="${commissioning.identity_missing_nodes ? 'warn' : 'ok'}">${commissioning.identity_missing_nodes || 0} missing identities</p><p>${commissioning.fresh_zones || 0} fresh of ${commissioning.bound_zones || 0} mapped zones</p></div>
+    <div class="card"><h3>Commissioning</h3><p class="${commissioning.next_action === 'ready' ? 'ok' : 'warn'}">${esc(fmtNextAction(commissioning.next_action))}</p><p>${commissioning.reachable_trusted_nodes || 0} ready trusted / ${commissioning.trusted_nodes || 0} trusted / ${commissioning.paired_nodes || 0} paired</p><p>${commissioning.reachable_nodes || 0} reachable / ${commissioning.stale_nodes || 0} stale nodes</p><p class="${commissioning.identity_missing_nodes ? 'warn' : 'ok'}">${commissioning.identity_missing_nodes || 0} missing identities</p><p>${commissioning.fresh_zones || 0} fresh of ${commissioning.bound_zones || 0} mapped zones</p></div>
     <div class="card"><h3>Dashboard access</h3><p>Canonical URL is the device root: <strong>http://&lt;touch-ip&gt;/</strong>. The embedded dashboard does not depend on ESPHome's default dashboard UI.</p></div>
     <div class="card"><h3>Recovery</h3><p>${state.nodes.length} paired nodes, ${state.commands.length} command records</p><button class="btn danger" data-action="reset-registry">Reset registry</button></div>
   </section>`;
@@ -495,7 +497,8 @@ export function renderDiagnostics() {
       <div class="ops-panel">
         <h3>Commissioning</h3>
         <p class="${commissioning.next_action === 'ready' ? 'ok' : 'warn'}">${esc(fmtNextAction(commissioning.next_action))}</p>
-        <p>${commissioning.trusted_nodes || 0} trusted / ${commissioning.paired_nodes || 0} paired / ${commissioning.reachable_nodes || 0} reachable</p>
+        <p>${commissioning.reachable_trusted_nodes || 0} ready trusted / ${commissioning.trusted_nodes || 0} trusted / ${commissioning.paired_nodes || 0} paired</p>
+        <p>${commissioning.reachable_nodes || 0} reachable / ${commissioning.stale_nodes || 0} stale nodes / ${commissioning.trusted_stale_nodes || 0} stale trusted</p>
         <p class="${commissioning.identity_missing_nodes ? 'warn' : 'ok'}">${commissioning.identity_missing_nodes || 0} missing identities</p>
         <p>${commissioning.fresh_zones || 0} fresh of ${commissioning.bound_zones || 0} bound zones</p>
         <p class="${commissioning.ready_for_commands ? 'ok' : 'warn'}">Commands ${commissioning.ready_for_commands ? 'ready' : 'blocked'} / forecast ${commissioning.ready_for_forecast ? 'ready' : 'blocked'}</p>

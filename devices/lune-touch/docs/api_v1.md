@@ -159,7 +159,9 @@ Diagnostics includes a `commissioning` readiness block for field testing:
   "paired_nodes": 1,
   "trusted_nodes": 1,
   "reachable_nodes": 1,
+  "reachable_trusted_nodes": 1,
   "stale_nodes": 0,
+  "trusted_stale_nodes": 0,
   "identity_missing_nodes": 0,
   "bound_zones": 6,
   "fresh_zones": 6,
@@ -169,6 +171,10 @@ Diagnostics includes a `commissioning` readiness block for field testing:
   "next_action": "ready"
 }
 ```
+
+`ready_for_commands` is only true when at least one trusted node is reachable
+and fresh, trusted node identity is complete, and at least one mapped zone has
+fresh telemetry.
 
 `next_action` is one of `add_node`, `fix_node_poll`,
 `verify_node_identity`, `trust_node`, `map_zones`,
