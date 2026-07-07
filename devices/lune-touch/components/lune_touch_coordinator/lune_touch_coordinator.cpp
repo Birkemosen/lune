@@ -2211,17 +2211,25 @@ bool LuneTouchCoordinator::queue_setpoint_command(const char *room_id, float req
   return true;
 }
 
-bool LuneTouchCoordinator::request_motor_action(const char *room_id, const char *action, char *response,
+bool LuneTouchCoordinator::request_motor_action(const char *room_id, const char *action,
+                                                const char *confirmation, char *response,
                                                 size_t capacity) {
   const char *v6_command = nullptr;
-  if (std::strcmp(action != nullptr ? action : "", "reset_fault") == 0) {
+  const char *requested_action = action != nullptr ? action : "";
+  if (std::strcmp(requested_action, "reset_fault") == 0) {
     v6_command = "motor_reset_fault";
-  } else if (std::strcmp(action != nullptr ? action : "", "reset_learned") == 0) {
+  } else if (std::strcmp(requested_action, "reset_learned") == 0) {
     v6_command = "motor_reset_learned_factors";
-  } else if (std::strcmp(action != nullptr ? action : "", "relearn") == 0) {
+  } else if (std::strcmp(requested_action, "relearn") == 0) {
     v6_command = "motor_reset_and_relearn";
   } else {
     snprintf(response, capacity, "{\"result\":\"rejected\",\"error\":\"invalid_motor_action\"}");
+    return false;
+  }
+  if ((std::strcmp(requested_action, "reset_learned") == 0 ||
+       std::strcmp(requested_action, "relearn") == 0) &&
+      (confirmation == nullptr || std::strcmp(confirmation, requested_action) != 0)) {
+    snprintf(response, capacity, "{\"result\":\"rejected\",\"error\":\"confirmation_required\"}");
     return false;
   }
 

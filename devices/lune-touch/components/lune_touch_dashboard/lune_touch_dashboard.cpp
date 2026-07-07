@@ -633,7 +633,10 @@ void LuneTouchDashboard::handle_v1_post_(ApiRequest &api, const char *path) {
       send_error_(api, 400, "missing_param", "action is required");
       return;
     }
-    const bool accepted = coordinator_->request_motor_action(room_id, action, data_buf_, sizeof(data_buf_));
+    char confirm[24];
+    parse_text_param(api, api.json_body, "confirm", confirm, sizeof(confirm));
+    const bool accepted = coordinator_->request_motor_action(room_id, action, confirm,
+                                                             data_buf_, sizeof(data_buf_));
     send_write_result_(api, accepted, 400);
   } else if (strstr(path, "/schedule") != nullptr) {
     char room_id[40]{};

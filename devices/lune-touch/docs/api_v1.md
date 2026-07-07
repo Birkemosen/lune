@@ -603,15 +603,18 @@ Requests a bounded V6-local motor recovery action for the mapped room:
 
 ```json
 {
-  "action": "relearn"
+  "action": "relearn",
+  "confirm": "relearn"
 }
 ```
 
-Accepted actions are `reset_fault`, `reset_learned`, and `relearn`. Touch resolves
-the room mapping and only sends the corresponding V6-local command when the target
-node is trusted, reachable, and fresh. Blocked outcomes are returned as successful
-write responses with `result` set to `blocked_untrusted`, `blocked_unreachable`, or
-`blocked_stale`; invalid actions and unmapped rooms return `4xx`.
+Accepted actions are `reset_fault`, `reset_learned`, and `relearn`. `reset_learned`
+and `relearn` require `confirm` to exactly match the action name. Touch resolves the
+room mapping and only sends the corresponding V6-local command when the target node
+is trusted, reachable, and fresh. Blocked outcomes are returned as successful write
+responses with `result` set to `blocked_untrusted`, `blocked_unreachable`, or
+`blocked_stale`; invalid actions, missing confirmations, and unmapped rooms return
+`4xx`.
 
 ### `POST /recovery/reset-registry`
 

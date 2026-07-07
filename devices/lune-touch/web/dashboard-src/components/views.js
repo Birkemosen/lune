@@ -789,7 +789,7 @@ export function bindActions(root) {
       if (!roomId) return;
       const action = btn.dataset.motorAction;
       if (confirm(`${btn.textContent.trim()} for ${roomId}?`)) {
-        runAction(() => api.motorAction(roomId, { action }).then(refreshAll));
+        runAction(() => api.motorAction(roomId, { action, confirm: action }).then(refreshAll));
       }
     });
   });
