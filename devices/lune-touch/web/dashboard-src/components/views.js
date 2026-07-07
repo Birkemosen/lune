@@ -287,14 +287,16 @@ export function renderZones() {
       <input class="input mini-input" id="map-room-name" placeholder="Room name">
       <select class="input mini-input" id="map-node">${nodeOptions || '<option value="0">V6-0</option>'}</select>
       <input class="input mini-input" id="map-zone" type="number" min="1" max="6" value="1">
-      <button class="btn" data-action="save-room-map">Map room</button>
+      <button class="btn" data-action="save-room-map">Apply</button>
+      <button class="btn" data-discard-section="zones">Discard</button>
     </div>
     <div class="inline-form">
       <input class="input mini-input" id="comfort-room-id" placeholder="room-id">
       <input class="input mini-input" id="comfort-setpoint" type="number" step="0.1" min="5" max="35" value="21.0">
       <input class="input mini-input" id="comfort-bias" type="number" step="0.1" min="-3" max="3" value="0.0">
       <select class="input mini-input" id="comfort-priority"><option value="1">Normal</option><option value="2">High</option><option value="3">Critical</option><option value="0">Low</option></select>
-      <button class="btn" data-action="save-comfort">Save comfort</button>
+      <button class="btn" data-action="save-comfort">Apply</button>
+      <button class="btn" data-discard-section="zones">Discard</button>
     </div>
     <div class="inline-form">
       <input class="input mini-input" id="schedule-room-id" placeholder="room-id">
@@ -303,7 +305,8 @@ export function renderZones() {
       <input class="input mini-input" id="schedule-setpoint" type="number" step="0.1" min="5" max="35" value="21.0">
       <input class="input mini-input" id="schedule-day-mask" type="number" min="1" max="127" value="127">
       <label class="check"><input id="schedule-enabled" type="checkbox" checked> On</label>
-      <button class="btn" data-action="save-schedule">Save schedule</button>
+      <button class="btn" data-action="save-schedule">Apply</button>
+      <button class="btn" data-discard-section="zones">Discard</button>
     </div>
     <div class="data-table">
       <div class="tr head zones"><span>Room</span><span>Current</span><span>Comfort</span><span>Schedule</span><span>Status</span><span>Source</span><span>Valve</span><span>Learning</span><span>Command</span></div>
@@ -381,7 +384,8 @@ export function renderForecast() {
           <div class="inline-form forecast-location">
             <input class="input mini-input" id="forecast-lat" type="number" step="0.000001" placeholder="Latitude" value="${latitudeValue}">
             <input class="input mini-input" id="forecast-lon" type="number" step="0.000001" placeholder="Longitude" value="${longitudeValue}">
-            <button class="btn" data-action="save-forecast-location">Save</button>
+            <button class="btn" data-action="save-forecast-location">Apply</button>
+            <button class="btn" data-discard-section="forecast">Discard</button>
             <button class="btn" data-action="geo">Use browser</button>
           </div>
         </div>
@@ -433,7 +437,8 @@ export function renderSettings() {
       <label>Asgard mode<select class="input" id="settings-asgard-mode">
         ${['advisory', 'disabled'].map((mode) => `<option value="${mode}" ${asgardMode === mode ? 'selected' : ''}>${mode}</option>`).join('')}
       </select></label>
-      <button class="btn" data-action="save-settings">Save</button>
+      <button class="btn" data-action="save-settings">Apply</button>
+      <button class="btn" data-discard-section="settings">Discard</button>
     </div>
     <div class="settings-panel"><h3>Register V6</h3><label>Hostname/IP<input class="input" id="node-host" placeholder="lune-v6-a.local"></label><div class="inline-form"><button class="btn" data-action="probe-node">Probe</button><button class="btn" data-action="add-node">Add node</button></div></div>
     <div class="settings-panel wide"><h3>Last scan</h3><p>${scan?.discovery || 'not run'}</p>${found.map((node) => `<p><strong>${esc(node.id)}</strong> ${esc(node.hostname || node.ip || '')} <span class="${node.reachable ? 'ok' : 'warn'}">${node.reachable ? 'reachable' : 'unreachable'}</span> ${node.firmware ? `<span>${esc(node.firmware)}</span>` : ''} ${node.pairing_fingerprint ? `<span>${esc(node.pairing_fingerprint)}</span>` : ''} <button class="btn slim" data-add-probed-host="${esc(node.hostname || '')}" data-add-probed-ip="${esc(node.ip || '')}" data-add-probed-fingerprint="${esc(node.pairing_fingerprint || '')}">Add</button></p>`).join('') || '<p>No candidates</p>'}</div>
@@ -564,6 +569,9 @@ export function renderDiagnostics() {
 
 export function bindActions(root) {
   root.querySelector('[data-action="refresh"]')?.addEventListener('click', () => runAction(refreshAll));
+  root.querySelectorAll('[data-discard-section]').forEach((btn) => {
+    btn.addEventListener('click', () => runAction(() => refreshSection(btn.dataset.discardSection)));
+  });
   root.querySelector('[data-action="scan"]')?.addEventListener('click', () => runAction(() => api.scanNodes().then((result) => {
     patch({ scanResult: result });
     return refreshAll();

@@ -177,6 +177,7 @@ export async function refreshAll(options = {}) {
 
 export async function refreshSection(section) {
   if (section === 'overview') return refreshPaths(['/overview', '/zones', '/forecast', '/diagnostics']);
+  if (section === 'zones') return refreshPaths(['/nodes', '/zones']);
   if (section === 'manifolds') return refreshPaths(['/overview', '/nodes', '/zones']);
   if (section === 'forecast') return refreshPaths(['/forecast', '/diagnostics']);
   if (section === 'commands') return refreshPaths(['/commands', '/events']);
