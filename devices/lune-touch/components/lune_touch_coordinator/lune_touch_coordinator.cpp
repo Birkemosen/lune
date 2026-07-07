@@ -1880,7 +1880,8 @@ bool LuneTouchCoordinator::scan_node_candidate(const char *hostname, const char 
 }
 
 bool LuneTouchCoordinator::set_node_trust(const char *node_id, ::lune_touch::NodeTrust trust,
-                                          char *response, size_t capacity) {
+                                          const char *confirmation, char *response,
+                                          size_t capacity) {
   if (trust == ::lune_touch::NodeTrust::UNPAIRED) {
     snprintf(response, capacity, "{\"result\":\"rejected\",\"error\":\"invalid_trust\"}");
     return false;
@@ -1905,6 +1906,12 @@ bool LuneTouchCoordinator::set_node_trust(const char *node_id, ::lune_touch::Nod
   if (trust == ::lune_touch::NodeTrust::TRUSTED && target->pairing_fingerprint[0] == '\0') {
     give_state_lock_();
     snprintf(response, capacity, "{\"result\":\"rejected\",\"error\":\"identity_required\"}");
+    return false;
+  }
+  if (trust == ::lune_touch::NodeTrust::TRUSTED &&
+      (confirmation == nullptr || std::strcmp(confirmation, target->pairing_fingerprint) != 0)) {
+    give_state_lock_();
+    snprintf(response, capacity, "{\"result\":\"rejected\",\"error\":\"fingerprint_confirmation_required\"}");
     return false;
   }
   if (!model_.update_node_trust(node_id, trust)) {

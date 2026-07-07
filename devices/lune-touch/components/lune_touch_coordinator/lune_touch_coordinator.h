@@ -102,7 +102,7 @@ class LuneTouchCoordinator : public esphome::Component {
   bool scan_node_candidate(const char *hostname, const char *fallback_ip,
                            char *response, size_t capacity);
   bool set_node_trust(const char *node_id, ::lune_touch::NodeTrust trust,
-                      char *response, size_t capacity);
+                      const char *confirmation, char *response, size_t capacity);
   bool remove_node(const char *node_id, char *response, size_t capacity);
   bool reset_registry(const char *confirmation, char *response, size_t capacity);
   bool bind_room(const char *room_id, const char *room_name, size_t node_index, size_t zone_index,

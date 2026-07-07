@@ -227,7 +227,9 @@ async function post(path, body = {}) {
       const code = errorJson?.error?.code || '';
       message = code === 'identity_required'
         ? 'Probe or add the V6 node with identity before trusting it'
-        : errorJson?.error?.message || code || message;
+        : code === 'fingerprint_confirmation_required'
+          ? 'Trust requires confirming the displayed V6 fingerprint'
+          : errorJson?.error?.message || code || message;
     } catch {
       // Keep the HTTP status fallback.
     }
@@ -241,7 +243,7 @@ async function post(path, body = {}) {
 export const api = {
   scanNodes: (candidate = {}) => post('/nodes/scan', candidate),
   addNode: (node) => post('/nodes', node),
-  trustNode: (id, trust) => post(`/nodes/${encodeURIComponent(id)}/trust`, { trust }),
+  trustNode: (id, trust, confirm) => post(`/nodes/${encodeURIComponent(id)}/trust`, { trust, confirm }),
   removeNode: (id) => post(`/nodes/${encodeURIComponent(id)}/remove`),
   resetRegistry: () => post('/recovery/reset-registry', { confirm: 'reset-registry' }),
   saveZone: (roomId, data) => post(`/zones/${encodeURIComponent(roomId)}`, data),

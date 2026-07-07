@@ -395,8 +395,8 @@ export function renderManifolds() {
         <p class="${n.reachable ? 'ok' : 'warn'}">${n.reachable ? 'reachable' : 'stale'} / ${fmtTrust(n)}</p>
         <div class="node-actions">
           ${r.motor_fault && recoveryZone ? `<button class="btn slim danger" data-motor-action="reset_fault" data-motor-room="${esc(recoveryZone.room_id)}">Reset fault</button>` : ''}
-          <button class="btn slim" data-trust-node="${n.id}" data-trust-value="trusted">Trust</button>
-          <button class="btn slim" data-trust-node="${n.id}" data-trust-value="paired">Pair only</button>
+          <button class="btn slim" data-trust-node="${n.id}" data-trust-value="trusted" data-trust-confirm="${esc(n.pairing_fingerprint || '')}">Trust</button>
+          <button class="btn slim" data-trust-node="${n.id}" data-trust-value="paired" data-trust-confirm="">Pair only</button>
           <button class="btn slim danger" data-remove-node="${n.id}">Remove</button>
         </div>
       </div>
@@ -770,7 +770,11 @@ export function bindActions(root) {
     });
   });
   root.querySelectorAll('[data-trust-node]').forEach((btn) => {
-    btn.addEventListener('click', () => runAction(() => api.trustNode(btn.dataset.trustNode, btn.dataset.trustValue).then(refreshAll)));
+    btn.addEventListener('click', () => {
+      const trust = btn.dataset.trustValue;
+      const confirmToken = trust === 'trusted' ? btn.dataset.trustConfirm : '';
+      runAction(() => api.trustNode(btn.dataset.trustNode, trust, confirmToken).then(refreshAll));
+    });
   });
   root.querySelectorAll('[data-add-probed-host]').forEach((btn) => {
     btn.addEventListener('click', () => {

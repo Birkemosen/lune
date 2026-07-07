@@ -356,14 +356,16 @@ Promotes or demotes a stored node between commissioning trust states:
 
 ```json
 {
-  "trust": "trusted"
+  "trust": "trusted",
+  "confirm": "hv6-aabbccddeeff"
 }
 ```
 
 Accepted values are `paired` and `trusted`. Promotion to `trusted` requires a
-stored `pairing_fingerprint`; if the node was added without one, probe or re-add
-the candidate after V6 identity is available. Use `POST /nodes/{node_id}/remove`
-to remove a node from the registry instead of writing `unpaired`.
+stored `pairing_fingerprint` and `confirm` must exactly match that displayed
+fingerprint. If the node was added without one, probe or re-add the candidate
+after V6 identity is available. Use `POST /nodes/{node_id}/remove` to remove a
+node from the registry instead of writing `unpaired`.
 
 ### `POST /nodes/scan`
 
