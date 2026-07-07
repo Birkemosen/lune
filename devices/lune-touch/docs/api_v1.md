@@ -168,7 +168,8 @@ Diagnostics includes a `commissioning` readiness block for field testing:
   "stale_zones": 0,
   "ready_for_commands": true,
   "ready_for_forecast": true,
-  "next_action": "ready"
+  "next_action": "ready",
+  "blockers": []
 }
 ```
 
@@ -179,6 +180,10 @@ fresh telemetry.
 `next_action` is one of `add_node`, `fix_node_poll`,
 `verify_node_identity`, `trust_node`, `map_zones`,
 `wait_for_fresh_zone_poll`, `set_forecast_location`, or `ready`.
+`blockers` is a compact, ordered list of the first concrete commissioning
+reasons that keep commands or forecast from being fully ready. Each blocker has
+`scope`, `target`, `reason`, and the recommended `action`, for example
+`{"scope":"node","target":"v6-ground","reason":"not_trusted","action":"trust_node"}`.
 
 ### `GET /events`
 

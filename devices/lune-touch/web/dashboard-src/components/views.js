@@ -506,6 +506,7 @@ export function renderDiagnostics() {
   const stats = d.command_results || commandStats(state.commands);
   const attentionCommands = state.commands.filter(commandNeedsAttention).slice(-5).reverse();
   const events = state.events.slice(0, 10);
+  const blockers = Array.isArray(commissioning.blockers) ? commissioning.blockers.slice(0, 5) : [];
   const recoveryOptions = state.zones
     .filter((zone) => zone.room_id && zone.status !== 'unused')
     .map((zone) => `<option value="${esc(zone.room_id)}">${esc(zone.name || zone.room_id)} (${v6Name(zone.node_index)} / Z${Number(zone.zone_index) + 1})</option>`)
@@ -561,6 +562,7 @@ export function renderDiagnostics() {
         <p class="${commissioning.identity_missing_nodes ? 'warn' : 'ok'}">${commissioning.identity_missing_nodes || 0} missing identities</p>
         <p>${commissioning.fresh_zones || 0} fresh of ${commissioning.bound_zones || 0} bound zones</p>
         <p class="${commissioning.ready_for_commands ? 'ok' : 'warn'}">Commands ${commissioning.ready_for_commands ? 'ready' : 'blocked'} / forecast ${commissioning.ready_for_forecast ? 'ready' : 'blocked'}</p>
+        ${blockers.map((blocker) => `<p class="warn">${esc(blocker.target || blocker.scope || 'system')}: ${esc(blocker.reason || 'blocked')} -> ${esc(fmtNextAction(blocker.action))}</p>`).join('') || '<p class="muted">No commissioning blockers</p>'}
         ${commissioningActionButton(commissioning.next_action)}
       </div>
       <div class="ops-panel">

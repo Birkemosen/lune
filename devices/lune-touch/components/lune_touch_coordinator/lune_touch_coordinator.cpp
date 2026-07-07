@@ -3154,6 +3154,55 @@ void LuneTouchCoordinator::write_diagnostics_json(char *buffer, size_t capacity)
     next_action = "wait_for_fresh_zone_poll";
   else if (!has_forecast_location)
     next_action = "set_forecast_location";
+
+  char blockers[768]{};
+  size_t blockers_off = 0;
+  size_t blockers_count = 0;
+  auto append_blocker = [&](const char *scope, const char *target, const char *reason, const char *action) {
+    if (blockers_count >= 8 || blockers_off + 128 >= sizeof(blockers))
+      return;
+    char scope_esc[24];
+    char target_esc[48];
+    char reason_esc[40];
+    char action_esc[40];
+    json_escape_(scope, scope_esc, sizeof(scope_esc));
+    json_escape_(target, target_esc, sizeof(target_esc));
+    json_escape_(reason, reason_esc, sizeof(reason_esc));
+    json_escape_(action, action_esc, sizeof(action_esc));
+    if (appendf_(blockers, sizeof(blockers), blockers_off,
+                 "%s{\"scope\":\"%s\",\"target\":\"%s\",\"reason\":\"%s\",\"action\":\"%s\"}",
+                 blockers_count ? "," : "", scope_esc, target_esc, reason_esc, action_esc))
+      blockers_count++;
+  };
+  if (model_.node_count() == 0)
+    append_blocker("system", "coordinator", "no_nodes", "add_node");
+  for (size_t i = 0; i < model_.node_count(); i++) {
+    const auto *node = model_.node(i);
+    if (node == nullptr)
+      continue;
+    const bool node_stale = model_.is_node_stale(i, now_ms);
+    const char *target = node->node_id[0] != '\0' ? node->node_id : node->hostname;
+    if ((node->trust == ::lune_touch::NodeTrust::PAIRED ||
+         node->trust == ::lune_touch::NodeTrust::TRUSTED) &&
+        node->pairing_fingerprint[0] == '\0') {
+      append_blocker("node", target, "identity_missing", "verify_node_identity");
+    } else if (node->trust == ::lune_touch::NodeTrust::PAIRED) {
+      append_blocker("node", target, "not_trusted", "trust_node");
+    } else if (node->trust == ::lune_touch::NodeTrust::TRUSTED && !node->reachable) {
+      append_blocker("node", target, "unreachable", "fix_node_poll");
+    } else if (node->trust == ::lune_touch::NodeTrust::TRUSTED && node_stale) {
+      append_blocker("node", target, "stale", "fix_node_poll");
+    }
+  }
+  if (trusted_nodes == 0 && identity_missing_nodes == 0 && model_.node_count() > 0)
+    append_blocker("system", "coordinator", "no_trusted_nodes", "trust_node");
+  if (bound_zones == 0)
+    append_blocker("zones", "registry", "no_mapped_zones", "map_zones");
+  else if (fresh_zones == 0)
+    append_blocker("zones", "registry", "no_fresh_zone_telemetry", "wait_for_fresh_zone_poll");
+  if (!has_forecast_location)
+    append_blocker("forecast", "location", "location_missing", "set_forecast_location");
+
   const esp_partition_t *running_partition = esp_ota_get_running_partition();
   const char *running_label = running_partition != nullptr ? running_partition->label : "unknown";
   const uint32_t running_size = running_partition != nullptr ? running_partition->size : 0;
@@ -3182,7 +3231,7 @@ void LuneTouchCoordinator::write_diagnostics_json(char *buffer, size_t capacity)
            "\"stale_nodes\":%u,\"trusted_stale_nodes\":%u,\"identity_missing_nodes\":%u,"
            "\"bound_zones\":%u,"
            "\"fresh_zones\":%u,\"stale_zones\":%u,\"ready_for_commands\":%s,"
-           "\"ready_for_forecast\":%s,\"next_action\":\"%s\"},"
+           "\"ready_for_forecast\":%s,\"next_action\":\"%s\",\"blockers\":[%s]},"
            "\"ota\":{\"running_label\":\"%s\",\"running_subtype\":%u,"
            "\"running_slot_size\":%lu,\"configured_slot_size\":%lu,"
            "\"state\":\"%s\",\"pending_verify\":%s},"
@@ -3226,6 +3275,7 @@ void LuneTouchCoordinator::write_diagnostics_json(char *buffer, size_t capacity)
            ready_for_commands ? "true" : "false",
            ready_for_forecast ? "true" : "false",
            next_action,
+           blockers,
            ota_label,
            static_cast<unsigned>(running_subtype),
            static_cast<unsigned long>(running_size),
