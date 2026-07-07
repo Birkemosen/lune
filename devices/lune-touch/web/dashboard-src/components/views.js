@@ -259,6 +259,12 @@ function zoneCard(zone) {
 
 export function renderOverview() {
   const summary = state.overview?.summary || {};
+  const forecast = state.forecast || {};
+  const activeDecisions = (forecast.decisions || []).filter((decision) => decision.active).slice(0, 5);
+  const diagnostics = state.diagnostics || {};
+  const polling = diagnostics.polling || {};
+  const forecastStatus = diagnostics.forecast || {};
+  const commandResults = diagnostics.command_results || {};
   return `<section class="panel">
     <div class="section-head"><h2>House</h2><button class="btn" data-action="refresh">Refresh</button></div>
     <div class="stat-grid">
@@ -273,7 +279,19 @@ export function renderOverview() {
         <div class="section-head"><h2>Zones</h2><span class="note">Heat demand and source freshness</span></div>
         <div class="zone-matrix">${state.zones.map(zoneCard).join('')}</div>
       </div>
-      ${forecastChart(state.forecast || {})}
+      <div class="stack">
+        ${forecastChart(forecast)}
+        <div class="ops-panel">
+          <h3>Active preload</h3>
+          ${activeDecisions.map((decision) => `<p>${esc(decision.name || decision.room_id)}: +${fmtValue(decision.offset_c, ' C')} / P${decision.priority ?? 1} / peak in ${decision.peak_in_h}h</p>`).join('') || '<p>No active preload decisions</p>'}
+        </div>
+        <div class="ops-panel">
+          <h3>System health</h3>
+          <p class="${polling.fail ? 'warn' : 'ok'}">${polling.success || 0} polls ok / ${polling.fail || 0} failed</p>
+          <p class="${forecastStatus.status === 'ok' || forecastStatus.status === 'cached' ? 'ok' : 'warn'}">Forecast ${forecastStatus.status || summary.forecast_status || 'unknown'}${forecastStatus.fetch_pending ? ' / pending' : ''}</p>
+          <p class="${commandResults.failed || commandResults.blocked ? 'warn' : 'muted'}">${commandResults.accepted || 0} commands accepted / ${commandResults.blocked || 0} blocked / ${commandResults.failed || 0} failed</p>
+        </div>
+      </div>
     </div>
   </section>`;
 }
