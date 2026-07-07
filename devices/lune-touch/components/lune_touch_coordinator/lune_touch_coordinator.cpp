@@ -435,8 +435,19 @@ void LuneTouchCoordinator::poll_task_() {
     if (esphome::network::is_connected()) {
       bool fetch_requested = false;
       if (take_state_lock_(100)) {
-        fetch_requested = forecast_fetch_requested_;
+        const uint32_t now = esphome::millis();
+        const bool has_location = std::isfinite(forecast_latitude_) && std::isfinite(forecast_longitude_) &&
+                                  (std::fabs(forecast_latitude_) >= 0.0001f ||
+                                   std::fabs(forecast_longitude_) >= 0.0001f);
+        const bool initial_fetch_due = has_location && forecast_last_fetch_ms_ == 0;
+        const bool boot_refresh_due = has_location && forecast_boot_refresh_pending_;
+        const bool interval_fetch_due =
+            has_location && forecast_last_fetch_ms_ != 0 &&
+            now - forecast_last_fetch_ms_ >= FORECAST_AUTO_FETCH_INTERVAL_MS;
+        fetch_requested = forecast_fetch_requested_ || initial_fetch_due || boot_refresh_due || interval_fetch_due;
         forecast_fetch_requested_ = false;
+        if (fetch_requested)
+          forecast_boot_refresh_pending_ = false;
         give_state_lock_();
       }
       if (fetch_requested) {
@@ -1535,6 +1546,7 @@ void LuneTouchCoordinator::load_forecast_cache_() {
   forecast_max_solar_wm2_ = cache.max_solar_wm2;
   forecast_last_fetch_ms_ = esphome::millis();
   forecast_cache_restored_ = true;
+  forecast_boot_refresh_pending_ = true;
   std::strncpy(forecast_status_, "cached", sizeof(forecast_status_) - 1);
   forecast_status_[sizeof(forecast_status_) - 1] = '\0';
   std::strncpy(forecast_last_error_, "restored_cache", sizeof(forecast_last_error_) - 1);
@@ -2169,6 +2181,7 @@ bool LuneTouchCoordinator::set_forecast_location(float latitude, float longitude
   forecast_hours_count_ = 0;
   forecast_decision_count_ = 0;
   forecast_cache_restored_ = false;
+  forecast_boot_refresh_pending_ = false;
   last_forecast_dispatch_ = {};
   save_forecast_settings_();
   give_state_lock_();

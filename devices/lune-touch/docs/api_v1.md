@@ -144,10 +144,13 @@ The diagnostics `forecast` block mirrors the current weather-fetch state:
 }
 ```
 
-`fetch_pending` is true after `POST /forecast/fetch` queues a background fetch
-and false once the poll task has picked it up. The full `GET /forecast` response
-exposes the same `fetch_pending` field alongside cache metadata, hourly weather,
-preload decisions, and dispatch counts.
+`fetch_pending` is true after `POST /forecast/fetch` queues a manual background
+fetch and false once the poll task has picked it up. The full `GET /forecast`
+response exposes the same `fetch_pending` field alongside cache metadata, hourly
+weather, preload decisions, and dispatch counts. Touch also auto-refreshes the
+forecast when a valid location exists and no cache has been fetched, shortly
+after boot when an NVS forecast cache was restored, and then roughly every hour
+while WiFi is connected.
 
 Diagnostics includes a `commissioning` readiness block for field testing:
 
@@ -448,6 +451,11 @@ ledger result is `rejected`.
   "source": "manual"
 }
 ```
+
+Saving a valid location clears the old cache and makes the next coordinator poll
+eligible for an automatic forecast fetch. `POST /forecast/fetch` can still be
+used to queue an immediate manual refresh; it returns `queued` while the poll
+task performs the HTTPS request and command dispatch in the background.
 
 ### `POST /settings`
 

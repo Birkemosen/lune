@@ -165,6 +165,7 @@ class LuneTouchCoordinator : public esphome::Component {
   static constexpr uint32_t LEARNING_SAVE_INTERVAL_MS = 10UL * 60UL * 1000UL;
   static constexpr uint32_t FORECAST_COMMAND_TTL_S = 4500;
   static constexpr uint32_t FORECAST_COMMAND_DEDUPE_MS = 30UL * 60UL * 1000UL;
+  static constexpr uint32_t FORECAST_AUTO_FETCH_INTERVAL_MS = 60UL * 60UL * 1000UL;
   static constexpr float FORECAST_COMMAND_EPSILON_C = 0.05f;
   static constexpr size_t EVENT_CAPACITY = 32;
 
@@ -200,6 +201,7 @@ class LuneTouchCoordinator : public esphome::Component {
   char forecast_status_[16]{"stale"};
   char forecast_last_error_[96]{};
   bool forecast_fetch_requested_{false};
+  bool forecast_boot_refresh_pending_{false};
   bool forecast_cache_restored_{false};
   uint8_t forecast_hours_count_{0};
   ForecastHourState forecast_hours_[72]{};
