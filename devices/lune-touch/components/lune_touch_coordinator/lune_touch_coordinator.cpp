@@ -2992,12 +2992,18 @@ void LuneTouchCoordinator::write_commands_json(char *buffer, size_t capacity) co
     const auto *record = ledger_.at(i);
     if (record == nullptr)
       continue;
+    char request_id[32];
+    char source[32];
+    char reason[96];
+    json_escape_(record->request_id, request_id, sizeof(request_id));
+    json_escape_(record->source, source, sizeof(source));
+    json_escape_(record->reason, reason, sizeof(reason));
     if (!appendf_(buffer, capacity, off,
                   "%s{\"request_id\":\"%s\",\"source\":\"%s\",\"reason\":\"%s\","
                   "\"node_index\":%u,\"zone_index\":%u,\"requested_offset_c\":%.2f,"
                   "\"accepted_offset_c\":%.2f,\"created_at_ms\":%lu,\"expires_at_ms\":%lu,"
                   "\"result\":\"%s\",\"clamp_applied\":%s}",
-                  first ? "" : ",", record->request_id, record->source, record->reason,
+                  first ? "" : ",", request_id, source, reason,
                   static_cast<unsigned>(record->node_index), static_cast<unsigned>(record->zone_index),
                   record->requested_offset_c, record->accepted_offset_c,
                   static_cast<unsigned long>(record->created_at_ms),
