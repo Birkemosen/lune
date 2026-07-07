@@ -1929,9 +1929,11 @@ bool LuneTouchCoordinator::bind_room(const char *room_id, const char *room_name,
     return false;
   }
   save_registry_();
+  char room_id_esc[48];
+  json_escape_(room_id != nullptr ? room_id : "", room_id_esc, sizeof(room_id_esc));
   snprintf(response, capacity,
            "{\"result\":\"stored\",\"room_id\":\"%s\",\"node_index\":%u,\"zone_index\":%u}",
-           room_id != nullptr ? room_id : "", static_cast<unsigned>(node_index), static_cast<unsigned>(zone_index));
+           room_id_esc, static_cast<unsigned>(node_index), static_cast<unsigned>(zone_index));
   char event[112];
   snprintf(event, sizeof(event), "mapped %s to node %u zone %u",
            room_id != nullptr ? room_id : "", static_cast<unsigned>(node_index),
@@ -1963,11 +1965,18 @@ bool LuneTouchCoordinator::set_zone_comfort(const char *room_id, float comfort_s
                               ? ::lune_touch::HouseModel::effective_comfort_setpoint_c(*resolved.binding)
                               : stored + stored_bias;
   const uint8_t stored_priority = resolved.binding != nullptr ? resolved.binding->priority : priority;
+  char room_id_esc[48];
+  json_escape_(room_id != nullptr ? room_id : "", room_id_esc, sizeof(room_id_esc));
   snprintf(response, capacity,
            "{\"result\":\"stored\",\"room_id\":\"%s\",\"comfort_setpoint_c\":%.1f,"
            "\"comfort_bias_c\":%.1f,\"effective_setpoint_c\":%.1f,\"priority\":%u}",
-           room_id != nullptr ? room_id : "", stored, stored_bias, effective,
+           room_id_esc, stored, stored_bias, effective,
            static_cast<unsigned>(stored_priority));
+  char event[112];
+  snprintf(event, sizeof(event), "comfort %s %.1f C bias %.1f P%u",
+           room_id != nullptr ? room_id : "", stored, stored_bias,
+           static_cast<unsigned>(stored_priority));
+  log_event_("info", "zones", event);
   return true;
 }
 
@@ -1993,15 +2002,25 @@ bool LuneTouchCoordinator::set_zone_schedule(const char *room_id, bool enabled, 
   save_registry_();
   const auto resolved = model_.resolve_room(room_id);
   const auto *zone = resolved.binding;
+  char room_id_esc[48];
+  json_escape_(room_id != nullptr ? room_id : "", room_id_esc, sizeof(room_id_esc));
   snprintf(response, capacity,
            "{\"result\":\"stored\",\"room_id\":\"%s\",\"schedule\":{\"enabled\":%s,"
            "\"day_mask\":%u,\"start_min\":%u,\"end_min\":%u,\"setpoint_c\":%.1f}}",
-           room_id != nullptr ? room_id : "",
+           room_id_esc,
            zone != nullptr && zone->schedule_enabled ? "true" : "false",
            static_cast<unsigned>(zone != nullptr ? zone->schedule_day_mask : day_mask),
            static_cast<unsigned>(zone != nullptr ? zone->schedule_start_min : start_min),
            static_cast<unsigned>(zone != nullptr ? zone->schedule_end_min : end_min),
            zone != nullptr ? zone->schedule_setpoint_c : setpoint_c);
+  char event[112];
+  snprintf(event, sizeof(event), "schedule %s %s %u-%u %.1f C",
+           room_id != nullptr ? room_id : "",
+           zone != nullptr && zone->schedule_enabled ? "on" : "off",
+           static_cast<unsigned>(zone != nullptr ? zone->schedule_start_min : start_min),
+           static_cast<unsigned>(zone != nullptr ? zone->schedule_end_min : end_min),
+           zone != nullptr ? zone->schedule_setpoint_c : setpoint_c);
+  log_event_("info", "zones", event);
   return true;
 }
 
@@ -2022,16 +2041,24 @@ bool LuneTouchCoordinator::set_zone_forecast_profile(const char *room_id, uint8_
   save_registry_();
   const auto resolved = model_.resolve_room(room_id);
   const auto *zone = resolved.binding;
+  char room_id_esc[48];
+  json_escape_(room_id != nullptr ? room_id : "", room_id_esc, sizeof(room_id_esc));
   snprintf(response, capacity,
            "{\"result\":\"stored\",\"room_id\":\"%s\",\"forecast\":{\"exterior_walls\":%u,"
            "\"wind_exposure\":%.2f,\"solar_gain\":%.2f,\"thermal_lead_h\":%u,"
            "\"max_offset_c\":%.2f}}",
-           room_id != nullptr ? room_id : "",
+           room_id_esc,
            static_cast<unsigned>(zone != nullptr ? zone->exterior_walls : (exterior_walls & 0x0F)),
            zone != nullptr ? zone->wind_exposure : wind_exposure,
            zone != nullptr ? zone->solar_gain : solar_gain,
            static_cast<unsigned>(zone != nullptr ? zone->thermal_lead_h : thermal_lead_h),
            zone != nullptr ? zone->max_offset_c : max_offset_c);
+  char event[112];
+  snprintf(event, sizeof(event), "forecast profile %s walls %u lead %u",
+           room_id != nullptr ? room_id : "",
+           static_cast<unsigned>(zone != nullptr ? zone->exterior_walls : (exterior_walls & 0x0F)),
+           static_cast<unsigned>(zone != nullptr ? zone->thermal_lead_h : thermal_lead_h));
+  log_event_("info", "forecast", event);
   return true;
 }
 
