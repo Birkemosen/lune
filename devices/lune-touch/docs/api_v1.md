@@ -413,9 +413,10 @@ optimization.
 ### `POST /zones/{room_id}/schedule`
 
 Stores the first Touch-owned schedule primitive: one daily comfort window per
-room. The schedule is persisted and exposed in `GET /zones`; command dispatch is
-still handled by explicit dashboard/forecast paths until the effective-comfort
-resolver is introduced.
+room. The schedule is persisted and exposed in `GET /zones`; Touch uses it as
+the effective-comfort base when local time is valid and the window is active.
+Manual dashboard offsets and forecast preload offsets remain explicit command
+paths layered on top of that base.
 
 ```json
 {
@@ -490,7 +491,9 @@ settings.
 Fetches Open-Meteo, recomputes per-zone preload decisions, dispatches active
 forecast commands only to fresh reachable V6 nodes, and reports dispatch counts.
 `blocked_stale`, `blocked_unreachable`, and `blocked_untrusted` are counted as
-skipped before send; `failed` means Touch attempted a command and did not get an
+skipped before send and are also recorded in the command ledger with source
+`forecast`, target node/zone, requested offset, immediate expiry, and the matching
+blocked result. `failed` means Touch attempted a command and did not get an
 accepted response.
 
 `GET /forecast` includes the cached hourly weather window for graphing:
