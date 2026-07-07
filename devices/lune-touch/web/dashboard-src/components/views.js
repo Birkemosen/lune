@@ -36,12 +36,12 @@ const fmtAge = (seconds) => {
 const fmtValue = (value, suffix = '') => value == null || Number.isNaN(Number(value)) ? '-' : `${Number(value).toFixed(1)}${suffix}`;
 const fmtLearning = (history = {}) => {
   const samples = Number(history.samples || 0);
-  return samples ? `${samples} / ${fmtValue(history.last_delta_c_per_h, ' C/h')}` : '0 / -';
+  return samples ? `${samples} samples / delta ${fmtValue(history.last_delta_c_per_h, ' C/h')}` : '0 samples';
 };
 const fmtThermal = (model = {}) => {
   const samples = Number(model.samples || 0);
-  if (!samples) return '-';
-  return `H ${fmtValue(model.heat_gain_c_per_h, '')} / C ${fmtValue(model.cool_loss_c_per_h, '')}`;
+  if (!samples) return 'thermal not learned';
+  return `heat ${fmtValue(model.heat_gain_c_per_h, ' C/h')} / cool ${fmtValue(model.cool_loss_c_per_h, ' C/h')} / ${Math.round(Number(model.confidence || 0) * 100)}%`;
 };
 const fmtComfortIntent = (comfort = {}, fallback) => {
   const effective = comfort.effective_setpoint_c ?? comfort.setpoint_c ?? fallback;
@@ -331,7 +331,7 @@ export function renderZones() {
       ${state.zones.map((z) => `<div class="tr">
         <span>${z.name}</span><span>${fmtC(z.temperature_c)}</span><span>${fmtComfortIntent(z.comfort, z.setpoint_c)}</span><span>${fmtSchedule(z.schedule)}</span><span class="${statusClass(z.status)}">${z.status}</span><span>${v6Name(z.node_index)} / Z${Number(z.zone_index) + 1}</span>
         <span>${fmtValue(z.valve_pct, '%')}</span>
-        <span>${fmtLearning(z.history)} / ${fmtThermal(z.thermal_model)}</span>
+        <span>${fmtLearning(z.history)}<small class="resolver-note">${fmtThermal(z.thermal_model)}</small></span>
         <span><button class="btn slim" data-command-room="${z.room_id}">+0.5 C / 45m</button><small class="resolver-note">${fmtResolver(z.resolver)}</small></span>
       </div>`).join('')}
     </div>
