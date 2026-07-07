@@ -341,13 +341,23 @@ export function renderZones() {
 export function renderManifolds() {
   return `<section class="panel">
     <div class="section-head"><h2>Manifolds</h2><button class="btn" data-action="scan">Scan</button></div>
-    <div class="card-grid">${state.nodes.map((n) => {
+    <div class="node-list">${state.nodes.map((n) => {
       const h = n.health || {};
       const r = n.runtime || {};
       const nodeIndex = state.nodes.findIndex((node) => node.id === n.id);
       const recoveryZone = state.zones.find((zone) => Number(zone.node_index) === nodeIndex && zone.room_id);
-      return `<article class="card">
-      <h3>${n.id}</h3><p>${n.hostname || n.ip || 'no address'}</p>
+      return `<article class="node-panel">
+      <div>
+        <h3>${n.id}</h3>
+        <p>${n.hostname || n.ip || 'no address'}</p>
+        <p class="${n.reachable ? 'ok' : 'warn'}">${n.reachable ? 'reachable' : 'stale'} / ${fmtTrust(n)}</p>
+        <div class="node-actions">
+          ${r.motor_fault && recoveryZone ? `<button class="btn slim danger" data-motor-action="reset_fault" data-motor-room="${esc(recoveryZone.room_id)}">Reset fault</button>` : ''}
+          <button class="btn slim" data-trust-node="${n.id}" data-trust-value="trusted">Trust</button>
+          <button class="btn slim" data-trust-node="${n.id}" data-trust-value="paired">Pair only</button>
+          <button class="btn slim danger" data-remove-node="${n.id}">Remove</button>
+        </div>
+      </div>
       <div class="health-grid">
         <div class="health-cell"><span>Zones</span><strong>${h.mapped_zones ?? 0}</strong></div>
         <div class="health-cell"><span>Fresh</span><strong class="${h.stale_zones ? 'warn' : 'ok'}">${h.fresh_zones ?? 0}/${h.mapped_zones ?? 0}</strong></div>
@@ -363,12 +373,6 @@ export function renderManifolds() {
         <div class="health-cell"><span>Fault</span><strong class="${r.motor_fault ? 'warn' : 'ok'}">${r.motor_fault ? 'yes' : 'none'}</strong></div>
       </div>
       <dl><dt>Firmware</dt><dd>${n.firmware || '-'}</dd><dt>Status</dt><dd class="${n.reachable ? 'ok' : 'warn'}">${n.reachable ? 'reachable' : 'stale'}</dd><dt>Identity</dt><dd>${esc(n.pairing_fingerprint || '-')}</dd><dt>Last host</dt><dd>${esc(n.last_success_host || '-')}</dd><dt>Last error</dt><dd class="${n.last_failure ? 'warn' : 'muted'}">${esc(n.last_failure || '-')}</dd></dl>
-      <div class="inline-form">
-        ${r.motor_fault && recoveryZone ? `<button class="btn slim danger" data-motor-action="reset_fault" data-motor-room="${esc(recoveryZone.room_id)}">Reset fault</button>` : ''}
-        <button class="btn slim" data-trust-node="${n.id}" data-trust-value="trusted">Trust</button>
-        <button class="btn slim" data-trust-node="${n.id}" data-trust-value="paired">Pair only</button>
-        <button class="btn slim danger" data-remove-node="${n.id}">Remove</button>
-      </div>
     </article>`;
     }).join('')}</div>
   </section>`;
