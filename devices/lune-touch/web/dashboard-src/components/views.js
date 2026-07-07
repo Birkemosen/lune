@@ -61,6 +61,20 @@ const fmtNextAction = (action) => ({
   set_forecast_location: 'set location',
   ready: 'ready',
 }[action] || action || 'unknown');
+const commissioningTarget = (action) => ({
+  add_node: ['settings', 'Open register'],
+  verify_node_identity: ['settings', 'Open register'],
+  trust_node: ['manifolds', 'Open manifolds'],
+  fix_node_poll: ['manifolds', 'Open manifolds'],
+  map_zones: ['zones', 'Open zones'],
+  wait_for_fresh_zone_poll: ['diagnostics', 'Open diagnostics'],
+  set_forecast_location: ['forecast', 'Open weather'],
+}[action] || ['diagnostics', 'Open diagnostics']);
+const commissioningActionButton = (action) => {
+  if (!action || action === 'ready') return '<button class="btn slim" data-section="diagnostics">Open diagnostics</button>';
+  const [section, label] = commissioningTarget(action);
+  return `<button class="btn slim" data-section="${section}">${label}</button>`;
+};
 const fmtClock = (minutes) => {
   const value = Math.max(0, Math.min(1440, Number(minutes || 0)));
   const hour = Math.floor(value / 60);
@@ -465,7 +479,7 @@ export function renderSettings() {
     <div class="settings-panel"><h3>Register V6</h3><label>Hostname/IP<input class="input" id="node-host" placeholder="lune-v6-a.local"></label><div class="inline-form"><button class="btn" data-action="probe-node">Probe</button><button class="btn" data-action="add-node">Add node</button></div></div>
     <div class="settings-panel wide"><h3>Last scan</h3><p>${scan?.discovery || 'not run'}</p>${found.map((node) => `<p><strong>${esc(node.id)}</strong> ${esc(node.hostname || node.ip || '')} <span class="${node.reachable ? 'ok' : 'warn'}">${node.reachable ? 'reachable' : 'unreachable'}</span> ${node.firmware ? `<span>${esc(node.firmware)}</span>` : ''} ${node.pairing_fingerprint ? `<span>${esc(node.pairing_fingerprint)}</span>` : ''} <button class="btn slim" data-add-probed-host="${esc(node.hostname || '')}" data-add-probed-ip="${esc(node.ip || '')}" data-add-probed-fingerprint="${esc(node.pairing_fingerprint || '')}">Add</button></p>`).join('') || '<p>No candidates</p>'}</div>
     <div class="settings-panel"><h3>Asgard / Odin</h3><p>Physical ${physical.has_temperature ? fmtC(physical.temperature_c) : 'missing'} from ${physical.contributing_zones || 0} zones</p><p>Comfort demand ${fmtValue(comfort.demand_c, ' C')} across ${comfort.demand_zones || 0} zones</p><p>Driver ${esc(driver.name || driver.room_id || '-')} ${driver.priority != null ? `/ P${driver.priority}` : ''}</p><p class="note">${esc(asgardMode)} / ${asgard.enabled === false ? 'disabled' : 'enabled'}</p></div>
-    <div class="settings-panel"><h3>Commissioning</h3><p class="${commissioning.next_action === 'ready' ? 'ok' : 'warn'}">${esc(fmtNextAction(commissioning.next_action))}</p><p>${commissioning.reachable_trusted_nodes || 0} ready trusted / ${commissioning.trusted_nodes || 0} trusted / ${commissioning.paired_nodes || 0} paired</p><p>${commissioning.reachable_nodes || 0} reachable / ${commissioning.stale_nodes || 0} stale nodes</p><p class="${commissioning.identity_missing_nodes ? 'warn' : 'ok'}">${commissioning.identity_missing_nodes || 0} missing identities</p><p>${commissioning.fresh_zones || 0} fresh of ${commissioning.bound_zones || 0} mapped zones</p></div>
+    <div class="settings-panel"><h3>Commissioning</h3><p class="${commissioning.next_action === 'ready' ? 'ok' : 'warn'}">${esc(fmtNextAction(commissioning.next_action))}</p><p>${commissioning.reachable_trusted_nodes || 0} ready trusted / ${commissioning.trusted_nodes || 0} trusted / ${commissioning.paired_nodes || 0} paired</p><p>${commissioning.reachable_nodes || 0} reachable / ${commissioning.stale_nodes || 0} stale nodes</p><p class="${commissioning.identity_missing_nodes ? 'warn' : 'ok'}">${commissioning.identity_missing_nodes || 0} missing identities</p><p>${commissioning.fresh_zones || 0} fresh of ${commissioning.bound_zones || 0} mapped zones</p>${commissioningActionButton(commissioning.next_action)}</div>
     <div class="settings-panel"><h3>Access</h3><p><strong>http://&lt;touch-ip&gt;/</strong></p><p class="note">screen ${esc(state.diagnostics?.screen || 'unknown')}</p></div>
     <div class="settings-panel"><h3>Recovery</h3><p>${state.nodes.length} paired nodes, ${state.commands.length} command records</p><button class="btn danger" data-action="reset-registry">Reset registry</button></div>
   </section>`;
@@ -537,6 +551,7 @@ export function renderDiagnostics() {
         <p class="${commissioning.identity_missing_nodes ? 'warn' : 'ok'}">${commissioning.identity_missing_nodes || 0} missing identities</p>
         <p>${commissioning.fresh_zones || 0} fresh of ${commissioning.bound_zones || 0} bound zones</p>
         <p class="${commissioning.ready_for_commands ? 'ok' : 'warn'}">Commands ${commissioning.ready_for_commands ? 'ready' : 'blocked'} / forecast ${commissioning.ready_for_forecast ? 'ready' : 'blocked'}</p>
+        ${commissioningActionButton(commissioning.next_action)}
       </div>
       <div class="ops-panel">
         <h3>Forecast dispatch</h3>
