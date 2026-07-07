@@ -665,6 +665,24 @@ bool CommandLedger::active_offset_for(const char *source, uint8_t node_index, ui
   return true;
 }
 
+CommandOffsetResolution CommandLedger::resolve_command_offset(uint8_t node_index,
+                                                              uint8_t zone_index,
+                                                              uint32_t now_ms) const {
+  CommandOffsetResolution resolution{};
+  resolution.has_manual_offset =
+      active_offset_for("dashboard", node_index, zone_index, now_ms, &resolution.manual_offset_c);
+  resolution.has_forecast_offset =
+      active_offset_for("forecast", node_index, zone_index, now_ms, &resolution.forecast_offset_c);
+  if (resolution.has_manual_offset) {
+    resolution.command_offset_c = resolution.manual_offset_c;
+    copy_text_(resolution.command_source, sizeof(resolution.command_source), "manual");
+  } else if (resolution.has_forecast_offset) {
+    resolution.command_offset_c = resolution.forecast_offset_c;
+    copy_text_(resolution.command_source, sizeof(resolution.command_source), "forecast");
+  }
+  return resolution;
+}
+
 const CommandRecord *CommandLedger::latest() const {
   if (count_ == 0)
     return nullptr;

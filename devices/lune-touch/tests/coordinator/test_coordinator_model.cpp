@@ -457,6 +457,34 @@ static void test_command_ledger() {
          "ledger: active offset by source");
   expect(!ledger.active_offset_for("forecast", 1, 3, 3700000, &active_offset),
          "ledger: expired active offset ignored");
+
+  CommandOffsetResolution resolved = ledger.resolve_command_offset(1, 3, 110000);
+  expect(resolved.has_forecast_offset && !resolved.has_manual_offset &&
+             resolved.command_offset_c > 0.49f && resolved.command_offset_c < 0.51f &&
+             std::strcmp(resolved.command_source, "forecast") == 0,
+         "resolver: forecast offset used when manual is absent");
+
+  CommandRecord manual = command("cmd-manual", 120000, 3600000);
+  std::strncpy(manual.source, "dashboard", sizeof(manual.source) - 1);
+  manual.node_index = 1;
+  manual.zone_index = 3;
+  manual.requested_offset_c = 0.9f;
+  manual.accepted_offset_c = 0.8f;
+  manual.result = CommandResult::ACCEPTED;
+  ledger.append(manual);
+  resolved = ledger.resolve_command_offset(1, 3, 130000);
+  expect(resolved.has_manual_offset && resolved.has_forecast_offset &&
+             resolved.manual_offset_c > 0.79f && resolved.manual_offset_c < 0.81f &&
+             resolved.forecast_offset_c > 0.49f && resolved.forecast_offset_c < 0.51f &&
+             resolved.command_offset_c > 0.79f && resolved.command_offset_c < 0.81f &&
+             std::strcmp(resolved.command_source, "manual") == 0,
+         "resolver: manual offset wins over forecast");
+
+  resolved = ledger.resolve_command_offset(1, 3, 4000000);
+  expect(!resolved.has_manual_offset && !resolved.has_forecast_offset &&
+             resolved.command_offset_c == 0.0f &&
+             std::strcmp(resolved.command_source, "none") == 0,
+         "resolver: expired offsets resolve to none");
 }
 
 static void test_ledger_ring_capacity() {

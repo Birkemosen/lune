@@ -2646,21 +2646,11 @@ void LuneTouchCoordinator::write_zones_json(char *buffer, size_t capacity) const
     const auto effective = ::lune_touch::HouseModel::effective_comfort(*zone, time_valid,
                                                                        day_index, minute_of_day);
     const uint32_t now_ms = esphome::millis();
-    float manual_offset_c = 0.0f;
-    float forecast_offset_c = 0.0f;
-    const bool has_manual_offset = ledger_.active_offset_for("dashboard", zone->node_index,
-                                                             zone->zone_index, now_ms,
-                                                             &manual_offset_c);
-    const bool has_forecast_offset = ledger_.active_offset_for("forecast", zone->node_index,
-                                                               zone->zone_index, now_ms,
-                                                               &forecast_offset_c);
+    const auto command_resolution =
+        ledger_.resolve_command_offset(zone->node_index, zone->zone_index, now_ms);
     const float learned_offset_c = 0.0f;
-    const float command_offset_c = has_manual_offset ? manual_offset_c :
-        (has_forecast_offset ? forecast_offset_c : 0.0f);
-    const char *command_source = has_manual_offset ? "manual" :
-        (has_forecast_offset ? "forecast" : "none");
     const float resolved_target_c = std::fmin(35.0f, std::fmax(5.0f,
-        effective.setpoint_c + command_offset_c + learned_offset_c));
+        effective.setpoint_c + command_resolution.command_offset_c + learned_offset_c));
     const float thermal_confidence = zone->thermal_samples >= 24 ? 1.0f :
         static_cast<float>(zone->thermal_samples) / 24.0f;
     if (!appendf_(buffer, capacity, off,
@@ -2696,11 +2686,11 @@ void LuneTouchCoordinator::write_zones_json(char *buffer, size_t capacity) const
                   static_cast<unsigned>(zone->priority),
                   effective.setpoint_c,
                   effective.source,
-                  has_manual_offset ? manual_offset_c : 0.0f,
-                  has_forecast_offset ? forecast_offset_c : 0.0f,
+                  command_resolution.has_manual_offset ? command_resolution.manual_offset_c : 0.0f,
+                  command_resolution.has_forecast_offset ? command_resolution.forecast_offset_c : 0.0f,
                   learned_offset_c,
-                  command_offset_c,
-                  command_source,
+                  command_resolution.command_offset_c,
+                  command_resolution.command_source,
                   resolved_target_c,
                   zone->schedule_enabled ? "true" : "false",
                   static_cast<unsigned>(zone->schedule_day_mask),

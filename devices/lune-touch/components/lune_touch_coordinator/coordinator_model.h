@@ -170,6 +170,15 @@ struct PersistedLedger {
   CommandRecord records[LEDGER_CAPACITY]{};
 };
 
+struct CommandOffsetResolution {
+  bool has_manual_offset{false};
+  bool has_forecast_offset{false};
+  float manual_offset_c{0.0f};
+  float forecast_offset_c{0.0f};
+  float command_offset_c{0.0f};
+  char command_source[20]{"none"};
+};
+
 class HouseModel {
  public:
   void set_node_stale_after_ms(uint32_t value) { node_stale_after_ms_ = value; }
@@ -252,6 +261,8 @@ class CommandLedger {
                           uint32_t min_interval_ms, float epsilon_c) const;
   bool active_offset_for(const char *source, uint8_t node_index, uint8_t zone_index,
                          uint32_t now_ms, float *offset_c) const;
+  CommandOffsetResolution resolve_command_offset(uint8_t node_index, uint8_t zone_index,
+                                                 uint32_t now_ms) const;
   const CommandRecord *latest() const;
   const CommandRecord *at(size_t index) const;
   bool export_state(PersistedLedger *out) const;
