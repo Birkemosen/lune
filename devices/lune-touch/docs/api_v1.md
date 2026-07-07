@@ -544,6 +544,17 @@ The request must include the confirmation token:
 }
 ```
 
+Successful response:
+
+```json
+{
+  "result": "reset",
+  "registry": "cleared",
+  "ledger": "cleared",
+  "forecast_location": "kept"
+}
+```
+
 This is a recovery/install workflow, not a normal operating command.
 
 Forecast decisions include Touch-owned comfort intent so callers can distinguish

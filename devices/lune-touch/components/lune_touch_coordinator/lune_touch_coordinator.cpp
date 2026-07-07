@@ -1894,7 +1894,8 @@ bool LuneTouchCoordinator::reset_registry(const char *confirmation, char *respon
     nvs_close(handle);
   }
   snprintf(response, capacity,
-           "{\"result\":\"reset\",\"registry\":\"cleared\",\"ledger\":\"cleared\"}");
+           "{\"result\":\"reset\",\"registry\":\"cleared\",\"ledger\":\"cleared\","
+           "\"forecast_location\":\"kept\"}");
   log_event_("warn", "recovery", "registry and ledger reset");
   return true;
 }

@@ -193,6 +193,7 @@ async function post(path, body = {}) {
       found: [{ id: 'v6-a', hostname: body.hostname || 'lune-v6-a.local', ip: body.ip || '192.168.1.51', model: 'lune-v6', firmware: 'mock', pairing_fingerprint: 'hv6-mock-a', reachable: true, stale: false, source: body.hostname || body.ip ? 'manual_probe' : 'known_node' }],
     };
     if (path.includes('/motor-action')) return { result: 'accepted', action: body.action || 'reset_fault', target_node: 'v6-a', zone_index: 0 };
+    if (path === '/recovery/reset-registry') return { result: 'reset', registry: 'cleared', ledger: 'cleared', forecast_location: 'kept' };
     return { result: 'mock' };
   }
   let response = await fetch(BASE + path, {

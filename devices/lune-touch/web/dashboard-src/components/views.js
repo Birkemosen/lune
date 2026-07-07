@@ -657,6 +657,6 @@ export function bindActions(root) {
     });
   });
   root.querySelector('[data-action="reset-registry"]')?.addEventListener('click', () => {
-    if (confirm('Reset Lune Touch registry and command ledger?')) runAction(() => api.resetRegistry().then(refreshAll));
+    if (confirm('Reset Lune Touch registry, zone mappings and command ledger? Forecast location is kept.')) runAction(() => api.resetRegistry().then(refreshAll));
   });
 }
