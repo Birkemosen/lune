@@ -1117,6 +1117,7 @@ ForecastDispatchSummary LuneTouchCoordinator::dispatch_forecast_commands_() {
   DispatchItem items[::lune_touch::MAX_HOUSE_ZONES]{};
   size_t item_count = 0;
   const uint32_t now = esphome::millis();
+  bool ledger_changed = false;
 
   if (!take_state_lock_(100))
     return summary;
@@ -1131,20 +1132,42 @@ ForecastDispatchSummary LuneTouchCoordinator::dispatch_forecast_commands_() {
       summary.skipped++;
       continue;
     }
+    auto append_blocked_record = [&](::lune_touch::CommandResult result, const char *reason) {
+      ::lune_touch::CommandRecord record{};
+      snprintf(record.request_id, sizeof(record.request_id), "fb-%lu-%02u",
+               static_cast<unsigned long>(now), static_cast<unsigned>(i));
+      std::strncpy(record.source, "forecast", sizeof(record.source) - 1);
+      std::strncpy(record.reason, reason, sizeof(record.reason) - 1);
+      record.node_index = decision.node_index;
+      record.zone_index = decision.zone_index;
+      record.requested_offset_c = decision.offset_c;
+      record.accepted_offset_c = 0.0f;
+      record.created_at_ms = now;
+      record.expires_at_ms = now;
+      record.result = result;
+      ledger_.append(record);
+      ledger_changed = true;
+    };
     const auto *node = model_.node(decision.node_index);
     if (node == nullptr || (!node->reachable && std::strcmp(node->firmware, "mock") != 0)) {
       summary.blocked_unreachable++;
       summary.skipped++;
+      append_blocked_record(::lune_touch::CommandResult::BLOCKED_UNREACHABLE,
+                            "forecast blocked: node unreachable");
       continue;
     }
     if (node->trust != ::lune_touch::NodeTrust::TRUSTED) {
       summary.blocked_untrusted++;
       summary.skipped++;
+      append_blocked_record(::lune_touch::CommandResult::BLOCKED_UNTRUSTED,
+                            "forecast blocked: node untrusted");
       continue;
     }
     if (model_.is_node_stale(decision.node_index, now)) {
       summary.blocked_stale++;
       summary.skipped++;
+      append_blocked_record(::lune_touch::CommandResult::BLOCKED_STALE,
+                            "forecast blocked: node stale");
       continue;
     }
     items[item_count].decision = decision;
@@ -1153,7 +1176,6 @@ ForecastDispatchSummary LuneTouchCoordinator::dispatch_forecast_commands_() {
   }
   give_state_lock_();
 
-  bool ledger_changed = false;
   for (size_t i = 0; i < item_count; i++) {
     const ForecastDecisionState &decision = items[i].decision;
     const ::lune_touch::PairedNode &node = items[i].node;
