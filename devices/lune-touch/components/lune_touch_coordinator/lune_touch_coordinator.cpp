@@ -1772,11 +1772,18 @@ bool LuneTouchCoordinator::scan_node_candidate(const char *hostname, const char 
   char generated_id[24]{};
   make_node_id_(hostname, fallback_ip, generated_id, sizeof(generated_id));
 
-  const char *host = (hostname != nullptr && hostname[0] != '\0') ? hostname : fallback_ip;
+  const char *hosts[2]{};
+  size_t host_count = 0;
+  if (hostname != nullptr && hostname[0] != '\0')
+    hosts[host_count++] = hostname;
+  if (fallback_ip != nullptr && fallback_ip[0] != '\0' &&
+      (host_count == 0 || std::strcmp(fallback_ip, hosts[0]) != 0))
+    hosts[host_count++] = fallback_ip;
+  const char *primary_host = host_count > 0 ? hosts[0] : "";
   char host_esc[128];
   char ip_esc[48];
   char id_esc[48];
-  json_escape_(host != nullptr ? host : "", host_esc, sizeof(host_esc));
+  json_escape_(primary_host, host_esc, sizeof(host_esc));
   json_escape_(fallback_ip != nullptr ? fallback_ip : "", ip_esc, sizeof(ip_esc));
   json_escape_(generated_id, id_esc, sizeof(id_esc));
 
@@ -1789,28 +1796,37 @@ bool LuneTouchCoordinator::scan_node_candidate(const char *hostname, const char 
     return false;
   }
 
-  char url[192];
-  snprintf(url, sizeof(url), "http://%s/api/hv6/v1/overview", host);
-
   char body[2048];
   int status = 0;
-  if (!fetch_json_(url, body, sizeof(body), &status)) {
+  int last_status = 0;
+  const char *success_host = nullptr;
+  JsonDocument doc;
+  bool parsed = false;
+  for (size_t i = 0; i < host_count; i++) {
+    char url[192];
+    snprintf(url, sizeof(url), "http://%s/api/hv6/v1/overview", hosts[i]);
+    if (!fetch_json_(url, body, sizeof(body), &status)) {
+      last_status = status;
+      ESP_LOGD(TAG, "V6 probe failed via %s (%d)", hosts[i], status);
+      continue;
+    }
+    DeserializationError err = deserializeJson(doc, body);
+    if (err) {
+      last_status = status;
+      ESP_LOGW(TAG, "V6 probe JSON parse failed via %s: %s", hosts[i], err.c_str());
+      doc.clear();
+      continue;
+    }
+    success_host = hosts[i];
+    parsed = true;
+    break;
+  }
+  if (!parsed) {
     snprintf(response, capacity,
              "{\"scan\":\"probe\",\"discovery\":\"manual_probe\",\"found\":[{\"id\":\"%s\","
              "\"hostname\":\"%s\",\"ip\":\"%s\",\"reachable\":false,\"stale\":true,"
              "\"source\":\"manual_probe\",\"http_status\":%d,\"error\":\"probe_failed\"}]}",
-             id_esc, host_esc, ip_esc, status);
-    return false;
-  }
-
-  JsonDocument doc;
-  DeserializationError err = deserializeJson(doc, body);
-  if (err) {
-    snprintf(response, capacity,
-             "{\"scan\":\"probe\",\"discovery\":\"manual_probe\",\"found\":[{\"id\":\"%s\","
-             "\"hostname\":\"%s\",\"ip\":\"%s\",\"reachable\":false,\"stale\":true,"
-             "\"source\":\"manual_probe\",\"http_status\":%d,\"error\":\"invalid_json\"}]}",
-             id_esc, host_esc, ip_esc, status);
+             id_esc, host_esc, ip_esc, last_status);
     return false;
   }
 
@@ -1833,6 +1849,7 @@ bool LuneTouchCoordinator::scan_node_candidate(const char *hostname, const char 
   json_escape_(firmware, firmware_esc, sizeof(firmware_esc));
   json_escape_(pairing_fingerprint, pairing_fingerprint_esc, sizeof(pairing_fingerprint_esc));
   json_escape_(reported_ip, reported_ip_esc, sizeof(reported_ip_esc));
+  json_escape_(success_host != nullptr ? success_host : primary_host, host_esc, sizeof(host_esc));
 
   snprintf(response, capacity,
            "{\"scan\":\"probe\",\"discovery\":\"manual_probe\",\"found\":[{\"id\":\"%s\","
