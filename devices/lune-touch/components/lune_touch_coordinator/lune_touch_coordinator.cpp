@@ -1733,12 +1733,14 @@ bool LuneTouchCoordinator::add_node(const char *node_id, const char *hostname, c
   }
   model_.update_node_identity(static_cast<size_t>(index), pairing_fingerprint);
   save_registry_();
+  char node_id_esc[48];
   char pairing_fingerprint_esc[48];
+  json_escape_(node_id != nullptr ? node_id : "", node_id_esc, sizeof(node_id_esc));
   json_escape_(pairing_fingerprint != nullptr ? pairing_fingerprint : "",
                pairing_fingerprint_esc, sizeof(pairing_fingerprint_esc));
   snprintf(response, capacity, "{\"result\":\"stored\",\"node_id\":\"%s\",\"node_index\":%d,"
            "\"pairing_fingerprint\":\"%s\"}",
-           node_id, index, pairing_fingerprint_esc);
+           node_id_esc, index, pairing_fingerprint_esc);
   char event[112];
   snprintf(event, sizeof(event), "paired node %s", node_id);
   log_event_("info", "commissioning", event);
@@ -1863,8 +1865,10 @@ bool LuneTouchCoordinator::set_node_trust(const char *node_id, ::lune_touch::Nod
   }
   give_state_lock_();
   save_registry_();
+  char node_id_esc[48];
+  json_escape_(node_id != nullptr ? node_id : "", node_id_esc, sizeof(node_id_esc));
   snprintf(response, capacity, "{\"result\":\"stored\",\"node_id\":\"%s\",\"trust\":\"%s\"}",
-           node_id != nullptr ? node_id : "", ::lune_touch::node_trust_name(trust));
+           node_id_esc, ::lune_touch::node_trust_name(trust));
   char event[112];
   snprintf(event, sizeof(event), "node %s trust %s",
            node_id != nullptr ? node_id : "", ::lune_touch::node_trust_name(trust));
@@ -1878,7 +1882,9 @@ bool LuneTouchCoordinator::remove_node(const char *node_id, char *response, size
     return false;
   }
   save_registry_();
-  snprintf(response, capacity, "{\"result\":\"removed\",\"node_id\":\"%s\"}", node_id != nullptr ? node_id : "");
+  char node_id_esc[48];
+  json_escape_(node_id != nullptr ? node_id : "", node_id_esc, sizeof(node_id_esc));
+  snprintf(response, capacity, "{\"result\":\"removed\",\"node_id\":\"%s\"}", node_id_esc);
   char event[112];
   snprintf(event, sizeof(event), "removed node %s", node_id != nullptr ? node_id : "");
   log_event_("warn", "commissioning", event);
@@ -2228,11 +2234,19 @@ bool LuneTouchCoordinator::request_motor_action(const char *room_id, const char 
     }
   }
 
+  char action_esc[32];
+  char command_esc[48];
+  char target_node_esc[48];
+  char error_esc[48];
+  json_escape_(action != nullptr ? action : "", action_esc, sizeof(action_esc));
+  json_escape_(v6_command, command_esc, sizeof(command_esc));
+  json_escape_(target_node.node_id, target_node_esc, sizeof(target_node_esc));
+  json_escape_(error, error_esc, sizeof(error_esc));
   snprintf(response, capacity,
            "{\"result\":\"%s\",\"action\":\"%s\",\"v6_command\":\"%s\","
            "\"target_node\":\"%s\",\"zone_index\":%u,\"error\":\"%s\"}",
-           result, action != nullptr ? action : "", v6_command, target_node.node_id,
-           static_cast<unsigned>(target_zone), error);
+           result, action_esc, command_esc, target_node_esc,
+           static_cast<unsigned>(target_zone), error_esc);
   char event[112];
   snprintf(event, sizeof(event), "motor %s %s", action != nullptr ? action : "", result);
   log_event_(std::strcmp(result, "accepted") == 0 ? "info" : "warn", "recovery", event);
