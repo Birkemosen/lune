@@ -111,7 +111,7 @@ function mockData(path) {
     nodes: 3,
     zones: 18,
     ledger: 3,
-    screen: 'overview-only',
+    screen: 'sidebar-views',
     api: BASE,
     command_results: { pending: 0, accepted: 2, rejected: 0, failed: 0, expired: 0, blocked: 1, blocked_stale: 0, blocked_unreachable: 1, blocked_untrusted: 0, clamped: 1 },
     polling: { last_poll_ms: Date.now() % 900000, success: 42, fail: 1, last_error: 'mock stale node' },

@@ -2998,7 +2998,7 @@ void LuneTouchCoordinator::write_diagnostics_json(char *buffer, size_t capacity)
 
   snprintf(buffer, capacity,
            "{\"heap\":\"watching\",\"nodes\":%u,\"zones\":%u,\"ledger\":%u,"
-           "\"screen\":\"overview-only\",\"api\":\"/api/lune-touch/v1\","
+           "\"screen\":\"sidebar-views\",\"api\":\"/api/lune-touch/v1\","
            "\"command_results\":{\"pending\":%u,\"accepted\":%u,\"rejected\":%u,"
            "\"failed\":%u,\"expired\":%u,\"blocked\":%u,\"blocked_stale\":%u,"
            "\"blocked_unreachable\":%u,\"blocked_untrusted\":%u,\"clamped\":%u},"

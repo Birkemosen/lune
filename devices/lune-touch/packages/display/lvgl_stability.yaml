@@ -1635,7 +1635,7 @@ lvgl:
                           y: 132
                           width: 780
                           height: 30
-                          text: "Commands: disabled until V6 command acceptance UI is built"
+                          text: "Commands: local UI is read-only; web dashboard sends JSON writes"
                           text_color: 0xE3C16F
                           text_font: montserrat_18
                       - button:
@@ -1776,7 +1776,7 @@ lvgl:
                     y: 17
                     width: 126
                     height: 24
-                    text: "mock data"
+                    text: "live"
                     text_color: 0xD9DEE3
                     text_font: montserrat_16
                     text_align: right
@@ -1971,7 +1971,7 @@ lvgl:
                     text_color: 0xEAFBFF
                     text_font: montserrat_16
                     on_click:
-                      - logger.log: "Lune Touch mock refresh requested"
+                      - logger.log: "Lune Touch local refresh requested"
                       - lvgl.label.update:
                           id: refresh_status_label
                           text: "refreshed"
