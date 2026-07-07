@@ -1111,6 +1111,7 @@ ForecastDispatchSummary LuneTouchCoordinator::dispatch_forecast_commands_() {
   struct DispatchItem {
     ForecastDecisionState decision{};
     ::lune_touch::PairedNode node{};
+    char preferred_host[64]{};
   };
 
   ForecastDispatchSummary summary{};
@@ -1172,6 +1173,11 @@ ForecastDispatchSummary LuneTouchCoordinator::dispatch_forecast_commands_() {
     }
     items[item_count].decision = decision;
     items[item_count].node = *node;
+    if (decision.node_index < ::lune_touch::MAX_NODES) {
+      std::strncpy(items[item_count].preferred_host, node_last_success_host_[decision.node_index],
+                   sizeof(items[item_count].preferred_host) - 1);
+      items[item_count].preferred_host[sizeof(items[item_count].preferred_host) - 1] = '\0';
+    }
     item_count++;
   }
   give_state_lock_();
@@ -1195,7 +1201,8 @@ ForecastDispatchSummary LuneTouchCoordinator::dispatch_forecast_commands_() {
 
     ::lune_touch::CommandRecord final_record = record;
     const bool sent = send_v6_setpoint_command_(node, decision.zone_index, record,
-                                                FORECAST_COMMAND_TTL_S, &final_record);
+                                                FORECAST_COMMAND_TTL_S, &final_record,
+                                                items[i].preferred_host);
     if (!sent)
       final_record.result = ::lune_touch::CommandResult::FAILED;
 
@@ -1252,7 +1259,8 @@ void LuneTouchCoordinator::url_encode_(const char *src, char *out, size_t out_le
 
 bool LuneTouchCoordinator::send_v6_setpoint_command_(const ::lune_touch::PairedNode &node, uint8_t zone_index,
                                                      const ::lune_touch::CommandRecord &request,
-                                                     uint32_t ttl_s, ::lune_touch::CommandRecord *result) {
+                                                     uint32_t ttl_s, ::lune_touch::CommandRecord *result,
+                                                     const char *preferred_host) {
   if (result == nullptr)
     return false;
   *result = request;
@@ -1260,13 +1268,20 @@ bool LuneTouchCoordinator::send_v6_setpoint_command_(const ::lune_touch::PairedN
   if (!esphome::network::is_connected())
     return false;
 
-  const char *hosts[2]{};
+  const char *hosts[3]{};
   size_t host_count = 0;
-  if (node.hostname[0] != '\0')
-    hosts[host_count++] = node.hostname;
-  if (node.fallback_ip[0] != '\0' &&
-      (host_count == 0 || std::strcmp(node.fallback_ip, hosts[0]) != 0))
-    hosts[host_count++] = node.fallback_ip;
+  auto add_host = [&](const char *host) {
+    if (host == nullptr || host[0] == '\0' || host_count >= 3)
+      return;
+    for (size_t i = 0; i < host_count; i++) {
+      if (std::strcmp(hosts[i], host) == 0)
+        return;
+    }
+    hosts[host_count++] = host;
+  };
+  add_host(preferred_host);
+  add_host(node.hostname);
+  add_host(node.fallback_ip);
   if (host_count == 0)
     return false;
 
@@ -2115,6 +2130,7 @@ bool LuneTouchCoordinator::queue_setpoint_command(const char *room_id, float req
   uint8_t target_node_index = 0;
   uint8_t target_zone = 0;
   bool target_stale = true;
+  char preferred_host[64]{};
   if (!take_state_lock_(100)) {
     snprintf(response, capacity, "{\"result\":\"rejected\",\"error\":\"coordinator_busy\"}");
     return false;
@@ -2129,6 +2145,11 @@ bool LuneTouchCoordinator::queue_setpoint_command(const char *room_id, float req
   target_node_index = resolved.binding->node_index;
   target_zone = resolved.binding->zone_index;
   target_stale = model_.is_node_stale(target_node_index, now);
+  if (target_node_index < ::lune_touch::MAX_NODES) {
+    std::strncpy(preferred_host, node_last_success_host_[target_node_index],
+                 sizeof(preferred_host) - 1);
+    preferred_host[sizeof(preferred_host) - 1] = '\0';
+  }
   give_state_lock_();
 
   ::lune_touch::CommandRecord record{};
@@ -2157,7 +2178,8 @@ bool LuneTouchCoordinator::queue_setpoint_command(const char *room_id, float req
     final_record.result = ::lune_touch::CommandResult::BLOCKED_STALE;
     std::strncpy(final_record.reason, "blocked: node stale", sizeof(final_record.reason) - 1);
   } else {
-    const bool sent = send_v6_setpoint_command_(target_node, target_zone, record, ttl_s, &final_record);
+    const bool sent = send_v6_setpoint_command_(target_node, target_zone, record, ttl_s,
+                                                &final_record, preferred_host);
     if (!sent)
       final_record.result = ::lune_touch::CommandResult::FAILED;
   }
@@ -2205,6 +2227,7 @@ bool LuneTouchCoordinator::request_motor_action(const char *room_id, const char 
   uint8_t target_node_index = 0;
   uint8_t target_zone = 0;
   bool target_stale = true;
+  char preferred_host[64]{};
   if (!take_state_lock_(100)) {
     snprintf(response, capacity, "{\"result\":\"rejected\",\"error\":\"coordinator_busy\"}");
     return false;
@@ -2219,6 +2242,11 @@ bool LuneTouchCoordinator::request_motor_action(const char *room_id, const char 
   target_node_index = resolved.binding->node_index;
   target_zone = resolved.binding->zone_index;
   target_stale = model_.is_node_stale(target_node_index, now);
+  if (target_node_index < ::lune_touch::MAX_NODES) {
+    std::strncpy(preferred_host, node_last_success_host_[target_node_index],
+                 sizeof(preferred_host) - 1);
+    preferred_host[sizeof(preferred_host) - 1] = '\0';
+  }
   give_state_lock_();
 
   const bool is_mock_node = std::strcmp(target_node.firmware, "mock") == 0;
@@ -2238,13 +2266,20 @@ bool LuneTouchCoordinator::request_motor_action(const char *room_id, const char 
       result = "failed";
       error = "network_offline";
     } else {
-      const char *hosts[2]{};
+      const char *hosts[3]{};
       size_t host_count = 0;
-      if (target_node.hostname[0] != '\0')
-        hosts[host_count++] = target_node.hostname;
-      if (target_node.fallback_ip[0] != '\0' &&
-          (host_count == 0 || std::strcmp(target_node.fallback_ip, hosts[0]) != 0))
-        hosts[host_count++] = target_node.fallback_ip;
+      auto add_host = [&](const char *host) {
+        if (host == nullptr || host[0] == '\0' || host_count >= 3)
+          return;
+        for (size_t i = 0; i < host_count; i++) {
+          if (std::strcmp(hosts[i], host) == 0)
+            return;
+        }
+        hosts[host_count++] = host;
+      };
+      add_host(preferred_host);
+      add_host(target_node.hostname);
+      add_host(target_node.fallback_ip);
       if (host_count == 0) {
         result = "failed";
         error = "missing_host";

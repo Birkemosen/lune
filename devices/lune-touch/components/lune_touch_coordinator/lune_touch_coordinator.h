@@ -162,7 +162,8 @@ class LuneTouchCoordinator : public esphome::Component {
   ForecastDispatchSummary dispatch_forecast_commands_();
   bool send_v6_setpoint_command_(const ::lune_touch::PairedNode &node, uint8_t zone_index,
                                  const ::lune_touch::CommandRecord &request,
-                                 uint32_t ttl_s, ::lune_touch::CommandRecord *result);
+                                 uint32_t ttl_s, ::lune_touch::CommandRecord *result,
+                                 const char *preferred_host = nullptr);
   void url_encode_(const char *src, char *out, size_t out_len) const;
   void log_event_(const char *level, const char *source, const char *message);
 
