@@ -252,8 +252,8 @@ function commandNeedsAttention(command = {}) {
 
 function zoneCard(zone) {
   return `<article class="zone-card ${statusClass(zone.status)}">
-    <div class="zone-top"><strong>${zone.name}</strong><span>${fmtC(zone.temperature_c)}</span></div>
-    <div class="zone-bottom"><span>Set ${fmtC(zone.setpoint_c)}</span><span>${fmtValue(zone.valve_pct, '%')}</span><span>${zone.status}</span><span>${v6Name(zone.node_index)}</span></div>
+    <div class="zone-top"><strong>${esc(zone.name)}</strong><span>${fmtC(zone.temperature_c)}</span></div>
+    <div class="zone-bottom"><span>Set ${fmtC(zone.setpoint_c)}</span><span>${fmtValue(zone.valve_pct, '%')}</span><span>${esc(zone.status)}</span><span>${v6Name(zone.node_index)}</span></div>
   </article>`;
 }
 
@@ -329,10 +329,10 @@ export function renderZones() {
     <div class="data-table">
       <div class="tr head zones"><span>Room</span><span>Current</span><span>Comfort</span><span>Schedule</span><span>Status</span><span>Source</span><span>Valve</span><span>Learning</span><span>Command</span></div>
       ${state.zones.map((z) => `<div class="tr">
-        <span>${z.name}</span><span>${fmtC(z.temperature_c)}</span><span>${fmtComfortIntent(z.comfort, z.setpoint_c)}</span><span>${fmtSchedule(z.schedule)}</span><span class="${statusClass(z.status)}">${z.status}</span><span>${v6Name(z.node_index)} / Z${Number(z.zone_index) + 1}</span>
+        <span class="room-tools"><button class="btn slim" data-edit-room="${esc(z.room_id)}">Edit</button><span>${esc(z.name)}</span></span><span>${fmtC(z.temperature_c)}</span><span>${fmtComfortIntent(z.comfort, z.setpoint_c)}</span><span>${fmtSchedule(z.schedule)}</span><span class="${statusClass(z.status)}">${esc(z.status)}</span><span>${v6Name(z.node_index)} / Z${Number(z.zone_index) + 1}</span>
         <span>${fmtValue(z.valve_pct, '%')}</span>
         <span>${fmtLearning(z.history)}<small class="resolver-note">${fmtThermal(z.thermal_model)}</small></span>
-        <span><button class="btn slim" data-command-room="${z.room_id}">+0.5 C / 45m</button><small class="resolver-note">${fmtResolver(z.resolver)}</small></span>
+        <span><button class="btn slim" data-command-room="${esc(z.room_id)}">+0.5 C / 45m</button><small class="resolver-note">${esc(fmtResolver(z.resolver))}</small></span>
       </div>`).join('')}
     </div>
   </section>`;
@@ -593,6 +593,31 @@ export function bindActions(root) {
   root.querySelector('[data-action="refresh"]')?.addEventListener('click', () => runAction(refreshAll));
   root.querySelectorAll('[data-discard-section]').forEach((btn) => {
     btn.addEventListener('click', () => runAction(() => refreshSection(btn.dataset.discardSection)));
+  });
+  root.querySelectorAll('[data-edit-room]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const zone = state.zones.find((candidate) => candidate.room_id === btn.dataset.editRoom);
+      if (!zone) return;
+      const setValue = (selector, value) => {
+        const input = root.querySelector(selector);
+        if (input) input.value = value ?? '';
+      };
+      setValue('#map-room-id', zone.room_id);
+      setValue('#map-room-name', zone.name || zone.room_id);
+      setValue('#map-node', Number(zone.node_index || 0));
+      setValue('#map-zone', Number(zone.zone_index || 0) + 1);
+      setValue('#comfort-room-id', zone.room_id);
+      setValue('#comfort-setpoint', Number(zone.comfort?.setpoint_c ?? zone.setpoint_c ?? 21).toFixed(1));
+      setValue('#comfort-bias', Number(zone.comfort?.bias_c || 0).toFixed(1));
+      setValue('#comfort-priority', Number(zone.comfort?.priority ?? 1));
+      setValue('#schedule-room-id', zone.room_id);
+      setValue('#schedule-start', fmtClock(zone.schedule?.start_min ?? 360));
+      setValue('#schedule-end', fmtClock(zone.schedule?.end_min ?? 1320));
+      setValue('#schedule-setpoint', Number(zone.schedule?.setpoint_c ?? zone.comfort?.setpoint_c ?? 21).toFixed(1));
+      setValue('#schedule-day-mask', Number(zone.schedule?.day_mask || 127));
+      const enabled = root.querySelector('#schedule-enabled');
+      if (enabled) enabled.checked = zone.schedule?.enabled !== false;
+    });
   });
   root.querySelector('[data-action="scan"]')?.addEventListener('click', () => runAction(() => api.scanNodes().then((result) => {
     patch({ scanResult: result });
