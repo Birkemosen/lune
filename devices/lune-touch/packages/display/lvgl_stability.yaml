@@ -104,6 +104,14 @@ text_sensor:
             id: header_status_label
             text: !lambda |-
               return x.c_str();
+        - lvgl.label.update:
+            id: touch_zone_registry_label
+            text: !lambda |-
+              return x.c_str();
+        - lvgl.label.update:
+            id: touch_manifold_health_label
+            text: !lambda |-
+              return x.c_str();
   - platform: template
     id: touch_forecast_summary_text
     internal: true
@@ -126,6 +134,10 @@ text_sensor:
       then:
         - lvgl.label.update:
             id: house_event_label
+            text: !lambda |-
+              return x.c_str();
+        - lvgl.label.update:
+            id: touch_diagnostics_command_label
             text: !lambda |-
               return x.c_str();
 
@@ -1345,12 +1357,12 @@ lvgl:
                     scrollable: false
                     widgets:
                       - label:
-                          id: touch_weather_cache_label
+                          id: touch_zone_registry_label
                           x: 22
                           y: 20
                           width: 780
                           height: 26
-                          text: "Room-to-zone map"
+                          text: "0z / ready 0/0 / stale 0 / call 0"
                           text_color: 0xD9DEE3
                           text_font: montserrat_18
                       - label:
@@ -1390,7 +1402,7 @@ lvgl:
                           y: 326
                           width: 780
                           height: 26
-                          text: "Touch commands are still disabled; this page is read-only."
+                          text: "Use the web dashboard to apply or discard zone mapping, comfort, and schedule changes."
                           text_color: 0xAAB4BF
                           text_font: montserrat_16
           - obj:
@@ -1437,11 +1449,12 @@ lvgl:
                           text_color: 0xD9DEE3
                           text_font: montserrat_18
                       - label:
+                          id: touch_manifold_health_label
                           x: 22
                           y: 72
                           width: 356
                           height: 28
-                          text: "Fresh 12 s    3 / 6 valves open"
+                          text: "0z / ready 0/0 / stale 0 / call 0"
                           text_color: 0x7FD6A5
                           text_font: montserrat_18
                       - label:
@@ -1540,11 +1553,12 @@ lvgl:
                     scrollable: false
                     widgets:
                       - label:
+                          id: touch_weather_cache_label
                           x: 22
                           y: 20
                           width: 780
                           height: 32
-                          text: "Forecast cache: auto-refresh enabled"
+                          text: "forecast waiting for cache"
                           text_color: 0xE3C16F
                           text_font: montserrat_20
                       - label:
@@ -1631,11 +1645,12 @@ lvgl:
                           text_color: 0xD9DEE3
                           text_font: montserrat_18
                       - label:
+                          id: touch_diagnostics_command_label
                           x: 22
                           y: 132
                           width: 780
                           height: 30
-                          text: "Commands: local UI is read-only; web dashboard sends JSON writes"
+                          text: "0 accepted / 0 failed / 0 rejected / 0 blocked"
                           text_color: 0xE3C16F
                           text_font: montserrat_18
                       - button:
