@@ -323,6 +323,8 @@ export function renderManifolds() {
     <div class="card-grid">${state.nodes.map((n) => {
       const h = n.health || {};
       const r = n.runtime || {};
+      const nodeIndex = state.nodes.findIndex((node) => node.id === n.id);
+      const recoveryZone = state.zones.find((zone) => Number(zone.node_index) === nodeIndex && zone.room_id);
       return `<article class="card">
       <h3>${n.id}</h3><p>${n.hostname || n.ip || 'no address'}</p>
       <div class="health-grid">
@@ -341,6 +343,7 @@ export function renderManifolds() {
       </div>
       <dl><dt>Firmware</dt><dd>${n.firmware || '-'}</dd><dt>Status</dt><dd class="${n.reachable ? 'ok' : 'warn'}">${n.reachable ? 'reachable' : 'stale'}</dd><dt>Identity</dt><dd>${esc(n.pairing_fingerprint || '-')}</dd><dt>Last host</dt><dd>${esc(n.last_success_host || '-')}</dd><dt>Last error</dt><dd class="${n.last_failure ? 'warn' : 'muted'}">${esc(n.last_failure || '-')}</dd></dl>
       <div class="inline-form">
+        ${r.motor_fault && recoveryZone ? `<button class="btn slim danger" data-motor-action="reset_fault" data-motor-room="${esc(recoveryZone.room_id)}">Reset fault</button>` : ''}
         <button class="btn slim" data-trust-node="${n.id}" data-trust-value="trusted">Trust</button>
         <button class="btn slim" data-trust-node="${n.id}" data-trust-value="paired">Pair only</button>
         <button class="btn slim danger" data-remove-node="${n.id}">Remove</button>
@@ -664,7 +667,7 @@ export function bindActions(root) {
   });
   root.querySelectorAll('[data-motor-action]').forEach((btn) => {
     btn.addEventListener('click', () => {
-      const roomId = root.querySelector('#recovery-room')?.value;
+      const roomId = btn.dataset.motorRoom || root.querySelector('#recovery-room')?.value;
       if (!roomId) return;
       const action = btn.dataset.motorAction;
       if (confirm(`${btn.textContent.trim()} for ${roomId}?`)) {
