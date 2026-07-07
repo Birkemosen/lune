@@ -661,6 +661,26 @@ void LuneTouchDashboard::handle_v1_post_(ApiRequest &api, const char *path) {
                                                           static_cast<uint16_t>(end_min),
                                                           setpoint, data_buf_, sizeof(data_buf_));
     send_write_result_(api, accepted, 400);
+  } else if (strstr(path, "/forecast-profile") != nullptr) {
+    char room_id[40]{};
+    if (!extract_middle_segment(path, "/zones/", "/forecast-profile", room_id, sizeof(room_id))) {
+      send_error_(api, 404, "unknown_route", "Unknown zone forecast profile route");
+      return;
+    }
+    uint32_t exterior_walls = 0;
+    uint32_t thermal_lead_h = 4;
+    float wind_exposure = 0.5f;
+    float solar_gain = 0.3f;
+    float max_offset_c = 1.5f;
+    parse_uint_param(api, api.json_body, "exterior_walls", &exterior_walls);
+    parse_uint_param(api, api.json_body, "thermal_lead_h", &thermal_lead_h);
+    parse_float_param(api, api.json_body, "wind_exposure", &wind_exposure);
+    parse_float_param(api, api.json_body, "solar_gain", &solar_gain);
+    parse_float_param(api, api.json_body, "max_offset_c", &max_offset_c);
+    const bool accepted = coordinator_->set_zone_forecast_profile(
+        room_id, static_cast<uint8_t>(exterior_walls), wind_exposure, solar_gain,
+        static_cast<uint8_t>(thermal_lead_h), max_offset_c, data_buf_, sizeof(data_buf_));
+    send_write_result_(api, accepted, 400);
   } else if (strstr(path, "/comfort") != nullptr) {
     char room_id[40]{};
     if (!extract_middle_segment(path, "/zones/", "/comfort", room_id, sizeof(room_id))) {

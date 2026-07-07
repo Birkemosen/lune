@@ -431,6 +431,25 @@ paths layered on top of that base.
 `day_mask` uses bit 0 for Monday through bit 6 for Sunday. `start_min` and
 `end_min` are local minutes after midnight, with `end_min` allowed to be `1440`.
 
+### `POST /zones/{room_id}/forecast-profile`
+
+Stores Touch-owned per-room weather exposure inputs used by forecast preload:
+
+```json
+{
+  "exterior_walls": 5,
+  "wind_exposure": 0.8,
+  "solar_gain": 0.2,
+  "thermal_lead_h": 8,
+  "max_offset_c": 1.25
+}
+```
+
+`exterior_walls` is a bitmask for north/east/south/west walls (`1|2|4|8`).
+`wind_exposure` and `solar_gain` are clamped to `0..1`, `thermal_lead_h` to
+`1..24`, and `max_offset_c` to `0..5`. Saving the profile recomputes current
+forecast decisions and persists the zone registry.
+
 ### `POST /zones/{room_id}/setpoint-command`
 
 ```json

@@ -340,6 +340,16 @@ export function renderZones() {
       <button class="btn" data-action="save-schedule">Apply</button>
       <button class="btn" data-discard-section="zones">Discard</button>
     </div>
+    <div class="inline-form">
+      <input class="input mini-input" id="forecast-room-id" placeholder="room-id">
+      <input class="input mini-input" id="forecast-walls" type="number" min="0" max="15" value="0" title="N/E/S/W bitmask">
+      <input class="input mini-input" id="forecast-wind" type="number" step="0.05" min="0" max="1" value="0.50">
+      <input class="input mini-input" id="forecast-solar" type="number" step="0.05" min="0" max="1" value="0.30">
+      <input class="input mini-input" id="forecast-lead" type="number" min="1" max="24" value="4">
+      <input class="input mini-input" id="forecast-max-offset" type="number" step="0.1" min="0" max="5" value="1.5">
+      <button class="btn" data-action="save-forecast-profile">Apply</button>
+      <button class="btn" data-discard-section="zones">Discard</button>
+    </div>
     <div class="data-table">
       <div class="tr head zones"><span>Room</span><span>Current</span><span>Comfort</span><span>Schedule</span><span>Status</span><span>Source</span><span>Valve</span><span>Learning</span><span>Command</span></div>
       ${state.zones.map((z) => `<div class="tr">
@@ -632,6 +642,12 @@ export function bindActions(root) {
       setValue('#schedule-day-mask', Number(zone.schedule?.day_mask || 127));
       const enabled = root.querySelector('#schedule-enabled');
       if (enabled) enabled.checked = zone.schedule?.enabled !== false;
+      setValue('#forecast-room-id', zone.room_id);
+      setValue('#forecast-walls', Number(zone.forecast?.exterior_walls || 0));
+      setValue('#forecast-wind', Number(zone.forecast?.wind_exposure ?? 0.5).toFixed(2));
+      setValue('#forecast-solar', Number(zone.forecast?.solar_gain ?? 0.3).toFixed(2));
+      setValue('#forecast-lead', Number(zone.forecast?.thermal_lead_h || 4));
+      setValue('#forecast-max-offset', Number(zone.forecast?.max_offset_c ?? 1.5).toFixed(1));
     });
   });
   root.querySelector('[data-action="scan"]')?.addEventListener('click', () => runAction(() => api.scanNodes().then((result) => {
@@ -714,6 +730,18 @@ export function bindActions(root) {
     const enabled = root.querySelector('#schedule-enabled')?.checked ? 1 : 0;
     if (roomId && Number.isFinite(setpoint)) {
       runAction(() => api.saveSchedule(roomId, { enabled, day_mask: dayMask, start_min: startMin, end_min: endMin, setpoint_c: setpoint }).then(refreshAll));
+    }
+  });
+  root.querySelector('[data-action="save-forecast-profile"]')?.addEventListener('click', () => {
+    const roomId = root.querySelector('#forecast-room-id')?.value?.trim();
+    const exterior_walls = Number(root.querySelector('#forecast-walls')?.value || 0);
+    const wind_exposure = Number(root.querySelector('#forecast-wind')?.value);
+    const solar_gain = Number(root.querySelector('#forecast-solar')?.value);
+    const thermal_lead_h = Number(root.querySelector('#forecast-lead')?.value || 4);
+    const max_offset_c = Number(root.querySelector('#forecast-max-offset')?.value);
+    if (roomId && Number.isFinite(exterior_walls) && Number.isFinite(wind_exposure) &&
+        Number.isFinite(solar_gain) && Number.isFinite(thermal_lead_h) && Number.isFinite(max_offset_c)) {
+      runAction(() => api.saveForecastProfile(roomId, { exterior_walls, wind_exposure, solar_gain, thermal_lead_h, max_offset_c }).then(refreshAll));
     }
   });
   root.querySelectorAll('[data-remove-node]').forEach((btn) => {

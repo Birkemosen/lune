@@ -396,6 +396,17 @@ static void test_zone_forecast_profile() {
              living.binding->wind_exposure == 1.0f && living.binding->solar_gain == 0.0f &&
              living.binding->thermal_lead_h == 24 && living.binding->max_offset_c == 5.0f,
          "forecast profile: clamped values stored");
+  expect(model.update_zone_forecast_profile("living", 0x03, 0.35f, 0.65f, 6, 1.1f),
+         "forecast profile: update mapped room");
+  living = model.resolve_room("living");
+  expect(living.binding != nullptr && living.binding->exterior_walls == 0x03 &&
+             living.binding->wind_exposure > 0.34f && living.binding->wind_exposure < 0.36f &&
+             living.binding->solar_gain > 0.64f && living.binding->solar_gain < 0.66f &&
+             living.binding->thermal_lead_h == 6 && living.binding->max_offset_c > 1.09f &&
+             living.binding->max_offset_c < 1.11f,
+         "forecast profile: room update stored");
+  expect(!model.update_zone_forecast_profile("missing", 0x01, 0.5f, 0.3f, 4, 1.0f),
+         "forecast profile: reject missing room");
   expect(!model.update_zone_forecast_profile_by_binding(2, 0, 0, 0.5f, 0.3f, 4, 1.0f),
          "forecast profile: reject missing node");
 }

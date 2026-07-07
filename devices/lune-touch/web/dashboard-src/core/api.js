@@ -232,6 +232,7 @@ export const api = {
   saveZone: (roomId, data) => post(`/zones/${encodeURIComponent(roomId)}`, data),
   saveComfort: (roomId, data) => post(`/zones/${encodeURIComponent(roomId)}/comfort`, data),
   saveSchedule: (roomId, data) => post(`/zones/${encodeURIComponent(roomId)}/schedule`, data),
+  saveForecastProfile: (roomId, data) => post(`/zones/${encodeURIComponent(roomId)}/forecast-profile`, data),
   setpointCommand: (roomId, data) => post(`/zones/${encodeURIComponent(roomId)}/setpoint-command`, data),
   motorAction: (roomId, data) => post(`/zones/${encodeURIComponent(roomId)}/motor-action`, data),
   saveForecast: (data) => post('/forecast/settings', data),

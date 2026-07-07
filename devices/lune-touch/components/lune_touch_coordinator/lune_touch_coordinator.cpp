@@ -2005,6 +2005,36 @@ bool LuneTouchCoordinator::set_zone_schedule(const char *room_id, bool enabled, 
   return true;
 }
 
+bool LuneTouchCoordinator::set_zone_forecast_profile(const char *room_id, uint8_t exterior_walls,
+                                                     float wind_exposure, float solar_gain,
+                                                     uint8_t thermal_lead_h, float max_offset_c,
+                                                     char *response, size_t capacity) {
+  if (!std::isfinite(wind_exposure) || !std::isfinite(solar_gain) || !std::isfinite(max_offset_c)) {
+    snprintf(response, capacity, "{\"result\":\"rejected\",\"error\":\"invalid_forecast_profile\"}");
+    return false;
+  }
+  if (!model_.update_zone_forecast_profile(room_id, exterior_walls, wind_exposure, solar_gain,
+                                           thermal_lead_h, max_offset_c)) {
+    snprintf(response, capacity, "{\"result\":\"rejected\",\"error\":\"room_not_mapped\"}");
+    return false;
+  }
+  recompute_forecast_decisions_();
+  save_registry_();
+  const auto resolved = model_.resolve_room(room_id);
+  const auto *zone = resolved.binding;
+  snprintf(response, capacity,
+           "{\"result\":\"stored\",\"room_id\":\"%s\",\"forecast\":{\"exterior_walls\":%u,"
+           "\"wind_exposure\":%.2f,\"solar_gain\":%.2f,\"thermal_lead_h\":%u,"
+           "\"max_offset_c\":%.2f}}",
+           room_id != nullptr ? room_id : "",
+           static_cast<unsigned>(zone != nullptr ? zone->exterior_walls : (exterior_walls & 0x0F)),
+           zone != nullptr ? zone->wind_exposure : wind_exposure,
+           zone != nullptr ? zone->solar_gain : solar_gain,
+           static_cast<unsigned>(zone != nullptr ? zone->thermal_lead_h : thermal_lead_h),
+           zone != nullptr ? zone->max_offset_c : max_offset_c);
+  return true;
+}
+
 bool LuneTouchCoordinator::queue_setpoint_command(const char *room_id, float requested_offset_c, uint32_t ttl_s,
                                                   const char *reason, char *response, size_t capacity) {
   if (!std::isfinite(requested_offset_c)) {

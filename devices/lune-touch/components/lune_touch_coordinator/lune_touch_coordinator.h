@@ -107,6 +107,10 @@ class LuneTouchCoordinator : public esphome::Component {
   bool set_zone_schedule(const char *room_id, bool enabled, uint8_t day_mask,
                          uint16_t start_min, uint16_t end_min, float setpoint_c,
                          char *response, size_t capacity);
+  bool set_zone_forecast_profile(const char *room_id, uint8_t exterior_walls,
+                                 float wind_exposure, float solar_gain,
+                                 uint8_t thermal_lead_h, float max_offset_c,
+                                 char *response, size_t capacity);
   bool queue_setpoint_command(const char *room_id, float requested_offset_c, uint32_t ttl_s,
                               const char *reason, char *response, size_t capacity);
   bool request_motor_action(const char *room_id, const char *action, char *response, size_t capacity);

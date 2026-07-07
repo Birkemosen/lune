@@ -218,6 +218,21 @@ bool HouseModel::update_zone_forecast_profile_by_binding(size_t node_index, size
   return false;
 }
 
+bool HouseModel::update_zone_forecast_profile(const char *room_id, uint8_t exterior_walls,
+                                              float wind_exposure, float solar_gain,
+                                              uint8_t thermal_lead_h, float max_offset_c) {
+  if (room_id == nullptr || room_id[0] == '\0')
+    return false;
+  for (size_t i = 0; i < zone_count_; i++) {
+    if (!same_text_(zones_[i].room_id, room_id))
+      continue;
+    return update_zone_forecast_profile_by_binding(zones_[i].node_index, zones_[i].zone_index,
+                                                   exterior_walls, wind_exposure, solar_gain,
+                                                   thermal_lead_h, max_offset_c);
+  }
+  return false;
+}
+
 bool HouseModel::update_zone_comfort(const char *room_id, float comfort_setpoint_c, uint8_t priority,
                                      float comfort_bias_c) {
   if (room_id == nullptr || room_id[0] == '\0')

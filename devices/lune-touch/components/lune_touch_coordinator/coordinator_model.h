@@ -200,6 +200,9 @@ class HouseModel {
                                                uint8_t exterior_walls, float wind_exposure,
                                                float solar_gain, uint8_t thermal_lead_h,
                                                float max_offset_c);
+  bool update_zone_forecast_profile(const char *room_id, uint8_t exterior_walls,
+                                    float wind_exposure, float solar_gain,
+                                    uint8_t thermal_lead_h, float max_offset_c);
   bool update_zone_comfort(const char *room_id, float comfort_setpoint_c, uint8_t priority,
                            float comfort_bias_c = 0.0f);
   bool update_zone_schedule(const char *room_id, bool enabled, uint8_t day_mask,
