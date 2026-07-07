@@ -2405,14 +2405,26 @@ std::string LuneTouchCoordinator::house_summary_text() const {
     return "coordinator busy";
   const uint32_t now = esphome::millis();
   size_t stale_nodes = 0;
+  size_t trusted_nodes = 0;
+  size_t ready_trusted_nodes = 0;
   for (size_t i = 0; i < model_.node_count(); i++) {
-    if (model_.is_node_stale(i, now))
+    const auto *node = model_.node(i);
+    if (node == nullptr)
+      continue;
+    const bool stale = model_.is_node_stale(i, now);
+    if (stale)
       stale_nodes++;
+    if (node->trust == ::lune_touch::NodeTrust::TRUSTED) {
+      trusted_nodes++;
+      if (node->reachable && !stale)
+        ready_trusted_nodes++;
+    }
   }
   char buffer[96];
-  snprintf(buffer, sizeof(buffer), "%u zones / %u nodes / %u stale / %u calling",
+  snprintf(buffer, sizeof(buffer), "%uz / ready %u/%u / stale %u / call %u",
            static_cast<unsigned>(model_.active_zone_count()),
-           static_cast<unsigned>(model_.node_count()),
+           static_cast<unsigned>(ready_trusted_nodes),
+           static_cast<unsigned>(trusted_nodes),
            static_cast<unsigned>(stale_nodes),
            static_cast<unsigned>(model_.calling_zone_count()));
   give_state_lock_();

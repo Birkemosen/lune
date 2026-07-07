@@ -1758,7 +1758,7 @@ lvgl:
                     y: 17
                     width: 360
                     height: 24
-                    text: "House console"
+                    text: "0z / ready 0/0 / stale 0 / call 0"
                     text_color: 0x9CA8B3
                     text_font: montserrat_16
                 - label:
