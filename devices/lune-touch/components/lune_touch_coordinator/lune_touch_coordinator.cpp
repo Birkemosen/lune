@@ -1260,8 +1260,14 @@ bool LuneTouchCoordinator::send_v6_setpoint_command_(const ::lune_touch::PairedN
   if (!esphome::network::is_connected())
     return false;
 
-  const char *host = node.hostname[0] != '\0' ? node.hostname : node.fallback_ip;
-  if (host == nullptr || host[0] == '\0')
+  const char *hosts[2]{};
+  size_t host_count = 0;
+  if (node.hostname[0] != '\0')
+    hosts[host_count++] = node.hostname;
+  if (node.fallback_ip[0] != '\0' &&
+      (host_count == 0 || std::strcmp(node.fallback_ip, hosts[0]) != 0))
+    hosts[host_count++] = node.fallback_ip;
+  if (host_count == 0)
     return false;
 
   char request_id[64];
@@ -1271,10 +1277,6 @@ bool LuneTouchCoordinator::send_v6_setpoint_command_(const ::lune_touch::PairedN
   json_escape_("lune-touch", source, sizeof(source));
   json_escape_(request.reason, reason, sizeof(reason));
 
-  char url[320];
-  snprintf(url, sizeof(url), "http://%s/api/hv6/v1/zones/%u/setpoint-command",
-           host, static_cast<unsigned>(zone_index + 1));
-
   char payload[320];
   snprintf(payload, sizeof(payload),
            "{\"request_id\":\"%s\",\"source\":\"%s\",\"reason\":\"%s\","
@@ -1282,33 +1284,45 @@ bool LuneTouchCoordinator::send_v6_setpoint_command_(const ::lune_touch::PairedN
            request_id, source, reason, request.requested_offset_c,
            static_cast<unsigned long>(ttl_s));
 
-  char body[512];
-  int status = 0;
-  if (!post_json_(url, payload, body, sizeof(body), &status))
-    return false;
+  for (size_t i = 0; i < host_count; i++) {
+    char url[320];
+    snprintf(url, sizeof(url), "http://%s/api/hv6/v1/zones/%u/setpoint-command",
+             hosts[i], static_cast<unsigned>(zone_index + 1));
 
-  JsonDocument doc;
-  DeserializationError err = deserializeJson(doc, body);
-  if (err)
-    return false;
+    char body[512];
+    int status = 0;
+    if (!post_json_(url, payload, body, sizeof(body), &status)) {
+      ESP_LOGD(TAG, "V6 setpoint command failed via %s (%d)", hosts[i], status);
+      continue;
+    }
 
-  JsonVariant data = doc["data"];
-  const char *result_name = data["result"] | nullptr;
-  if (result_name == nullptr)
-    result_name = doc["result"] | "";
-  const bool accepted = std::strcmp(result_name, "accepted") == 0 || doc["ok"] == true;
-  result->result = accepted ? ::lune_touch::CommandResult::ACCEPTED : ::lune_touch::CommandResult::REJECTED;
-  if (!data["accepted_offset_c"].isNull())
-    result->accepted_offset_c = data["accepted_offset_c"] | request.requested_offset_c;
-  else if (!data["requested_offset_c"].isNull())
-    result->accepted_offset_c = data["requested_offset_c"] | request.requested_offset_c;
-  else
-    result->accepted_offset_c = request.requested_offset_c;
-  result->clamp_applied = data["clamp_applied"] | false;
-  const uint32_t expires_at = data["expires_at_ms"] | 0UL;
-  if (expires_at != 0)
-    result->expires_at_ms = expires_at;
-  return true;
+    JsonDocument doc;
+    DeserializationError err = deserializeJson(doc, body);
+    if (err) {
+      ESP_LOGW(TAG, "V6 setpoint command JSON parse failed via %s: %s", hosts[i], err.c_str());
+      continue;
+    }
+
+    JsonVariant data = doc["data"];
+    const char *result_name = data["result"] | nullptr;
+    if (result_name == nullptr)
+      result_name = doc["result"] | "";
+    const bool accepted = std::strcmp(result_name, "accepted") == 0 ||
+                          (result_name[0] == '\0' && doc["ok"] == true);
+    result->result = accepted ? ::lune_touch::CommandResult::ACCEPTED : ::lune_touch::CommandResult::REJECTED;
+    if (!data["accepted_offset_c"].isNull())
+      result->accepted_offset_c = data["accepted_offset_c"] | request.requested_offset_c;
+    else if (!data["requested_offset_c"].isNull())
+      result->accepted_offset_c = data["requested_offset_c"] | request.requested_offset_c;
+    else
+      result->accepted_offset_c = request.requested_offset_c;
+    result->clamp_applied = data["clamp_applied"] | false;
+    const uint32_t expires_at = data["expires_at_ms"] | 0UL;
+    if (expires_at != 0)
+      result->expires_at_ms = expires_at;
+    return true;
+  }
+  return false;
 }
 
 bool LuneTouchCoordinator::load_registry_() {
@@ -2207,28 +2221,44 @@ bool LuneTouchCoordinator::request_motor_action(const char *room_id, const char 
       result = "failed";
       error = "network_offline";
     } else {
-      const char *host = target_node.hostname[0] != '\0' ? target_node.hostname : target_node.fallback_ip;
-      if (host == nullptr || host[0] == '\0') {
+      const char *hosts[2]{};
+      size_t host_count = 0;
+      if (target_node.hostname[0] != '\0')
+        hosts[host_count++] = target_node.hostname;
+      if (target_node.fallback_ip[0] != '\0' &&
+          (host_count == 0 || std::strcmp(target_node.fallback_ip, hosts[0]) != 0))
+        hosts[host_count++] = target_node.fallback_ip;
+      if (host_count == 0) {
         result = "failed";
         error = "missing_host";
       } else {
-        char url[288];
-        snprintf(url, sizeof(url), "http://%s/api/hv6/v1/commands", host);
         char payload[128];
         snprintf(payload, sizeof(payload), "{\"command\":\"%s\",\"zone\":%u}",
                  v6_command, static_cast<unsigned>(target_zone + 1));
-        char body[384];
-        int status = 0;
-        if (!post_json_(url, payload, body, sizeof(body), &status)) {
-          result = "failed";
-          error = "post_failed";
-        } else {
+        bool accepted = false;
+        bool rejected = false;
+        for (size_t i = 0; i < host_count; i++) {
+          char url[288];
+          snprintf(url, sizeof(url), "http://%s/api/hv6/v1/commands", hosts[i]);
+          char body[384];
+          int status = 0;
+          if (!post_json_(url, payload, body, sizeof(body), &status)) {
+            ESP_LOGD(TAG, "V6 motor command failed via %s (%d)", hosts[i], status);
+            continue;
+          }
           JsonDocument doc;
           const DeserializationError err = deserializeJson(doc, body);
           if (err || doc["ok"] == false) {
-            result = "failed";
-            error = "v6_rejected";
+            rejected = true;
+            ESP_LOGW(TAG, "V6 motor command rejected via %s", hosts[i]);
+            continue;
           }
+          accepted = true;
+          break;
+        }
+        if (!accepted) {
+          result = "failed";
+          error = rejected ? "v6_rejected" : "post_failed";
         }
       }
     }
