@@ -261,6 +261,11 @@ valve state still resets on reboot; history survives registry import/export:
     "heat_gain_c_per_h": 0.42,
     "cool_loss_c_per_h": 0.18,
     "confidence": 0.5
+  },
+  "forecast": {
+    "thermal_lead_h": 4,
+    "learned_thermal_lead_h": 3,
+    "active_thermal_lead_h": 4
   }
 }
 ```
@@ -269,7 +274,11 @@ valve state still resets on reboot; history survives registry import/export:
 the room schedule is active, `effective_source` is `schedule`; otherwise it is
 `comfort`. The stored comfort bias is applied in both cases. `thermal_model`
 contains Touch-learned, persisted coefficients derived from fresh temperature
-history; it is observational and does not yet override local V6 safety behavior.
+history. `forecast.learned_thermal_lead_h` is derived from the learned heat-gain
+rate after enough samples exist; `active_thermal_lead_h` is the larger of the
+configured and learned lead. This can extend weather preload for slow zones, but
+it never shortens the configured lead and still sends only expiring V6-clamped
+commands.
 
 `resolver` is the read-only ordering view used by the dashboard for field
 debugging. It starts with the comfort/schedule base, then chooses an active
@@ -536,7 +545,17 @@ accepted response.
   "cache": {
     "hours": 72,
     "restored": false
-  }
+  },
+  "decisions": [
+    {
+      "room_id": "living",
+      "offset_c": 0.4,
+      "peak_in_h": 8,
+      "configured_thermal_lead_h": 4,
+      "learned_thermal_lead_h": 9,
+      "active_thermal_lead_h": 9
+    }
+  ]
 }
 ```
 

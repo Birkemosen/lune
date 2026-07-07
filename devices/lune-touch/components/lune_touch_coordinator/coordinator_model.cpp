@@ -397,6 +397,26 @@ bool HouseModel::scheduled_comfort_setpoint_c(const ZoneBinding &zone, uint8_t d
   return true;
 }
 
+uint8_t HouseModel::learned_thermal_lead_h(const ZoneBinding &zone) {
+  if (zone.thermal_samples < 6 || !std::isfinite(zone.learned_heat_gain_c_per_h) ||
+      zone.learned_heat_gain_c_per_h < 0.05f)
+    return 0;
+
+  const float hours_to_gain_1c = std::ceil(1.0f / zone.learned_heat_gain_c_per_h);
+  if (!std::isfinite(hours_to_gain_1c) || hours_to_gain_1c < 1.0f)
+    return 1;
+  if (hours_to_gain_1c > 24.0f)
+    return 24;
+  return static_cast<uint8_t>(hours_to_gain_1c);
+}
+
+uint8_t HouseModel::active_thermal_lead_h(const ZoneBinding &zone) {
+  const uint8_t configured = zone.thermal_lead_h == 0 ? 4 : zone.thermal_lead_h;
+  const uint8_t learned = learned_thermal_lead_h(zone);
+  const uint8_t active = learned > configured ? learned : configured;
+  return active > 24 ? 24 : active;
+}
+
 StrategySnapshot HouseModel::strategy_snapshot() const {
   return strategy_snapshot(false, 0, 0);
 }

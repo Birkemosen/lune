@@ -290,6 +290,40 @@ static void test_zone_live_state() {
   expect(living_binding != nullptr && living_binding->thermal_samples == 3 &&
              living_binding->learned_heat_gain_c_per_h > 0.9f,
          "thermal: learns heat gain rate");
+  expect(living_binding != nullptr &&
+             HouseModel::learned_thermal_lead_h(*living_binding) == 0 &&
+             HouseModel::active_thermal_lead_h(*living_binding) == living_binding->thermal_lead_h,
+         "thermal: waits for enough samples before lead tuning");
+
+  HouseModel slow_model;
+  slow_model.upsert_node("v6-slow", "slow.local", "", "lune-v6", "1.0", NodeTrust::TRUSTED);
+  slow_model.bind_zone("slow", "Slow slab", 0, 0);
+  slow_model.update_zone_forecast_profile("slow", 0x01, 0.8f, 0.2f, 4, 1.5f);
+  for (uint8_t i = 0; i < 7; i++) {
+    const uint32_t ts = static_cast<uint32_t>(i) * 3600000UL;
+    const float temp = 18.0f + static_cast<float>(i) * 0.12f;
+    slow_model.update_zone_live("slow", temp, true, 21.0f, true, "heat", true, ts);
+  }
+  const ZoneBinding *slow_binding = slow_model.zone(0);
+  expect(slow_binding != nullptr && HouseModel::learned_thermal_lead_h(*slow_binding) >= 8,
+         "thermal: slow learned heat gain extends lead");
+  expect(slow_binding != nullptr &&
+             HouseModel::active_thermal_lead_h(*slow_binding) >=
+                 HouseModel::learned_thermal_lead_h(*slow_binding),
+         "thermal: active lead includes learned lead");
+
+  HouseModel fast_model;
+  fast_model.upsert_node("v6-fast", "fast.local", "", "lune-v6", "1.0", NodeTrust::TRUSTED);
+  fast_model.bind_zone("fast", "Fast room", 0, 0);
+  fast_model.update_zone_forecast_profile("fast", 0x01, 0.8f, 0.2f, 10, 1.5f);
+  for (uint8_t i = 0; i < 7; i++) {
+    const uint32_t ts = static_cast<uint32_t>(i) * 3600000UL;
+    const float temp = 18.0f + static_cast<float>(i) * 1.2f;
+    fast_model.update_zone_live("fast", temp, true, 21.0f, true, "heat", true, ts);
+  }
+  const ZoneBinding *fast_binding = fast_model.zone(0);
+  expect(fast_binding != nullptr && HouseModel::active_thermal_lead_h(*fast_binding) == 10,
+         "thermal: learned lead never shortens configured lead");
 
   ResolvedZone living = model.resolve_room("living");
   expect(living.live != nullptr && living.live->has_temperature && living.live->temperature_c > 21.8f,

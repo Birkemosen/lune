@@ -30,6 +30,9 @@ struct ForecastDecisionState {
   float offset_c{0.0f};
   float peak_load{0.0f};
   int8_t peak_in_h{-1};
+  uint8_t configured_thermal_lead_h{4};
+  uint8_t learned_thermal_lead_h{0};
+  uint8_t active_thermal_lead_h{4};
   bool active{false};
 };
 

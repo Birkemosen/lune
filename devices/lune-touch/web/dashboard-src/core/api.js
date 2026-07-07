@@ -78,8 +78,8 @@ function mockData(path) {
     commands: { active: 2, sent: 1, skipped: 1, failed: 0, blocked_stale: 1, blocked_unreachable: 0, blocked_untrusted: 0 },
     hours,
     decisions: [
-      { room_id: 'room-01', name: 'Living', node_index: 0, zone_index: 0, comfort_setpoint_c: 21.5, priority: 3, offset_c: 0.4, peak_load: 1.8, peak_in_h: 3, active: true },
-      { room_id: 'room-06', name: 'Bedroom', node_index: 0, zone_index: 5, comfort_setpoint_c: 19.5, priority: 1, offset_c: 0.2, peak_load: 1.4, peak_in_h: 4, active: true },
+      { room_id: 'room-01', name: 'Living', node_index: 0, zone_index: 0, comfort_setpoint_c: 21.5, priority: 3, offset_c: 0.4, peak_load: 1.8, peak_in_h: 3, configured_thermal_lead_h: 4, learned_thermal_lead_h: 9, active_thermal_lead_h: 9, active: true },
+      { room_id: 'room-06', name: 'Bedroom', node_index: 0, zone_index: 5, comfort_setpoint_c: 19.5, priority: 1, offset_c: 0.2, peak_load: 1.4, peak_in_h: 4, configured_thermal_lead_h: 4, learned_thermal_lead_h: 0, active_thermal_lead_h: 4, active: true },
     ],
   };
   }

@@ -28,11 +28,15 @@ Lune V6 keeps validating and clamping the resulting commands locally.
    side scores 0. The per-zone `exterior_walls` bitmask (set in V6 zone settings and
    eventually mirrored into the coordinator zone registry) is what makes this directional.
 
-3. **Preload decision.** For each zone the model scans the next `thermal_lead_h` hours and
-   takes the peak load. Above `load_threshold` it issues a setpoint offset
-   `min(max_offset_c, (peak − threshold) × gain_c_per_load)`, so charging starts
-   `thermal_lead_h` before the storm — longer for high-mass floors (concrete ground floor
-   ≈ 8–12 h), shorter for the light first floor (≈ 2–3 h).
+3. **Preload decision.** For each zone the model scans the next active lead window and
+   takes the peak load. The active lead is the larger of the configured
+   `thermal_lead_h` and a learned lead derived from the observed heat gain rate once
+   enough fresh samples exist. Learning can therefore extend a slow slab's preload
+   window, but it never shortens the configured/manual safety profile. Above
+   `load_threshold` it issues a setpoint offset
+   `min(max_offset_c, (peak − threshold) × gain_c_per_load)`, so charging starts before
+   the storm — longer for high-mass floors (concrete ground floor ≈ 8–12 h), shorter
+   for the light first floor (≈ 2–3 h).
 
 4. **Apply.** Touch sends each active offset through the V6 expiring
    `setpoint-command` path, so every per-zone firmware safety clamp applies unchanged:

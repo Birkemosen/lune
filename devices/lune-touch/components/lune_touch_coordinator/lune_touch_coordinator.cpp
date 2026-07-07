@@ -1079,12 +1079,15 @@ void LuneTouchCoordinator::recompute_forecast_decisions_() {
                                                                        day_index, minute_of_day);
     out.comfort_setpoint_c = effective.setpoint_c;
     out.priority = zone->priority;
+    out.configured_thermal_lead_h = zone->thermal_lead_h;
+    out.learned_thermal_lead_h = ::lune_touch::HouseModel::learned_thermal_lead_h(*zone);
+    out.active_thermal_lead_h = ::lune_touch::HouseModel::active_thermal_lead_h(*zone);
     if (live == nullptr || !live->fresh)
       continue;
 
     const float indoor_ref_c = out.comfort_setpoint_c;
     const size_t last = std::min(static_cast<size_t>(forecast_hours_count_) - 1,
-                                 static_cast<size_t>(zone->thermal_lead_h));
+                                 static_cast<size_t>(out.active_thermal_lead_h));
     float peak_load = 0.0f;
     int8_t peak_in_h = -1;
     for (size_t h = 0; h <= last; h++) {
@@ -2902,6 +2905,8 @@ void LuneTouchCoordinator::write_zones_json(char *buffer, size_t capacity) const
         effective.setpoint_c + command_resolution.command_offset_c + learned_offset_c));
     const float thermal_confidence = zone->thermal_samples >= 24 ? 1.0f :
         static_cast<float>(zone->thermal_samples) / 24.0f;
+    const uint8_t learned_thermal_lead_h = ::lune_touch::HouseModel::learned_thermal_lead_h(*zone);
+    const uint8_t active_thermal_lead_h = ::lune_touch::HouseModel::active_thermal_lead_h(*zone);
     if (!appendf_(buffer, capacity, off,
                   "%s{\"room_id\":\"%s\",\"name\":\"%s\",\"node_index\":%u,\"zone_index\":%u,"
                   "\"temperature_c\":%s,\"setpoint_c\":%s,\"status\":\"%s\",\"fresh\":%s,"
@@ -2921,6 +2926,7 @@ void LuneTouchCoordinator::write_zones_json(char *buffer, size_t capacity) const
                   "\"cool_loss_c_per_h\":%.3f,\"confidence\":%.2f},"
                   "\"forecast\":{\"exterior_walls\":%u,"
                   "\"wind_exposure\":%.2f,\"solar_gain\":%.2f,\"thermal_lead_h\":%u,"
+                  "\"learned_thermal_lead_h\":%u,\"active_thermal_lead_h\":%u,"
                   "\"max_offset_c\":%.2f}}",
                   first ? "" : ",", zone->room_id, zone->room_name,
                   static_cast<unsigned>(zone->node_index), static_cast<unsigned>(zone->zone_index),
@@ -2955,6 +2961,8 @@ void LuneTouchCoordinator::write_zones_json(char *buffer, size_t capacity) const
                   thermal_confidence,
                   static_cast<unsigned>(zone->exterior_walls), zone->wind_exposure,
                   zone->solar_gain, static_cast<unsigned>(zone->thermal_lead_h),
+                  static_cast<unsigned>(learned_thermal_lead_h),
+                  static_cast<unsigned>(active_thermal_lead_h),
                   zone->max_offset_c))
       break;
     first = false;
@@ -3098,11 +3106,16 @@ void LuneTouchCoordinator::write_forecast_json(char *buffer, size_t capacity) co
     appendf_(buffer, capacity, off,
              "%s{\"room_id\":\"%s\",\"name\":\"%s\",\"node_index\":%u,\"zone_index\":%u,"
              "\"comfort_setpoint_c\":%.1f,\"priority\":%u,\"offset_c\":%.2f,"
-             "\"peak_load\":%.2f,\"peak_in_h\":%d,\"active\":%s}",
+             "\"peak_load\":%.2f,\"peak_in_h\":%d,\"configured_thermal_lead_h\":%u,"
+             "\"learned_thermal_lead_h\":%u,\"active_thermal_lead_h\":%u,\"active\":%s}",
              i ? "," : "", room_id, room_name, static_cast<unsigned>(d.node_index),
              static_cast<unsigned>(d.zone_index), d.comfort_setpoint_c,
              static_cast<unsigned>(d.priority), d.offset_c, d.peak_load,
-             static_cast<int>(d.peak_in_h), d.active ? "true" : "false");
+             static_cast<int>(d.peak_in_h),
+             static_cast<unsigned>(d.configured_thermal_lead_h),
+             static_cast<unsigned>(d.learned_thermal_lead_h),
+             static_cast<unsigned>(d.active_thermal_lead_h),
+             d.active ? "true" : "false");
   }
   appendf_(buffer, capacity, off, "]}");
 }

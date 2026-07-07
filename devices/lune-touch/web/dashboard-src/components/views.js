@@ -94,6 +94,12 @@ const fmtResolver = (resolver = {}) => {
   if (source === 'none' || Math.abs(offset) < 0.01) return `target ${fmtC(target)}`;
   return `${source} ${offset > 0 ? '+' : ''}${offset.toFixed(2)} C -> ${fmtC(target)}`;
 };
+const fmtDecisionLead = (decision = {}) => {
+  const active = Number(decision.active_thermal_lead_h ?? decision.configured_thermal_lead_h ?? 0);
+  const learned = Number(decision.learned_thermal_lead_h || 0);
+  if (!active) return '';
+  return learned > 0 && learned >= active ? ` / lead ${active}h learned` : ` / lead ${active}h`;
+};
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
 const nodePayloadFromCandidate = (input, candidate = {}) => {
   const value = String(input || '');
@@ -297,7 +303,7 @@ export function renderOverview() {
         ${forecastChart(forecast)}
         <div class="ops-panel">
           <h3>Active preload</h3>
-          ${activeDecisions.map((decision) => `<p>${esc(decision.name || decision.room_id)}: +${fmtValue(decision.offset_c, ' C')} / P${decision.priority ?? 1} / peak in ${decision.peak_in_h}h</p>`).join('') || '<p>No active preload decisions</p>'}
+          ${activeDecisions.map((decision) => `<p>${esc(decision.name || decision.room_id)}: +${fmtValue(decision.offset_c, ' C')} / P${decision.priority ?? 1} / peak in ${decision.peak_in_h}h${fmtDecisionLead(decision)}</p>`).join('') || '<p>No active preload decisions</p>'}
         </div>
         <div class="ops-panel">
           <h3>System health</h3>
@@ -442,7 +448,7 @@ export function renderForecast() {
         </div>
       </div>
       <div class="stack">
-        <div class="ops-panel"><h3>Active preload decisions</h3>${activeDecisions.map((d) => `<p>${esc(d.room_id)}: +${fmtValue(d.offset_c, ' C')}, P${d.priority ?? 1}, comfort ${fmtC(d.comfort_setpoint_c)}, peak ${fmtValue(d.peak_load)} in ${d.peak_in_h}h</p>`).join('') || '<p>No active decisions</p>'}</div>
+        <div class="ops-panel"><h3>Active preload decisions</h3>${activeDecisions.map((d) => `<p>${esc(d.room_id)}: +${fmtValue(d.offset_c, ' C')}, P${d.priority ?? 1}, comfort ${fmtC(d.comfort_setpoint_c)}, peak ${fmtValue(d.peak_load)} in ${d.peak_in_h}h${fmtDecisionLead(d)}</p>`).join('') || '<p>No active decisions</p>'}</div>
       </div>
     </div>
   </section>`;
