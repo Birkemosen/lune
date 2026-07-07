@@ -236,10 +236,10 @@ valve state still resets on reboot; history survives registry import/export:
     "base_source": "schedule",
     "manual_offset_c": 0.5,
     "forecast_offset_c": 0.3,
-    "learned_offset_c": 0.0,
+    "learned_offset_c": 0.3,
     "command_offset_c": 0.5,
     "command_source": "manual",
-    "target_setpoint_c": 22.2
+    "target_setpoint_c": 22.5
   },
   "schedule": {
     "enabled": true,
@@ -258,35 +258,41 @@ valve state still resets on reboot; history survives registry import/export:
   },
   "thermal_model": {
     "samples": 12,
-    "heat_gain_c_per_h": 0.42,
+    "heat_gain_c_per_h": 0.18,
     "cool_loss_c_per_h": 0.18,
     "confidence": 0.5
   },
   "forecast": {
     "thermal_lead_h": 4,
-    "learned_thermal_lead_h": 3,
-    "active_thermal_lead_h": 4
+    "learned_thermal_lead_h": 6,
+    "active_thermal_lead_h": 6
   }
 }
 ```
 
 `comfort.effective_setpoint_c` is resolved by Touch. When local time is valid and
 the room schedule is active, `effective_source` is `schedule`; otherwise it is
-`comfort`. The stored comfort bias is applied in both cases. `thermal_model`
-contains Touch-learned, persisted coefficients derived from fresh temperature
-history. `forecast.learned_thermal_lead_h` is derived from the learned heat-gain
-rate after enough samples exist; `active_thermal_lead_h` is the larger of the
-configured and learned lead. This can extend weather preload for slow zones, but
-it never shortens the configured lead and still sends only expiring V6-clamped
+`comfort`. The stored comfort bias is applied in both cases. `resolver` then
+layers expiring manual/forecast command offsets and the small calculated
+`learned_offset_c` into `target_setpoint_c` for diagnostics. The learned offset
+is positive-only, requires fresh live temperature plus enough slow-zone thermal
+samples, and does not create a persisted command by itself.
+
+`thermal_model` contains Touch-learned, persisted coefficients derived from
+fresh temperature history. `forecast.learned_thermal_lead_h` is derived from the
+learned heat-gain rate after enough samples exist; `active_thermal_lead_h` is
+the larger of the configured and learned lead. This can extend weather preload
+for slow zones, but it never shortens the configured lead and still sends only
+expiring V6-clamped
 commands.
 
 `resolver` is the read-only ordering view used by the dashboard for field
 debugging. It starts with the comfort/schedule base, then chooses an active
 manual dashboard offset over an active forecast preload offset. `learned_offset_c`
-is intentionally exposed as `0.0` until learned tuning becomes an enabled policy;
-the learned coefficients remain visible in `thermal_model`. `target_setpoint_c`
-is the resolved advisory target after the winning offset, still subject to V6
-local clamps and safety validation when commands are sent.
+is then added only for fresh, slow, under-heated zones with enough thermal
+samples. `target_setpoint_c` is the resolved advisory target after the winning
+command offset plus any learned offset, still subject to V6 local clamps and
+safety validation when commands are sent.
 
 ## Writes
 

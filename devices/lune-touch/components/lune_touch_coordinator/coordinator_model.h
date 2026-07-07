@@ -224,6 +224,8 @@ class HouseModel {
   static float effective_comfort_setpoint_c(const ZoneBinding &zone);
   static EffectiveComfort effective_comfort(const ZoneBinding &zone, bool time_valid,
                                             uint8_t day_index, uint16_t minute_of_day);
+  static float learned_comfort_offset_c(const ZoneBinding &zone, const ZoneLiveState *live,
+                                        float base_setpoint_c);
   static uint8_t learned_thermal_lead_h(const ZoneBinding &zone);
   static uint8_t active_thermal_lead_h(const ZoneBinding &zone);
   StrategySnapshot strategy_snapshot(bool time_valid, uint8_t day_index,

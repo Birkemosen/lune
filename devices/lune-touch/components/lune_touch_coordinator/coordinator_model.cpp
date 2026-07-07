@@ -397,6 +397,23 @@ bool HouseModel::scheduled_comfort_setpoint_c(const ZoneBinding &zone, uint8_t d
   return true;
 }
 
+float HouseModel::learned_comfort_offset_c(const ZoneBinding &zone, const ZoneLiveState *live,
+                                           float base_setpoint_c) {
+  if (live == nullptr || !live->fresh || !live->has_temperature ||
+      !std::isfinite(live->temperature_c) || !std::isfinite(base_setpoint_c))
+    return 0.0f;
+  if (zone.thermal_samples < 12 || !std::isfinite(zone.learned_heat_gain_c_per_h) ||
+      zone.learned_heat_gain_c_per_h < 0.05f || zone.learned_heat_gain_c_per_h > 0.35f)
+    return 0.0f;
+
+  const float deficit_c = base_setpoint_c - live->temperature_c;
+  if (deficit_c < 0.4f)
+    return 0.0f;
+
+  const float cap_c = clamp_float_(zone.max_offset_c * 0.35f, 0.0f, 0.5f, 0.0f);
+  return clamp_float_((deficit_c - 0.2f) * 0.25f, 0.0f, cap_c, 0.0f);
+}
+
 uint8_t HouseModel::learned_thermal_lead_h(const ZoneBinding &zone) {
   if (zone.thermal_samples < 6 || !std::isfinite(zone.learned_heat_gain_c_per_h) ||
       zone.learned_heat_gain_c_per_h < 0.05f)

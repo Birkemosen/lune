@@ -2900,7 +2900,8 @@ void LuneTouchCoordinator::write_zones_json(char *buffer, size_t capacity) const
     const uint32_t now_ms = esphome::millis();
     const auto command_resolution =
         ledger_.resolve_command_offset(zone->node_index, zone->zone_index, now_ms);
-    const float learned_offset_c = 0.0f;
+    const float learned_offset_c =
+        ::lune_touch::HouseModel::learned_comfort_offset_c(*zone, live, effective.setpoint_c);
     const float resolved_target_c = std::fmin(35.0f, std::fmax(5.0f,
         effective.setpoint_c + command_resolution.command_offset_c + learned_offset_c));
     const float thermal_confidence = zone->thermal_samples >= 24 ? 1.0f :

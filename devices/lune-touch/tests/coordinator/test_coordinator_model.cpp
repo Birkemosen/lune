@@ -373,6 +373,30 @@ static void test_effective_comfort_resolver() {
   expect(outside.setpoint_c > 20.3f && outside.setpoint_c < 20.5f &&
              std::strcmp(outside.source, "comfort") == 0 && !outside.schedule_active,
          "effective: comfort used outside schedule window");
+
+  ZoneBinding slow_zone = *living;
+  slow_zone.max_offset_c = 1.2f;
+  slow_zone.thermal_samples = 12;
+  slow_zone.learned_heat_gain_c_per_h = 0.18f;
+  ZoneLiveState live{};
+  live.fresh = true;
+  live.has_temperature = true;
+  live.temperature_c = 19.2f;
+  float learned = HouseModel::learned_comfort_offset_c(slow_zone, &live, 21.0f);
+  expect(learned > 0.39f && learned < 0.41f,
+         "effective: learned offset helps slow under-heated rooms");
+
+  slow_zone.thermal_samples = 11;
+  expect(HouseModel::learned_comfort_offset_c(slow_zone, &live, 21.0f) == 0.0f,
+         "effective: learned offset waits for enough samples");
+  slow_zone.thermal_samples = 12;
+  slow_zone.learned_heat_gain_c_per_h = 0.5f;
+  expect(HouseModel::learned_comfort_offset_c(slow_zone, &live, 21.0f) == 0.0f,
+         "effective: learned offset does not boost fast rooms");
+  slow_zone.learned_heat_gain_c_per_h = 0.18f;
+  live.fresh = false;
+  expect(HouseModel::learned_comfort_offset_c(slow_zone, &live, 21.0f) == 0.0f,
+         "effective: learned offset requires fresh live temperature");
 }
 
 static void test_strategy_snapshot() {

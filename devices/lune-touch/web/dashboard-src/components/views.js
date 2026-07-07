@@ -90,9 +90,16 @@ const fmtSchedule = (schedule = {}) => schedule.enabled ? `${fmtClock(schedule.s
 const fmtResolver = (resolver = {}) => {
   const source = resolver.command_source || 'none';
   const offset = Number(resolver.command_offset_c || 0);
+  const learned = Number(resolver.learned_offset_c || 0);
   const target = resolver.target_setpoint_c;
-  if (source === 'none' || Math.abs(offset) < 0.01) return `target ${fmtC(target)}`;
-  return `${source} ${offset > 0 ? '+' : ''}${offset.toFixed(2)} C -> ${fmtC(target)}`;
+  const parts = [];
+  if (source !== 'none' && Math.abs(offset) >= 0.01) {
+    parts.push(`${source} ${offset > 0 ? '+' : ''}${offset.toFixed(2)} C`);
+  }
+  if (Math.abs(learned) >= 0.01) {
+    parts.push(`learned ${learned > 0 ? '+' : ''}${learned.toFixed(2)} C`);
+  }
+  return parts.length ? `${parts.join(' / ')} -> ${fmtC(target)}` : `target ${fmtC(target)}`;
 };
 const fmtDecisionLead = (decision = {}) => {
   const active = Number(decision.active_thermal_lead_h ?? decision.configured_thermal_lead_h ?? 0);
