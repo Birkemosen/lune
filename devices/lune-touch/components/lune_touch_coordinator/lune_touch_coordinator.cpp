@@ -1932,7 +1932,13 @@ bool LuneTouchCoordinator::set_node_trust(const char *node_id, ::lune_touch::Nod
   return true;
 }
 
-bool LuneTouchCoordinator::remove_node(const char *node_id, char *response, size_t capacity) {
+bool LuneTouchCoordinator::remove_node(const char *node_id, const char *confirmation,
+                                       char *response, size_t capacity) {
+  if (node_id == nullptr || node_id[0] == '\0' ||
+      confirmation == nullptr || std::strcmp(confirmation, node_id) != 0) {
+    snprintf(response, capacity, "{\"result\":\"rejected\",\"error\":\"confirmation_required\"}");
+    return false;
+  }
   if (!model_.remove_node(node_id)) {
     snprintf(response, capacity, "{\"result\":\"rejected\",\"error\":\"node_not_found\"}");
     return false;

@@ -244,7 +244,7 @@ export const api = {
   scanNodes: (candidate = {}) => post('/nodes/scan', candidate),
   addNode: (node) => post('/nodes', node),
   trustNode: (id, trust, confirm) => post(`/nodes/${encodeURIComponent(id)}/trust`, { trust, confirm }),
-  removeNode: (id) => post(`/nodes/${encodeURIComponent(id)}/remove`),
+  removeNode: (id) => post(`/nodes/${encodeURIComponent(id)}/remove`, { confirm: id }),
   resetRegistry: () => post('/recovery/reset-registry', { confirm: 'reset-registry' }),
   saveZone: (roomId, data) => post(`/zones/${encodeURIComponent(roomId)}`, data),
   saveComfort: (roomId, data) => post(`/zones/${encodeURIComponent(roomId)}/comfort`, data),

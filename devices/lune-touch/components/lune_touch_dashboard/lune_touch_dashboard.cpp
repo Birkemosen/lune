@@ -604,7 +604,9 @@ void LuneTouchDashboard::handle_v1_post_(ApiRequest &api, const char *path) {
       send_error_(api, 404, "unknown_route", "Unknown node remove route");
       return;
     }
-    const bool accepted = coordinator_->remove_node(node_id, data_buf_, sizeof(data_buf_));
+    char confirm[32];
+    parse_text_param(api, api.json_body, "confirm", confirm, sizeof(confirm));
+    const bool accepted = coordinator_->remove_node(node_id, confirm, data_buf_, sizeof(data_buf_));
     send_write_result_(api, accepted, 404);
   } else if (strstr(path, "/setpoint-command") != nullptr) {
     char room_id[40]{};

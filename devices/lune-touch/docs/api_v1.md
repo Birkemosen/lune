@@ -367,6 +367,17 @@ fingerprint. If the node was added without one, probe or re-add the candidate
 after V6 identity is available. Use `POST /nodes/{node_id}/remove` to remove a
 node from the registry instead of writing `unpaired`.
 
+### `POST /nodes/{node_id}/remove`
+
+Removes a node from the coordinator registry and disables mapped rooms that point
+at it. The request must confirm the exact node id:
+
+```json
+{
+  "confirm": "v6-ground"
+}
+```
+
 ### `POST /nodes/scan`
 
 Without a request body, returns currently known/paired nodes as commissioning
