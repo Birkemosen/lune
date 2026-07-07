@@ -279,7 +279,7 @@ export function renderOverview() {
   const polling = diagnostics.polling || {};
   const forecastStatus = diagnostics.forecast || {};
   const commandResults = diagnostics.command_results || {};
-  return `<section class="panel">
+  return `<section class="view">
     <div class="section-head"><h2>House</h2><button class="btn" data-action="refresh">Refresh</button></div>
     <div class="stat-grid">
       <div class="stat"><span>Comfort</span><strong>${fmtC(summary.comfort_avg_c)}</strong></div>
@@ -312,7 +312,7 @@ export function renderOverview() {
 
 export function renderZones() {
   const nodeOptions = state.nodes.map((node, index) => `<option value="${index}">${node.id || v6Name(index)}</option>`).join('');
-  return `<section class="panel">
+  return `<section class="view">
     <div class="section-head"><h2>Zone control</h2><span class="note">Expiring commands only. V6 clamps locally.</span></div>
     <div class="inline-form">
       <input class="input mini-input" id="map-room-id" placeholder="room-id">
@@ -363,7 +363,7 @@ export function renderZones() {
 }
 
 export function renderManifolds() {
-  return `<section class="panel">
+  return `<section class="view">
     <div class="section-head"><h2>Manifolds</h2><button class="btn" data-action="scan">Scan</button></div>
     <div class="node-list">${state.nodes.map((n) => {
       const h = n.health || {};
@@ -414,7 +414,7 @@ export function renderForecast() {
   const activeDecisions = (f.decisions || []).filter((d) => d.active);
   const forecastHealthy = f.status === 'ok' || f.status === 'cached';
   const statusLabel = `${f.status || 'unknown'}${f.fetch_pending ? ' / pending' : ''}`;
-  return `<section class="panel">
+  return `<section class="view">
     <div class="section-head"><h2>Weather</h2><button class="btn" data-action="forecast-fetch">Fetch now</button></div>
     <div class="metric-strip">
       <div class="metric"><span>Status</span><strong class="${forecastHealthy ? 'ok' : 'warn'}">${statusLabel}</strong></div>
@@ -449,7 +449,7 @@ export function renderForecast() {
 }
 
 export function renderCommands() {
-  return `<section class="panel">
+  return `<section class="view">
     <div class="section-head"><h2>Command ledger</h2><span class="note">Requested vs accepted/clamped values</span></div>
     <div class="data-table">
       <div class="tr head commands"><span>ID</span><span>Source</span><span>Reason</span><span>Target</span><span>Request</span><span>Accept</span><span>Clamp</span><span>Expiry</span></div>
@@ -470,7 +470,7 @@ export function renderSettings() {
   const comfort = strategy.comfort || {};
   const driver = strategy.driver || {};
   const commissioning = state.diagnostics?.commissioning || {};
-  return `<section class="panel settings-layout">
+  return `<section class="view settings-layout">
     <div class="section-head settings-head"><h2>Settings</h2><span class="note">Coordinator, commissioning and recovery</span></div>
     <div class="settings-panel wide"><h3>Coordinator</h3>
       <label>Name<input class="input" id="settings-name" value="${esc(coordinator.name || '')}" placeholder="Lune Touch"></label>
@@ -515,7 +515,7 @@ export function renderDiagnostics() {
   const comfort = strategy.comfort || {};
   const driver = strategy.driver || {};
   const schedule = strategy.schedule || {};
-  return `<section class="panel">
+  return `<section class="view">
     <div class="section-head"><h2>Diagnostics</h2><button class="btn" data-action="refresh">Refresh</button></div>
     <div class="metric-strip">
       <div class="metric"><span>API</span><strong>${d.api || '/api/lune-touch/v1'}</strong></div>
