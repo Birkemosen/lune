@@ -113,6 +113,54 @@ text_sensor:
             text: !lambda |-
               return x.c_str();
   - platform: template
+    id: touch_zone_row_0_text
+    internal: true
+    update_interval: 15s
+    lambda: |-
+      return id(lune_touch_app).zone_line_text(0);
+    on_value:
+      then:
+        - lvgl.label.update:
+            id: touch_zone_row_0_label
+            text: !lambda |-
+              return x.c_str();
+  - platform: template
+    id: touch_zone_row_1_text
+    internal: true
+    update_interval: 15s
+    lambda: |-
+      return id(lune_touch_app).zone_line_text(1);
+    on_value:
+      then:
+        - lvgl.label.update:
+            id: touch_zone_row_1_label
+            text: !lambda |-
+              return x.c_str();
+  - platform: template
+    id: touch_zone_row_2_text
+    internal: true
+    update_interval: 15s
+    lambda: |-
+      return id(lune_touch_app).zone_line_text(2);
+    on_value:
+      then:
+        - lvgl.label.update:
+            id: touch_zone_row_2_label
+            text: !lambda |-
+              return x.c_str();
+  - platform: template
+    id: touch_zone_row_3_text
+    internal: true
+    update_interval: 15s
+    lambda: |-
+      return id(lune_touch_app).zone_line_text(3);
+    on_value:
+      then:
+        - lvgl.label.update:
+            id: touch_zone_row_3_label
+            text: !lambda |-
+              return x.c_str();
+  - platform: template
     id: touch_forecast_summary_text
     internal: true
     update_interval: 15s
@@ -122,6 +170,18 @@ text_sensor:
       then:
         - lvgl.label.update:
             id: touch_weather_cache_label
+            text: !lambda |-
+              return x.c_str();
+  - platform: template
+    id: touch_forecast_decision_text
+    internal: true
+    update_interval: 15s
+    lambda: |-
+      return id(lune_touch_app).forecast_decision_text(0);
+    on_value:
+      then:
+        - lvgl.label.update:
+            id: touch_weather_decisions_label
             text: !lambda |-
               return x.c_str();
   - platform: template
@@ -1366,35 +1426,39 @@ lvgl:
                           text_color: 0xD9DEE3
                           text_font: montserrat_18
                       - label:
+                          id: touch_zone_row_0_label
                           x: 22
                           y: 70
                           width: 780
                           height: 30
-                          text: "Living       hallway:1    21.5 C    calling    forecast +12 min"
+                          text: "Zone row 1 waiting for mapped room"
                           text_color: 0xFFFFFF
                           text_font: montserrat_18
                       - label:
+                          id: touch_zone_row_1_label
                           x: 22
                           y: 122
                           width: 780
                           height: 30
-                          text: "Kitchen      hallway:2    20.9 C    idle       window neutral"
+                          text: "Zone row 2 waiting for mapped room"
                           text_color: 0xD9DEE3
                           text_font: montserrat_18
                       - label:
+                          id: touch_zone_row_2_label
                           x: 22
                           y: 174
                           width: 780
                           height: 30
-                          text: "Bath         utility:1    22.2 C    calling    comfort priority"
+                          text: "Zone row 3 waiting for mapped room"
                           text_color: 0xFFFFFF
                           text_font: montserrat_18
                       - label:
+                          id: touch_zone_row_3_label
                           x: 22
                           y: 226
                           width: 780
                           height: 30
-                          text: "Bedroom      utility:2    19.4 C    idle       night setback"
+                          text: "Zone row 4 waiting for mapped room"
                           text_color: 0xD9DEE3
                           text_font: montserrat_18
                       - label:
@@ -1570,11 +1634,12 @@ lvgl:
                           text_color: 0xFFFFFF
                           text_font: montserrat_18
                       - label:
+                          id: touch_weather_decisions_label
                           x: 22
                           y: 152
                           width: 780
                           height: 28
-                          text: "Preload decisions: Living +0.4 C, Bedroom +0.2 C, stale nodes blocked"
+                          text: "No preload decisions yet"
                           text_color: 0xD9DEE3
                           text_font: montserrat_18
                       - label:

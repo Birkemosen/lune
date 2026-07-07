@@ -2484,6 +2484,56 @@ std::string LuneTouchCoordinator::house_summary_text() const {
   return buffer;
 }
 
+std::string LuneTouchCoordinator::zone_line_text(uint8_t row) const {
+  if (!take_state_lock_(50))
+    return "zone data busy";
+  const ::lune_touch::ZoneBinding *zone = nullptr;
+  size_t zone_index = 0;
+  size_t active_index = 0;
+  for (size_t i = 0; i < model_.zone_count(); i++) {
+    const auto *candidate = model_.zone(i);
+    if (candidate == nullptr || !candidate->enabled)
+      continue;
+    if (active_index == row) {
+      zone = candidate;
+      zone_index = i;
+      break;
+    }
+    active_index++;
+  }
+  if (zone == nullptr || !zone->enabled) {
+    give_state_lock_();
+    char empty[80];
+    snprintf(empty, sizeof(empty), "Zone row %u waiting for mapped room",
+             static_cast<unsigned>(row + 1));
+    return empty;
+  }
+
+  const uint32_t now = esphome::millis();
+  const auto *live = model_.zone_live(zone_index);
+  const auto offset = ledger_.resolve_command_offset(zone->node_index, zone->zone_index, now);
+  const char *name = zone->room_name[0] != '\0' ? zone->room_name : zone->room_id;
+  const char *status = live != nullptr ? live->status : "unknown";
+  char temp[16];
+  if (live != nullptr && live->has_temperature)
+    snprintf(temp, sizeof(temp), "%.1f C", live->temperature_c);
+  else
+    snprintf(temp, sizeof(temp), "--.- C");
+
+  char command[32];
+  if (offset.command_offset_c > 0.01f)
+    snprintf(command, sizeof(command), "%s +%.1f C", offset.command_source, offset.command_offset_c);
+  else
+    snprintf(command, sizeof(command), "local");
+
+  char buffer[128];
+  snprintf(buffer, sizeof(buffer), "%-12.12s V6 %u / Z%u  %s  %-8.8s  %s",
+           name, static_cast<unsigned>(zone->node_index + 1),
+           static_cast<unsigned>(zone->zone_index + 1), temp, status, command);
+  give_state_lock_();
+  return buffer;
+}
+
 std::string LuneTouchCoordinator::forecast_summary_text() const {
   if (!take_state_lock_(50))
     return "forecast busy";
@@ -2493,6 +2543,30 @@ std::string LuneTouchCoordinator::forecast_summary_text() const {
            static_cast<unsigned>(forecast_hours_count_),
            forecast_last_fetch_ms_ == 0 ? 0UL :
                static_cast<unsigned long>((esphome::millis() - forecast_last_fetch_ms_) / 60000UL));
+  give_state_lock_();
+  return buffer;
+}
+
+std::string LuneTouchCoordinator::forecast_decision_text(uint8_t row) const {
+  if (!take_state_lock_(50))
+    return "forecast decisions busy";
+  char buffer[144];
+  if (forecast_decision_count_ == 0) {
+    snprintf(buffer, sizeof(buffer), "No preload decisions yet / %s / %u h cache",
+             forecast_status_, static_cast<unsigned>(forecast_hours_count_));
+    give_state_lock_();
+    return buffer;
+  }
+
+  size_t decision_index = row;
+  if (decision_index >= forecast_decision_count_)
+    decision_index = forecast_decision_count_ - 1;
+  const auto &decision = forecast_decisions_[decision_index];
+  const char *name = decision.room_name[0] != '\0' ? decision.room_name : decision.room_id;
+  snprintf(buffer, sizeof(buffer), "%s: %s %.1f C / peak %.1f in %dh / P%u",
+           name, decision.active ? "preload" : "watch", decision.offset_c,
+           decision.peak_load, static_cast<int>(decision.peak_in_h),
+           static_cast<unsigned>(decision.priority));
   give_state_lock_();
   return buffer;
 }

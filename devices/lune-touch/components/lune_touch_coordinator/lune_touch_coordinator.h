@@ -89,7 +89,9 @@ class LuneTouchCoordinator : public esphome::Component {
   void write_settings_json(char *buffer, size_t capacity) const;
   void write_events_json(char *buffer, size_t capacity) const;
   std::string house_summary_text() const;
+  std::string zone_line_text(uint8_t row) const;
   std::string forecast_summary_text() const;
+  std::string forecast_decision_text(uint8_t row) const;
   std::string command_summary_text() const;
 
   bool add_node(const char *node_id, const char *hostname, const char *fallback_ip,
