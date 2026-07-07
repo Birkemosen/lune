@@ -2163,7 +2163,8 @@ bool LuneTouchCoordinator::request_motor_action(const char *room_id, const char 
 bool LuneTouchCoordinator::set_forecast_location(float latitude, float longitude, const char *mode,
                                                  char *response, size_t capacity) {
   if (!std::isfinite(latitude) || !std::isfinite(longitude) ||
-      latitude < -90.0f || latitude > 90.0f || longitude < -180.0f || longitude > 180.0f) {
+      latitude < -90.0f || latitude > 90.0f || longitude < -180.0f || longitude > 180.0f ||
+      (std::fabs(latitude) < 0.0001f && std::fabs(longitude) < 0.0001f)) {
     snprintf(response, capacity, "{\"result\":\"rejected\",\"error\":\"invalid_location\"}");
     return false;
   }
@@ -2983,9 +2984,12 @@ void LuneTouchCoordinator::write_diagnostics_json(char *buffer, size_t capacity)
   }
   const size_t bound_zones = model_.active_zone_count();
   const size_t stale_zones = model_.stale_zone_count();
+  const bool has_forecast_location = std::isfinite(forecast_latitude_) && std::isfinite(forecast_longitude_) &&
+                                     (std::fabs(forecast_latitude_) >= 0.0001f ||
+                                      std::fabs(forecast_longitude_) >= 0.0001f);
   const bool ready_for_commands = reachable_trusted_nodes > 0 && trusted_identity_missing_nodes == 0 &&
                                   bound_zones > 0 && fresh_zones > 0;
-  const bool ready_for_forecast = ready_for_commands && forecast_latitude_ != 0.0f && forecast_longitude_ != 0.0f;
+  const bool ready_for_forecast = ready_for_commands && has_forecast_location;
   const char *next_action = "ready";
   if (model_.node_count() == 0)
     next_action = "add_node";
@@ -2999,7 +3003,7 @@ void LuneTouchCoordinator::write_diagnostics_json(char *buffer, size_t capacity)
     next_action = "map_zones";
   else if (fresh_zones == 0)
     next_action = "wait_for_fresh_zone_poll";
-  else if (forecast_latitude_ == 0.0f || forecast_longitude_ == 0.0f)
+  else if (!has_forecast_location)
     next_action = "set_forecast_location";
   const esp_partition_t *running_partition = esp_ota_get_running_partition();
   const char *running_label = running_partition != nullptr ? running_partition->label : "unknown";

@@ -459,9 +459,10 @@ ledger result is `rejected`.
 ```
 
 Saving a valid location clears the old cache and makes the next coordinator poll
-eligible for an automatic forecast fetch. `POST /forecast/fetch` can still be
-used to queue an immediate manual refresh; it returns `queued` while the poll
-task performs the HTTPS request and command dispatch in the background.
+eligible for an automatic forecast fetch. `0,0` is treated as unset and is not a
+valid fetch location. `POST /forecast/fetch` can still be used to queue an
+immediate manual refresh; it returns `queued` while the poll task performs the
+HTTPS request and command dispatch in the background.
 
 ### `POST /settings`
 

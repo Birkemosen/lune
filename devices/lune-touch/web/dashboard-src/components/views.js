@@ -354,6 +354,10 @@ export function renderForecast() {
   const f = state.forecast || {};
   const cache = f.cache || {};
   const location = f.location || {};
+  const latitude = Number(location.latitude);
+  const longitude = Number(location.longitude);
+  const latitudeValue = Number.isFinite(latitude) ? String(latitude) : '';
+  const longitudeValue = Number.isFinite(longitude) ? String(longitude) : '';
   const commands = f.commands || {};
   const activeDecisions = (f.decisions || []).filter((d) => d.active);
   const forecastHealthy = f.status === 'ok' || f.status === 'cached';
@@ -370,10 +374,10 @@ export function renderForecast() {
       <div class="stack">
         ${forecastChart(f)}
         <div class="ops-panel">
-          <h3>Location</h3><p>${location.mode || 'manual'} (${Number(location.latitude || 0).toFixed(5)}, ${Number(location.longitude || 0).toFixed(5)})</p>
+          <h3>Location</h3><p>${location.mode || 'manual'} (${Number(latitude || 0).toFixed(5)}, ${Number(longitude || 0).toFixed(5)})</p>
           <div class="inline-form forecast-location">
-            <input class="input mini-input" id="forecast-lat" type="number" step="0.000001" placeholder="Latitude" value="${location.latitude || ''}">
-            <input class="input mini-input" id="forecast-lon" type="number" step="0.000001" placeholder="Longitude" value="${location.longitude || ''}">
+            <input class="input mini-input" id="forecast-lat" type="number" step="0.000001" placeholder="Latitude" value="${latitudeValue}">
+            <input class="input mini-input" id="forecast-lon" type="number" step="0.000001" placeholder="Longitude" value="${longitudeValue}">
             <button class="btn" data-action="save-forecast-location">Save</button>
             <button class="btn" data-action="geo">Use browser</button>
           </div>
@@ -567,11 +571,23 @@ export function bindActions(root) {
     setTimeout(() => refreshSection('forecast'), 18000);
   })));
   root.querySelector('[data-action="save-forecast-location"]')?.addEventListener('click', () => {
-    const latitude = Number(root.querySelector('#forecast-lat')?.value);
-    const longitude = Number(root.querySelector('#forecast-lon')?.value);
-    if (Number.isFinite(latitude) && Number.isFinite(longitude)) {
-      runAction(() => api.saveForecast({ latitude, longitude, source: 'manual' }).then(refreshAll));
+    const latText = root.querySelector('#forecast-lat')?.value?.trim() || '';
+    const lonText = root.querySelector('#forecast-lon')?.value?.trim() || '';
+    const latitude = Number(latText);
+    const longitude = Number(lonText);
+    if (!latText || !lonText || !Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+      patch({ error: 'Latitude and longitude are required' });
+      return;
     }
+    if (latitude < -90 || latitude > 90 || longitude < -180 || longitude > 180) {
+      patch({ error: 'Forecast location is outside valid latitude/longitude range' });
+      return;
+    }
+    if (Math.abs(latitude) < 0.0001 && Math.abs(longitude) < 0.0001) {
+      patch({ error: 'Forecast location cannot be 0,0' });
+      return;
+    }
+    runAction(() => api.saveForecast({ latitude, longitude, source: 'manual' }).then(refreshAll));
   });
   root.querySelector('[data-action="geo"]')?.addEventListener('click', () => {
     if (!navigator.geolocation) return;
