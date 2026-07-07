@@ -407,7 +407,7 @@ export function renderCommands() {
     <div class="section-head"><h2>Command ledger</h2><span class="note">Requested vs accepted/clamped values</span></div>
     <div class="data-table">
       <div class="tr head commands"><span>ID</span><span>Source</span><span>Reason</span><span>Target</span><span>Request</span><span>Accept</span><span>Clamp</span><span>Expiry</span></div>
-      ${state.commands.map((c) => `<div class="tr commands"><span>${c.request_id}</span><span>${c.source}</span><span>${c.reason}</span><span>${v6Name(c.node_index)} / Z${Number(c.zone_index) + 1}</span><span>${c.requested_offset_c}</span><span>${c.accepted_offset_c}</span><span class="${c.clamp_applied ? 'warn' : 'ok'}">${c.clamp_applied ? 'yes' : 'no'}</span><span class="${statusClass(c.result === 'accepted' ? 'heat' : c.result)}">${c.result} / ${fmtCommandExpiry(c)}</span></div>`).join('')}
+      ${state.commands.map((c) => `<div class="tr commands"><span>${esc(c.request_id)}</span><span>${esc(c.source)}</span><span>${esc(c.reason || '-')}</span><span>${v6Name(c.node_index)} / Z${Number(c.zone_index) + 1}</span><span>${fmtValue(c.requested_offset_c, ' C')}</span><span>${fmtValue(c.accepted_offset_c, ' C')}</span><span class="${c.clamp_applied ? 'warn' : 'ok'}">${c.clamp_applied ? 'yes' : 'no'}</span><span class="${statusClass(c.result === 'accepted' ? 'heat' : c.result)}">${esc(c.result)} / ${fmtCommandExpiry(c)}</span></div>`).join('')}
     </div>
   </section>`;
 }
