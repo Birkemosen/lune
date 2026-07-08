@@ -154,23 +154,50 @@ recommendations, and local safety results.
 
 ## Build Phases
 
-1. Prototype UI shell on ESP32-S3 7-inch hardware with LVGL, OTA, WiFi, and mock V6 data.
-2. Pair and poll one Lune V6 over the current `/api/hv6/v1/state` endpoint.
-3. Add multi-V6 zone registry, health model, and read-only house overview.
-4. Implement command-path writes with expiry, clamp reporting, and local fallback proof.
-5. Move forecast preload and adaptive whole-house logic from V6 toward Touch.
-6. Add Asgard / Odin strategy: physical temperature selection plus separate comfort demand.
-7. Harden commissioning, offline behavior, OTA recovery, and production enclosure decisions.
+| Phase | Status | Current state |
+| --- | --- | --- |
+| 1. Prototype UI shell on ESP32-S3 7-inch hardware with LVGL, OTA, WiFi, and mock V6 data. | Implemented | `lune-touch-7.yaml` builds for the Waveshare ESP32-S3 7-inch profile with OTA size checks, LVGL display wiring, local dashboard, and mock/runtime coordinator data. |
+| 2. Pair and poll one Lune V6 over the current `/api/hv6/v1/state` endpoint. | Implemented | Touch stores nodes, scans/polls candidates, retains legacy `/state` ingestion as fallback, and prefers resource-shaped V6 endpoints when available. |
+| 3. Add multi-V6 zone registry, health model, and read-only house overview. | Implemented | The coordinator model supports multiple V6 nodes, room-to-node/zone bindings, stale-state propagation, node health summaries, and house/zone/manifold dashboard views. |
+| 4. Implement command-path writes with expiry, clamp reporting, and local fallback proof. | Implemented | Touch issues dashboard and forecast setpoint-offset commands with TTL, source/reason metadata, stale/unreachable/untrusted blocking, V6 response handling, persisted ledger records, and clamp reporting. V6 remains the safety authority. |
+| 5. Move forecast preload and adaptive whole-house logic from V6 toward Touch. | Implemented for first field build | Touch owns Open-Meteo fetch/cache, per-zone wind/solar/thermal-lead decisions, forecast dispatch, dedupe, learned thermal-lead inputs, and forecast diagnostics. |
+| 6. Add Asgard / Odin strategy: physical temperature selection plus separate comfort demand. | Implemented as advisory API | `GET /strategy` exposes priority-weighted physical house temperature, separate comfort demand, schedule driver, and advisory Asgard/Odin mode. |
+| 7. Harden commissioning, offline behavior, OTA recovery, and production enclosure decisions. | Partly implemented, needs field validation | Commissioning readiness/blockers, identity fingerprint checks, destructive-action confirmations, offline command blocking, OTA partition diagnostics, CORS/preflight, and recovery APIs are in place. Remaining work is hardware soak, real V6 commissioning runs, final auth/pairing policy, and production enclosure/display decisions. |
+
+## Field Readiness Boundary
+
+The remaining work now depends on real hardware or installation context rather
+than more speculative implementation. The firmware should be treated as ready
+for structured field debugging when these repository-side checks pass:
+
+- `make test-lune-touch`
+- `make build-lune-touch`
+- `make -C devices/lune-touch build-mini`
+- `GET /api/lune-touch/v1/diagnostics` reports a concrete `commissioning.next_action`
+- `GET /api/lune-touch/v1/forecast` exposes location/cache/fetch state without UI crashes
+- `GET /api/lune-touch/v1/commands` shows blocked commands when nodes are stale,
+  unreachable, or untrusted
+
+Field validation is tracked in
+[`devices/lune-touch/docs/field_validation.md`](../devices/lune-touch/docs/field_validation.md).
 
 ## Open Decisions
 
-- Whether Lune Touch should remain ESPHome/LVGL-only or run a richer local web UI stack
-- Stronger pairing/authentication between Touch and V6 nodes beyond the current
-  MAC-derived identity fingerprint
-- Long-term shape of local storage for useful house learning beyond the
-  lightweight persisted zone-history layer
-- Effective resolver ordering for schedule, manual boost, forecast preload, and
-  learned comfort tuning
-- How much weather history is stored locally versus fetched on demand
-- Long-term product split between Lune Touch and the headless Lune Mini profile
-- Long-term migration path from `/api/hv6/v1` to a public Lune API namespace
+- UI runtime: keep ESPHome/LVGL plus embedded local web dashboard for this field
+  build. Revisit a richer UI stack only after coordinator behavior is proven.
+- Pairing/authentication: current field build uses stored V6 identity
+  fingerprints and explicit trust promotion. Stronger authentication remains a
+  production decision.
+- Learning storage: current field build persists lightweight per-zone history,
+  thermal coefficients, and command ledger state. Larger history stores remain
+  out of scope until useful field signals are known.
+- Resolver ordering: current implementation resolves comfort/schedule base,
+  then active manual dashboard offsets over forecast offsets, then learned
+  comfort tuning for eligible slow zones.
+- Weather history: current implementation persists the latest forecast cache and
+  metadata, not long-term weather history.
+- Touch/Mini split: current field build keeps one shared coordinator/API/dashboard
+  runtime, with display/LVGL selected by entrypoint.
+- API namespace: current integration stays under `/api/hv6/v1` for V6 and
+  `/api/lune-touch/v1` for Touch. A public Lune namespace remains a future
+  migration.

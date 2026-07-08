@@ -20,6 +20,7 @@ firmware skeleton already includes:
 - a `lune_touch_coordinator` external component with host-testable coordinator models
 - runtime per-zone temperature / heat-call history exposed through the Touch API
 - LCD/LVGL stability rules documented in `docs/LCD_STABILITY.md`
+- field validation steps documented in `docs/field_validation.md`
 
 Useful commands from the repo root:
 
@@ -84,7 +85,9 @@ Lune V6-owned:
 
 ## Bringup Boundary
 
-The first firmware shell intentionally does not encode a guessed 7-inch RGB pin
-map. The display package carries the stability contract into the firmware include
-graph; the actual panel/touch driver should be added when the exact dev kit or
-PCB revision is fixed.
+The first hardware profile is now concrete: Waveshare ESP32-S3-Touch-LCD-7B with
+1024 x 600 RGB565, GT911 touch, and CH422G-controlled panel power/reset lines.
+The remaining boundary is validation, not pin discovery. Treat changes to LCD
+timings, LVGL buffers, HTTPS forecast behavior, dashboard bundle size, or poll
+cadence as field-sensitive and re-run the checks in `docs/field_validation.md`
+before trusting a flashed build.
