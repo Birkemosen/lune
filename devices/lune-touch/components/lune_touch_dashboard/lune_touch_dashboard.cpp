@@ -14,6 +14,8 @@ namespace lune_touch_dashboard {
 static const char *const TAG = "lune_touch_dashboard";
 static constexpr const char API_PREFIX[] = "/api/lune-touch/v1";
 static constexpr size_t API_PREFIX_LEN = sizeof(API_PREFIX) - 1;
+static constexpr const char CORS_ALLOW_METHODS[] = "GET, POST, OPTIONS";
+static constexpr const char CORS_ALLOW_HEADERS[] = "Content-Type";
 
 namespace {
 
@@ -270,6 +272,22 @@ char first_non_space(const std::string &body) {
   return '\0';
 }
 
+void add_cors_headers(AsyncWebServerResponse *response) {
+  if (response == nullptr)
+    return;
+  response->addHeader("Access-Control-Allow-Origin", "*");
+  response->addHeader("Access-Control-Allow-Methods", CORS_ALLOW_METHODS);
+  response->addHeader("Access-Control-Allow-Headers", CORS_ALLOW_HEADERS);
+}
+
+void add_cors_headers(httpd_req_t *request) {
+  if (request == nullptr)
+    return;
+  httpd_resp_set_hdr(request, "Access-Control-Allow-Origin", "*");
+  httpd_resp_set_hdr(request, "Access-Control-Allow-Methods", CORS_ALLOW_METHODS);
+  httpd_resp_set_hdr(request, "Access-Control-Allow-Headers", CORS_ALLOW_HEADERS);
+}
+
 }  // namespace
 
 static const char DASHBOARD_HTML[] =
@@ -354,7 +372,7 @@ void LuneTouchDashboard::handle_js_(AsyncWebServerRequest *request) {
 void LuneTouchDashboard::send_json_(AsyncWebServerRequest *request, const char *body) {
   AsyncWebServerResponse *response = request->beginResponse(200, "application/json", body);
   response->addHeader("Cache-Control", "no-cache");
-  response->addHeader("Access-Control-Allow-Origin", "*");
+  add_cors_headers(response);
   request->send(response);
 }
 
@@ -375,7 +393,9 @@ void LuneTouchDashboard::send_error_(AsyncWebServerRequest *request, int code, c
   snprintf(response_buf_, sizeof(response_buf_),
            "{\"ok\":false,\"version\":\"v1\",\"ts_ms\":%lu,\"error\":{\"code\":\"%s\",\"message\":\"%s\"}}",
            ts_ms, err_code, message);
-  request->send(code, "application/json", response_buf_);
+  AsyncWebServerResponse *response = request->beginResponse(code, "application/json", response_buf_);
+  add_cors_headers(response);
+  request->send(response);
 }
 
 void LuneTouchDashboard::send_write_result_(AsyncWebServerRequest *request, bool accepted, int failure_code) {
@@ -400,7 +420,7 @@ void LuneTouchDashboard::send_json_(ApiRequest &api, const char *body) {
   httpd_resp_set_status(api.raw, http_status_line(200));
   httpd_resp_set_type(api.raw, "application/json");
   httpd_resp_set_hdr(api.raw, "Cache-Control", "no-cache");
-  httpd_resp_set_hdr(api.raw, "Access-Control-Allow-Origin", "*");
+  add_cors_headers(api.raw);
   httpd_resp_send(api.raw, body, HTTPD_RESP_USE_STRLEN);
 }
 
@@ -434,7 +454,7 @@ void LuneTouchDashboard::send_error_(ApiRequest &api, int code, const char *err_
   httpd_resp_set_status(api.raw, http_status_line(code));
   httpd_resp_set_type(api.raw, "application/json");
   httpd_resp_set_hdr(api.raw, "Cache-Control", "no-cache");
-  httpd_resp_set_hdr(api.raw, "Access-Control-Allow-Origin", "*");
+  add_cors_headers(api.raw);
   httpd_resp_send(api.raw, response_buf_, HTTPD_RESP_USE_STRLEN);
 }
 
@@ -456,7 +476,9 @@ void LuneTouchDashboard::send_write_result_(ApiRequest &api, bool accepted, int 
 
 void LuneTouchDashboard::handle_v1_(AsyncWebServerRequest *request, const char *path) {
   if (request->method() == HTTP_OPTIONS) {
-    request->send(204, "text/plain", "");
+    AsyncWebServerResponse *response = request->beginResponse(204, "text/plain", "");
+    add_cors_headers(response);
+    request->send(response);
     return;
   }
 

@@ -6,6 +6,10 @@ The embedded browser dashboard and external commissioning tools use:
 /api/lune-touch/v1
 ```
 
+The API returns CORS headers on success and error responses and answers
+`OPTIONS` preflight requests with `GET, POST, OPTIONS` plus `Content-Type`, so
+browser-based commissioning tools can call the Touch directly on the local LAN.
+
 Read endpoints return the standard envelope:
 
 ```json
