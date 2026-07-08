@@ -15,10 +15,11 @@ const css = `
   position: static;
   margin-bottom: 14px;
   padding: 12px;
-  border-radius: 18px;
+  border-radius: 8px;
   border: 1px solid var(--panel-border);
   background: var(--panel-bg-vibrant);
   box-shadow: var(--panel-shadow);
+  backdrop-filter: blur(18px) saturate(1.25);
   display: grid;
   gap: 10px;
 }
@@ -53,6 +54,7 @@ const css = `
   letter-spacing: 1.8px;
   text-transform: uppercase;
   white-space: nowrap;
+  text-shadow: 0 0 22px rgba(255,138,61,.32);
 }
 
 .top-menu {
@@ -66,13 +68,14 @@ const css = `
   text-decoration: none;
   color: var(--text-secondary);
   border: 1px solid var(--control-border);
-  background: var(--control-bg);
-  border-radius: 11px;
+  background: linear-gradient(145deg, rgba(255,255,255,.13), rgba(255,255,255,.055));
+  border-radius: 8px;
   padding: 10px 12px;
   font-size: .78rem;
   text-transform: uppercase;
   font-weight: 700;
   letter-spacing: .8px;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.12), 0 10px 22px rgba(0,0,0,.18);
   transition: .2s ease;
 }
 
@@ -83,9 +86,10 @@ const css = `
 }
 
 .menu-link.active {
-  color: var(--text-on-accent);
-  border-color: var(--accent);
-  background: var(--accent);
+  color: var(--text-strong);
+  border-color: rgba(255,138,61,.54);
+  background: linear-gradient(135deg, rgba(255,138,61,.25), rgba(255,255,255,.075));
+  box-shadow: 0 0 0 1px rgba(255,138,61,.08), inset 0 1px 0 rgba(255,255,255,.18), 0 14px 26px rgba(255,138,61,.10);
 }
 
 .top-meta {
@@ -110,9 +114,10 @@ const css = `
   align-items: flex-start;
   height: 34px;
   padding: 4px 10px;
-  border-radius: 14px;
+  border-radius: 8px;
   border: 1px solid var(--control-border);
-  background: var(--control-bg);
+  background: linear-gradient(145deg, rgba(255,255,255,.13), rgba(255,255,255,.055));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.10);
 }
 
 .meta-chip-label {
@@ -167,7 +172,7 @@ const css = `
 .top-dot {
   width: 10px;
   height: 10px;
-  border-radius: 999px;
+  border-radius: 6px;
   background: var(--state-disabled);
   transition: .2s ease;
 }

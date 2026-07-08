@@ -49,8 +49,10 @@ help:
 	@echo "  make build"
 	@echo "  make deploy"
 	@echo "  make deploy PORT=/dev/cu.usbmodemXXXX"
+	@echo "  make deploy HOST=192.168.x.x"
 	@echo "  make monitor PORT=/dev/cu.usbmodemXXXX"
 	@echo "  make erase PORT=/dev/cu.usbmodemXXXX"
+	@echo "  make ota HOST=192.168.x.x"
 	@echo "  make ota HOST=heatvalve-6-a1b2c3.local  # current internal hostname pattern"
 	@echo "  make discover"
 
@@ -89,11 +91,11 @@ deploy: check
 	@if [ -n "$(PORT)" ]; then \
 		echo "Flashing via serial port: $(PORT)"; \
 		$(PIO) run -d $(BUILD_ROOT) -t upload --upload-port $(PORT); \
+	elif [ -n "$(HOST)" ]; then \
+		$(ESPHOME) upload $(CONFIG) --file $(FIRMWARE_BIN) --device $(HOST); \
 	elif [ -n "$(AUTO_PORT)" ]; then \
 		echo "Auto-detected serial port: $(AUTO_PORT)"; \
 		$(PIO) run -d $(BUILD_ROOT) -t upload --upload-port $(AUTO_PORT); \
-	elif [ -n "$(HOST)" ]; then \
-		$(ESPHOME) upload $(CONFIG) --file $(FIRMWARE_BIN) --device $(HOST); \
 	else \
 		echo "No serial port detected. Scanning for Lune V6 devices (3s)..."; \
 		hosts=$$($(PYTHON) discover_devices.py 2>/dev/null); \

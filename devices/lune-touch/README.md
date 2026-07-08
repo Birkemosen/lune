@@ -25,14 +25,16 @@ firmware skeleton already includes:
 Useful commands from the repo root:
 
 ```bash
-make config-lune-touch
-make build-lune-touch
-make config-lune-mini
-make build-lune-mini
-make test-lune-touch
+make config-touch
+make build-touch
+make deploy-touch HOST=192.168.x.x
+make config-mini
+make build-mini
+make deploy-mini HOST=192.168.x.x
+make test-touch
 ```
 
-`make build-lune-touch` also checks the produced firmware against the 0x640000
+`make build-touch` also checks the produced firmware against the 0x640000
 OTA slot from `partitions/lune_touch_16mb_ota.csv`.
 
 The headless Lune Mini entrypoint is:

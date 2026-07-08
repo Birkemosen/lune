@@ -13,9 +13,10 @@ const css = `
 .zone-detail {
   background: var(--panel-bg-flat);
   border: 1px solid var(--panel-border);
-  border-radius: 18px;
+  border-radius: 8px;
   padding: 16px 18px;
   box-shadow: var(--panel-shadow);
+  backdrop-filter: blur(16px) saturate(1.18);
   height: 100%;
   box-sizing: border-box;
 }
@@ -46,7 +47,7 @@ const css = `
 }
 
 .zone-detail .zd-badge {
-  border-radius: 999px;
+  border-radius: 8px;
   padding: 3px 9px;
   font-size: .62rem;
   text-transform: uppercase;

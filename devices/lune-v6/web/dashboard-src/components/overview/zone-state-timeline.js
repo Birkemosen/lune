@@ -44,10 +44,11 @@ const CHART_H    = ZONES_BOTTOM + BAND_GAP + BAND_H + AXIS_H;
 const css = `
 .timeline-card {
   border: 1px solid var(--panel-border);
-  border-radius: 16px;
+  border-radius: 8px;
   background: var(--panel-bg-vibrant);
   padding: 14px 16px;
   box-shadow: var(--panel-shadow);
+  backdrop-filter: blur(16px) saturate(1.18);
 }
 
 .timeline-head {
@@ -60,8 +61,9 @@ const css = `
   content: '';
   width: 4px;
   height: 13px;
-  border-radius: 2px;
-  background: var(--accent);
+  border-radius: 4px;
+  background: linear-gradient(180deg, var(--accent), var(--state-warn));
+  box-shadow: 0 0 18px rgba(255,138,61,.34);
   flex-shrink: 0;
 }
 .timeline-head span {
@@ -84,7 +86,7 @@ const css = `
 .timeline-svg {
   width: 100%;
   display: block;
-  border-radius: 10px;
+  border-radius: 8px;
   overflow: visible;
 }
 

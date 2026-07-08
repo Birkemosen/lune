@@ -9,8 +9,8 @@ from implemented plan to field debugging.
 Run these from the repository root before flashing a candidate build:
 
 ```bash
-make test-lune-touch
-make build-lune-touch
+make test-touch
+make build-touch
 make -C devices/lune-touch build-mini
 ```
 

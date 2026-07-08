@@ -191,6 +191,10 @@ class HV6Dashboard : public Component, public AsyncWebHandler {
  protected:
   void handle_root_(AsyncWebServerRequest *request);
   void handle_js_(AsyncWebServerRequest *request);
+  void send_text_(AsyncWebServerRequest *request, int code, const char *content_type,
+                  const char *body, bool cors = false, const char *cache_control = nullptr);
+  void send_gzip_chunked_(AsyncWebServerRequest *request, const char *content_type,
+                          const uint8_t *data, size_t length, const char *cache_control);
   void handle_state_(AsyncWebServerRequest *request);
   void handle_overview_(AsyncWebServerRequest *request);
   void handle_zones_(AsyncWebServerRequest *request);

@@ -37,8 +37,9 @@ const css = `
   gap: 6px;
   padding: 12px 14px;
   border: 1px solid var(--control-border);
-  border-radius: 12px;
-  background: var(--control-bg);
+  border-radius: 8px;
+  background: linear-gradient(145deg, rgba(255,255,255,.075), rgba(255,255,255,.025));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.08);
   margin-bottom: 12px;
 }
 .asgard-bridge-status-card .setpoint-val {

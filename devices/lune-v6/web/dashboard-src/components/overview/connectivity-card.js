@@ -10,11 +10,12 @@ import { localize, subscribeLanguage } from '../../core/i18n.js';
 // ========================================
 const css = `
 .connectivity-card {
-  background: var(--panel-bg);
+  background: var(--panel-bg-vibrant);
   border: 1px solid var(--panel-border);
-  border-radius: 14px;
+  border-radius: 8px;
   padding: 12px 14px;
   box-shadow: var(--panel-shadow);
+  backdrop-filter: blur(16px) saturate(1.18);
   height: 100%;
   box-sizing: border-box;
 }

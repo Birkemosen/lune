@@ -170,8 +170,8 @@ The remaining work now depends on real hardware or installation context rather
 than more speculative implementation. The firmware should be treated as ready
 for structured field debugging when these repository-side checks pass:
 
-- `make test-lune-touch`
-- `make build-lune-touch`
+- `make test-touch`
+- `make build-touch`
 - `make -C devices/lune-touch build-mini`
 - `GET /api/lune-touch/v1/diagnostics` reports a concrete `commissioning.next_action`
 - `GET /api/lune-touch/v1/forecast` exposes location/cache/fetch state without UI crashes

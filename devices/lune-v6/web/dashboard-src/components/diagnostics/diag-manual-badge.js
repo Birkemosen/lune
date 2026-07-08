@@ -11,7 +11,7 @@ const css = `
   margin-bottom: 12px;
   border: 1px solid var(--danger-border-soft);
   background: var(--danger-bg);
-  border-radius: 12px;
+  border-radius: 8px;
   padding: 10px 12px;
   box-shadow: inset 0 1px 0 rgba(255,255,255,.05);
 }

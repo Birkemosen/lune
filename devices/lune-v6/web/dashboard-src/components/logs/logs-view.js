@@ -24,9 +24,10 @@ const css = `
 .logs-view {
   background: var(--panel-bg-vibrant);
   border: 1px solid var(--panel-border);
-  border-radius: 18px;
+  border-radius: 8px;
   padding: 18px;
   box-shadow: var(--panel-shadow);
+  backdrop-filter: blur(16px) saturate(1.18);
 }
 
 .logs-view .card-title {
@@ -47,7 +48,7 @@ const css = `
 .logs-view .actions { display: flex; gap: 6px; }
 .logs-view .btn {
   border: 1px solid var(--control-border);
-  background: var(--control-bg);
+  background: linear-gradient(145deg, rgba(255,255,255,.13), rgba(255,255,255,.055));
   color: var(--text-secondary);
   border-radius: 8px;
   padding: 4px 10px;
@@ -64,8 +65,8 @@ const css = `
   margin-top: 4px;
   height: 420px;
   overflow-y: auto;
-  border-radius: 10px;
-  background: rgba(8,18,34,.55);
+  border-radius: 8px;
+  background: linear-gradient(145deg, rgba(0,0,0,.18), rgba(255,255,255,.035));
   border: 1px solid var(--control-border);
   padding: 6px 0;
   font-family: var(--mono);

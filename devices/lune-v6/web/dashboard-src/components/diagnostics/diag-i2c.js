@@ -11,10 +11,11 @@ const css = `
 .diag-i2c {
   background: var(--panel-bg-vibrant);
   border: 1px solid var(--panel-border);
-  border-radius: 18px;
+  border-radius: 8px;
   padding: 18px;
   margin-bottom: 18px;
   box-shadow: var(--panel-shadow);
+  backdrop-filter: blur(16px) saturate(1.18);
 }
 .diag-i2c .card-title {
   font-size: .84rem;
@@ -27,7 +28,7 @@ const css = `
   border-bottom: 1px solid var(--panel-border);
 }
 .diag-i2c pre {
-  background: var(--control-bg);
+  background: linear-gradient(145deg, rgba(0,0,0,.16), rgba(255,255,255,.05));
   border: 1px solid var(--control-border);
   color: var(--text-strong);
   border-radius: 8px;
@@ -37,8 +38,8 @@ const css = `
   margin: 0;
 }
 .btn-row { margin-top: 12px; }
-.btn { padding: 7px 14px; border-radius: 10px; border: 1px solid var(--control-border); background: var(--control-bg); color: var(--text-strong); font-weight: 700; cursor: pointer; }
-.btn:hover { background: var(--control-bg-hover); border-color: rgba(255,133,49,.5); color: #ffe7b9; }
+.btn { padding: 7px 14px; border-radius: 8px; border: 1px solid var(--control-border); background: linear-gradient(145deg, rgba(255,255,255,.13), rgba(255,255,255,.055)); color: var(--text-strong); font-weight: 700; cursor: pointer; }
+.btn:hover { background: linear-gradient(135deg, rgba(255,138,61,.90), rgba(255,189,74,.84)); border-color: rgba(255,138,61,.5); color: var(--text-on-accent); }
 .diag-i2c .fault {
     color: var(--red);
     font-weight: bold;

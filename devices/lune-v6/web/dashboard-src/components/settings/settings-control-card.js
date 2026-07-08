@@ -15,9 +15,11 @@ const css = `
 .settings-card {
   background: var(--panel-bg-vibrant);
   border: 1px solid var(--panel-border);
-  border-radius: 18px;
+  border-radius: 8px;
   padding: 20px;
   box-shadow: var(--panel-shadow);
+  backdrop-filter: blur(18px) saturate(130%);
+  -webkit-backdrop-filter: blur(18px) saturate(130%);
 }
 
 .settings-card .card-title {
@@ -39,8 +41,9 @@ const css = `
   margin-bottom: 10px;
   padding: 10px 14px;
   border: 1px solid var(--control-border);
-  border-radius: 12px;
-  background: var(--control-bg);
+  border-radius: 8px;
+  background: linear-gradient(145deg, rgba(255,255,255,.075), rgba(255,255,255,.025));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.08);
 }
 
 .settings-card .toggle-label {
@@ -58,12 +61,13 @@ const css = `
 .settings-card .ui-toggle {
   width: 48px;
   height: 26px;
-  border-radius: 999px;
+  border-radius: 8px;
   background: var(--control-bg-hover);
   position: relative;
   cursor: pointer;
   border: 1px solid var(--control-border);
-  transition: background .2s ease, border-color .2s ease;
+  box-shadow: inset 0 1px 2px rgba(0,0,0,.28);
+  transition: background .2s ease, border-color .2s ease, box-shadow .2s ease;
   flex-shrink: 0;
 }
 
@@ -75,8 +79,9 @@ const css = `
   width: 18px;
   height: 18px;
   background: var(--control-knob);
-  border-radius: 999px;
+  border-radius: 6px;
   transition: transform .2s ease;
+  box-shadow: 0 3px 10px rgba(0,0,0,.32);
 }
 
 .settings-card .ui-toggle.on {
@@ -99,17 +104,18 @@ const css = `
   width: 100%;
   min-width: 0;
   border: 1px solid var(--control-border);
-  background: var(--control-bg);
+  background: linear-gradient(145deg, rgba(255,255,255,.085), rgba(255,255,255,.025));
   color: var(--text-strong);
-  border-radius: 10px;
+  border-radius: 8px;
   padding: 9px 14px;
   cursor: pointer;
   font-weight: 700;
+  box-shadow: 0 8px 20px rgba(0,0,0,.18), inset 0 1px 0 rgba(255,255,255,.08);
   transition: .18s ease;
 }
 
 .settings-card .btn:hover {
-  background: var(--control-bg-hover);
+  background: linear-gradient(145deg, rgba(255,138,61,.2), rgba(255,255,255,.055));
   border-color: var(--control-border-hover);
   color: var(--text-strong);
 }

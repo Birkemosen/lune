@@ -42,6 +42,10 @@ class LuneTouchDashboard : public Component, public AsyncWebHandler {
   void handle_root_(AsyncWebServerRequest *request);
   void handle_js_(AsyncWebServerRequest *request);
   void handle_v1_(AsyncWebServerRequest *request, const char *path);
+  void send_text_(AsyncWebServerRequest *request, int code, const char *content_type,
+                  const char *body, bool cors = false, const char *cache_control = nullptr);
+  void send_gzip_chunked_(AsyncWebServerRequest *request, const char *content_type,
+                          const uint8_t *data, size_t length, const char *cache_control);
   void send_json_(AsyncWebServerRequest *request, const char *body);
   void send_ok_(AsyncWebServerRequest *request, const char *data = "{}");
   void send_error_(AsyncWebServerRequest *request, int code, const char *err_code, const char *message);

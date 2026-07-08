@@ -16,6 +16,7 @@ static constexpr const char API_PREFIX[] = "/api/lune-touch/v1";
 static constexpr size_t API_PREFIX_LEN = sizeof(API_PREFIX) - 1;
 static constexpr const char CORS_ALLOW_METHODS[] = "GET, POST, OPTIONS";
 static constexpr const char CORS_ALLOW_HEADERS[] = "Content-Type";
+static constexpr size_t STATIC_CHUNK_SIZE = 2048;
 
 namespace {
 
@@ -72,6 +73,13 @@ bool query_value_from(const char *query, const char *name, std::string *out) {
     cursor = *part_end == '&' ? part_end + 1 : part_end;
   }
   return false;
+}
+
+bool is_dashboard_js_url(const char *url) {
+  static constexpr const char PATH[] = "/dashboard.js";
+  static constexpr size_t PATH_LEN = sizeof(PATH) - 1;
+  return url != nullptr && strncmp(url, PATH, PATH_LEN) == 0 &&
+         (url[PATH_LEN] == '\0' || url[PATH_LEN] == '?');
 }
 
 std::string api_arg(const ApiRequest &api, const char *name) {
@@ -229,6 +237,8 @@ const char *http_status_line(int code) {
   switch (code) {
     case 200:
       return "200 OK";
+    case 204:
+      return "204 No Content";
     case 400:
       return "400 Bad Request";
     case 404:
@@ -297,7 +307,7 @@ static const char DASHBOARD_HTML[] =
     "<title>Lune Touch</title>"
     "</head><body>"
     "<div id=\"app\">Loading Lune Touch...</div>"
-    "<script src=\"/dashboard.js\"></script>"
+    "<script src=\"/dashboard.js?v=glass-ui-1\"></script>"
     "</body></html>";
 
 void LuneTouchDashboard::setup() {
@@ -327,7 +337,7 @@ void LuneTouchDashboard::setup() {
 bool LuneTouchDashboard::canHandle(AsyncWebServerRequest *request) const {
   char url_buf[AsyncWebServerRequest::URL_BUF_SIZE];
   auto url = request->url_to(url_buf);
-  if (url == "/" || url == "/dashboard" || url == "/dashboard/" || url == "/dashboard.js")
+  if (url == "/" || url == "/dashboard" || url == "/dashboard/" || is_dashboard_js_url(url.c_str()))
     return true;
   return strncmp(url.c_str(), API_PREFIX, API_PREFIX_LEN) == 0 &&
          (url.c_str()[API_PREFIX_LEN] == '/' || url.c_str()[API_PREFIX_LEN] == '\0');
@@ -340,7 +350,7 @@ void LuneTouchDashboard::handleRequest(AsyncWebServerRequest *request) {
     handle_root_(request);
     return;
   }
-  if (url == "/dashboard.js") {
+  if (is_dashboard_js_url(url.c_str())) {
     handle_js_(request);
     return;
   }
@@ -349,31 +359,63 @@ void LuneTouchDashboard::handleRequest(AsyncWebServerRequest *request) {
     handle_v1_(request, *path ? path : "/");
     return;
   }
-  request->send(404, "text/plain", "Not found");
+  send_text_(request, 404, "text/plain", "Not found");
 }
 
 void LuneTouchDashboard::handle_root_(AsyncWebServerRequest *request) {
-  request->send(200, "text/html; charset=utf-8", DASHBOARD_HTML);
+  send_text_(request, 200, "text/html; charset=utf-8", DASHBOARD_HTML, false, "no-cache");
 }
 
 void LuneTouchDashboard::handle_js_(AsyncWebServerRequest *request) {
 #ifdef LUNE_TOUCH_HAS_DASHBOARD_JS
-  AsyncWebServerResponse *response = request->beginResponse(
-      200, "application/javascript; charset=utf-8",
-      (const uint8_t *) LUNE_TOUCH_DASHBOARD_JS_DATA, LUNE_TOUCH_DASHBOARD_JS_SIZE);
-  response->addHeader("Content-Encoding", "gzip");
-  response->addHeader("Cache-Control", "max-age=60");
-  request->send(response);
+  send_gzip_chunked_(request, "application/javascript; charset=utf-8",
+                     LUNE_TOUCH_DASHBOARD_JS_DATA, LUNE_TOUCH_DASHBOARD_JS_SIZE,
+                     "no-cache, max-age=0");
 #else
-  request->send(404, "text/plain", "dashboard.js not configured");
+  send_text_(request, 404, "text/plain", "dashboard.js not configured");
 #endif
 }
 
+void LuneTouchDashboard::send_text_(AsyncWebServerRequest *request, int code, const char *content_type,
+                                    const char *body, bool cors, const char *cache_control) {
+  if (request == nullptr)
+    return;
+  httpd_req_t *raw = *request;
+  httpd_resp_set_status(raw, http_status_line(code));
+  httpd_resp_set_type(raw, content_type);
+  httpd_resp_set_hdr(raw, "Connection", "close");
+  if (cache_control != nullptr)
+    httpd_resp_set_hdr(raw, "Cache-Control", cache_control);
+  if (cors)
+    add_cors_headers(raw);
+  httpd_resp_send(raw, body != nullptr ? body : "", HTTPD_RESP_USE_STRLEN);
+}
+
+void LuneTouchDashboard::send_gzip_chunked_(AsyncWebServerRequest *request, const char *content_type,
+                                            const uint8_t *data, size_t length,
+                                            const char *cache_control) {
+  if (request == nullptr || data == nullptr)
+    return;
+  httpd_req_t *raw = *request;
+  httpd_resp_set_status(raw, http_status_line(200));
+  httpd_resp_set_type(raw, content_type);
+  httpd_resp_set_hdr(raw, "Content-Encoding", "gzip");
+  httpd_resp_set_hdr(raw, "Connection", "close");
+  if (cache_control != nullptr)
+    httpd_resp_set_hdr(raw, "Cache-Control", cache_control);
+
+  size_t offset = 0;
+  while (offset < length) {
+    const size_t to_send = std::min(STATIC_CHUNK_SIZE, length - offset);
+    if (httpd_resp_send_chunk(raw, reinterpret_cast<const char *>(data + offset), to_send) != ESP_OK)
+      return;
+    offset += to_send;
+  }
+  httpd_resp_send_chunk(raw, nullptr, 0);
+}
+
 void LuneTouchDashboard::send_json_(AsyncWebServerRequest *request, const char *body) {
-  AsyncWebServerResponse *response = request->beginResponse(200, "application/json", body);
-  response->addHeader("Cache-Control", "no-cache");
-  add_cors_headers(response);
-  request->send(response);
+  send_text_(request, 200, "application/json", body, true, "no-cache");
 }
 
 void LuneTouchDashboard::send_ok_(AsyncWebServerRequest *request, const char *data) {
@@ -393,9 +435,7 @@ void LuneTouchDashboard::send_error_(AsyncWebServerRequest *request, int code, c
   snprintf(response_buf_, sizeof(response_buf_),
            "{\"ok\":false,\"version\":\"v1\",\"ts_ms\":%lu,\"error\":{\"code\":\"%s\",\"message\":\"%s\"}}",
            ts_ms, err_code, message);
-  AsyncWebServerResponse *response = request->beginResponse(code, "application/json", response_buf_);
-  add_cors_headers(response);
-  request->send(response);
+  send_text_(request, code, "application/json", response_buf_, true, "no-cache");
 }
 
 void LuneTouchDashboard::send_write_result_(AsyncWebServerRequest *request, bool accepted, int failure_code) {
@@ -420,6 +460,7 @@ void LuneTouchDashboard::send_json_(ApiRequest &api, const char *body) {
   httpd_resp_set_status(api.raw, http_status_line(200));
   httpd_resp_set_type(api.raw, "application/json");
   httpd_resp_set_hdr(api.raw, "Cache-Control", "no-cache");
+  httpd_resp_set_hdr(api.raw, "Connection", "close");
   add_cors_headers(api.raw);
   httpd_resp_send(api.raw, body, HTTPD_RESP_USE_STRLEN);
 }
@@ -454,6 +495,7 @@ void LuneTouchDashboard::send_error_(ApiRequest &api, int code, const char *err_
   httpd_resp_set_status(api.raw, http_status_line(code));
   httpd_resp_set_type(api.raw, "application/json");
   httpd_resp_set_hdr(api.raw, "Cache-Control", "no-cache");
+  httpd_resp_set_hdr(api.raw, "Connection", "close");
   add_cors_headers(api.raw);
   httpd_resp_send(api.raw, response_buf_, HTTPD_RESP_USE_STRLEN);
 }
@@ -476,9 +518,7 @@ void LuneTouchDashboard::send_write_result_(ApiRequest &api, bool accepted, int 
 
 void LuneTouchDashboard::handle_v1_(AsyncWebServerRequest *request, const char *path) {
   if (request->method() == HTTP_OPTIONS) {
-    AsyncWebServerResponse *response = request->beginResponse(204, "text/plain", "");
-    add_cors_headers(response);
-    request->send(response);
+    send_text_(request, 204, "text/plain", "", true);
     return;
   }
 

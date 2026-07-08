@@ -11,9 +11,10 @@ const css = `
 .diag-zone-recovery {
   background: var(--panel-bg-vibrant);
   border: 1px solid var(--panel-border);
-  border-radius: 18px;
+  border-radius: 8px;
   padding: 18px;
   box-shadow: var(--panel-shadow);
+  backdrop-filter: blur(16px) saturate(1.18);
 }
 .diag-zone-recovery .card-title {
   font-size: .84rem;
@@ -59,7 +60,7 @@ const css = `
   min-width: 140px;
 }
 .diag-zone-recovery .sel {
-  background: var(--control-bg);
+  background: linear-gradient(145deg, rgba(0,0,0,.16), rgba(255,255,255,.05));
   border: 1px solid var(--control-border);
   border-radius: 8px;
   padding: 6px 10px;

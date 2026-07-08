@@ -15,6 +15,7 @@ BUILD_ROOT ?= $(ROOT_ABS)/$(DEVICE_DIR)/configurations/.esphome/build/$(BUILD_NA
 FIRMWARE_BIN ?= $(BUILD_ROOT)/.pio/build/$(BUILD_NAME)/firmware.bin
 OTA_SLOT_BYTES ?= 6553600
 OTA_WARN_PERCENT ?= 85
+HOST ?=
 PORT ?=
 AUTO_PORT := $(strip $(shell ls /dev/cu.usbmodem* /dev/cu.usbserial* /dev/cu.SLAB_USBtoUART* /dev/cu.wchusbserial* 2>/dev/null | head -n 1))
 SERIAL_PORT := $(if $(PORT),$(PORT),$(AUTO_PORT))
@@ -36,18 +37,23 @@ COORDINATOR_SRCS := $(COORDINATOR_COMPONENT_DIR)/coordinator_model.cpp \
                     $(COORDINATOR_TEST_DIR)/test_coordinator_model.cpp
 COORDINATOR_OUT ?= /tmp/test_lune_touch_coordinator_model
 
-.PHONY: help check ensure-secrets-link config build build-verify ota-size-check deploy monitor \
-        config-mini build-mini dashboard dashboard-tooling dashboard-build dashboard-watch \
+.PHONY: help check ensure-secrets-link config build build-verify ota-size-check ota deploy monitor \
+        config-mini build-mini deploy-mini ota-mini dashboard dashboard-tooling dashboard-build dashboard-watch \
         test test-forecast test-coordinator clean
 
 help:
 	@echo "Lune Touch coordinator tasks"
 	@echo "  make config           Validate Lune Touch ESPHome YAML"
 	@echo "  make build            Compile Lune Touch firmware"
+	@echo "  make config-mini      Validate Lune Mini ESPHome YAML"
 	@echo "  make build-mini       Compile Lune Mini headless coordinator firmware"
+	@echo "  make deploy-mini HOST=192.168.x.x"
+	@echo "  make ota-mini HOST=192.168.x.x"
 	@echo "  make ota-size-check   Verify firmware fits the OTA slot"
-	@echo "  make deploy           Build + upload Lune Touch"
+	@echo "  make ota HOST=192.168.x.x"
+	@echo "  make deploy           Build + upload Lune Touch (USB or HOST OTA)"
 	@echo "  make deploy PORT=/dev/cu.usbmodemXXXX"
+	@echo "  make deploy HOST=192.168.x.x"
 	@echo "  make monitor          Open serial monitor on PORT"
 	@echo "  make monitor PORT=/dev/cu.usbmodemXXXX"
 	@echo "  make dashboard-build  Build Lune Touch dashboard bundle"
@@ -91,6 +97,12 @@ config-mini:
 build-mini:
 	$(MAKE) CONFIG=configurations/lune-mini.yaml BUILD_NAME=lune-mini build
 
+deploy-mini:
+	$(MAKE) CONFIG=configurations/lune-mini.yaml BUILD_NAME=lune-mini deploy
+
+ota-mini:
+	$(MAKE) CONFIG=configurations/lune-mini.yaml BUILD_NAME=lune-mini ota
+
 ota-size-check:
 	@if [ ! -f "$(FIRMWARE_BIN)" ]; then \
 		echo "Firmware binary not found: $(FIRMWARE_BIN)"; \
@@ -99,7 +111,7 @@ ota-size-check:
 	@size=$$(wc -c < "$(FIRMWARE_BIN)"); \
 	warn=$$(( $(OTA_SLOT_BYTES) * $(OTA_WARN_PERCENT) / 100 )); \
 	pct=$$(awk "BEGIN { printf \"%.1f\", ($$size / $(OTA_SLOT_BYTES)) * 100 }"); \
-	echo "Lune Touch OTA size: $$size / $(OTA_SLOT_BYTES) bytes ($$pct%)"; \
+	echo "$(BUILD_NAME) OTA size: $$size / $(OTA_SLOT_BYTES) bytes ($$pct%)"; \
 	if [ $$size -gt $(OTA_SLOT_BYTES) ]; then \
 		echo "ERROR: firmware.bin exceeds Lune Touch OTA slot"; \
 		exit 1; \
@@ -108,13 +120,22 @@ ota-size-check:
 		echo "WARNING: firmware.bin exceeds $(OTA_WARN_PERCENT)% of the OTA slot"; \
 	fi
 
+ota: build
+	@if [ -z "$(HOST)" ]; then \
+		echo "No OTA host set. Re-run with HOST=192.168.x.x or HOST=lune-touch.local"; \
+		exit 1; \
+	fi
+	$(ESPHOME) upload $(CONFIG_PATH) --file $(FIRMWARE_BIN) --device $(HOST)
+
 deploy: build
 	@if [ -n "$(PORT)" ]; then \
 		PLATFORMIO_CORE_DIR=$(PLATFORMIO_CORE_DIR) $(PIO) run -d $(BUILD_ROOT) -t upload --upload-port $(PORT); \
+	elif [ -n "$(HOST)" ]; then \
+		$(ESPHOME) upload $(CONFIG_PATH) --file $(FIRMWARE_BIN) --device $(HOST); \
 	else \
 		AUTO_PORT=$$(ls /dev/cu.usbmodem* /dev/cu.wchusbserial* /dev/cu.SLAB_USBtoUART* 2>/dev/null | head -n 1); \
 		if [ -z "$$AUTO_PORT" ]; then \
-			echo "No serial upload port found. Re-run with PORT=/dev/cu.usbmodemXXXX"; \
+			echo "No serial upload port found. Re-run with PORT=/dev/cu.usbmodemXXXX or HOST=192.168.x.x"; \
 			exit 1; \
 		fi; \
 		echo "Uploading to $$AUTO_PORT"; \

@@ -22,6 +22,7 @@ namespace esphome {
 namespace hv6_dashboard {
 
 static const char *const TAG = "hv6_dashboard";
+static constexpr size_t STATIC_CHUNK_SIZE = 2048;
 
 namespace {
 
@@ -43,6 +44,25 @@ bool appendf(char *buffer, size_t capacity, size_t &offset, const char *fmt, ...
 
   offset += static_cast<size_t>(written);
   return true;
+}
+
+const char *http_status_line(int code) {
+  switch (code) {
+    case 200: return "200 OK";
+    case 204: return "204 No Content";
+    case 400: return "400 Bad Request";
+    case 404: return "404 Not Found";
+    case 405: return "405 Method Not Allowed";
+    case 503: return "503 Service Unavailable";
+    default: return "500 Internal Server Error";
+  }
+}
+
+bool is_dashboard_js_url(const char *url) {
+  static constexpr const char PATH[] = "/dashboard.js";
+  static constexpr size_t PATH_LEN = sizeof(PATH) - 1;
+  return url != nullptr && strncmp(url, PATH, PATH_LEN) == 0 &&
+         (url[PATH_LEN] == '\0' || url[PATH_LEN] == '?');
 }
 
 // Append `s` as the body of a JSON string (without surrounding quotes),
@@ -289,7 +309,7 @@ static const char DASHBOARD_HTML[] =
     "<title>Lune V6</title>"
     "</head><body>"
     "<div id=\"app\">Loading dashboard...</div>"
-    "<script src=\"/dashboard.js\"></script>"
+    "<script src=\"/dashboard.js?v=glass-ui-1\"></script>"
     "</body></html>";
 
 void HV6Dashboard::update_snapshot_() {
@@ -527,7 +547,7 @@ static constexpr size_t V1_PREFIX_LEN = sizeof(V1_PREFIX) - 1;
 bool HV6Dashboard::canHandle(AsyncWebServerRequest *request) const {
   char url_buf[AsyncWebServerRequest::URL_BUF_SIZE];
   auto url = request->url_to(url_buf);
-  if (url == "/dashboard" || url == "/dashboard/" || url == "/dashboard.js")
+  if (url == "/dashboard" || url == "/dashboard/" || is_dashboard_js_url(url.c_str()))
     return true;
   return strncmp(url.c_str(), V1_PREFIX, V1_PREFIX_LEN) == 0 && url.c_str()[V1_PREFIX_LEN] == '/';
 }
@@ -540,7 +560,7 @@ void HV6Dashboard::handleRequest(AsyncWebServerRequest *request) {
     this->handle_root_(request);
     return;
   }
-  if (url == "/dashboard.js") {
+  if (is_dashboard_js_url(url.c_str())) {
     this->handle_js_(request);
     return;
   }
@@ -549,21 +569,60 @@ void HV6Dashboard::handleRequest(AsyncWebServerRequest *request) {
     return;
   }
 
-  request->send(404, "text/plain", "Not found");
+  send_text_(request, 404, "text/plain", "Not found");
 }
 
-void HV6Dashboard::handle_root_(AsyncWebServerRequest *request) { request->send(200, "text/html; charset=utf-8", DASHBOARD_HTML); }
+void HV6Dashboard::handle_root_(AsyncWebServerRequest *request) {
+  send_text_(request, 200, "text/html; charset=utf-8", DASHBOARD_HTML, false, "no-cache");
+}
 
 void HV6Dashboard::handle_js_(AsyncWebServerRequest *request) {
 #ifdef HV6_HAS_DASHBOARD_JS
-  AsyncWebServerResponse *response = request->beginResponse(
-      200, "application/javascript; charset=utf-8", (const uint8_t *) HV6_DASHBOARD_JS_DATA, HV6_DASHBOARD_JS_SIZE);
-  response->addHeader("Content-Encoding", "gzip");
-  response->addHeader("Cache-Control", "max-age=60");
-  request->send(response);
+  send_gzip_chunked_(request, "application/javascript; charset=utf-8",
+                     HV6_DASHBOARD_JS_DATA, HV6_DASHBOARD_JS_SIZE,
+                     "no-cache, max-age=0");
 #else
-  request->send(404, "text/plain", "dashboard.js not configured. Add dashboard_js: web/dashboard.js to hv6_dashboard.");
+  send_text_(request, 404, "text/plain",
+             "dashboard.js not configured. Add dashboard_js: web/dashboard.js to hv6_dashboard.");
 #endif
+}
+
+void HV6Dashboard::send_text_(AsyncWebServerRequest *request, int code, const char *content_type,
+                              const char *body, bool cors, const char *cache_control) {
+  if (request == nullptr)
+    return;
+  httpd_req_t *req = *request;
+  httpd_resp_set_status(req, http_status_line(code));
+  httpd_resp_set_type(req, content_type);
+  httpd_resp_set_hdr(req, "Connection", "close");
+  if (cache_control != nullptr)
+    httpd_resp_set_hdr(req, "Cache-Control", cache_control);
+  if (cors)
+    httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+  httpd_resp_send(req, body != nullptr ? body : "", HTTPD_RESP_USE_STRLEN);
+}
+
+void HV6Dashboard::send_gzip_chunked_(AsyncWebServerRequest *request, const char *content_type,
+                                      const uint8_t *data, size_t length,
+                                      const char *cache_control) {
+  if (request == nullptr || data == nullptr)
+    return;
+  httpd_req_t *req = *request;
+  httpd_resp_set_status(req, "200 OK");
+  httpd_resp_set_type(req, content_type);
+  httpd_resp_set_hdr(req, "Content-Encoding", "gzip");
+  httpd_resp_set_hdr(req, "Connection", "close");
+  if (cache_control != nullptr)
+    httpd_resp_set_hdr(req, "Cache-Control", cache_control);
+
+  size_t offset = 0;
+  while (offset < length) {
+    const size_t to_send = std::min(STATIC_CHUNK_SIZE, length - offset);
+    if (httpd_resp_send_chunk(req, reinterpret_cast<const char *>(data + offset), to_send) != ESP_OK)
+      return;
+    offset += to_send;
+  }
+  httpd_resp_send_chunk(req, nullptr, 0);
 }
 
 void HV6Dashboard::handle_state_(AsyncWebServerRequest *request) {
@@ -572,6 +631,7 @@ void HV6Dashboard::handle_state_(AsyncWebServerRequest *request) {
     httpd_req_t *req_err = *request;
     httpd_resp_set_status(req_err, "503 Service Unavailable");
     httpd_resp_set_type(req_err, "text/plain");
+    httpd_resp_set_hdr(req_err, "Connection", "close");
     httpd_resp_send(req_err, "Snapshot not ready", HTTPD_RESP_USE_STRLEN);
     return;
   }
@@ -585,6 +645,7 @@ void HV6Dashboard::handle_state_(AsyncWebServerRequest *request) {
   httpd_resp_set_type(req, "application/json");
   httpd_resp_set_hdr(req, "Cache-Control", "no-cache");
   httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+  httpd_resp_set_hdr(req, "Connection", "close");
 
   constexpr size_t BUF_SIZE = 2048;
   char *buf = this->json_buf_;
@@ -950,7 +1011,8 @@ void HV6Dashboard::handle_state_(AsyncWebServerRequest *request) {
 void HV6Dashboard::handle_overview_(AsyncWebServerRequest *request) {
   if (snapshot_lock_ == nullptr || !snapshot_ready_ ||
       xSemaphoreTake(snapshot_lock_, pdMS_TO_TICKS(50)) != pdTRUE) {
-    request->send(503, "application/json", "{\"ok\":false,\"error\":{\"code\":\"snapshot_not_ready\"}}");
+    send_text_(request, 503, "application/json", "{\"ok\":false,\"error\":{\"code\":\"snapshot_not_ready\"}}",
+               true, "no-cache");
     return;
   }
   memcpy(&this->state_snap_buf_, &this->snapshot_, sizeof(this->state_snap_buf_));
@@ -999,13 +1061,14 @@ void HV6Dashboard::handle_overview_(AsyncWebServerRequest *request) {
            static_cast<unsigned long>(snap->free_internal_kb),
            static_cast<unsigned long>(snap->free_psram_kb),
            snap->minimum_flow_always ? "true" : "false");
-  request->send(200, "application/json", this->json_buf_);
+  send_text_(request, 200, "application/json", this->json_buf_, true, "no-cache");
 }
 
 void HV6Dashboard::handle_zones_(AsyncWebServerRequest *request) {
   if (snapshot_lock_ == nullptr || !snapshot_ready_ ||
       xSemaphoreTake(snapshot_lock_, pdMS_TO_TICKS(50)) != pdTRUE) {
-    request->send(503, "application/json", "{\"ok\":false,\"error\":{\"code\":\"snapshot_not_ready\"}}");
+    send_text_(request, 503, "application/json", "{\"ok\":false,\"error\":{\"code\":\"snapshot_not_ready\"}}",
+               true, "no-cache");
     return;
   }
   memcpy(&this->state_snap_buf_, &this->snapshot_, sizeof(this->state_snap_buf_));
@@ -1042,7 +1105,7 @@ void HV6Dashboard::handle_zones_(AsyncWebServerRequest *request) {
             static_cast<unsigned>(snap->zones[i].thermal_lead_h), max_offset);
   }
   appendf(buf, sizeof(this->json_buf_), off, "]}}");
-  request->send(200, "application/json", buf);
+  send_text_(request, 200, "application/json", buf, true, "no-cache");
 }
 
 void HV6Dashboard::handle_zone_(AsyncWebServerRequest *request, uint8_t zone) {
@@ -1052,7 +1115,8 @@ void HV6Dashboard::handle_zone_(AsyncWebServerRequest *request, uint8_t zone) {
   }
   if (snapshot_lock_ == nullptr || !snapshot_ready_ ||
       xSemaphoreTake(snapshot_lock_, pdMS_TO_TICKS(50)) != pdTRUE) {
-    request->send(503, "application/json", "{\"ok\":false,\"error\":{\"code\":\"snapshot_not_ready\"}}");
+    send_text_(request, 503, "application/json", "{\"ok\":false,\"error\":{\"code\":\"snapshot_not_ready\"}}",
+               true, "no-cache");
     return;
   }
   memcpy(&this->state_snap_buf_, &this->snapshot_, sizeof(this->state_snap_buf_));
@@ -1111,13 +1175,14 @@ void HV6Dashboard::handle_zone_(AsyncWebServerRequest *request, uint8_t zone) {
           static_cast<unsigned>(z.exterior_walls), wind, solar,
           static_cast<unsigned>(z.thermal_lead_h), max_offset,
           snap->motor_fault[i], open_ripple, close_ripple, open_factor, close_factor);
-  request->send(200, "application/json", buf);
+  send_text_(request, 200, "application/json", buf, true, "no-cache");
 }
 
 void HV6Dashboard::handle_settings_(AsyncWebServerRequest *request) {
   if (snapshot_lock_ == nullptr || !snapshot_ready_ ||
       xSemaphoreTake(snapshot_lock_, pdMS_TO_TICKS(50)) != pdTRUE) {
-    request->send(503, "application/json", "{\"ok\":false,\"error\":{\"code\":\"snapshot_not_ready\"}}");
+    send_text_(request, 503, "application/json", "{\"ok\":false,\"error\":{\"code\":\"snapshot_not_ready\"}}",
+               true, "no-cache");
     return;
   }
   memcpy(&this->state_snap_buf_, &this->snapshot_, sizeof(this->state_snap_buf_));
@@ -1129,6 +1194,7 @@ void HV6Dashboard::handle_settings_(AsyncWebServerRequest *request) {
   httpd_resp_set_type(req, "application/json");
   httpd_resp_set_hdr(req, "Cache-Control", "no-cache");
   httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+  httpd_resp_set_hdr(req, "Connection", "close");
 
   constexpr size_t BUF_SIZE = 2048;
   char *buf = this->json_buf_;
@@ -1230,7 +1296,8 @@ void HV6Dashboard::handle_settings_(AsyncWebServerRequest *request) {
 void HV6Dashboard::handle_diagnostics_(AsyncWebServerRequest *request) {
   if (snapshot_lock_ == nullptr || !snapshot_ready_ ||
       xSemaphoreTake(snapshot_lock_, pdMS_TO_TICKS(50)) != pdTRUE) {
-    request->send(503, "application/json", "{\"ok\":false,\"error\":{\"code\":\"snapshot_not_ready\"}}");
+    send_text_(request, 503, "application/json", "{\"ok\":false,\"error\":{\"code\":\"snapshot_not_ready\"}}",
+               true, "no-cache");
     return;
   }
   memcpy(&this->state_snap_buf_, &this->snapshot_, sizeof(this->state_snap_buf_));
@@ -1252,13 +1319,14 @@ void HV6Dashboard::handle_diagnostics_(AsyncWebServerRequest *request) {
            static_cast<unsigned long>(snap->free_psram_kb), cpu0, cpu1, flow, ret,
            snap->drivers_enabled ? "true" : "false", snap->asgard_role,
            snap->asgard_peer_status, snap->asgard_last_error);
-  request->send(200, "application/json", this->json_buf_);
+  send_text_(request, 200, "application/json", this->json_buf_, true, "no-cache");
 }
 
 void HV6Dashboard::handle_events_(AsyncWebServerRequest *request) {
-  request->send(200, "text/event-stream",
-                "event: hello\n"
-                "data: {\"resource\":\"/api/hv6/v1/state\",\"stream\":\"poll\"}\n\n");
+  send_text_(request, 200, "text/event-stream",
+             "event: hello\n"
+             "data: {\"resource\":\"/api/hv6/v1/state\",\"stream\":\"poll\"}\n\n",
+             true, "no-cache");
 }
 
 // =============================================================================
@@ -1362,7 +1430,7 @@ void HV6Dashboard::send_v1_(AsyncWebServerRequest *request, int code, const char
              "{\"ok\":false,\"version\":\"v1\",\"ts_ms\":%lld,\"error\":{\"code\":\"%s\",\"message\":\"%s\"}}",
              ts_ms, err_code, err_message != nullptr ? err_message : "");
   }
-  request->send(code, "application/json", buf);
+  send_text_(request, code, "application/json", buf, true, "no-cache");
 }
 
 bool HV6Dashboard::enqueue_action_(const DashboardAction &act) {
@@ -1531,7 +1599,7 @@ void HV6Dashboard::handle_v1_(AsyncWebServerRequest *request, const char *path) 
              static_cast<unsigned>(zone), num, accepted_offset, effective_setpoint,
              static_cast<unsigned long>(this->coordinator_command_expires_at_ms_[zi]),
              static_cast<unsigned long>(ttl_s), clamp_applied ? "true" : "false");
-    request->send(200, "application/json", response);
+    send_text_(request, 200, "application/json", response, true, "no-cache");
     return;
 
   } else if ((zone = match_zone_route(path, "/zones", "enabled")) != -1) {
@@ -2004,6 +2072,7 @@ void HV6Dashboard::handle_history_(AsyncWebServerRequest *request) {
     httpd_req_t *req_err = *request;
     httpd_resp_set_status(req_err, "503 Service Unavailable");
     httpd_resp_set_type(req_err, "text/plain");
+    httpd_resp_set_hdr(req_err, "Connection", "close");
     httpd_resp_send(req_err, "Out of memory", HTTPD_RESP_USE_STRLEN);
     return;
   }
@@ -2023,6 +2092,7 @@ void HV6Dashboard::handle_history_(AsyncWebServerRequest *request) {
   httpd_resp_set_type(req, "application/json");
   httpd_resp_set_hdr(req, "Cache-Control", "no-cache");
   httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+  httpd_resp_set_hdr(req, "Connection", "close");
 
   constexpr size_t BUF_SIZE = 2048;
   char *buf = this->json_buf_;
@@ -2166,6 +2236,7 @@ void HV6Dashboard::handle_logs_(AsyncWebServerRequest *request) {
     httpd_req_t *req_err = *request;
     httpd_resp_set_status(req_err, "503 Service Unavailable");
     httpd_resp_set_type(req_err, "text/plain");
+    httpd_resp_set_hdr(req_err, "Connection", "close");
     httpd_resp_send(req_err, "Out of memory", HTTPD_RESP_USE_STRLEN);
     return;
   }
@@ -2187,6 +2258,7 @@ void HV6Dashboard::handle_logs_(AsyncWebServerRequest *request) {
   httpd_resp_set_type(req, "application/json");
   httpd_resp_set_hdr(req, "Cache-Control", "no-cache");
   httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+  httpd_resp_set_hdr(req, "Connection", "close");
 
   constexpr size_t BUF_SIZE = 2048;
   char *buf = this->json_buf_;
@@ -2238,7 +2310,8 @@ void HV6Dashboard::handle_logs_(AsyncWebServerRequest *request) {
 void HV6Dashboard::handle_peer_(AsyncWebServerRequest *request) {
   if (snapshot_lock_ == nullptr || !snapshot_ready_ ||
       xSemaphoreTake(snapshot_lock_, pdMS_TO_TICKS(50)) != pdTRUE) {
-    request->send(503, "application/json", "{\"ok\":false,\"error\":\"snapshot not ready\"}");
+    send_text_(request, 503, "application/json", "{\"ok\":false,\"error\":\"snapshot not ready\"}",
+               false, "no-cache");
     return;
   }
   float temps[hv6::NUM_ZONES];
@@ -2280,12 +2353,14 @@ void HV6Dashboard::handle_peer_(AsyncWebServerRequest *request) {
   httpd_resp_set_status(req, "200 OK");
   httpd_resp_set_type(req, "application/json");
   httpd_resp_set_hdr(req, "Cache-Control", "no-cache");
+  httpd_resp_set_hdr(req, "Connection", "close");
   httpd_resp_send(req, buf, static_cast<ssize_t>(off));
 }
 
 void HV6Dashboard::handle_ble_scan_(AsyncWebServerRequest *request) {
   if (zone_controller_ == nullptr) {
-    request->send(503, "application/json", "{\"ok\":false,\"error\":\"no zone controller\"}");
+    send_text_(request, 503, "application/json", "{\"ok\":false,\"error\":\"no zone controller\"}",
+               true, "no-cache");
     return;
   }
 
@@ -2300,6 +2375,7 @@ void HV6Dashboard::handle_ble_scan_(AsyncWebServerRequest *request) {
   httpd_resp_set_type(req, "application/json");
   httpd_resp_set_hdr(req, "Cache-Control", "no-cache");
   httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+  httpd_resp_set_hdr(req, "Connection", "close");
 
   static char buf[2048];
   size_t off = 0;

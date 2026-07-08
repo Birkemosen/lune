@@ -14,24 +14,26 @@ const css = `
 	grid-template-rows: auto auto auto;
 	gap: 2px;
 	padding: 7px 10px;
-	border-radius: 12px;
+	border-radius: 8px;
 	border: 1px solid var(--panel-border);
 	border-left: 3px solid rgba(120,146,200,.45);
-	background: var(--panel-bg);
+	background: linear-gradient(145deg, rgba(255,255,255,.085), rgba(0,0,0,.045));
+	box-shadow: inset 0 1px 0 rgba(255,255,255,.10), 0 10px 22px rgba(0,0,0,.14);
 	cursor: pointer;
 	transition: .18s ease;
 	min-width: 0;
 	overflow: hidden;
 }
 .zone-card:hover {
-	border-color: rgba(124,155,208,.42);
-	border-left-color: rgba(124,155,208,.7);
-	background: rgba(0,47,69,.56);
+	border-color: rgba(235,245,248,.30);
+	border-left-color: rgba(126,182,216,.82);
+	background: linear-gradient(145deg, rgba(255,255,255,.12), rgba(255,255,255,.045));
 }
 .zone-card.active {
-	border-color: rgba(255,133,49,.44);
-	border-left-color: rgba(255,133,49,.84);
-	background: rgba(255,133,49,.10);
+	border-color: rgba(255,138,61,.54);
+	border-left-color: rgba(255,138,61,.92);
+	background: linear-gradient(135deg, rgba(255,138,61,.20), rgba(255,255,255,.075));
+	box-shadow: 0 0 0 1px rgba(255,138,61,.08), inset 0 1px 0 rgba(255,255,255,.16), 0 14px 26px rgba(255,138,61,.10);
 }
 
 .zone-card.disabled {
@@ -39,9 +41,9 @@ const css = `
 	border-left-color: rgba(120,146,200,.35);
 }
 
-.zone-card.zs-heating { border-left-color: #ff8531; }
-.zone-card.zs-idle { border-left-color: #7aa7ce; }
-.zone-card.zs-fault { border-left-color: #ff6361; }
+.zone-card.zs-heating { border-left-color: var(--accent); }
+.zone-card.zs-idle { border-left-color: var(--blue); }
+.zone-card.zs-fault { border-left-color: var(--state-danger); }
 .zone-card.zs-off { border-left-color: rgba(120,146,200,.4); }
 
 .zone-card .zc-state-row {
@@ -74,9 +76,9 @@ const css = `
 .zone-card .zc-link {
 	margin-left: auto;
 	padding: 1px 6px 2px;
-	border-radius: 999px;
-	border: 1px solid rgba(255,133,49,.44);
-	background: rgba(255,133,49,.12);
+	border-radius: 8px;
+	border: 1px solid rgba(255,138,61,.44);
+	background: rgba(255,138,61,.14);
 	color: var(--accent);
 	font-size: 9px;
 	font-weight: 800;

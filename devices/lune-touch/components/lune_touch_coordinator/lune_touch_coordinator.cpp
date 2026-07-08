@@ -3339,11 +3339,11 @@ void LuneTouchCoordinator::write_diagnostics_json(char *buffer, size_t capacity)
   else if (!has_forecast_location)
     next_action = "set_forecast_location";
 
-  char blockers[768]{};
+  diagnostics_blockers_[0] = '\0';
   size_t blockers_off = 0;
   size_t blockers_count = 0;
   auto append_blocker = [&](const char *scope, const char *target, const char *reason, const char *action) {
-    if (blockers_count >= 8 || blockers_off + 128 >= sizeof(blockers))
+    if (blockers_count >= 8 || blockers_off + 128 >= sizeof(diagnostics_blockers_))
       return;
     char scope_esc[24];
     char target_esc[48];
@@ -3353,7 +3353,7 @@ void LuneTouchCoordinator::write_diagnostics_json(char *buffer, size_t capacity)
     json_escape_(target, target_esc, sizeof(target_esc));
     json_escape_(reason, reason_esc, sizeof(reason_esc));
     json_escape_(action, action_esc, sizeof(action_esc));
-    if (appendf_(blockers, sizeof(blockers), blockers_off,
+    if (appendf_(diagnostics_blockers_, sizeof(diagnostics_blockers_), blockers_off,
                  "%s{\"scope\":\"%s\",\"target\":\"%s\",\"reason\":\"%s\",\"action\":\"%s\"}",
                  blockers_count ? "," : "", scope_esc, target_esc, reason_esc, action_esc))
       blockers_count++;
@@ -3459,7 +3459,7 @@ void LuneTouchCoordinator::write_diagnostics_json(char *buffer, size_t capacity)
            ready_for_commands ? "true" : "false",
            ready_for_forecast ? "true" : "false",
            next_action,
-           blockers,
+           diagnostics_blockers_,
            ota_label,
            static_cast<unsigned>(running_subtype),
            static_cast<unsigned long>(running_size),

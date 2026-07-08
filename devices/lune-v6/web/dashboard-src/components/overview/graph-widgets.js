@@ -31,8 +31,9 @@ const DEMAND_LINE = 'var(--series-solar)';
 const css = `
 .graph-widgets { display: grid; gap: 12px; }
 .graph-widgets .chart-card svg {
-  border-radius: 10px;
-  background: rgba(0,32,46,.34);
+  border-radius: 8px;
+  background: linear-gradient(145deg, rgba(255,255,255,.045), rgba(0,18,26,.34));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.06);
 }
 .graph-widgets .gw-controls {
   display: flex;
@@ -47,9 +48,9 @@ const css = `
   align-items: center;
   gap: 6px;
   border: 1px solid var(--control-border);
-  background: var(--control-bg);
+  background: linear-gradient(145deg, rgba(255,255,255,.075), rgba(255,255,255,.025));
   color: var(--text-secondary);
-  border-radius: 999px;
+  border-radius: 8px;
   padding: 4px 10px;
   font-size: .68rem;
   font-weight: 700;
@@ -61,7 +62,7 @@ const css = `
   content: '';
   width: 9px;
   height: 9px;
-  border-radius: 999px;
+  border-radius: 4px;
   border: 2px solid currentColor;
   background: color-mix(in srgb, currentColor 30%, transparent);
   flex-shrink: 0;

@@ -12,9 +12,10 @@ const css = `
 .ui-card {
   background: var(--panel-bg-vibrant);
   border: 1px solid var(--panel-border);
-  border-radius: 18px;
+  border-radius: 8px;
   padding: 18px 20px;
   box-shadow: var(--panel-shadow);
+  backdrop-filter: blur(16px) saturate(1.18);
   box-sizing: border-box;
 }
 
@@ -45,7 +46,7 @@ const css = `
   width: 16px;
   height: 16px;
   margin-left: 7px;
-  border-radius: 999px;
+  border-radius: 8px;
   border: 1.5px solid var(--control-border-strong);
   color: var(--text-secondary);
   font-size: .65rem;
@@ -135,12 +136,13 @@ const css = `
   box-sizing: border-box;
   text-align: right;
   border: 1px solid var(--control-border);
-  background: var(--control-bg);
+  background: linear-gradient(145deg, rgba(0,0,0,.16), rgba(255,255,255,.05));
   color: var(--text);
-  border-radius: 10px;
+  border-radius: 8px;
   padding: 8px 10px;
   font-size: .92rem;
   font-family: var(--mono);
+  box-shadow: inset 0 2px 8px rgba(0,0,0,.20), inset 0 1px 0 rgba(255,255,255,.08);
   transition: border-color .15s ease;
 }
 .ui-input.wide { width: 180px; text-align: left; font-family: inherit; }
@@ -150,11 +152,12 @@ const css = `
   max-width: 240px;
   box-sizing: border-box;
   border: 1px solid var(--control-border);
-  background: var(--control-bg);
+  background: linear-gradient(145deg, rgba(0,0,0,.16), rgba(255,255,255,.05));
   color: var(--text);
-  border-radius: 10px;
+  border-radius: 8px;
   padding: 8px 10px;
   font-size: .92rem;
+  box-shadow: inset 0 2px 8px rgba(0,0,0,.20), inset 0 1px 0 rgba(255,255,255,.08);
   transition: border-color .15s ease;
 }
 
@@ -195,9 +198,10 @@ const css = `
   height: 34px;
   flex-shrink: 0;
   border: 1px solid var(--control-border);
-  background: var(--control-bg);
+  background: linear-gradient(145deg, rgba(255,255,255,.13), rgba(255,255,255,.055));
   color: var(--text);
-  border-radius: 9px;
+  border-radius: 8px;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.12), 0 10px 22px rgba(0,0,0,.18);
   cursor: pointer;
   font-size: 1.15rem;
   line-height: 1;
@@ -217,7 +221,7 @@ const css = `
   gap: 10px;
   margin: 0 0 6px;
   padding: 8px 12px;
-  border-radius: 10px;
+  border-radius: 8px;
   background: var(--warn-bg-soft);
   border: 1px solid var(--warn-border);
 }
@@ -243,7 +247,7 @@ const css = `
 .ui-toggle {
   width: 48px;
   height: 26px;
-  border-radius: 999px;
+  border-radius: 8px;
   background: var(--control-bg-hover);
   position: relative;
   cursor: pointer;
@@ -259,7 +263,7 @@ const css = `
   width: 18px;
   height: 18px;
   background: var(--control-knob);
-  border-radius: 999px;
+  border-radius: 6px;
   transition: transform .2s ease;
 }
 .ui-toggle.on { background: var(--success-bg-soft); border-color: var(--success-border); }
@@ -284,16 +288,17 @@ const css = `
   flex: 1;
   min-width: 120px;
   border: 1px solid var(--control-border);
-  background: var(--control-bg);
+  background: linear-gradient(145deg, rgba(255,255,255,.13), rgba(255,255,255,.055));
   color: var(--text-strong);
-  border-radius: 10px;
+  border-radius: 8px;
   padding: 9px 14px;
   cursor: pointer;
   font-weight: 700;
   font-size: .82rem;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.12), 0 10px 22px rgba(0,0,0,.18);
   transition: .18s ease;
 }
-.ui-btn:hover { background: var(--control-bg-hover); border-color: var(--control-border-hover); }
+.ui-btn:hover { background: linear-gradient(135deg, rgba(255,138,61,.90), rgba(255,189,74,.84)); border-color: rgba(255,218,166,.58); color: var(--text-on-accent); }
 .ui-btn.warn { border-color: var(--danger-border); background: var(--danger-bg); color: var(--danger-text); }
 .ui-btn.warn:hover { background: var(--danger-bg-strong); border-color: var(--danger-border-strong); }
 

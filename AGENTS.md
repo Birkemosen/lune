@@ -30,9 +30,12 @@ make build
 make deploy
 make logs
 make test
-make test-lune-v6
-make test-lune-touch
+make test-v6
+make test-touch
 make test-forecast
+make deploy-v6 HOST=192.168.x.x
+make deploy-touch HOST=192.168.x.x
+make deploy-mini HOST=192.168.x.x
 ```
 
 Device-local commands also work:

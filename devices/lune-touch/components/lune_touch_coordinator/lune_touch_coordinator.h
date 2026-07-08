@@ -215,6 +215,7 @@ class LuneTouchCoordinator : public esphome::Component {
   uint32_t forecast_last_fetch_ms_{0};
   char forecast_status_[16]{"stale"};
   char forecast_last_error_[96]{};
+  mutable char diagnostics_blockers_[768]{};
   bool forecast_fetch_requested_{false};
   bool forecast_boot_refresh_pending_{false};
   bool forecast_cache_restored_{false};

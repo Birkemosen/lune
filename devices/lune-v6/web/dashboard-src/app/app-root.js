@@ -19,53 +19,53 @@ const css = `
      → data series + states. Greens for "OK" status are kept for status
      legibility.
      =========================================================== */
-  --accent: #ff8531;          /* orange — primary accent */
-  --blue: #7aa7ce;            /* muted cool blue — secondary / return / wind accent */
+  --accent: #ff8a3d;          /* orange — primary accent */
+  --blue: #7eb6d8;            /* muted cool blue — secondary / return / wind accent */
   /* Chart data series — orange (warm) + muted blue (cool). */
-  --series-warm: #ff8531;
-  --series-cool: #7aa7ce;
-  --series-cool-fill: rgba(122,167,206,.14);
-  --series-solar: #ffc14d;    /* gold — solar irradiance / current-hour highlight */
+  --series-warm: #ff8a3d;
+  --series-cool: #7eb6d8;
+  --series-cool-fill: rgba(126,182,216,.14);
+  --series-solar: #ffd36a;    /* gold — solar irradiance / current-hour highlight */
   /* Axis/tick label color — warm-neutral, legible on the dark panel. */
-  --chart-axis: rgba(233,222,210,.82);
-  --bg: #00131d;
-  --surface: #002f45;
-  --card: #021d2b;
-  --border: rgba(120,146,200,.22);
-  --text: #FFFFFF;
-  --text-strong: #FFF4E6;
-  --text-secondary: rgba(255,239,224,.84);
-  --muted: rgba(247,233,221,.74);
-  --text-faint: rgba(229,216,222,.56);
-  --text-on-accent: #00202e;
-  --overlay-bg: rgba(0,19,29,.96);
-  --overlay-bg-soft: rgba(0,19,29,.72);
-  --soft: rgba(124,155,208,.12);
-  --panel-border: rgba(120,146,200,.28);
-  --panel-border-soft: rgba(120,146,200,.18);
-  --divider: rgba(255,255,255,.07);
-  --divider-dashed: rgba(120,146,200,.28);
-  --panel-bg: rgba(0,47,69,.34);
-  --panel-bg-vibrant: var(--panel-bg);
-  --panel-bg-flat: var(--panel-bg);
-  --panel-shadow: inset 0 1px 0 rgba(255,255,255,.025), 0 12px 30px rgba(0,0,0,.32);
+  --chart-axis: rgba(238,230,218,.82);
+  --bg: #091217;
+  --surface: rgba(18,30,36,.58);
+  --card: rgba(18,30,36,.74);
+  --border: rgba(229,240,244,.20);
+  --text: #f8f2e9;
+  --text-strong: #fff8ea;
+  --text-secondary: rgba(232,226,216,.78);
+  --muted: rgba(232,226,216,.72);
+  --text-faint: rgba(216,226,232,.50);
+  --text-on-accent: #071015;
+  --overlay-bg: rgba(7,16,21,.90);
+  --overlay-bg-soft: rgba(7,16,21,.66);
+  --soft: rgba(255,255,255,.08);
+  --panel-border: rgba(229,240,244,.20);
+  --panel-border-soft: rgba(229,240,244,.12);
+  --divider: rgba(255,255,255,.08);
+  --divider-dashed: rgba(229,240,244,.18);
+  --panel-bg: rgba(255,255,255,.075);
+  --panel-bg-vibrant: linear-gradient(145deg, rgba(255,255,255,.11), rgba(255,255,255,.04));
+  --panel-bg-flat: linear-gradient(145deg, rgba(255,255,255,.085), rgba(255,255,255,.035));
+  --panel-shadow: 16px 18px 38px rgba(0,0,0,.34), -10px -10px 28px rgba(255,255,255,.035), inset 0 1px 0 rgba(255,255,255,.16);
   --panel-shadow-soft: var(--panel-shadow);
-  --state-ok: #79d17e;
-  --state-warn: #ffa600;
-  --state-danger: #ff6361;
-  --state-disabled: #6E7E96;
-  --control-bg: rgba(124,155,208,.10);
-  --control-bg-hover: rgba(124,155,208,.16);
-  --control-border: rgba(120,146,200,.30);
-  --control-border-strong: rgba(120,146,200,.45);
-  --control-border-hover: rgba(120,146,200,.52);
+  --state-ok: #8fe08e;
+  --state-warn: #ffbd4a;
+  --state-danger: #ff7572;
+  --state-disabled: #7e8b95;
+  --control-bg: rgba(255,255,255,.085);
+  --control-bg-hover: rgba(255,255,255,.14);
+  --control-border: rgba(235,245,248,.22);
+  --control-border-strong: rgba(235,245,248,.36);
+  --control-border-hover: rgba(235,245,248,.48);
   --control-knob: #efe6dd;
   --focus-ring: rgba(124,155,208,.72);
   --focus-ring-soft: rgba(124,155,208,.60);
   --focus-border: rgba(124,155,208,.55);
-  --accent-bg-soft: rgba(255,133,49,.12);
-  --accent-border: rgba(255,133,49,.35);
-  --accent-border-hover: rgba(255,133,49,.50);
+  --accent-bg-soft: rgba(255,138,61,.14);
+  --accent-border: rgba(255,138,61,.38);
+  --accent-border-hover: rgba(255,138,61,.54);
   --accent-text-soft: #ffe8ba;
   --success-bg: rgba(45,110,45,.28);
   --success-bg-soft: rgba(121,209,126,.25);
@@ -91,8 +91,8 @@ const css = `
   --viz-delta-low: #7aa7ce;
   --viz-delta-ok: #66BB6A;
   --viz-delta-high: #ff6361;
-  --green: #79d17e;
-  --red: #ff6361;
+  --green: #8fe08e;
+  --red: #ff7572;
   --font-ui: "Source Sans 3", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --font-display: "Montserrat", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   --mono: "Montserrat", sans-serif;
@@ -104,14 +104,24 @@ const css = `
 html { font-size: 13px; scroll-behavior: smooth; }
 body {
   font-family: var(--font-ui);
-  background:
-    radial-gradient(1400px 760px at 92% -14%, rgba(255,133,49,.12), transparent 56%),
-    radial-gradient(1200px 820px at 18% -8%, rgba(122,167,206,.10), transparent 64%),
-    var(--bg);
+  background: linear-gradient(135deg, #071015 0%, #0c2026 38%, #171612 70%, #081015 100%);
   color: var(--text);
   min-height: 100vh;
   line-height: 1.45;
   -webkit-font-smoothing: antialiased;
+}
+
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: -1;
+  background:
+    linear-gradient(115deg, rgba(255,255,255,.08), transparent 28%, rgba(126,182,216,.07) 50%, transparent 72%, rgba(255,138,61,.08)),
+    repeating-linear-gradient(90deg, rgba(255,255,255,.028) 0 1px, transparent 1px 84px),
+    repeating-linear-gradient(0deg, rgba(255,255,255,.018) 0 1px, transparent 1px 84px);
+  mask-image: linear-gradient(180deg, rgba(0,0,0,.92), rgba(0,0,0,.36));
 }
 
 .app {
@@ -218,16 +228,28 @@ body {
   align-items: stretch;
 }
 
-.settings-group,
+.settings-group {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  gap: 12px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
 .diagnostics-group {
   display: grid;
   grid-template-rows: auto 1fr;
   gap: 12px;
   padding: 18px 20px;
   border: 1px solid var(--panel-border);
-  border-radius: 14px;
+  border-radius: 8px;
   background: var(--panel-bg-flat);
   box-shadow: var(--panel-shadow-soft);
+  backdrop-filter: blur(16px) saturate(1.18);
 }
 
 .diagnostics-group {
@@ -371,9 +393,10 @@ body {
 .placeholder-card {
   background: var(--panel-bg);
   border: 1px solid var(--border);
-  border-radius: 18px;
+  border-radius: 8px;
   padding: 20px;
   box-shadow: var(--panel-shadow);
+  backdrop-filter: blur(16px) saturate(1.18);
 }
 
 .placeholder-card h3 {

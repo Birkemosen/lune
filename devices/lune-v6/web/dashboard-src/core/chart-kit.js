@@ -14,10 +14,11 @@ export const SVG_NS = 'http://www.w3.org/2000/svg';
 const css = `
 .chart-card {
   border: 1px solid var(--panel-border);
-  border-radius: 16px;
+  border-radius: 8px;
   background: var(--panel-bg-vibrant);
   padding: 14px 16px;
   box-shadow: var(--panel-shadow);
+  backdrop-filter: blur(16px) saturate(1.18);
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
@@ -34,8 +35,9 @@ const css = `
   content: '';
   width: 4px;
   height: 13px;
-  border-radius: 2px;
-  background: var(--accent);
+  border-radius: 4px;
+  background: linear-gradient(180deg, var(--accent), var(--state-warn));
+  box-shadow: 0 0 18px rgba(255,138,61,.34);
   flex-shrink: 0;
 }
 .chart-title {
@@ -73,15 +75,16 @@ const css = `
 .chart-legend-marker {
   width: 11px;
   height: 11px;
-  border-radius: 999px;
+  border-radius: 50%;
   border: 2px solid currentColor;
   background: color-mix(in srgb, currentColor 32%, transparent);
+  box-shadow: 0 0 14px currentColor;
   flex-shrink: 0;
 }
 
 .chart-card svg { width: 100%; height: auto; display: block; overflow: visible; }
-.chart-grid { stroke: rgba(150,168,205,.14); stroke-width: 1; vector-effect: non-scaling-stroke; }
-.chart-axis { stroke: rgba(150,168,205,.34); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.chart-grid { stroke: rgba(218,231,238,.16); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.chart-axis { stroke: rgba(218,231,238,.36); stroke-width: 1; vector-effect: non-scaling-stroke; }
 .chart-tick { fill: var(--chart-axis); font-size: 11px; opacity: .85; }
 .chart-axis-label {
   fill: var(--chart-axis); font-size: 9px; letter-spacing: .8px;
@@ -109,12 +112,13 @@ const css = `
   pointer-events: none;
   z-index: 20;
   background: var(--overlay-bg);
+  backdrop-filter: blur(12px) saturate(1.15);
   border: 1px solid var(--panel-border);
   border-radius: 8px;
   padding: 7px 9px;
   font-size: .7rem;
   color: var(--text-strong);
-  box-shadow: 0 8px 24px rgba(0,0,0,.5);
+  box-shadow: 0 16px 34px rgba(0,0,0,.34), inset 0 1px 0 rgba(255,255,255,.12);
   white-space: nowrap;
   opacity: 0;
   transition: opacity .1s ease;

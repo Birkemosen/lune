@@ -22,9 +22,9 @@ const css = `
   flex: 1;
   min-width: 0;
   border: 1px solid var(--control-border);
-  background: var(--control-bg);
+  background: linear-gradient(145deg, rgba(255,255,255,.075), rgba(255,255,255,.025));
   color: var(--text);
-  border-radius: 10px;
+  border-radius: 8px;
   padding: 9px 10px;
   font-size: .88rem;
   font-family: var(--mono);
@@ -38,9 +38,9 @@ const css = `
 .zone-sensor-card .btn-scan {
   flex-shrink: 0;
   padding: 9px 13px;
-  border-radius: 10px;
+  border-radius: 8px;
   border: 1px solid var(--control-border);
-  background: var(--control-bg);
+  background: linear-gradient(145deg, rgba(255,255,255,.08), rgba(255,255,255,.025));
   color: var(--accent);
   font-size: .82rem;
   font-weight: 700;
@@ -54,8 +54,9 @@ const css = `
 .zone-sensor-card .ble-scan-list {
   margin-top: 6px;
   border: 1px solid var(--panel-border);
-  border-radius: 10px;
+  border-radius: 8px;
   overflow: hidden;
+  background: rgba(255,255,255,.025);
 }
 .zone-sensor-card .ble-scan-item {
   display: flex;
@@ -105,8 +106,9 @@ const css = `
   margin-top: 12px;
   padding: 12px;
   border: 1px solid rgba(255,133,49,.24);
-  border-radius: 12px;
-  background: rgba(255,133,49,.08);
+  border-radius: 8px;
+  background: linear-gradient(145deg, rgba(255,133,49,.12), rgba(255,255,255,.025));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.08);
 }
 .zone-sensor-card .merge-visual.is-solo {
   border-color: var(--panel-border);
@@ -122,7 +124,7 @@ const css = `
   min-width: 0;
   padding: 8px 10px;
   border: 1px solid rgba(255,255,255,.14);
-  border-radius: 10px;
+  border-radius: 8px;
   color: var(--text-strong);
   font-size: .82rem;
   font-weight: 800;

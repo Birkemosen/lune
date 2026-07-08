@@ -12,10 +12,11 @@ const css = `
 .diag-zone-motor {
   background: var(--panel-bg-vibrant);
   border: 1px solid var(--panel-border);
-  border-radius: 18px;
+  border-radius: 8px;
   padding: 18px;
   margin-bottom: 18px;
   box-shadow: var(--panel-shadow);
+  backdrop-filter: blur(16px) saturate(1.18);
 }
 .diag-zone-motor .card-title {
   font-size: .84rem;
@@ -59,7 +60,7 @@ const css = `
   gap: 6px;
 }
 .diag-zone-motor .sel {
-  background: var(--control-bg);
+  background: linear-gradient(145deg, rgba(0,0,0,.16), rgba(255,255,255,.05));
   border: 1px solid var(--control-border);
   border-radius: 8px;
   padding: 6px 10px;
@@ -76,7 +77,7 @@ const css = `
   border-color: var(--focus-border);
 }
 .diag-zone-motor .mn-inp {
-  background: var(--control-bg);
+  background: linear-gradient(145deg, rgba(0,0,0,.16), rgba(255,255,255,.05));
   border: 1px solid var(--control-border);
   border-radius: 8px;
   padding: 6px 10px;

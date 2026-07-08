@@ -44,11 +44,12 @@ const MOBILE = {
 const css = `
 .flow-wrap {
   width: 100%;
-  border-radius: 18px;
+  border-radius: 8px;
   overflow: hidden;
   border: 1px solid var(--panel-border);
   box-shadow: var(--panel-shadow);
-  background: var(--card);
+  background: var(--panel-bg-vibrant);
+  backdrop-filter: blur(16px) saturate(1.18);
 }
 
 .flow-svg {
