@@ -135,7 +135,7 @@ class LuneTouchCoordinator : public esphome::Component {
   void load_ledger_();
   void save_ledger_();
   void load_forecast_settings_();
-  void save_forecast_settings_();
+  void save_forecast_settings_(float latitude, float longitude, const char *mode);
   void load_forecast_cache_();
   void save_forecast_cache_();
   void clear_forecast_cache_();

@@ -1566,13 +1566,13 @@ void LuneTouchCoordinator::load_forecast_settings_() {
   nvs_close(handle);
 }
 
-void LuneTouchCoordinator::save_forecast_settings_() {
+void LuneTouchCoordinator::save_forecast_settings_(float latitude, float longitude, const char *mode) {
   nvs_handle_t handle;
   if (nvs_open(WEATHER_NAMESPACE, NVS_READWRITE, &handle) != ESP_OK)
     return;
-  nvs_set_i32(handle, "lat_e6", static_cast<int32_t>(forecast_latitude_ * 1000000.0f));
-  nvs_set_i32(handle, "lon_e6", static_cast<int32_t>(forecast_longitude_ * 1000000.0f));
-  nvs_set_str(handle, "mode", forecast_location_mode_);
+  nvs_set_i32(handle, "lat_e6", static_cast<int32_t>(latitude * 1000000.0f));
+  nvs_set_i32(handle, "lon_e6", static_cast<int32_t>(longitude * 1000000.0f));
+  nvs_set_str(handle, "mode", mode != nullptr && mode[0] != '\0' ? mode : "manual");
   nvs_commit(handle);
   nvs_close(handle);
 }
@@ -2371,23 +2371,29 @@ bool LuneTouchCoordinator::set_forecast_location(float latitude, float longitude
     snprintf(response, capacity, "{\"result\":\"rejected\",\"error\":\"coordinator_busy\"}");
     return false;
   }
+  char saved_mode[sizeof(forecast_location_mode_)]{};
   forecast_latitude_ = latitude;
   forecast_longitude_ = longitude;
   std::strncpy(forecast_location_mode_, mode != nullptr && mode[0] != '\0' ? mode : "manual",
                sizeof(forecast_location_mode_) - 1);
   forecast_location_mode_[sizeof(forecast_location_mode_) - 1] = '\0';
+  std::strncpy(saved_mode, forecast_location_mode_, sizeof(saved_mode) - 1);
   std::strncpy(forecast_status_, "stale", sizeof(forecast_status_) - 1);
   forecast_status_[sizeof(forecast_status_) - 1] = '\0';
   forecast_last_error_[0] = '\0';
+  forecast_last_fetch_ms_ = 0;
+  forecast_fetch_requested_ = true;
   forecast_hours_count_ = 0;
   forecast_decision_count_ = 0;
   forecast_cache_restored_ = false;
   forecast_boot_refresh_pending_ = false;
   last_forecast_dispatch_ = {};
-  save_forecast_settings_();
   give_state_lock_();
+  save_forecast_settings_(latitude, longitude, saved_mode);
   clear_forecast_cache_();
-  snprintf(response, capacity, "{\"result\":\"saved\",\"latitude\":%.6f,\"longitude\":%.6f}",
+  snprintf(response, capacity,
+           "{\"result\":\"saved\",\"latitude\":%.6f,\"longitude\":%.6f,\"status\":\"stale\","
+           "\"fetch_pending\":true}",
            latitude, longitude);
   log_event_("info", "forecast", "location updated");
   return true;
@@ -2474,6 +2480,7 @@ bool LuneTouchCoordinator::request_forecast_fetch(char *response, size_t capacit
     forecast_status_[sizeof(forecast_status_) - 1] = '\0';
     std::strncpy(forecast_last_error_, "location_required", sizeof(forecast_last_error_) - 1);
     forecast_last_error_[sizeof(forecast_last_error_) - 1] = '\0';
+    forecast_fetch_requested_ = false;
     give_state_lock_();
     snprintf(response, capacity, "{\"result\":\"rejected\",\"error\":\"location_required\"}");
     return false;
@@ -2483,6 +2490,7 @@ bool LuneTouchCoordinator::request_forecast_fetch(char *response, size_t capacit
     forecast_status_[sizeof(forecast_status_) - 1] = '\0';
     std::strncpy(forecast_last_error_, "network_offline", sizeof(forecast_last_error_) - 1);
     forecast_last_error_[sizeof(forecast_last_error_) - 1] = '\0';
+    forecast_fetch_requested_ = false;
     give_state_lock_();
     snprintf(response, capacity, "{\"result\":\"rejected\",\"error\":\"network_offline\"}");
     return false;
@@ -2519,6 +2527,7 @@ bool LuneTouchCoordinator::perform_forecast_fetch_(char *response, size_t capaci
       forecast_status_[sizeof(forecast_status_) - 1] = '\0';
       std::strncpy(forecast_last_error_, "location_required", sizeof(forecast_last_error_) - 1);
       forecast_last_error_[sizeof(forecast_last_error_) - 1] = '\0';
+      forecast_fetch_requested_ = false;
       give_state_lock_();
     }
     snprintf(response, capacity, "{\"result\":\"rejected\",\"error\":\"location_required\"}");
@@ -2530,6 +2539,7 @@ bool LuneTouchCoordinator::perform_forecast_fetch_(char *response, size_t capaci
       forecast_status_[sizeof(forecast_status_) - 1] = '\0';
       std::strncpy(forecast_last_error_, "network_offline", sizeof(forecast_last_error_) - 1);
       forecast_last_error_[sizeof(forecast_last_error_) - 1] = '\0';
+      forecast_fetch_requested_ = false;
       give_state_lock_();
     }
     snprintf(response, capacity, "{\"result\":\"rejected\",\"error\":\"network_offline\"}");
