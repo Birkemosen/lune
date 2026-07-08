@@ -550,8 +550,14 @@ void LuneTouchDashboard::handle_v1_(AsyncWebServerRequest *request, const char *
   const std::string body_str = request->arg("plain");
   JsonDocument body_doc;
   const JsonDocument *body = nullptr;
-  if (!body_str.empty() && !deserializeJson(body_doc, body_str.c_str()))
+  if (!body_str.empty() && (first_non_space(body_str) == '{' || first_non_space(body_str) == '[')) {
+    const DeserializationError err = deserializeJson(body_doc, body_str.c_str());
+    if (err) {
+      send_error_(request, 400, "invalid_json", "Request body is not valid JSON");
+      return;
+    }
     body = &body_doc;
+  }
 
   ApiRequest api;
   api.async = request;

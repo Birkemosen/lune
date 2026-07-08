@@ -332,6 +332,10 @@ envelope. Valid safety outcomes, such as a setpoint command blocked because its
 V6 node is stale, are returned as successful write responses and recorded in the
 command ledger.
 
+If a POST body is present and starts as JSON (`{` or `[`), malformed JSON is
+rejected with HTTP `400` and `error.code = "invalid_json"`. Query-parameter
+compatibility is still available for tools that send no JSON body.
+
 ### `POST /nodes`
 
 ```json
