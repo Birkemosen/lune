@@ -332,41 +332,51 @@ export function renderZones() {
   const nodeOptions = state.nodes.map((node, index) => `<option value="${index}">${node.id || v6Name(index)}</option>`).join('');
   return `<section class="view">
     <div class="section-head"><h2>Zone control</h2><span class="note">Expiring commands only. V6 clamps locally.</span></div>
-    <div class="inline-form">
-      <input class="input mini-input" id="map-room-id" placeholder="room-id">
-      <input class="input mini-input" id="map-room-name" placeholder="Room name">
-      <select class="input mini-input" id="map-node">${nodeOptions || '<option value="0">V6-0</option>'}</select>
-      <input class="input mini-input" id="map-zone" type="number" min="1" max="6" value="1">
-      <button class="btn" data-action="save-room-map">Apply</button>
-      <button class="btn" data-discard-section="zones">Discard</button>
-    </div>
-    <div class="inline-form">
-      <input class="input mini-input" id="comfort-room-id" placeholder="room-id">
-      <input class="input mini-input" id="comfort-setpoint" type="number" step="0.1" min="5" max="35" value="21.0">
-      <input class="input mini-input" id="comfort-bias" type="number" step="0.1" min="-3" max="3" value="0.0">
-      <select class="input mini-input" id="comfort-priority"><option value="1">Normal</option><option value="2">High</option><option value="3">Critical</option><option value="0">Low</option></select>
-      <button class="btn" data-action="save-comfort">Apply</button>
-      <button class="btn" data-discard-section="zones">Discard</button>
-    </div>
-    <div class="inline-form">
-      <input class="input mini-input" id="schedule-room-id" placeholder="room-id">
-      <input class="input mini-input" id="schedule-start" type="time" value="06:00">
-      <input class="input mini-input" id="schedule-end" type="time" value="22:00">
-      <input class="input mini-input" id="schedule-setpoint" type="number" step="0.1" min="5" max="35" value="21.0">
-      <input class="input mini-input" id="schedule-day-mask" type="number" min="1" max="127" value="127">
-      <label class="check"><input id="schedule-enabled" type="checkbox" checked> On</label>
-      <button class="btn" data-action="save-schedule">Apply</button>
-      <button class="btn" data-discard-section="zones">Discard</button>
-    </div>
-    <div class="inline-form">
-      <input class="input mini-input" id="forecast-room-id" placeholder="room-id">
-      <input class="input mini-input" id="forecast-walls" type="number" min="0" max="15" value="0" title="N/E/S/W bitmask">
-      <input class="input mini-input" id="forecast-wind" type="number" step="0.05" min="0" max="1" value="0.50">
-      <input class="input mini-input" id="forecast-solar" type="number" step="0.05" min="0" max="1" value="0.30">
-      <input class="input mini-input" id="forecast-lead" type="number" min="1" max="24" value="4">
-      <input class="input mini-input" id="forecast-max-offset" type="number" step="0.1" min="0" max="5" value="1.5">
-      <button class="btn" data-action="save-forecast-profile">Apply</button>
-      <button class="btn" data-discard-section="zones">Discard</button>
+    <div class="zone-editor-layout">
+      <div class="settings-panel"><h3>Room mapping</h3>
+        <div class="inline-form">
+          <input class="input mini-input" id="map-room-id" placeholder="room-id">
+          <input class="input mini-input" id="map-room-name" placeholder="Room name">
+          <select class="input mini-input" id="map-node">${nodeOptions || '<option value="0">V6-0</option>'}</select>
+          <input class="input mini-input" id="map-zone" type="number" min="1" max="6" value="1">
+          <button class="btn" data-action="save-room-map">Apply</button>
+          <button class="btn" data-discard-section="zones">Discard</button>
+        </div>
+      </div>
+      <div class="settings-panel"><h3>Comfort intent</h3>
+        <div class="inline-form">
+          <input class="input mini-input" id="comfort-room-id" placeholder="room-id">
+          <input class="input mini-input" id="comfort-setpoint" type="number" step="0.1" min="5" max="35" value="21.0">
+          <input class="input mini-input" id="comfort-bias" type="number" step="0.1" min="-3" max="3" value="0.0">
+          <select class="input mini-input" id="comfort-priority"><option value="1">Normal</option><option value="2">High</option><option value="3">Critical</option><option value="0">Low</option></select>
+          <button class="btn" data-action="save-comfort">Apply</button>
+          <button class="btn" data-discard-section="zones">Discard</button>
+        </div>
+      </div>
+      <div class="settings-panel"><h3>Schedule</h3>
+        <div class="inline-form">
+          <input class="input mini-input" id="schedule-room-id" placeholder="room-id">
+          <input class="input mini-input" id="schedule-start" type="time" value="06:00">
+          <input class="input mini-input" id="schedule-end" type="time" value="22:00">
+          <input class="input mini-input" id="schedule-setpoint" type="number" step="0.1" min="5" max="35" value="21.0">
+          <input class="input mini-input" id="schedule-day-mask" type="number" min="1" max="127" value="127">
+          <label class="check"><input id="schedule-enabled" type="checkbox" checked> On</label>
+          <button class="btn" data-action="save-schedule">Apply</button>
+          <button class="btn" data-discard-section="zones">Discard</button>
+        </div>
+      </div>
+      <div class="settings-panel"><h3>Forecast profile</h3>
+        <div class="inline-form">
+          <input class="input mini-input" id="forecast-room-id" placeholder="room-id">
+          <input class="input mini-input" id="forecast-walls" type="number" min="0" max="15" value="0" title="N/E/S/W bitmask">
+          <input class="input mini-input" id="forecast-wind" type="number" step="0.05" min="0" max="1" value="0.50">
+          <input class="input mini-input" id="forecast-solar" type="number" step="0.05" min="0" max="1" value="0.30">
+          <input class="input mini-input" id="forecast-lead" type="number" min="1" max="24" value="4">
+          <input class="input mini-input" id="forecast-max-offset" type="number" step="0.1" min="0" max="5" value="1.5">
+          <button class="btn" data-action="save-forecast-profile">Apply</button>
+          <button class="btn" data-discard-section="zones">Discard</button>
+        </div>
+      </div>
     </div>
     <div class="data-table">
       <div class="tr head zones"><span>Room</span><span>Current</span><span>Comfort</span><span>Schedule</span><span>Status</span><span>Source</span><span>Valve</span><span>Learning</span><span>Command</span></div>
