@@ -63,7 +63,7 @@ const css = `
 }
 
 .zone-card .zc-state-label {
-	font-size: 12px;
+	font-size: .84rem;
 	font-weight: 700;
 	text-transform: uppercase;
 	letter-spacing: .55px;
@@ -80,7 +80,7 @@ const css = `
 	border: 1px solid rgba(255,138,61,.44);
 	background: rgba(255,138,61,.14);
 	color: var(--accent);
-	font-size: 9px;
+	font-size: .72rem;
 	font-weight: 800;
 	line-height: 1.2;
 	letter-spacing: .55px;
@@ -99,7 +99,7 @@ const css = `
 }
 
 .zone-card .zc-friendly {
-	font-size: 12px;
+	font-size: .84rem;
 	font-weight: 600;
 	line-height: 1.1;
 	color: var(--text-secondary);

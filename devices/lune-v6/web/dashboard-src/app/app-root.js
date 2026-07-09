@@ -101,7 +101,7 @@ const css = `
 }
 
 *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
-html { font-size: 13px; scroll-behavior: smooth; }
+html { font-size: 100%; scroll-behavior: smooth; }
 body {
   font-family: var(--font-ui);
   background: linear-gradient(135deg, #071015 0%, #0c2026 38%, #171612 70%, #081015 100%);
@@ -133,6 +133,27 @@ body::before {
   padding: 18px;
   width: min(1320px, 100%);
   margin: 0 auto;
+  display: grid;
+  grid-template-columns: 210px minmax(0, 1fr);
+  gap: 0 18px;
+  align-items: start;
+}
+
+.hdr {
+  grid-column: 1 / -1;
+}
+
+.side-panel {
+  position: sticky;
+  top: 14px;
+  min-width: 0;
+  min-height: calc(100vh - 112px);
+  padding: 12px 14px 12px 0;
+  border-right: 1px solid var(--panel-border-soft);
+}
+
+.view-panel {
+  min-width: 0;
 }
 
 .sec {
@@ -232,12 +253,12 @@ body::before {
   display: grid;
   grid-template-rows: auto 1fr;
   gap: 12px;
-  padding: 0;
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  box-shadow: none;
-  backdrop-filter: none;
+  padding: 18px 20px;
+  border: 1px solid var(--panel-border);
+  border-radius: 8px;
+  background: var(--panel-bg-flat);
+  box-shadow: var(--panel-shadow-soft);
+  backdrop-filter: blur(16px) saturate(1.18);
 }
 
 .diagnostics-group {
@@ -269,9 +290,9 @@ body::before {
 .diagnostics-group-title {
   font-family: var(--font-display);
   color: var(--accent);
-  font-size: .86rem;
+  font-size: .875rem;
   font-weight: 800;
-  letter-spacing: 1.05px;
+  letter-spacing: 1px;
   text-transform: uppercase;
 }
 
@@ -303,11 +324,13 @@ body::before {
 
 .settings-group .ui-card,
 .settings-group .settings-card {
-  background: transparent;
-  border: 0;
-  border-radius: 0;
-  box-shadow: none;
-  padding: 0;
+  background: transparent !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+  padding: 0 !important;
 }
 
 .settings-group-grid > * + *,
@@ -321,11 +344,30 @@ body::before {
 .settings-group .ui-card-title,
 .settings-group .settings-card .card-title {
   color: var(--muted);
-  font-size: .68rem;
-  letter-spacing: .82px;
+  font-size: .74rem;
+  letter-spacing: .78px;
   margin-bottom: 2px;
   padding-bottom: 4px;
   border-bottom: 0;
+}
+
+.settings-group .settings-card .toggle-row {
+  padding: 8px 0 10px !important;
+  border: 0 !important;
+  border-bottom: 1px solid var(--panel-border-soft) !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.settings-group .gated-body,
+.settings-group .settings-motor-cal-card .mc-advanced-body {
+  background: transparent !important;
+  box-shadow: none !important;
+}
+
+.settings-group .settings-motor-cal-card .runtime-note {
+  box-shadow: none !important;
 }
 
 .diagnostics-layout {
@@ -375,18 +417,35 @@ body::before {
 .diagnostics-group .connectivity-card .card-title,
 .diagnostics-group .diag-i2c .card-title {
   color: var(--text-secondary);
-  font-size: .72rem;
-  letter-spacing: 1px;
+  font-size: .76rem;
+  letter-spacing: .9px;
   margin-bottom: 4px;
   padding-bottom: 8px;
   border-bottom-color: var(--panel-border-soft);
+}
+
+.diagnostics-group .asgard-bridge-status-card .setpoint-box {
+  padding: 10px 0 12px;
+  border: 0;
+  border-top: 1px solid var(--panel-border-soft);
+  border-bottom: 1px solid var(--panel-border-soft);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.diagnostics-group .logs-stream,
+.diagnostics-group .diag-i2c pre {
+  background: rgba(0,0,0,.10);
+  border-color: var(--panel-border-soft);
+  box-shadow: none;
 }
 
 .ftr {
   text-align: center;
   color: var(--text-faint);
   padding: 20px;
-  font-size: .72rem;
+  font-size: .78rem;
   letter-spacing: .8px;
 }
 
@@ -400,7 +459,7 @@ body::before {
 }
 
 .placeholder-card h3 {
-  font-size: .84rem;
+  font-size: .875rem;
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 1.1px;
@@ -420,6 +479,27 @@ body::before {
 }
 
 @media (max-width: 860px) {
+  .shell {
+    display: block;
+    padding: 12px 12px 78px;
+  }
+
+  .side-panel {
+    position: fixed;
+    left: 10px;
+    right: 10px;
+    bottom: 10px;
+    top: auto;
+    z-index: 40;
+    min-height: 0;
+    padding: 8px;
+    border: 1px solid var(--panel-border);
+    border-radius: 8px;
+    background: rgba(9,18,23,.82);
+    box-shadow: var(--panel-shadow);
+    backdrop-filter: blur(18px) saturate(1.25);
+  }
+
   .zone-layout,
   .dashboard-grid,
   .settings-layout,
@@ -479,71 +559,74 @@ const template = (ctx) => `
   <div class="app">
     <main class="shell">
       <div class="hdr"></div>
-      <section class="sec active" data-section="overview">
-        <div class="overview-flow"></div>
-        <div class="overview-timeline" style="margin-top:14px"></div>
-        <div class="dashboard-grid">
-          <div class="overview-flow-return"></div>
-        </div>
-      </section>
-      <section class="sec" data-section="zones">
-        <div class="zone-selector"></div>
-        <div class="zone-layout">
-          <div class="zone-detail-slot"></div>
-          <div class="zone-mid-col">
-            <div class="zone-sensor-slot"></div>
-            <div class="zone-recovery-slot"></div>
+      <aside class="side-panel"></aside>
+      <div class="view-panel">
+        <section class="sec active" data-section="overview">
+          <div class="overview-flow"></div>
+          <div class="overview-timeline" style="margin-top:14px"></div>
+          <div class="dashboard-grid">
+            <div class="overview-flow-return"></div>
           </div>
-          <div class="zone-room-slot"></div>
-        </div>
-      </section>
-      <section class="sec" data-section="settings">
-        <div class="settings-layout">
-          <div class="settings-group settings-installation-group">
-            <div class="settings-group-head"><span class="settings-group-title" data-i18n="settings.group.installation">Installation</span></div>
-            <div class="settings-group-grid settings-installation-grid">
-              <div class="settings-manifold-slot"></div>
+        </section>
+        <section class="sec" data-section="zones">
+          <div class="zone-selector"></div>
+          <div class="zone-layout">
+            <div class="zone-detail-slot"></div>
+            <div class="zone-mid-col">
+              <div class="zone-sensor-slot"></div>
+              <div class="zone-recovery-slot"></div>
             </div>
+            <div class="zone-room-slot"></div>
           </div>
-          <div class="settings-group settings-heat-source-group">
-            <div class="settings-group-head"><span class="settings-group-title" data-i18n="settings.group.heatSource">Heat Source</span></div>
-            <div class="settings-group-grid settings-heat-source-grid">
-              <div class="settings-asgard-slot"></div>
-              <div class="settings-heat-source-stack">
-                <div class="settings-min-flow-slot"></div>
-                <div class="settings-preheat-slot"></div>
+        </section>
+        <section class="sec" data-section="settings">
+          <div class="settings-layout">
+            <div class="settings-group settings-installation-group">
+              <div class="settings-group-head"><span class="settings-group-title" data-i18n="settings.group.installation">Installation</span></div>
+              <div class="settings-group-grid settings-installation-grid">
+                <div class="settings-manifold-slot"></div>
+              </div>
+            </div>
+            <div class="settings-group settings-heat-source-group">
+              <div class="settings-group-head"><span class="settings-group-title" data-i18n="settings.group.heatSource">Heat Source</span></div>
+              <div class="settings-group-grid settings-heat-source-grid">
+                <div class="settings-asgard-slot"></div>
+                <div class="settings-heat-source-stack">
+                  <div class="settings-min-flow-slot"></div>
+                  <div class="settings-preheat-slot"></div>
+                </div>
+              </div>
+            </div>
+            <div class="settings-group settings-motor-group">
+              <div class="settings-group-head"><span class="settings-group-title" data-i18n="settings.group.motorAdvanced">Motor Advanced</span></div>
+              <div class="settings-group-grid settings-motor-grid">
+                <div class="settings-motor-cal-slot"></div>
               </div>
             </div>
           </div>
-          <div class="settings-group settings-motor-group">
-            <div class="settings-group-head"><span class="settings-group-title" data-i18n="settings.group.motorAdvanced">Motor Advanced</span></div>
-            <div class="settings-group-grid settings-motor-grid">
-              <div class="settings-motor-cal-slot"></div>
+        </section>
+        <section class="sec" data-section="diagnostics">
+          <div class="diagnostics-layout">
+            <div class="diagnostics-group diagnostics-logs-group">
+              <div class="diagnostics-group-head"><span class="diagnostics-group-title" data-i18n="diagnostics.group.logs">Logs</span></div>
+              <div class="logs-main-col"></div>
+            </div>
+            <div class="diagnostics-group diagnostics-manual-group">
+              <div class="diagnostics-group-head"><span class="diagnostics-group-title" data-i18n="diagnostics.group.manual">Manual Motor Control</span></div>
+              <div class="manual-control-col"></div>
+            </div>
+            <div class="diagnostics-group diagnostics-actions-group">
+              <div class="diagnostics-group-head"><span class="diagnostics-group-title" data-i18n="diagnostics.group.actions">Service Actions</span></div>
+              <div class="diagnostics-group-grid diag-actions-grid"></div>
+            </div>
+            <div class="diagnostics-group diagnostics-health-group">
+              <div class="diagnostics-group-head"><span class="diagnostics-group-title" data-i18n="diagnostics.group.health">Device Health</span></div>
+              <div class="diagnostics-group-grid diag-health-grid"></div>
             </div>
           </div>
-        </div>
-      </section>
-      <section class="sec" data-section="diagnostics">
-        <div class="diagnostics-layout">
-          <div class="diagnostics-group diagnostics-logs-group">
-            <div class="diagnostics-group-head"><span class="diagnostics-group-title" data-i18n="diagnostics.group.logs">Logs</span></div>
-            <div class="logs-main-col"></div>
-          </div>
-          <div class="diagnostics-group diagnostics-manual-group">
-            <div class="diagnostics-group-head"><span class="diagnostics-group-title" data-i18n="diagnostics.group.manual">Manual Motor Control</span></div>
-            <div class="manual-control-col"></div>
-          </div>
-          <div class="diagnostics-group diagnostics-actions-group">
-            <div class="diagnostics-group-head"><span class="diagnostics-group-title" data-i18n="diagnostics.group.actions">Service Actions</span></div>
-            <div class="diagnostics-group-grid diag-actions-grid"></div>
-          </div>
-          <div class="diagnostics-group diagnostics-health-group">
-            <div class="diagnostics-group-head"><span class="diagnostics-group-title" data-i18n="diagnostics.group.health">Device Health</span></div>
-            <div class="diagnostics-group-grid diag-health-grid"></div>
-          </div>
-        </div>
-      </section>
-      <div class="ftr" data-i18n="footer.product">LUNE V6 · LOCAL MANIFOLD CONTROLLER</div>
+        </section>
+        <div class="ftr" data-i18n="footer.product">LUNE V6 · LOCAL MANIFOLD CONTROLLER</div>
+      </div>
     </main>
   </div>
 `;
@@ -558,6 +641,7 @@ component({
 
   onMount(ctx, el) {
     el.querySelector('.hdr').appendChild(mountComponent('hv6-header'));
+    el.querySelector('.side-panel').appendChild(mountComponent('hv6-sidebar'));
     el.querySelector('.overview-flow').appendChild(mountComponent('flow-diagram'));
     el.querySelector('.overview-timeline').appendChild(mountComponent('zone-state-timeline'));
     el.querySelector('.overview-flow-return').appendChild(mountComponent('graph-widgets', { variant: 'flow-return' }));

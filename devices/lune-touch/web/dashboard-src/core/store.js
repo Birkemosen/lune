@@ -14,6 +14,7 @@ export const state = {
   diagnostics: null,
   settings: null,
   scanResult: null,
+  zoneEditRoomId: '',
 };
 
 export function subscribe(fn) {

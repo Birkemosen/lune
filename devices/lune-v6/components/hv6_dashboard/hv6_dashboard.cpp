@@ -309,7 +309,7 @@ static const char DASHBOARD_HTML[] =
     "<title>Lune V6</title>"
     "</head><body>"
     "<div id=\"app\">Loading dashboard...</div>"
-    "<script src=\"/dashboard.js?v=glass-ui-1\"></script>"
+    "<script src=\"/dashboard.js?v=v6-settings-flat-20260709\"></script>"
     "</body></html>";
 
 void HV6Dashboard::update_snapshot_() {
@@ -573,14 +573,15 @@ void HV6Dashboard::handleRequest(AsyncWebServerRequest *request) {
 }
 
 void HV6Dashboard::handle_root_(AsyncWebServerRequest *request) {
-  send_text_(request, 200, "text/html; charset=utf-8", DASHBOARD_HTML, false, "no-cache");
+  send_text_(request, 200, "text/html; charset=utf-8", DASHBOARD_HTML, false,
+             "no-store, no-cache, max-age=0, must-revalidate");
 }
 
 void HV6Dashboard::handle_js_(AsyncWebServerRequest *request) {
 #ifdef HV6_HAS_DASHBOARD_JS
   send_gzip_chunked_(request, "application/javascript; charset=utf-8",
                      HV6_DASHBOARD_JS_DATA, HV6_DASHBOARD_JS_SIZE,
-                     "no-cache, max-age=0");
+                     "no-store, no-cache, max-age=0, must-revalidate");
 #else
   send_text_(request, 404, "text/plain",
              "dashboard.js not configured. Add dashboard_js: web/dashboard.js to hv6_dashboard.");

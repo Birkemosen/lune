@@ -307,7 +307,7 @@ static const char DASHBOARD_HTML[] =
     "<title>Lune Touch</title>"
     "</head><body>"
     "<div id=\"app\">Loading Lune Touch...</div>"
-    "<script src=\"/dashboard.js?v=glass-ui-1\"></script>"
+    "<script src=\"/dashboard.js?v=zone-cards-20260708\"></script>"
     "</body></html>";
 
 void LuneTouchDashboard::setup() {
@@ -363,14 +363,15 @@ void LuneTouchDashboard::handleRequest(AsyncWebServerRequest *request) {
 }
 
 void LuneTouchDashboard::handle_root_(AsyncWebServerRequest *request) {
-  send_text_(request, 200, "text/html; charset=utf-8", DASHBOARD_HTML, false, "no-cache");
+  send_text_(request, 200, "text/html; charset=utf-8", DASHBOARD_HTML, false,
+             "no-store, no-cache, max-age=0, must-revalidate");
 }
 
 void LuneTouchDashboard::handle_js_(AsyncWebServerRequest *request) {
 #ifdef LUNE_TOUCH_HAS_DASHBOARD_JS
   send_gzip_chunked_(request, "application/javascript; charset=utf-8",
                      LUNE_TOUCH_DASHBOARD_JS_DATA, LUNE_TOUCH_DASHBOARD_JS_SIZE,
-                     "no-cache, max-age=0");
+                     "no-store, no-cache, max-age=0, must-revalidate");
 #else
   send_text_(request, 404, "text/plain", "dashboard.js not configured");
 #endif

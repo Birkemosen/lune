@@ -9,6 +9,7 @@ DEVICE_DIR ?= devices/lune-v6
 CONFIG_PATH ?= $(ROOT_ABS)/$(DEVICE_DIR)/$(CONFIG)
 ESPHOME ?= $(if $(wildcard $(ROOT_ABS)/.venv313/bin/esphome),$(ROOT_ABS)/.venv313/bin/esphome,$(if $(wildcard $(ROOT_ABS)/.venv/bin/esphome),$(ROOT_ABS)/.venv/bin/esphome,esphome))
 PIO ?= $(if $(wildcard $(ROOT_ABS)/.venv313/bin/platformio),$(ROOT_ABS)/.venv313/bin/platformio,$(if $(wildcard $(ROOT_ABS)/.venv/bin/platformio),$(ROOT_ABS)/.venv/bin/platformio,platformio))
+PLATFORMIO_CORE_DIR ?= $(ROOT_ABS)/.cache/platformio
 PYTHON ?= $(if $(wildcard $(ROOT_ABS)/.venv313/bin/python3),$(ROOT_ABS)/.venv313/bin/python3,$(if $(wildcard $(ROOT_ABS)/.venv/bin/python3),$(ROOT_ABS)/.venv/bin/python3,python3))
 # ESPHome materialises generated sources next to the config file, so the
 # build root for the configurations/ entrypoints lives under that directory.
@@ -81,7 +82,7 @@ config: check
 build: check dashboard-build
 	cd $(ROOT_ABS) && $(ESPHOME) compile --only-generate $(CONFIG_PATH)
 	perl -0pi -e 's/" ".join\(cmd\)/" ".join(map(str, cmd))/g' $(BUILD_ROOT)/post_build.py
-	$(PIO) run -d $(BUILD_ROOT)
+	PLATFORMIO_CORE_DIR=$(PLATFORMIO_CORE_DIR) $(PIO) run -d $(BUILD_ROOT)
 
 build-verify: check dashboard-build
 	$(MAKE) build
@@ -90,12 +91,12 @@ deploy: check
 	$(MAKE) build
 	@if [ -n "$(PORT)" ]; then \
 		echo "Flashing via serial port: $(PORT)"; \
-		$(PIO) run -d $(BUILD_ROOT) -t upload --upload-port $(PORT); \
+		PLATFORMIO_CORE_DIR=$(PLATFORMIO_CORE_DIR) $(PIO) run -d $(BUILD_ROOT) -t upload --upload-port $(PORT); \
 	elif [ -n "$(HOST)" ]; then \
 		$(ESPHOME) upload $(CONFIG) --file $(FIRMWARE_BIN) --device $(HOST); \
 	elif [ -n "$(AUTO_PORT)" ]; then \
 		echo "Auto-detected serial port: $(AUTO_PORT)"; \
-		$(PIO) run -d $(BUILD_ROOT) -t upload --upload-port $(AUTO_PORT); \
+		PLATFORMIO_CORE_DIR=$(PLATFORMIO_CORE_DIR) $(PIO) run -d $(BUILD_ROOT) -t upload --upload-port $(AUTO_PORT); \
 	else \
 		echo "No serial port detected. Scanning for Lune V6 devices (3s)..."; \
 		hosts=$$($(PYTHON) discover_devices.py 2>/dev/null); \
@@ -178,7 +179,7 @@ monitor: check
 		exit 1; \
 	fi
 	@echo "Using serial port: $(SERIAL_PORT)"
-	$(PIO) device monitor --port $(SERIAL_PORT)
+	PLATFORMIO_CORE_DIR=$(PLATFORMIO_CORE_DIR) $(PIO) device monitor --port $(SERIAL_PORT)
 
 erase: check
 	@if [ -z "$(SERIAL_PORT)" ]; then \
@@ -186,7 +187,7 @@ erase: check
 		exit 1; \
 	fi
 	@echo "Using serial port: $(SERIAL_PORT)"
-	$(PIO) run -d $(BUILD_ROOT) -t erase --upload-port $(SERIAL_PORT)
+	PLATFORMIO_CORE_DIR=$(PLATFORMIO_CORE_DIR) $(PIO) run -d $(BUILD_ROOT) -t erase --upload-port $(SERIAL_PORT)
 
 erase-nvs: check
 	@if [ -z "$(SERIAL_PORT)" ]; then \

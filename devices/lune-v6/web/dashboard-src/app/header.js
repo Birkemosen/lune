@@ -14,30 +14,28 @@ const css = `
 .topbar {
   position: static;
   margin-bottom: 14px;
-  padding: 12px;
+  padding: 11px 14px;
   border-radius: 8px;
   border: 1px solid var(--panel-border);
   background: var(--panel-bg-vibrant);
   box-shadow: var(--panel-shadow);
   backdrop-filter: blur(18px) saturate(1.25);
-  display: grid;
-  gap: 10px;
 }
 
 .topbar-head {
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
-  gap: 10px;
+  gap: 14px;
 }
 
 .top-brand {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
-  justify-content: center;
-  justify-self: center;
-  gap: 4px;
+  justify-content: flex-start;
+  gap: 10px;
+  min-width: 0;
 }
 
 .brand-row {
@@ -49,7 +47,7 @@ const css = `
 .side-brand {
   color: var(--accent);
   font-family: var(--mono);
-  font-size: 1.02rem;
+  font-size: 1.08rem;
   font-weight: 800;
   letter-spacing: 1.8px;
   text-transform: uppercase;
@@ -57,35 +55,32 @@ const css = `
   text-shadow: 0 0 22px rgba(255,138,61,.32);
 }
 
-.top-menu {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-start;
-  gap: 7px;
+.side-nav {
+  display: grid;
+  gap: 6px;
 }
 
-.menu-link {
+.side-link {
   text-decoration: none;
   color: var(--text-secondary);
-  border: 1px solid var(--control-border);
-  background: linear-gradient(145deg, rgba(255,255,255,.13), rgba(255,255,255,.055));
+  border: 1px solid transparent;
+  background: transparent;
   border-radius: 8px;
   padding: 10px 12px;
-  font-size: .78rem;
+  font-size: .875rem;
   text-transform: uppercase;
-  font-weight: 700;
-  letter-spacing: .8px;
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.12), 0 10px 22px rgba(0,0,0,.18);
+  font-weight: 800;
+  letter-spacing: .55px;
+  box-shadow: none;
   transition: .2s ease;
 }
 
-.menu-link:hover {
+.side-link:hover {
   color: var(--text-strong);
-  background: var(--control-bg-hover);
-  border-color: var(--control-border-hover);
+  background: rgba(255,255,255,.045);
 }
 
-.menu-link.active {
+.side-link.active {
   color: var(--text-strong);
   border-color: rgba(255,138,61,.54);
   background: linear-gradient(135deg, rgba(255,138,61,.25), rgba(255,255,255,.075));
@@ -97,7 +92,7 @@ const css = `
   justify-items: end;
   row-gap: 4px;
   color: var(--muted);
-  font-size: .74rem;
+  font-size: .82rem;
 }
 
 .meta-row {
@@ -123,14 +118,14 @@ const css = `
 .meta-chip-label {
   text-transform: uppercase;
   letter-spacing: .6px;
-  font-size: 9px;
+  font-size: .7rem;
   font-weight: 700;
   line-height: 1;
   color: var(--text-secondary);
 }
 
 .meta-chip-value {
-  font-size: 12px;
+  font-size: .875rem;
   font-weight: 800;
   line-height: 1;
   color: var(--text-strong);
@@ -162,7 +157,7 @@ const css = `
 
 .brand-fw {
   min-height: 12px;
-  font-size: .62rem;
+  font-size: .72rem;
   letter-spacing: .7px;
   color: var(--text-secondary);
   font-family: var(--mono);
@@ -184,13 +179,22 @@ const css = `
 
 @media (max-width: 860px) {
   .topbar-head { grid-template-columns: 1fr; }
-  /* Stat pills (uptime / wifi / heat source) ride to the very top, above brand + menu. */
-  .top-meta { order: -2; justify-items: center; }
-  .top-brand { order: -1; justify-self: center; justify-content: center; flex-wrap: wrap; }
+  .top-meta { justify-items: center; }
+  .top-brand { justify-self: center; justify-content: center; flex-wrap: wrap; }
   .brand-row { justify-content: center; }
   .brand-fw { text-align: center; width: 100%; }
   .meta-row { justify-content: center; flex-wrap: wrap; }
-  .top-menu { justify-content: center; }
+  .side-nav {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 6px;
+  }
+  .side-link {
+    min-width: 0;
+    padding: 9px 6px;
+    text-align: center;
+    font-size: .78rem;
+    letter-spacing: .5px;
+  }
 }
 `;
 
@@ -202,12 +206,6 @@ injectStyle('hv6-header', css);
 const template = () => `
   <header class="topbar">
     <div class="topbar-head">
-      <nav class="top-menu">
-        <a href="#" class="menu-link active" data-section="overview" data-i18n="nav.monitor">Monitor</a>
-        <a href="#" class="menu-link" data-section="zones" data-i18n="nav.zones">Zones</a>
-        <a href="#" class="menu-link" data-section="settings" data-i18n="nav.settings">Settings</a>
-        <a href="#" class="menu-link" data-section="diagnostics" data-i18n="nav.diagnostics">Diagnostics</a>
-      </nav>
       <div class="top-brand">
         <div class="brand-row">
           <div class="side-brand">Lune V6</div>
@@ -245,14 +243,6 @@ export default component({
     const asgardValEl = el.querySelector('#hdr-asgard-val');
     const asgardTimeEl = el.querySelector('#hdr-asgard-time');
     const fwEl = el.querySelector('#hdr-fw');
-    const links = el.querySelectorAll('.menu-link');
-
-    function updateSection() {
-      const section = getDashboardValue('section');
-      links.forEach((node) => {
-        node.classList.toggle('active', node.getAttribute('data-section') === section);
-      });
-    }
 
     function updateMeta() {
       const live = getDashboardValue('live');
@@ -282,14 +272,6 @@ export default component({
       fwEl.textContent = fw ? 'FW ' + fw : '';
     }
 
-    links.forEach((node) => {
-      node.addEventListener('click', (event) => {
-        event.preventDefault();
-        setSection(node.getAttribute('data-section'));
-      });
-    });
-
-    subscribeDashboard('section', updateSection);
     subscribeDashboard('live', updateMeta);
     subscribeDashboard('pendingWrites', updateMeta);
     subscribeDashboard('firmwareVersion', updateMeta);
@@ -299,8 +281,39 @@ export default component({
     subscribe(gkey.asgardLastPushAgeS, updateMeta);
     subscribe(gkey.asgardEnabled, updateMeta);
     subscribe(gkey.firmware, updateMeta);
-    updateSection();
     localize(el);
     updateMeta();
+  }
+});
+
+const navTemplate = () => `
+  <nav class="side-nav">
+    <a href="#" class="side-link active" data-section="overview" data-i18n="nav.monitor">Monitor</a>
+    <a href="#" class="side-link" data-section="zones" data-i18n="nav.zones">Zones</a>
+    <a href="#" class="side-link" data-section="settings" data-i18n="nav.settings">Settings</a>
+    <a href="#" class="side-link" data-section="diagnostics" data-i18n="nav.diagnostics">Diagnostics</a>
+  </nav>
+`;
+
+component({
+  tag: 'hv6-sidebar',
+  render: navTemplate,
+  onMount(ctx, el) {
+    const links = el.querySelectorAll('.side-link');
+    function updateSection() {
+      const section = getDashboardValue('section');
+      links.forEach((node) => {
+        node.classList.toggle('active', node.getAttribute('data-section') === section);
+      });
+    }
+    links.forEach((node) => {
+      node.addEventListener('click', (event) => {
+        event.preventDefault();
+        setSection(node.getAttribute('data-section'));
+      });
+    });
+    subscribeDashboard('section', updateSection);
+    localize(el);
+    updateSection();
   }
 });

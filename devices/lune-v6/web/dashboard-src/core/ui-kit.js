@@ -22,7 +22,7 @@ const css = `
 /* ---- Titles & section headers ---- */
 .ui-card-title {
   font-family: var(--font-display);
-  font-size: .84rem;
+  font-size: .875rem;
   font-weight: 800;
   text-transform: uppercase;
   letter-spacing: 1.1px;
@@ -49,7 +49,7 @@ const css = `
   border-radius: 8px;
   border: 1.5px solid var(--control-border-strong);
   color: var(--text-secondary);
-  font-size: .65rem;
+  font-size: .7rem;
   font-weight: 700;
   font-family: inherit;
   text-transform: none;
@@ -70,7 +70,7 @@ const css = `
   border: 1px solid var(--panel-border);
   border-radius: 8px;
   padding: 8px 10px;
-  font-size: .72rem;
+  font-size: .84rem;
   font-weight: 500;
   line-height: 1.45;
   color: var(--text-secondary);
@@ -89,7 +89,7 @@ const css = `
 .ui-section {
   font-family: var(--font-display);
   color: var(--text-secondary);
-  font-size: .7rem;
+  font-size: .76rem;
   font-weight: 700;
   letter-spacing: 1.6px;
   text-transform: uppercase;
@@ -117,7 +117,7 @@ const css = `
 .ui-sublabel {
   display: block;
   color: var(--text-faint);
-  font-size: .78rem;
+  font-size: .84rem;
   font-weight: 500;
   font-style: italic;
   margin-top: 2px;
@@ -168,7 +168,7 @@ const css = `
   border-color: var(--focus-border);
 }
 
-.ui-unit { color: var(--text-faint); font-size: .78rem; font-weight: 600; }
+.ui-unit { color: var(--text-faint); font-size: .84rem; font-weight: 600; }
 
 /* ---- Numeric stepper (− value +) ----
    The value reads as plain text (flat, no input chrome) between the buttons;
@@ -226,13 +226,13 @@ const css = `
   border: 1px solid var(--warn-border);
 }
 .ui-form-banner.show { display: flex; }
-.ui-form-banner-msg { color: var(--state-warn); font-size: .76rem; font-weight: 700; }
+.ui-form-banner-msg { color: var(--state-warn); font-size: .84rem; font-weight: 700; }
 .ui-form-banner-btns { display: flex; gap: 8px; flex-shrink: 0; }
 .ui-form-discard,
 .ui-form-apply {
   border-radius: 8px;
   padding: 5px 14px;
-  font-size: .76rem;
+  font-size: .84rem;
   font-weight: 700;
   cursor: pointer;
   border: 1px solid var(--control-border);
@@ -272,7 +272,7 @@ const css = `
 /* ---- Notes & dividers ---- */
 .ui-note {
   color: var(--text-secondary);
-  font-size: .82rem;
+  font-size: .875rem;
   line-height: 1.4;
   margin-top: 8px;
 }
@@ -294,7 +294,7 @@ const css = `
   padding: 9px 14px;
   cursor: pointer;
   font-weight: 700;
-  font-size: .82rem;
+  font-size: .875rem;
   box-shadow: inset 0 1px 0 rgba(255,255,255,.12), 0 10px 22px rgba(0,0,0,.18);
   transition: .18s ease;
 }

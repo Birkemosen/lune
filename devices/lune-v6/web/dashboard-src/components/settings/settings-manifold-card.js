@@ -28,7 +28,7 @@ const css = `
 
 .settings-manifold-card .probe-name {
   color: var(--text-secondary);
-  font-size: .64rem;
+  font-size: .72rem;
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 1px;

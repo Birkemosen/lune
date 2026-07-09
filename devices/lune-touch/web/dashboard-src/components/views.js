@@ -113,15 +113,37 @@ const fmtCommandTarget = (command = {}) => {
   return room ? `${room} (${binding})` : binding;
 };
 const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+const isIpv4 = (value) => /^\d+\.\d+\.\d+\.\d+$/.test(String(value || '').trim());
+const nodeProbePayload = (input) => {
+  const value = String(input || '').trim();
+  return isIpv4(value) ? { ip: value } : { hostname: value };
+};
 const nodePayloadFromCandidate = (input, candidate = {}) => {
-  const value = String(input || '');
-  const isIp = /^\d+\.\d+\.\d+\.\d+$/.test(value);
+  const value = String(input || candidate.hostname || candidate.ip || '').trim();
+  const candidateHostname = String(candidate.hostname || '').trim();
+  const candidateHostnameIsIp = isIpv4(candidateHostname);
+  const inputIsIp = isIpv4(value);
   return {
     node_id: candidate.id || undefined,
-    hostname: candidate.hostname || (isIp ? '' : value),
-    ip: candidate.ip || (isIp ? value : ''),
+    hostname: candidateHostnameIsIp ? '' : (candidateHostname || (inputIsIp ? '' : value)),
+    ip: candidate.ip || (candidateHostnameIsIp ? candidateHostname : (inputIsIp ? value : '')),
     pairing_fingerprint: candidate.pairing_fingerprint || '',
   };
+};
+
+const renderScanResults = (scan) => {
+  const found = scan?.found || [];
+  return `<div class="scan-results">
+    <div class="scan-results-head"><h3>Last scan</h3><span class="note">${esc(scan?.discovery || 'not run')}</span></div>
+    ${found.map((node) => `<div class="scan-candidate">
+      <strong>${esc(node.id || node.hostname || node.ip || 'candidate')}</strong>
+      <span>${esc(node.hostname || node.ip || '')}</span>
+      <span class="${node.reachable ? 'ok' : 'warn'}">${node.reachable ? 'reachable' : 'unreachable'}</span>
+      ${node.firmware ? `<span>${esc(node.firmware)}</span>` : ''}
+      ${node.error ? `<span class="warn">${esc(node.error)}</span>` : ''}
+      <button class="btn slim" data-add-probed-host="${esc(node.hostname || '')}" data-add-probed-ip="${esc(node.ip || '')}" data-add-probed-fingerprint="${esc(node.pairing_fingerprint || '')}" data-add-probed-id="${esc(node.id || '')}">Add</button>
+    </div>`).join('') || '<p class="note">No candidates yet. Probe a hostname/IP, or add manually.</p>'}
+  </div>`;
 };
 
 function range(values, fallbackMin, fallbackMax) {
@@ -289,6 +311,120 @@ function zoneCard(zone) {
   </article>`;
 }
 
+const priorityOptions = (value) => [
+  [0, 'Low'],
+  [1, 'Normal'],
+  [2, 'High'],
+  [3, 'Critical'],
+].map(([priority, label]) => `<option value="${priority}" ${Number(value ?? 1) === priority ? 'selected' : ''}>${label}</option>`).join('');
+
+const nodeOptions = (selected) => {
+  const options = state.nodes.map((node, index) => `<option value="${index}" ${Number(selected || 0) === index ? 'selected' : ''}>${esc(node.id || v6Name(index))}</option>`).join('');
+  return options || `<option value="0" ${Number(selected || 0) === 0 ? 'selected' : ''}>V6-0</option>`;
+};
+
+const comfortDefault = (z) => {
+  const candidates = [z.comfort?.setpoint_c, z.setpoint_c, 21];
+  const value = candidates.map(Number).find((candidate) => Number.isFinite(candidate) && candidate >= 5);
+  return value ?? 21;
+};
+
+const scheduleDefault = (z) => {
+  const schedule = z.schedule || {};
+  const comfort = comfortDefault(z);
+  const start = Number(schedule.start_min);
+  const end = Number(schedule.end_min);
+  const setpoint = Number(schedule.setpoint_c);
+  return {
+    enabled: schedule.enabled === true,
+    start: Number.isFinite(start) && start > 0 ? start : 360,
+    end: Number.isFinite(end) && end > 0 ? end : 1320,
+    setpoint: Number.isFinite(setpoint) && setpoint >= 5 ? setpoint : comfort,
+  };
+};
+
+function zoneEditorPanel(z, index) {
+  const schedule = z.schedule || {};
+  const scheduleValues = scheduleDefault(z);
+  const comfort = z.comfort || {};
+  const forecast = z.forecast || {};
+  const comfortSetpoint = comfortDefault(z);
+  return `<div class="zone-editor" data-zone-index="${index}">
+    <div class="zone-editor-group">
+      <h3>Room binding</h3>
+      <p class="field-help">Touch label and mapping to the V6 source. Live values still come from V6.</p>
+      <label>Room name<input class="input mini-input" data-zone-field="name" value="${esc(z.name || '')}" placeholder="Room name"><small>Shown in dashboards and command ledgers.</small></label>
+      <div class="field-grid two">
+        <label>Manifold<select class="input mini-input" data-zone-field="node">${nodeOptions(z.node_index)}</select><small>Which V6 owns the valve.</small></label>
+        <label>Zone<input class="input mini-input" data-zone-field="zone" type="number" min="1" max="6" value="${Number(z.zone_index || 0) + 1}"><small>Valve output on that V6.</small></label>
+      </div>
+    </div>
+    <div class="zone-editor-group">
+      <h3>Comfort</h3>
+      <p class="field-help">Touch intent. V6 still clamps and reports the actual valve/current state.</p>
+      <div class="field-grid three">
+        <label>Setpoint C<input class="input mini-input" data-zone-field="comfort" type="number" step="0.1" min="5" max="35" value="${Number(comfortSetpoint).toFixed(1)}"><small>Normal target for this room.</small></label>
+        <label>Bias C<input class="input mini-input" data-zone-field="bias" type="number" step="0.1" min="-3" max="3" value="${Number(comfort.bias_c || 0).toFixed(1)}"><small>Permanent offset from target.</small></label>
+        <label>Priority<select class="input mini-input" data-zone-field="priority">${priorityOptions(comfort.priority)}</select><small>Used when heat is limited.</small></label>
+      </div>
+    </div>
+    <div class="zone-editor-group">
+      <h3>Schedule</h3>
+      <p class="field-help">Optional daily intent. When disabled, the comfort target above is used.</p>
+      <div class="field-grid schedule">
+        <label class="check mini-check"><input data-zone-field="schedule-enabled" type="checkbox" ${scheduleValues.enabled ? 'checked' : ''}> Enabled</label>
+        <label>Start<input class="input mini-input" data-zone-field="schedule-start" type="time" value="${fmtClock(scheduleValues.start)}"><small>First active minute.</small></label>
+        <label>End<input class="input mini-input" data-zone-field="schedule-end" type="time" value="${fmtClock(scheduleValues.end)}"><small>Last active minute.</small></label>
+        <label>Setpoint C<input class="input mini-input" data-zone-field="schedule-setpoint" type="number" step="0.1" min="5" max="35" value="${Number(scheduleValues.setpoint).toFixed(1)}"><small>Target while active.</small></label>
+      </div>
+    </div>
+    <details class="zone-editor-advanced">
+      <summary>Advanced forecast profile</summary>
+      <div class="zone-editor-group">
+        <p class="field-help">Optional Touch preload hints. Leave these on defaults unless the room behaves differently than learned history suggests.</p>
+        <div class="field-grid forecast">
+          <label>Walls<input class="input mini-input" data-zone-field="forecast-walls" type="number" min="0" max="15" value="${Number(forecast.exterior_walls || 0)}"><small>Exterior exposure mask.</small></label>
+          <label>Wind<input class="input mini-input" data-zone-field="forecast-wind" type="number" step="0.05" min="0" max="1" value="${Number(forecast.wind_exposure ?? 0.5).toFixed(2)}"><small>0 sheltered, 1 exposed.</small></label>
+          <label>Solar<input class="input mini-input" data-zone-field="forecast-solar" type="number" step="0.05" min="0" max="1" value="${Number(forecast.solar_gain ?? 0.3).toFixed(2)}"><small>Passive sun gain.</small></label>
+          <label>Lead h<input class="input mini-input" data-zone-field="forecast-lead" type="number" min="1" max="24" value="${Number(forecast.thermal_lead_h || 4)}"><small>Hours to preload.</small></label>
+          <label>Max offset C<input class="input mini-input" data-zone-field="forecast-max-offset" type="number" step="0.1" min="0" max="5" value="${Number(forecast.max_offset_c ?? 1.5).toFixed(1)}"><small>Forecast boost cap.</small></label>
+        </div>
+      </div>
+    </details>
+    <div class="zone-editor-actions">
+      <button class="btn" data-save-zone-row="${index}">Apply</button>
+      <button class="btn" data-cancel-zone-edit>Cancel</button>
+    </div>
+  </div>`;
+}
+
+function zoneListItem(z, index) {
+  const editing = state.zoneEditRoomId === z.room_id;
+  const source = `${v6Name(z.node_index)} / Z${Number(z.zone_index) + 1}`;
+  return `<article class="zone-row ${statusClass(z.status)} ${editing ? 'editing' : ''}">
+    <div class="zone-row-main">
+      <div class="zone-room">
+        <strong>${esc(z.name || z.room_id)}</strong>
+        <span>${esc(z.room_id || '')} · ${source}</span>
+      </div>
+      <div class="zone-reading"><span>Current</span><strong>${fmtC(z.temperature_c)}</strong></div>
+      <div class="zone-pill ${statusClass(z.status)}"><span>Status</span><strong>${esc(z.status || 'unknown')}</strong></div>
+      <div class="zone-metrics">
+        <div><span>Comfort</span><strong>${fmtComfortIntent(z.comfort, z.setpoint_c)}</strong></div>
+        <div><span>Schedule</span><strong>${fmtSchedule(z.schedule)}</strong></div>
+        <div><span>Valve</span><strong>${fmtValue(z.valve_pct, '%')}</strong></div>
+        <div><span>Learning</span><strong>${fmtLearning(z.history)}</strong><small>${fmtThermal(z.thermal_model)}</small></div>
+      </div>
+      <div class="zone-row-actions">
+        <button class="btn slim" data-command-room="${esc(z.room_id)}">+0.5 C / 45m</button>
+        <button class="btn slim" data-edit-zone-row="${index}">${editing ? 'Close' : 'Edit'}</button>
+        <small class="resolver-note">${esc(fmtResolver(z.resolver))}</small>
+      </div>
+    </div>
+    ${editing ? zoneEditorPanel(z, index) : ''}
+  </article>`;
+}
+
 export function renderOverview() {
   const summary = state.overview?.summary || {};
   const forecast = state.forecast || {};
@@ -329,70 +465,30 @@ export function renderOverview() {
 }
 
 export function renderZones() {
-  const nodeOptions = state.nodes.map((node, index) => `<option value="${index}">${node.id || v6Name(index)}</option>`).join('');
   return `<section class="view">
     <div class="section-head"><h2>Zone control</h2><span class="note">Expiring commands only. V6 clamps locally.</span></div>
-    <div class="zone-editor-layout">
-      <div class="settings-panel"><h3>Room mapping</h3>
-        <div class="inline-form">
-          <input class="input mini-input" id="map-room-id" placeholder="room-id">
-          <input class="input mini-input" id="map-room-name" placeholder="Room name">
-          <select class="input mini-input" id="map-node">${nodeOptions || '<option value="0">V6-0</option>'}</select>
-          <input class="input mini-input" id="map-zone" type="number" min="1" max="6" value="1">
-          <button class="btn" data-action="save-room-map">Apply</button>
-          <button class="btn" data-discard-section="zones">Discard</button>
-        </div>
-      </div>
-      <div class="settings-panel"><h3>Comfort intent</h3>
-        <div class="inline-form">
-          <input class="input mini-input" id="comfort-room-id" placeholder="room-id">
-          <input class="input mini-input" id="comfort-setpoint" type="number" step="0.1" min="5" max="35" value="21.0">
-          <input class="input mini-input" id="comfort-bias" type="number" step="0.1" min="-3" max="3" value="0.0">
-          <select class="input mini-input" id="comfort-priority"><option value="1">Normal</option><option value="2">High</option><option value="3">Critical</option><option value="0">Low</option></select>
-          <button class="btn" data-action="save-comfort">Apply</button>
-          <button class="btn" data-discard-section="zones">Discard</button>
-        </div>
-      </div>
-      <div class="settings-panel"><h3>Schedule</h3>
-        <div class="inline-form">
-          <input class="input mini-input" id="schedule-room-id" placeholder="room-id">
-          <input class="input mini-input" id="schedule-start" type="time" value="06:00">
-          <input class="input mini-input" id="schedule-end" type="time" value="22:00">
-          <input class="input mini-input" id="schedule-setpoint" type="number" step="0.1" min="5" max="35" value="21.0">
-          <input class="input mini-input" id="schedule-day-mask" type="number" min="1" max="127" value="127">
-          <label class="check"><input id="schedule-enabled" type="checkbox" checked> On</label>
-          <button class="btn" data-action="save-schedule">Apply</button>
-          <button class="btn" data-discard-section="zones">Discard</button>
-        </div>
-      </div>
-      <div class="settings-panel"><h3>Forecast profile</h3>
-        <div class="inline-form">
-          <input class="input mini-input" id="forecast-room-id" placeholder="room-id">
-          <input class="input mini-input" id="forecast-walls" type="number" min="0" max="15" value="0" title="N/E/S/W bitmask">
-          <input class="input mini-input" id="forecast-wind" type="number" step="0.05" min="0" max="1" value="0.50">
-          <input class="input mini-input" id="forecast-solar" type="number" step="0.05" min="0" max="1" value="0.30">
-          <input class="input mini-input" id="forecast-lead" type="number" min="1" max="24" value="4">
-          <input class="input mini-input" id="forecast-max-offset" type="number" step="0.1" min="0" max="5" value="1.5">
-          <button class="btn" data-action="save-forecast-profile">Apply</button>
-          <button class="btn" data-discard-section="zones">Discard</button>
-        </div>
-      </div>
-    </div>
-    <div class="data-table">
-      <div class="tr head zones"><span>Room</span><span>Current</span><span>Comfort</span><span>Schedule</span><span>Status</span><span>Source</span><span>Valve</span><span>Learning</span><span>Command</span></div>
-      ${state.zones.map((z) => `<div class="tr">
-        <span class="room-tools"><button class="btn slim" data-edit-room="${esc(z.room_id)}">Edit</button><span>${esc(z.name)}</span></span><span>${fmtC(z.temperature_c)}</span><span>${fmtComfortIntent(z.comfort, z.setpoint_c)}</span><span>${fmtSchedule(z.schedule)}</span><span class="${statusClass(z.status)}">${esc(z.status)}</span><span>${v6Name(z.node_index)} / Z${Number(z.zone_index) + 1}</span>
-        <span>${fmtValue(z.valve_pct, '%')}</span>
-        <span>${fmtLearning(z.history)}<small class="resolver-note">${fmtThermal(z.thermal_model)}</small></span>
-        <span><button class="btn slim" data-command-room="${esc(z.room_id)}">+0.5 C / 45m</button><small class="resolver-note">${esc(fmtResolver(z.resolver))}</small></span>
-      </div>`).join('')}
+    <div class="zone-list">
+      ${state.zones.map(zoneListItem).join('')}
     </div>
   </section>`;
 }
 
 export function renderManifolds() {
+  const scan = state.scanResult;
   return `<section class="view">
     <div class="section-head"><h2>Manifolds</h2><button class="btn" data-action="scan">Scan</button></div>
+    <div class="manifold-register">
+      <div>
+        <h3>Register manifold</h3>
+        <p class="note">Scan lists known nodes. Probe checks a specific host. Add stores hostname/IP even if the probe cannot reach it yet.</p>
+      </div>
+      <div class="inline-form manifold-form">
+        <input class="input mini-input" id="node-host" placeholder="lune-v6-a.local or 192.168.20.120">
+        <button class="btn" data-action="probe-node">Probe</button>
+        <button class="btn" data-action="add-node">Add manually</button>
+      </div>
+    </div>
+    ${renderScanResults(scan)}
     <div class="node-list">${state.nodes.map((n) => {
       const h = n.health || {};
       const r = n.runtime || {};
@@ -488,7 +584,6 @@ export function renderCommands() {
 
 export function renderSettings() {
   const scan = state.scanResult;
-  const found = scan?.found || [];
   const strategy = state.strategy || {};
   const settings = state.settings || {};
   const coordinator = settings.coordinator || {};
@@ -515,7 +610,7 @@ export function renderSettings() {
       <button class="btn" data-discard-section="settings">Discard</button>
     </div>
     <div class="settings-panel"><h3>Register V6</h3><label>Hostname/IP<input class="input" id="node-host" placeholder="lune-v6-a.local"></label><div class="inline-form"><button class="btn" data-action="probe-node">Probe</button><button class="btn" data-action="add-node">Add node</button></div></div>
-    <div class="settings-panel wide"><h3>Last scan</h3><p>${scan?.discovery || 'not run'}</p>${found.map((node) => `<p><strong>${esc(node.id)}</strong> ${esc(node.hostname || node.ip || '')} <span class="${node.reachable ? 'ok' : 'warn'}">${node.reachable ? 'reachable' : 'unreachable'}</span> ${node.firmware ? `<span>${esc(node.firmware)}</span>` : ''} ${node.pairing_fingerprint ? `<span>${esc(node.pairing_fingerprint)}</span>` : ''} <button class="btn slim" data-add-probed-host="${esc(node.hostname || '')}" data-add-probed-ip="${esc(node.ip || '')}" data-add-probed-fingerprint="${esc(node.pairing_fingerprint || '')}">Add</button></p>`).join('') || '<p>No candidates</p>'}</div>
+    <div class="settings-panel wide">${renderScanResults(scan)}</div>
     <div class="settings-panel"><h3>Asgard / Odin</h3><p>Physical ${physical.has_temperature ? fmtC(physical.temperature_c) : 'missing'} from ${physical.contributing_zones || 0} zones</p><p>Comfort demand ${fmtValue(comfort.demand_c, ' C')} across ${comfort.demand_zones || 0} zones</p><p>Driver ${esc(driver.name || driver.room_id || '-')} ${driver.priority != null ? `/ P${driver.priority}` : ''}</p><p class="note">${esc(asgardMode)} / ${asgard.enabled === false ? 'disabled' : 'enabled'}</p></div>
     <div class="settings-panel"><h3>Commissioning</h3><p class="${commissioning.next_action === 'ready' ? 'ok' : 'warn'}">${esc(fmtNextAction(commissioning.next_action))}</p><p>${commissioning.reachable_trusted_nodes || 0} ready trusted / ${commissioning.trusted_nodes || 0} trusted / ${commissioning.paired_nodes || 0} paired</p><p>${commissioning.reachable_nodes || 0} reachable / ${commissioning.stale_nodes || 0} stale nodes</p><p class="${commissioning.identity_missing_nodes ? 'warn' : 'ok'}">${commissioning.identity_missing_nodes || 0} missing identities</p><p>${commissioning.fresh_zones || 0} fresh of ${commissioning.bound_zones || 0} mapped zones</p>${commissioningActionButton(commissioning.next_action)}</div>
     <div class="settings-panel"><h3>Access</h3><p><strong>http://&lt;touch-ip&gt;/</strong></p><p class="note">screen ${esc(state.diagnostics?.screen || 'unknown')}</p></div>
@@ -646,43 +741,74 @@ export function renderDiagnostics() {
 
 export function bindActions(root) {
   root.querySelector('[data-action="refresh"]')?.addEventListener('click', () => runAction(refreshAll));
+  const getNodeHost = () => root.querySelector('#node-host')?.value?.trim() || '';
+  const refreshAfterNodeChange = () => refreshSection(state.section === 'settings' ? 'settings' : 'manifolds');
+  const probeNodeHost = (host) => api.scanNodes(nodeProbePayload(host)).then((result) => {
+    patch({ scanResult: result });
+    return result;
+  });
+  const addNodeHost = (host) => probeNodeHost(host)
+    .catch((error) => {
+      patch({ scanResult: { scan: 'probe', discovery: 'manual_probe', found: [{ id: host, hostname: host, reachable: false, stale: true, source: 'manual_entry', error: error.message || String(error) }] } });
+      return { found: [] };
+    })
+    .then((result) => {
+      const candidate = result?.found?.[0] || {};
+      return api.addNode(nodePayloadFromCandidate(host, candidate));
+    })
+    .then(refreshAfterNodeChange);
   root.querySelectorAll('[data-discard-section]').forEach((btn) => {
     btn.addEventListener('click', () => runAction(() => refreshSection(btn.dataset.discardSection)));
   });
-  root.querySelectorAll('[data-edit-room]').forEach((btn) => {
+  root.querySelectorAll('[data-edit-zone-row]').forEach((btn) => {
     btn.addEventListener('click', () => {
-      const zone = state.zones.find((candidate) => candidate.room_id === btn.dataset.editRoom);
-      if (!zone) return;
-      const setValue = (selector, value) => {
-        const input = root.querySelector(selector);
-        if (input) input.value = value ?? '';
-      };
-      setValue('#map-room-id', zone.room_id);
-      setValue('#map-room-name', zone.name || zone.room_id);
-      setValue('#map-node', Number(zone.node_index || 0));
-      setValue('#map-zone', Number(zone.zone_index || 0) + 1);
-      setValue('#comfort-room-id', zone.room_id);
-      setValue('#comfort-setpoint', Number(zone.comfort?.setpoint_c ?? zone.setpoint_c ?? 21).toFixed(1));
-      setValue('#comfort-bias', Number(zone.comfort?.bias_c || 0).toFixed(1));
-      setValue('#comfort-priority', Number(zone.comfort?.priority ?? 1));
-      setValue('#schedule-room-id', zone.room_id);
-      setValue('#schedule-start', fmtClock(zone.schedule?.start_min ?? 360));
-      setValue('#schedule-end', fmtClock(zone.schedule?.end_min ?? 1320));
-      setValue('#schedule-setpoint', Number(zone.schedule?.setpoint_c ?? zone.comfort?.setpoint_c ?? 21).toFixed(1));
-      setValue('#schedule-day-mask', Number(zone.schedule?.day_mask || 127));
-      const enabled = root.querySelector('#schedule-enabled');
-      if (enabled) enabled.checked = zone.schedule?.enabled !== false;
-      setValue('#forecast-room-id', zone.room_id);
-      setValue('#forecast-walls', Number(zone.forecast?.exterior_walls || 0));
-      setValue('#forecast-wind', Number(zone.forecast?.wind_exposure ?? 0.5).toFixed(2));
-      setValue('#forecast-solar', Number(zone.forecast?.solar_gain ?? 0.3).toFixed(2));
-      setValue('#forecast-lead', Number(zone.forecast?.thermal_lead_h || 4));
-      setValue('#forecast-max-offset', Number(zone.forecast?.max_offset_c ?? 1.5).toFixed(1));
+      const zone = state.zones[Number(btn.dataset.editZoneRow)];
+      patch({ zoneEditRoomId: state.zoneEditRoomId === zone?.room_id ? '' : (zone?.room_id || '') });
+    });
+  });
+  root.querySelectorAll('[data-cancel-zone-edit]').forEach((btn) => {
+    btn.addEventListener('click', () => patch({ zoneEditRoomId: '' }));
+  });
+  root.querySelectorAll('[data-save-zone-row]').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const index = Number(btn.dataset.saveZoneRow);
+      const zone = state.zones[index];
+      const row = btn.closest('[data-zone-index]');
+      if (!zone || !row || !zone.room_id) return;
+      const field = (name) => row.querySelector(`[data-zone-field="${name}"]`);
+      const name = field('name')?.value?.trim() || zone.room_id;
+      const nodeIndex = Number(field('node')?.value || 0);
+      const zoneIndex = Math.max(0, Number(field('zone')?.value || 1) - 1);
+      const comfort = Number(field('comfort')?.value);
+      const bias = Number(field('bias')?.value || 0);
+      const priority = Number(field('priority')?.value || 1);
+      const startMin = parseClock(field('schedule-start')?.value, 360);
+      const endMin = parseClock(field('schedule-end')?.value, 1320);
+      const setpoint = Number(field('schedule-setpoint')?.value);
+      const dayMask = Number(zone.schedule?.day_mask || 127);
+      const enabled = field('schedule-enabled')?.checked ? 1 : 0;
+      const exterior_walls = Number(field('forecast-walls')?.value || 0);
+      const wind_exposure = Number(field('forecast-wind')?.value);
+      const solar_gain = Number(field('forecast-solar')?.value);
+      const thermal_lead_h = Number(field('forecast-lead')?.value || 4);
+      const max_offset_c = Number(field('forecast-max-offset')?.value);
+      if (!Number.isFinite(comfort) || !Number.isFinite(bias) || !Number.isFinite(setpoint) ||
+          !Number.isFinite(exterior_walls) || !Number.isFinite(wind_exposure) ||
+          !Number.isFinite(solar_gain) || !Number.isFinite(thermal_lead_h) || !Number.isFinite(max_offset_c)) {
+        patch({ error: 'Zone values must be numeric' });
+        return;
+      }
+      runAction(() => api.saveZone(zone.room_id, { name, node_index: nodeIndex, zone_index: zoneIndex })
+        .then(() => api.saveComfort(zone.room_id, { comfort_setpoint_c: comfort, comfort_bias_c: bias, priority }))
+        .then(() => api.saveSchedule(zone.room_id, { enabled, day_mask: dayMask, start_min: startMin, end_min: endMin, setpoint_c: setpoint }))
+        .then(() => api.saveForecastProfile(zone.room_id, { exterior_walls, wind_exposure, solar_gain, thermal_lead_h, max_offset_c }))
+        .then(() => patch({ zoneEditRoomId: '' }))
+        .then(() => refreshSection('zones')));
     });
   });
   root.querySelector('[data-action="scan"]')?.addEventListener('click', () => runAction(() => api.scanNodes().then((result) => {
     patch({ scanResult: result });
-    return refreshAll();
+    return refreshAfterNodeChange();
   })));
   root.querySelector('[data-action="forecast-fetch"]')?.addEventListener('click', () => runAction(() => api.fetchForecast().then(() => {
     refreshSection('forecast');
@@ -724,55 +850,12 @@ export function bindActions(root) {
     runAction(() => api.saveSettings({ name, install_id, site_label, install_mode, asgard_enabled, asgard_mode }).then(refreshAll));
   });
   root.querySelector('[data-action="add-node"]')?.addEventListener('click', () => {
-    const host = root.querySelector('#node-host')?.value?.trim();
-    if (host) runAction(() => api.scanNodes({ hostname: host }).then((result) => {
-      patch({ scanResult: result });
-      const candidate = result?.found?.[0] || {};
-      return api.addNode(nodePayloadFromCandidate(host, candidate));
-    }).then(refreshAll));
+    const host = getNodeHost();
+    if (host) runAction(() => addNodeHost(host));
   });
   root.querySelector('[data-action="probe-node"]')?.addEventListener('click', () => {
-    const host = root.querySelector('#node-host')?.value?.trim();
-    if (host) runAction(() => api.scanNodes({ hostname: host }).then((result) => patch({ scanResult: result })));
-  });
-  root.querySelector('[data-action="save-room-map"]')?.addEventListener('click', () => {
-    const roomId = root.querySelector('#map-room-id')?.value?.trim();
-    const name = root.querySelector('#map-room-name')?.value?.trim() || roomId;
-    const nodeIndex = Number(root.querySelector('#map-node')?.value || 0);
-    const zoneIndex = Math.max(0, Number(root.querySelector('#map-zone')?.value || 1) - 1);
-    if (roomId) runAction(() => api.saveZone(roomId, { name, node_index: nodeIndex, zone_index: zoneIndex }).then(refreshAll));
-  });
-  root.querySelector('[data-action="save-comfort"]')?.addEventListener('click', () => {
-    const roomId = root.querySelector('#comfort-room-id')?.value?.trim();
-    const comfort = Number(root.querySelector('#comfort-setpoint')?.value);
-    const bias = Number(root.querySelector('#comfort-bias')?.value || 0);
-    const priority = Number(root.querySelector('#comfort-priority')?.value || 1);
-    if (roomId && Number.isFinite(comfort) && Number.isFinite(bias)) {
-      runAction(() => api.saveComfort(roomId, { comfort_setpoint_c: comfort, comfort_bias_c: bias, priority }).then(refreshAll));
-    }
-  });
-  root.querySelector('[data-action="save-schedule"]')?.addEventListener('click', () => {
-    const roomId = root.querySelector('#schedule-room-id')?.value?.trim();
-    const startMin = parseClock(root.querySelector('#schedule-start')?.value, 360);
-    const endMin = parseClock(root.querySelector('#schedule-end')?.value, 1320);
-    const setpoint = Number(root.querySelector('#schedule-setpoint')?.value);
-    const dayMask = Number(root.querySelector('#schedule-day-mask')?.value || 127);
-    const enabled = root.querySelector('#schedule-enabled')?.checked ? 1 : 0;
-    if (roomId && Number.isFinite(setpoint)) {
-      runAction(() => api.saveSchedule(roomId, { enabled, day_mask: dayMask, start_min: startMin, end_min: endMin, setpoint_c: setpoint }).then(refreshAll));
-    }
-  });
-  root.querySelector('[data-action="save-forecast-profile"]')?.addEventListener('click', () => {
-    const roomId = root.querySelector('#forecast-room-id')?.value?.trim();
-    const exterior_walls = Number(root.querySelector('#forecast-walls')?.value || 0);
-    const wind_exposure = Number(root.querySelector('#forecast-wind')?.value);
-    const solar_gain = Number(root.querySelector('#forecast-solar')?.value);
-    const thermal_lead_h = Number(root.querySelector('#forecast-lead')?.value || 4);
-    const max_offset_c = Number(root.querySelector('#forecast-max-offset')?.value);
-    if (roomId && Number.isFinite(exterior_walls) && Number.isFinite(wind_exposure) &&
-        Number.isFinite(solar_gain) && Number.isFinite(thermal_lead_h) && Number.isFinite(max_offset_c)) {
-      runAction(() => api.saveForecastProfile(roomId, { exterior_walls, wind_exposure, solar_gain, thermal_lead_h, max_offset_c }).then(refreshAll));
-    }
+    const host = getNodeHost();
+    if (host) runAction(() => probeNodeHost(host));
   });
   root.querySelectorAll('[data-remove-node]').forEach((btn) => {
     btn.addEventListener('click', () => {
@@ -791,7 +874,8 @@ export function bindActions(root) {
       const hostname = btn.dataset.addProbedHost || '';
       const ip = btn.dataset.addProbedIp || '';
       const pairing_fingerprint = btn.dataset.addProbedFingerprint || '';
-      if (hostname || ip) runAction(() => api.addNode({ hostname, ip, pairing_fingerprint }).then(refreshAll));
+      const node_id = btn.dataset.addProbedId || undefined;
+      if (hostname || ip) runAction(() => api.addNode({ node_id, hostname, ip, pairing_fingerprint }).then(refreshAfterNodeChange));
     });
   });
   root.querySelectorAll('[data-command-room]').forEach((btn) => {
