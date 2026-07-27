@@ -1,7 +1,16 @@
 const listeners = new Set();
 
+function storedNavState() {
+  try {
+    return localStorage.getItem('lune-touch-nav-collapsed') === '1';
+  } catch {
+    return false;
+  }
+}
+
 export const state = {
-  section: 'overview',
+  section: 'dashboard',
+  navCollapsed: storedNavState(),
   loading: false,
   error: '',
   overview: null,
@@ -13,6 +22,7 @@ export const state = {
   events: [],
   diagnostics: null,
   settings: null,
+  heatSource: null,
   scanResult: null,
   zoneEditRoomId: '',
 };
@@ -28,6 +38,16 @@ function notify() {
 
 export function setSection(section) {
   state.section = section;
+  notify();
+}
+
+export function toggleNavigation() {
+  state.navCollapsed = !state.navCollapsed;
+  try {
+    localStorage.setItem('lune-touch-nav-collapsed', state.navCollapsed ? '1' : '0');
+  } catch {
+    // Storage may be unavailable in private or embedded browser contexts.
+  }
   notify();
 }
 

@@ -44,6 +44,8 @@ int HouseModel::upsert_node(const char *node_id, const char *hostname, const cha
 
   for (size_t i = 0; i < node_count_; i++) {
     if (same_text_(nodes_[i].node_id, node_id)) {
+      if (nodes_[i].name[0] == '\0')
+        copy_text_(nodes_[i].name, sizeof(nodes_[i].name), node_id);
       copy_text_(nodes_[i].hostname, sizeof(nodes_[i].hostname), hostname);
       copy_text_(nodes_[i].fallback_ip, sizeof(nodes_[i].fallback_ip), fallback_ip);
       copy_text_(nodes_[i].model, sizeof(nodes_[i].model), model);
@@ -58,6 +60,7 @@ int HouseModel::upsert_node(const char *node_id, const char *hostname, const cha
 
   PairedNode &node = nodes_[node_count_];
   copy_text_(node.node_id, sizeof(node.node_id), node_id);
+  copy_text_(node.name, sizeof(node.name), node_id);
   copy_text_(node.hostname, sizeof(node.hostname), hostname);
   copy_text_(node.fallback_ip, sizeof(node.fallback_ip), fallback_ip);
   copy_text_(node.model, sizeof(node.model), model);
@@ -66,6 +69,18 @@ int HouseModel::upsert_node(const char *node_id, const char *hostname, const cha
   node.reachable = false;
   node.last_seen_ms = 0;
   return static_cast<int>(node_count_++);
+}
+
+bool HouseModel::update_node_name(const char *node_id, const char *name) {
+  if (node_id == nullptr || node_id[0] == '\0' || name == nullptr || name[0] == '\0')
+    return false;
+  for (size_t i = 0; i < node_count_; i++) {
+    if (!same_text_(nodes_[i].node_id, node_id))
+      continue;
+    copy_text_(nodes_[i].name, sizeof(nodes_[i].name), name);
+    return true;
+  }
+  return false;
 }
 
 bool HouseModel::remove_node(const char *node_id) {
@@ -169,6 +184,11 @@ bool HouseModel::is_node_stale(size_t node_index, uint32_t now_ms) const {
 }
 
 bool HouseModel::bind_zone(const char *room_id, const char *room_name, size_t node_index, size_t zone_index) {
+  return bind_zone_with_source(room_id, room_name, node_index, zone_index, ZoneNameSource::TOUCH);
+}
+
+bool HouseModel::bind_zone_with_source(const char *room_id, const char *room_name, size_t node_index,
+                                       size_t zone_index, ZoneNameSource source) {
   if (room_id == nullptr || room_id[0] == '\0' || node_index >= node_count_ || zone_index >= ZONES_PER_NODE)
     return false;
 
@@ -177,6 +197,7 @@ bool HouseModel::bind_zone(const char *room_id, const char *room_name, size_t no
       copy_text_(zones_[i].room_name, sizeof(zones_[i].room_name), room_name);
       zones_[i].node_index = static_cast<uint8_t>(node_index);
       zones_[i].zone_index = static_cast<uint8_t>(zone_index);
+      zones_[i].name_source = source;
       zones_[i].enabled = true;
       return true;
     }
@@ -191,10 +212,28 @@ bool HouseModel::bind_zone(const char *room_id, const char *room_name, size_t no
   copy_text_(zone.room_name, sizeof(zone.room_name), room_name);
   zone.node_index = static_cast<uint8_t>(node_index);
   zone.zone_index = static_cast<uint8_t>(zone_index);
+  zone.name_source = source;
   zone.enabled = true;
   live_[index] = {};
   copy_text_(live_[index].room_id, sizeof(live_[index].room_id), room_id);
   return true;
+}
+
+bool HouseModel::update_zone_name_from_v6_by_binding(size_t node_index, size_t zone_index,
+                                                     const char *room_name) {
+  if (node_index >= node_count_ || zone_index >= ZONES_PER_NODE || room_name == nullptr ||
+      room_name[0] == '\0')
+    return false;
+  for (size_t i = 0; i < zone_count_; i++) {
+    if (!zones_[i].enabled || zones_[i].node_index != node_index || zones_[i].zone_index != zone_index)
+      continue;
+    if (zones_[i].name_source == ZoneNameSource::TOUCH)
+      return false;
+    copy_text_(zones_[i].room_name, sizeof(zones_[i].room_name), room_name);
+    zones_[i].name_source = ZoneNameSource::V6;
+    return true;
+  }
+  return false;
 }
 
 bool HouseModel::update_zone_forecast_profile_by_binding(size_t node_index, size_t zone_index,
@@ -244,6 +283,19 @@ bool HouseModel::update_zone_comfort(const char *room_id, float comfort_setpoint
                                                 zones_[i].comfort_setpoint_c);
     zones_[i].comfort_bias_c = clamp_float_(comfort_bias_c, -3.0f, 3.0f, zones_[i].comfort_bias_c);
     zones_[i].priority = priority > 3 ? 3 : priority;
+    return true;
+  }
+  return false;
+}
+
+bool HouseModel::update_zone_comfort_from_v6_by_binding(size_t node_index, size_t zone_index,
+                                                        float comfort_setpoint_c) {
+  if (!std::isfinite(comfort_setpoint_c))
+    return false;
+  for (size_t i = 0; i < zone_count_; i++) {
+    if (!zones_[i].enabled || zones_[i].node_index != node_index || zones_[i].zone_index != zone_index)
+      continue;
+    zones_[i].comfort_setpoint_c = std::fmax(5.0f, std::fmin(35.0f, comfort_setpoint_c));
     return true;
   }
   return false;
@@ -627,6 +679,10 @@ bool HouseModel::import_state(const PersistedState &state) {
   zone_count_ = state.zone_count;
   for (size_t i = 0; i < node_count_; i++)
     nodes_[i] = state.nodes[i];
+  for (size_t i = 0; i < node_count_; i++) {
+    if (nodes_[i].name[0] == '\0')
+      copy_text_(nodes_[i].name, sizeof(nodes_[i].name), nodes_[i].node_id);
+  }
   for (size_t i = 0; i < zone_count_; i++) {
     zones_[i] = state.zones[i];
     history_[i] = state.histories[i];

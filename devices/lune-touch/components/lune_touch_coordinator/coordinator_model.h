@@ -10,7 +10,8 @@ static constexpr size_t ZONES_PER_NODE = 6;
 static constexpr size_t MAX_HOUSE_ZONES = MAX_NODES * ZONES_PER_NODE;
 static constexpr size_t LEDGER_CAPACITY = 32;
 static constexpr uint32_t PERSISTED_STATE_MAGIC = 0x4C544348;  // LTCH
-static constexpr uint16_t PERSISTED_STATE_VERSION = 8;
+static constexpr uint16_t PERSISTED_STATE_VERSION = 9;
+static constexpr uint16_t PERSISTED_STATE_VERSION_V8 = 8;
 static constexpr uint16_t PERSISTED_STATE_VERSION_V7 = 7;
 static constexpr uint16_t PERSISTED_STATE_VERSION_V6 = 6;
 static constexpr uint16_t PERSISTED_STATE_VERSION_V5 = 5;
@@ -36,8 +37,15 @@ enum class CommandResult : uint8_t {
   FAILED = 7,
 };
 
+enum class ZoneNameSource : uint8_t {
+  GENERATED = 0,
+  V6 = 1,
+  TOUCH = 2,
+};
+
 struct PairedNode {
   char node_id[24]{};
+  char name[48]{};
   char hostname[64]{};
   char fallback_ip[16]{};
   char model[24]{};
@@ -65,6 +73,7 @@ struct ZoneBinding {
   uint16_t schedule_end_min{1320};
   uint8_t schedule_day_mask{0x7F};
   uint8_t priority{1};
+  ZoneNameSource name_source{ZoneNameSource::GENERATED};
   uint16_t thermal_samples{0};
   float learned_heat_gain_c_per_h{0.0f};
   float learned_cool_loss_c_per_h{0.0f};
@@ -193,9 +202,14 @@ class HouseModel {
                             const char *fallback_ip);
   bool update_node_identity(size_t node_index, const char *pairing_fingerprint);
   bool update_node_trust(const char *node_id, NodeTrust trust);
+  bool update_node_name(const char *node_id, const char *name);
   bool is_node_stale(size_t node_index, uint32_t now_ms) const;
 
   bool bind_zone(const char *room_id, const char *room_name, size_t node_index, size_t zone_index);
+  bool bind_zone_with_source(const char *room_id, const char *room_name, size_t node_index,
+                             size_t zone_index, ZoneNameSource source);
+  bool update_zone_name_from_v6_by_binding(size_t node_index, size_t zone_index,
+                                           const char *room_name);
   bool update_zone_forecast_profile_by_binding(size_t node_index, size_t zone_index,
                                                uint8_t exterior_walls, float wind_exposure,
                                                float solar_gain, uint8_t thermal_lead_h,
@@ -205,6 +219,8 @@ class HouseModel {
                                     uint8_t thermal_lead_h, float max_offset_c);
   bool update_zone_comfort(const char *room_id, float comfort_setpoint_c, uint8_t priority,
                            float comfort_bias_c = 0.0f);
+  bool update_zone_comfort_from_v6_by_binding(size_t node_index, size_t zone_index,
+                                              float comfort_setpoint_c);
   bool update_zone_schedule(const char *room_id, bool enabled, uint8_t day_mask,
                             uint16_t start_min, uint16_t end_min, float setpoint_c);
   bool update_zone_live(const char *room_id, float temperature_c, bool has_temperature,

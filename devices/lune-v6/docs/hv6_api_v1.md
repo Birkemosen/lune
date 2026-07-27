@@ -377,6 +377,10 @@ Minimum command set:
 
 Applies validated partial settings payload.
 
+Touch uses the existing typed settings routes for V6-owned zone weather data:
+`zone_exterior_walls` (`text`), `zone_wind_exposure`, `zone_solar_gain`, and
+`zone_thermal_lead_h` (`number`). All include the one-based `zone` field.
+
 ## SSE Endpoint
 
 ### `GET /api/hv6/v1/events`

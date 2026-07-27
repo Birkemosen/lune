@@ -69,6 +69,20 @@ struct EventRecord {
   char message[96]{};
 };
 
+struct HeatSourceState {
+  bool enabled{false};
+  char host[64]{};
+  uint16_t port{80};
+  char weighted_temperature_variable[48]{"virtual_thermostat_input_z1"};
+  uint16_t push_interval_s{30};
+  bool last_push_ok{false};
+  bool has_last_push{false};
+  float last_value_c{0.0f};
+  uint32_t last_push_ms{0};
+  uint32_t failure_count{0};
+  char last_error[96]{};
+};
+
 class LuneTouchCoordinator : public esphome::Component {
  public:
   float get_setup_priority() const override { return esphome::setup_priority::AFTER_WIFI; }
@@ -90,6 +104,7 @@ class LuneTouchCoordinator : public esphome::Component {
   void write_commands_json(char *buffer, size_t capacity) const;
   void write_diagnostics_json(char *buffer, size_t capacity) const;
   void write_settings_json(char *buffer, size_t capacity) const;
+  void write_heat_source_json(char *buffer, size_t capacity) const;
   void write_events_json(char *buffer, size_t capacity) const;
   std::string house_summary_text() const;
   std::string zone_line_text(uint8_t row) const;
@@ -103,6 +118,7 @@ class LuneTouchCoordinator : public esphome::Component {
                            char *response, size_t capacity);
   bool set_node_trust(const char *node_id, ::lune_touch::NodeTrust trust,
                       const char *confirmation, char *response, size_t capacity);
+  bool set_node_profile(const char *node_id, const char *name, char *response, size_t capacity);
   bool remove_node(const char *node_id, const char *confirmation, char *response, size_t capacity);
   bool reset_registry(const char *confirmation, char *response, size_t capacity);
   bool bind_room(const char *room_id, const char *room_name, size_t node_index, size_t zone_index,
@@ -122,7 +138,12 @@ class LuneTouchCoordinator : public esphome::Component {
                             char *response, size_t capacity);
   bool set_forecast_location(float latitude, float longitude, const char *mode,
                              char *response, size_t capacity);
+  bool set_weather_settings(float max_boost_c, char *response, size_t capacity);
   bool request_forecast_fetch(char *response, size_t capacity);
+  bool set_heat_source_settings(bool has_enabled, bool enabled, const char *host, uint16_t port,
+                                const char *weighted_temperature_variable, uint16_t push_interval_s,
+                                char *response, size_t capacity);
+  bool request_heat_source_push(char *response, size_t capacity);
   bool set_settings(const char *coordinator_name, const char *install_id,
                     const char *site_label, const char *install_mode,
                     bool has_asgard_enabled, bool asgard_enabled,
@@ -168,6 +189,11 @@ class LuneTouchCoordinator : public esphome::Component {
                                  const ::lune_touch::CommandRecord &request,
                                  uint32_t ttl_s, ::lune_touch::CommandRecord *result,
                                  const char *preferred_host = nullptr);
+  bool send_v6_zone_setpoint_(const ::lune_touch::PairedNode &node, uint8_t zone_index,
+                              float setpoint_c);
+  bool send_v6_zone_setting_(const ::lune_touch::PairedNode &node, uint8_t zone_index,
+                             const char *kind, const char *key, const char *value);
+  bool push_weighted_temperature_();
   void url_encode_(const char *src, char *out, size_t out_len) const;
   void log_event_(const char *level, const char *source, const char *message);
 
@@ -212,6 +238,11 @@ class LuneTouchCoordinator : public esphome::Component {
   char install_mode_[16]{"commissioning"};
   bool asgard_enabled_{true};
   char asgard_mode_[16]{"advisory"};
+  HeatSourceState heat_source_{};
+  bool heat_source_push_requested_{false};
+  float weather_max_boost_c_{1.5f};
+  bool weather_max_boost_configured_{false};
+  bool weather_max_boost_seeded_from_v6_{false};
   uint32_t forecast_last_fetch_ms_{0};
   char forecast_status_[16]{"stale"};
   char forecast_last_error_[96]{};

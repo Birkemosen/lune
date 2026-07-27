@@ -5,9 +5,9 @@ const BASE = '/api/lune-touch/v1';
 function mockData(path) {
   if (path === '/overview') return { summary: { zones: 18, nodes: 3, calling: 5, stale_nodes: 1, comfort_avg_c: 21.1, forecast_status: 'stale', latest_command: 'accepted' } };
   if (path === '/nodes') return { nodes: [
-    { id: 'v6-a', hostname: 'lune-v6-a.local', ip: '192.168.1.51', firmware: 'mock', pairing_fingerprint: 'hv6-mock-a', reachable: true, trust: 2, trust_label: 'trusted', last_success_host: 'lune-v6-a.local', last_failure: '', health: { mapped_zones: 6, fresh_zones: 6, stale_zones: 0, calling_zones: 2, avg_temp_c: 20.9, avg_setpoint_c: 21.0 }, runtime: { active_zones: 6, avg_valve_pct: 28.5, flow_c: 33.8, return_c: 30.6, drivers_enabled: true, motor_fault: false, motor_current_ma: 18.2 } },
-    { id: 'v6-b', hostname: 'lune-v6-b.local', ip: '192.168.1.52', firmware: 'mock', pairing_fingerprint: 'hv6-mock-b', reachable: true, trust: 2, trust_label: 'trusted', last_success_host: '192.168.1.52', last_failure: '', health: { mapped_zones: 6, fresh_zones: 6, stale_zones: 0, calling_zones: 2, avg_temp_c: 18.9, avg_setpoint_c: 18.9 }, runtime: { active_zones: 4, avg_valve_pct: 19.7, flow_c: 31.2, return_c: 28.9, drivers_enabled: true, motor_fault: true, motor_current_ma: 12.4 } },
-    { id: 'v6-c', hostname: 'lune-v6-c.local', ip: '192.168.1.53', firmware: 'mock', pairing_fingerprint: 'hv6-mock-c', reachable: false, trust: 1, trust_label: 'paired', last_success_host: '', last_failure: 'overview failed status=0', health: { mapped_zones: 6, fresh_zones: 5, stale_zones: 1, calling_zones: 1, avg_temp_c: 19.3, avg_setpoint_c: 18.6 }, runtime: { active_zones: 0, avg_valve_pct: null, flow_c: null, return_c: null, drivers_enabled: false, motor_fault: false, motor_current_ma: null } },
+    { id: 'v6-a', name: 'Ground floor manifold', hostname: 'lune-v6-a.local', ip: '192.168.1.51', firmware: 'mock', pairing_fingerprint: 'hv6-mock-a', reachable: true, trust: 2, trust_label: 'trusted', last_success_host: 'lune-v6-a.local', last_failure: '', health: { mapped_zones: 6, fresh_zones: 6, stale_zones: 0, calling_zones: 2, avg_temp_c: 20.9, avg_setpoint_c: 21.0 }, runtime: { active_zones: 6, avg_valve_pct: 28.5, flow_c: 33.8, return_c: 30.6, drivers_enabled: true, motor_fault: false, motor_current_ma: 18.2 } },
+    { id: 'v6-b', name: 'Workshop manifold', hostname: 'lune-v6-b.local', ip: '192.168.1.52', firmware: 'mock', pairing_fingerprint: 'hv6-mock-b', reachable: true, trust: 2, trust_label: 'trusted', last_success_host: '192.168.1.52', last_failure: '', health: { mapped_zones: 6, fresh_zones: 6, stale_zones: 0, calling_zones: 2, avg_temp_c: 18.9, avg_setpoint_c: 18.9 }, runtime: { active_zones: 4, avg_valve_pct: 19.7, flow_c: 31.2, return_c: 28.9, drivers_enabled: true, motor_fault: true, motor_current_ma: 12.4 } },
+    { id: 'v6-c', name: 'Unverified manifold', hostname: 'lune-v6-c.local', ip: '192.168.1.53', firmware: 'mock', pairing_fingerprint: 'hv6-mock-c', reachable: false, trust: 1, trust_label: 'paired', last_success_host: '', last_failure: 'overview failed status=0', health: { mapped_zones: 6, fresh_zones: 5, stale_zones: 1, calling_zones: 1, avg_temp_c: 19.3, avg_setpoint_c: 18.6 }, runtime: { active_zones: 0, avg_valve_pct: null, flow_c: null, return_c: null, drivers_enabled: false, motor_fault: false, motor_current_ma: null } },
   ] };
   if (path === '/zones') {
     const names = ['Living','Kitchen','Bath','Hall','Office','Bedroom','Guest','Utility','Laundry','Workshop','Pantry','Landing','Kids west','Kids east','Ensuite','Basement','Garage','Spare'];
@@ -17,6 +17,7 @@ function mockData(path) {
     return { count: 18, zones: names.map((name, i) => ({
       room_id: `room-${String(i + 1).padStart(2, '0')}`,
       name,
+      name_source: i % 5 === 0 ? 'touch' : 'v6',
       node_index: Math.floor(i / 6),
       zone_index: i % 6,
       temperature_c: [21.3,20.9,22.2,20.1,20.8,19.4,19.8,18.9,18.7,17.6,18.1,20.3,20.5,20.0,21.8,null,12.4,null][i],
@@ -71,6 +72,7 @@ function mockData(path) {
     return {
     status: 'ok',
     location: { mode: 'manual', latitude: 55.6761, longitude: 12.5683 },
+    weather: { max_boost_c: 1.5 },
     fetch_pending: false,
     last_fetch_age_s: 420,
     cache: { hours: 72, min_temp_c: -2.1, max_wind_ms: 13.4, peak_wind_dir_deg: 275, max_solar_wm2: 180, restored: false },
@@ -85,14 +87,20 @@ function mockData(path) {
   }
   if (path === '/strategy') return {
     physical: { has_temperature: true, temperature_c: 20.8, contributing_zones: 14 },
+    weighted_temperature: { available: true, value_c: 20.8, contributing_rooms: 14 },
     comfort: { average_c: 20.7, demand_c: 0.6, demand_zones: 5 },
     driver: { room_id: 'room-03', name: 'Bath', deficit_c: 1.3, priority: 3 },
     schedule: { time_valid: true, active_zones: 8, driver_room_id: 'room-03', driver_name: 'Bath', driver_setpoint_c: 22.0, driver_priority: 3 },
-    asgard_odin: {
-      physical_signal: 'priority_weighted_house_temp',
-      comfort_signal: 'separate_weighted_demand',
-      mode: 'advisory',
-    },
+    heat_source: { enabled: true, mode: 'active' },
+  };
+  if (path === '/heat-source') return {
+    enabled: true,
+    host: 'asgard.local',
+    port: 80,
+    weighted_temperature_variable: 'virtual_thermostat_input_z1',
+    push_interval_s: 30,
+    weighted_temperature: { available: true, value_c: 20.8, contributing_rooms: 14 },
+    push: { has_result: true, ok: true, last_value_c: 20.8, last_push_age_s: 12, failure_count: 0, last_error: '' },
   };
   if (path === '/commands') return { commands: [
     { request_id: 'mock-forecast-1', source: 'forecast', reason: 'wind preload', room_id: 'room-01', name: 'Living', node_index: 0, zone_index: 0, requested_offset_c: 0.4, accepted_offset_c: 0.4, created_at_ms: Date.now() - 600000, expires_at_ms: Date.now() + 2100000, result: 'accepted', clamp_applied: false },
@@ -138,7 +146,7 @@ function mockData(path) {
   };
   if (path === '/settings') return {
     coordinator: { name: 'Lune Touch', install_id: 'house-main', site_label: 'Birkemosen', install_mode: 'commissioning' },
-    asgard_odin: { enabled: true, mode: 'advisory', physical_signal: 'priority_weighted_house_temp', comfort_signal: 'separate_weighted_demand' },
+    weather: { max_boost_c: 1.5 },
   };
   return {};
 }
@@ -176,6 +184,7 @@ async function refreshPaths(paths, { loading = false } = {}) {
       if (path === '/events') next.events = value.events || [];
       if (path === '/diagnostics') next.diagnostics = value;
       if (path === '/settings') next.settings = value;
+      if (path === '/heat-source') next.heatSource = value;
     });
     if (loading) next.loading = false;
     patch(next);
@@ -185,19 +194,20 @@ async function refreshPaths(paths, { loading = false } = {}) {
 }
 
 export async function refreshAll(options = {}) {
-  return refreshPaths(['/overview', '/nodes', '/zones', '/strategy', '/forecast', '/commands', '/events', '/diagnostics', '/settings'], {
+  return refreshPaths(['/overview', '/nodes', '/zones', '/strategy', '/forecast', '/commands', '/events', '/diagnostics', '/settings', '/heat-source'], {
     loading: options.loading ?? true,
   });
 }
 
 export async function refreshSection(section) {
-  if (section === 'overview') return refreshPaths(['/overview', '/zones', '/forecast', '/diagnostics']);
-  if (section === 'zones') return refreshPaths(['/nodes', '/zones']);
+  if (section === 'setup') return refreshPaths(['/overview', '/nodes', '/zones', '/forecast', '/diagnostics', '/settings', '/heat-source']);
+  if (section === 'dashboard' || section === 'house' || section === 'overview') return refreshPaths(['/overview', '/zones', '/forecast', '/diagnostics', '/heat-source']);
+  if (section === 'rooms' || section === 'zones') return refreshPaths(['/nodes', '/zones']);
   if (section === 'manifolds') return refreshPaths(['/overview', '/nodes', '/zones']);
-  if (section === 'forecast') return refreshPaths(['/forecast', '/diagnostics']);
+  if (section === 'weather' || section === 'forecast') return refreshPaths(['/forecast', '/diagnostics', '/settings']);
+  if (section === 'heat-source') return refreshPaths(['/heat-source']);
   if (section === 'commands') return refreshPaths(['/commands', '/events']);
-  if (section === 'settings') return refreshPaths(['/overview', '/nodes', '/strategy', '/diagnostics', '/settings']);
-  if (section === 'diagnostics') return refreshPaths(['/strategy', '/forecast', '/commands', '/events', '/diagnostics']);
+  if (section === 'system' || section === 'settings') return refreshPaths(['/settings', '/diagnostics', '/events']);
   return Promise.resolve();
 }
 
@@ -253,6 +263,10 @@ export const api = {
   setpointCommand: (roomId, data) => post(`/zones/${encodeURIComponent(roomId)}/setpoint-command`, data),
   motorAction: (roomId, data) => post(`/zones/${encodeURIComponent(roomId)}/motor-action`, data),
   saveForecast: (data) => post('/forecast/settings', data),
+  saveWeather: (data) => post('/weather/settings', data),
+  saveHeatSource: (data) => post('/heat-source/settings', data),
+  pushHeatSource: () => post('/heat-source/push'),
   saveSettings: (data) => post('/settings', data),
+  saveNodeProfile: (id, data) => post(`/nodes/${encodeURIComponent(id)}/profile`, data),
   fetchForecast: () => post('/forecast/fetch'),
 };

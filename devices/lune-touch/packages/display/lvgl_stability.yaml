@@ -231,7 +231,130 @@ lvgl:
         scrollable: false
         widgets:
           - obj:
+              id: view_setup
+              x: 150
+              y: 58
+              width: 874
+              height: 542
+              bg_color: 0x11151A
+              bg_opa: 100%
+              border_width: 0
+              outline_width: 0
+              radius: 0
+              pad_all: 0
+              scrollable: false
+              widgets:
+                - label:
+                    x: 20
+                    y: 16
+                    width: 320
+                    height: 32
+                    text: "Setup"
+                    text_color: 0xF3F6F8
+                    text_font: montserrat_24
+                - label:
+                    x: 20
+                    y: 54
+                    width: 760
+                    height: 28
+                    text: "Commission Lune Touch, verify V6 manifolds, then import room names."
+                    text_color: 0xAAB4BF
+                    text_font: montserrat_16
+                - obj:
+                    x: 20
+                    y: 104
+                    width: 828
+                    height: 96
+                    bg_color: 0x202831
+                    border_color: 0x2D3742
+                    border_width: 1
+                    radius: 6
+                    pad_all: 0
+                    scrollable: false
+                    widgets:
+                      - label:
+                          x: 22
+                          y: 16
+                          width: 760
+                          height: 28
+                          text: "1. Add and verify V6 manifolds"
+                          text_color: 0xFFFFFF
+                          text_font: montserrat_20
+                      - label:
+                          x: 22
+                          y: 54
+                          width: 760
+                          height: 24
+                          text: "Use Manifolds to check identity fingerprint and give each manifold a friendly name."
+                          text_color: 0xAAB4BF
+                          text_font: montserrat_16
+                - obj:
+                    x: 20
+                    y: 218
+                    width: 828
+                    height: 96
+                    bg_color: 0x202831
+                    border_color: 0x2D3742
+                    border_width: 1
+                    radius: 6
+                    pad_all: 0
+                    scrollable: false
+                    widgets:
+                      - label:
+                          x: 22
+                          y: 16
+                          width: 760
+                          height: 28
+                          text: "2. Import room names from V6"
+                          text_color: 0xFFFFFF
+                          text_font: montserrat_20
+                      - label:
+                          x: 22
+                          y: 54
+                          width: 760
+                          height: 24
+                          text: "Generated room names are replaced by V6 friendly names; Touch edits are preserved."
+                          text_color: 0xAAB4BF
+                          text_font: montserrat_16
+                - obj:
+                    x: 20
+                    y: 332
+                    width: 828
+                    height: 96
+                    bg_color: 0x202831
+                    border_color: 0x2D3742
+                    border_width: 1
+                    radius: 6
+                    pad_all: 0
+                    scrollable: false
+                    widgets:
+                      - label:
+                          x: 22
+                          y: 16
+                          width: 760
+                          height: 28
+                          text: "3. Set comfort and weather"
+                          text_color: 0xFFFFFF
+                          text_font: montserrat_20
+                      - label:
+                          x: 22
+                          y: 54
+                          width: 760
+                          height: 24
+                          text: "Weather boost is house-wide. Per-room tuning stays as simple exposure hints."
+                          text_color: 0xAAB4BF
+                          text_font: montserrat_16
+                - label:
+                    x: 20
+                    y: 486
+                    width: 828
+                    height: 24
+                    text: "Open the browser dashboard for full setup actions; this screen mirrors the field workflow."
+                    text_color: 0x7FD6A5
+                    text_font: montserrat_16
+          - obj:
               id: view_house
+              hidden: true
               x: 150
               y: 58
               width: 874
@@ -298,7 +421,7 @@ lvgl:
                           y: 10
                           width: 130
                           height: 20
-                          text: "Zones"
+                          text: "Rooms"
                           text_color: 0xAAB4BF
                           text_font: montserrat_14
                       - label:
@@ -1401,7 +1524,7 @@ lvgl:
                     y: 16
                     width: 250
                     height: 32
-                    text: "Zones"
+                    text: "Rooms"
                     text_color: 0xF3F6F8
                     text_font: montserrat_24
                 - obj:
@@ -1431,7 +1554,7 @@ lvgl:
                           y: 70
                           width: 780
                           height: 30
-                          text: "Zone row 1 waiting for mapped room"
+                          text: "Room row 1 waiting for mapped valve"
                           text_color: 0xFFFFFF
                           text_font: montserrat_18
                       - label:
@@ -1440,7 +1563,7 @@ lvgl:
                           y: 122
                           width: 780
                           height: 30
-                          text: "Zone row 2 waiting for mapped room"
+                          text: "Room row 2 waiting for mapped valve"
                           text_color: 0xD9DEE3
                           text_font: montserrat_18
                       - label:
@@ -1449,7 +1572,7 @@ lvgl:
                           y: 174
                           width: 780
                           height: 30
-                          text: "Zone row 3 waiting for mapped room"
+                          text: "Room row 3 waiting for mapped valve"
                           text_color: 0xFFFFFF
                           text_font: montserrat_18
                       - label:
@@ -1458,7 +1581,7 @@ lvgl:
                           y: 226
                           width: 780
                           height: 30
-                          text: "Zone row 4 waiting for mapped room"
+                          text: "Room row 4 waiting for mapped valve"
                           text_color: 0xD9DEE3
                           text_font: montserrat_18
                       - label:
@@ -1466,7 +1589,7 @@ lvgl:
                           y: 326
                           width: 780
                           height: 26
-                          text: "Use the web dashboard to apply or discard zone mapping, comfort, and schedule changes."
+                          text: "Use the web dashboard to confirm room names, comfort, weather tuning, and valve mapping."
                           text_color: 0xAAB4BF
                           text_font: montserrat_16
           - obj:
@@ -1489,7 +1612,7 @@ lvgl:
                     y: 16
                     width: 260
                     height: 32
-                    text: "Manifolds"
+                    text: "Manifolds / Zones"
                     text_color: 0xF3F6F8
                     text_font: montserrat_24
                 - obj:
@@ -1526,7 +1649,7 @@ lvgl:
                           y: 128
                           width: 356
                           height: 28
-                          text: "Min flow protected locally"
+                          text: "Verify this is the correct manifold"
                           text_color: 0xAAB4BF
                           text_font: montserrat_16
                       - label:
@@ -1534,7 +1657,7 @@ lvgl:
                           y: 184
                           width: 356
                           height: 28
-                          text: "Last accepted command: none"
+                          text: "Friendly name shown before host and ID"
                           text_color: 0xAAB4BF
                           text_font: montserrat_16
                 - obj:
@@ -1630,7 +1753,7 @@ lvgl:
                           y: 84
                           width: 780
                           height: 34
-                          text: "Hourly fetch after boot, then every 60 min while WiFi is connected"
+                          text: "House-level weather boost cap defaults to 1.5 C"
                           text_color: 0xFFFFFF
                           text_font: montserrat_18
                       - label:
@@ -1647,7 +1770,7 @@ lvgl:
                           y: 214
                           width: 780
                           height: 28
-                          text: "Dashboard Weather shows fetch pending, errors, cache age, and command dispatch."
+                          text: "Dashboard Weather edits location and the house-wide boost cap."
                           text_color: 0xAAB4BF
                           text_font: montserrat_16
                       - label:
@@ -1751,7 +1874,7 @@ lvgl:
                     y: 16
                     width: 260
                     height: 32
-                    text: "Settings"
+                    text: "System"
                     text_color: 0xF3F6F8
                     text_font: montserrat_24
                 - obj:
@@ -1771,7 +1894,7 @@ lvgl:
                           y: 20
                           width: 780
                           height: 30
-                          text: "Touch controls"
+                          text: "System"
                           text_color: 0xFFFFFF
                           text_font: montserrat_20
                       - label:
@@ -1792,23 +1915,23 @@ lvgl:
                           y: 158
                           width: 260
                           height: 28
-                          text: "Mock target"
+                          text: "Weighted temperature"
                           text_color: 0xD9DEE3
                           text_font: montserrat_18
-                      - slider:
+                      - label:
                           x: 330
                           y: 164
-                          width: 420
-                          height: 16
-                          min_value: 180
-                          max_value: 240
-                          value: 210
+                          width: 440
+                          height: 28
+                          text: "Configure in browser dashboard"
+                          text_color: 0xAAB4BF
+                          text_font: montserrat_16
                       - label:
                           x: 22
                           y: 292
                           width: 780
                           height: 28
-                          text: "These controls are local UI exercises only; they do not write to V6."
+                          text: "Use the browser dashboard to configure the heat-source address, variable, and push interval."
                           text_color: 0xAAB4BF
                           text_font: montserrat_16
           - obj:
@@ -1838,7 +1961,7 @@ lvgl:
                     y: 17
                     width: 360
                     height: 24
-                    text: "0z / ready 0/0 / stale 0 / call 0"
+                    text: "Setup workflow"
                     text_color: 0x9CA8B3
                     text_font: montserrat_16
                 - label:
@@ -1891,13 +2014,14 @@ lvgl:
                     bg_color: 0x26323D
                     border_width: 0
                     radius: 5
-                    text: "House"
+                    text: "Setup"
                     text_color: 0xFFFFFF
                     text_font: montserrat_16
                     on_click:
                       - lvgl.widget.show:
-                          id: view_house
+                          id: view_setup
                       - lvgl.widget.hide:
+                          - view_house
                           - view_zones
                           - view_manifolds
                           - view_weather
@@ -1908,7 +2032,7 @@ lvgl:
                           y: 22
                       - lvgl.label.update:
                           id: header_status_label
-                          text: "House console"
+                          text: "Setup workflow"
                 - button:
                     x: 14
                     y: 72
@@ -1917,14 +2041,15 @@ lvgl:
                     bg_color: 0x161B21
                     border_width: 0
                     radius: 5
-                    text: "Zones"
+                    text: "Dashboard"
                     text_color: 0xAAB4BF
                     text_font: montserrat_16
                     on_click:
                       - lvgl.widget.show:
-                          id: view_zones
+                          id: view_house
                       - lvgl.widget.hide:
-                          - view_house
+                          - view_setup
+                          - view_zones
                           - view_manifolds
                           - view_weather
                           - view_diagnostics
@@ -1934,7 +2059,35 @@ lvgl:
                           y: 74
                       - lvgl.label.update:
                           id: header_status_label
-                          text: "Zone registry"
+                          text: "Dashboard"
+                - button:
+                    hidden: true
+                    x: 14
+                    y: 124
+                    width: 122
+                    height: 42
+                    bg_color: 0x161B21
+                    border_width: 0
+                    radius: 5
+                    text: "Rooms"
+                    text_color: 0xAAB4BF
+                    text_font: montserrat_16
+                    on_click:
+                      - lvgl.widget.show:
+                          id: view_zones
+                      - lvgl.widget.hide:
+                          - view_setup
+                          - view_house
+                          - view_manifolds
+                          - view_weather
+                          - view_diagnostics
+                          - view_settings
+                      - lvgl.widget.update:
+                          id: nav_indicator
+                          y: 126
+                      - lvgl.label.update:
+                          id: header_status_label
+                          text: "Rooms"
                 - button:
                     x: 14
                     y: 124
@@ -1950,6 +2103,7 @@ lvgl:
                       - lvgl.widget.show:
                           id: view_manifolds
                       - lvgl.widget.hide:
+                          - view_setup
                           - view_house
                           - view_zones
                           - view_weather
@@ -1976,6 +2130,7 @@ lvgl:
                       - lvgl.widget.show:
                           id: view_weather
                       - lvgl.widget.hide:
+                          - view_setup
                           - view_house
                           - view_zones
                           - view_manifolds
@@ -1986,10 +2141,37 @@ lvgl:
                           y: 178
                       - lvgl.label.update:
                           id: header_status_label
-                          text: "Forecast preload"
+                          text: "Weather boost"
                 - button:
                     x: 14
                     y: 228
+                    width: 122
+                    height: 42
+                    bg_color: 0x161B21
+                    border_width: 0
+                    radius: 5
+                    text: "System"
+                    text_color: 0xAAB4BF
+                    text_font: montserrat_16
+                    on_click:
+                      - lvgl.widget.show:
+                          id: view_settings
+                      - lvgl.widget.hide:
+                          - view_setup
+                          - view_house
+                          - view_zones
+                          - view_manifolds
+                          - view_weather
+                          - view_diagnostics
+                      - lvgl.widget.update:
+                          id: nav_indicator
+                          y: 230
+                      - lvgl.label.update:
+                          id: header_status_label
+                          text: "System"
+                - button:
+                    x: 14
+                    y: 280
                     width: 122
                     height: 42
                     bg_color: 0x161B21
@@ -2002,6 +2184,7 @@ lvgl:
                       - lvgl.widget.show:
                           id: view_diagnostics
                       - lvgl.widget.hide:
+                          - view_setup
                           - view_house
                           - view_zones
                           - view_manifolds
@@ -2009,36 +2192,10 @@ lvgl:
                           - view_settings
                       - lvgl.widget.update:
                           id: nav_indicator
-                          y: 230
-                      - lvgl.label.update:
-                          id: header_status_label
-                          text: "Diagnostics"
-                - button:
-                    x: 14
-                    y: 280
-                    width: 122
-                    height: 42
-                    bg_color: 0x161B21
-                    border_width: 0
-                    radius: 5
-                    text: "Settings"
-                    text_color: 0xAAB4BF
-                    text_font: montserrat_16
-                    on_click:
-                      - lvgl.widget.show:
-                          id: view_settings
-                      - lvgl.widget.hide:
-                          - view_house
-                          - view_zones
-                          - view_manifolds
-                          - view_weather
-                          - view_diagnostics
-                      - lvgl.widget.update:
-                          id: nav_indicator
                           y: 282
                       - lvgl.label.update:
                           id: header_status_label
-                          text: "Settings"
+                          text: "Diagnostics"
                 - button:
                     x: 14
                     y: 462

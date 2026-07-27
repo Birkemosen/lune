@@ -48,6 +48,13 @@ static void test_node_staleness() {
   expect(updated == 0 && model.node_count() == 1, "node: upsert updates existing node");
   const PairedNode *node = model.node(0);
   expect(node != nullptr && std::strcmp(node->firmware, "1.4.1") == 0, "node: firmware updated");
+  expect(node != nullptr && std::strcmp(node->name, "v6-ground") == 0,
+         "node: default friendly name is node id");
+  expect(model.update_node_name("v6-ground", "Ground floor manifold"),
+         "node: friendly name update succeeds");
+  node = model.node(0);
+  expect(node != nullptr && std::strcmp(node->name, "Ground floor manifold") == 0,
+         "node: friendly name stored");
   expect(model.update_node_metadata(0, "lune-v6", "1.4.2", "192.168.1.60"),
          "node: metadata update succeeds");
   node = model.node(0);
@@ -116,6 +123,8 @@ static void test_zone_registry() {
   expect(living.node != nullptr && living.binding != nullptr, "registry: resolve bound room");
   expect(living.binding && living.binding->node_index == 0 && living.binding->zone_index == 1,
          "registry: resolved room maps to node/zone");
+  expect(living.binding && living.binding->name_source == ZoneNameSource::TOUCH,
+         "registry: manual bind marks name as Touch-owned");
   expect(model.active_zone_count() == 2, "registry: active zone count");
   expect(model.update_zone_comfort("living", 22.0f, 3), "registry: update comfort intent");
   living = model.resolve_room("living");
@@ -130,6 +139,13 @@ static void test_zone_registry() {
              HouseModel::effective_comfort_setpoint_c(*living.binding) > 21.4f &&
              HouseModel::effective_comfort_setpoint_c(*living.binding) < 21.6f,
          "registry: comfort bias affects effective comfort");
+  expect(model.update_zone_comfort_from_v6_by_binding(0, 1, 20.5f),
+         "registry: V6 comfort target sync");
+  living = model.resolve_room("living");
+  expect(living.binding != nullptr && living.binding->comfort_setpoint_c == 20.5f &&
+             living.binding->comfort_bias_c == -0.5f && living.binding->priority == 3,
+         "registry: V6 sync preserves Touch coordination metadata");
+  model.update_zone_comfort("living", 22.0f, 3, -0.5f);
   expect(model.update_zone_schedule("living", true, 0x1F, 390, 1290, 20.5f),
          "registry: update schedule");
   living = model.resolve_room("living");
@@ -164,6 +180,27 @@ static void test_zone_registry() {
          "registry: rebind updates target");
 }
 
+static void test_zone_name_sources() {
+  HouseModel model;
+  model.upsert_node("v6-a", "a.local", "", "lune-v6", "1.0", NodeTrust::TRUSTED);
+  expect(model.bind_zone_with_source("v61-z1", "Zone 1", 0, 0, ZoneNameSource::GENERATED),
+         "names: generated binding can be created");
+  expect(model.update_zone_name_from_v6_by_binding(0, 0, "Living"),
+         "names: V6 name replaces generated name");
+  ResolvedZone living = model.resolve_room("v61-z1");
+  expect(living.binding != nullptr && std::strcmp(living.binding->room_name, "Living") == 0 &&
+             living.binding->name_source == ZoneNameSource::V6,
+         "names: V6 source stored");
+  expect(model.bind_zone("v61-z1", "Local Living", 0, 0),
+         "names: Touch rename succeeds");
+  expect(!model.update_zone_name_from_v6_by_binding(0, 0, "Kitchen"),
+         "names: V6 does not overwrite Touch override");
+  living = model.resolve_room("v61-z1");
+  expect(living.binding != nullptr && std::strcmp(living.binding->room_name, "Local Living") == 0 &&
+             living.binding->name_source == ZoneNameSource::TOUCH,
+         "names: Touch override preserved");
+}
+
 static void test_remove_node_remaps_zones() {
   HouseModel model;
   model.upsert_node("v6-a", "a.local", "", "lune-v6", "1.0", NodeTrust::TRUSTED);
@@ -184,6 +221,7 @@ static void test_remove_node_remaps_zones() {
 static void test_persisted_state_roundtrip() {
   HouseModel model;
   model.upsert_node("v6-a", "a.local", "192.168.1.51", "lune-v6", "1.0", NodeTrust::TRUSTED);
+  model.update_node_name("v6-a", "Ground manifold");
   model.update_node_identity(0, "hv6-aabbccddeeff");
   model.bind_zone("living", "Living", 0, 4);
   model.update_zone_comfort("living", 21.8f, 2, 0.4f);
@@ -202,10 +240,14 @@ static void test_persisted_state_roundtrip() {
   ResolvedZone living = restored.resolve_room("living");
   expect(living.node != nullptr && std::strcmp(living.node->hostname, "a.local") == 0,
          "persist: node fields restored");
+  expect(living.node != nullptr && std::strcmp(living.node->name, "Ground manifold") == 0,
+         "persist: node friendly name restored");
   expect(living.node != nullptr && std::strcmp(living.node->pairing_fingerprint, "hv6-aabbccddeeff") == 0,
          "persist: node identity restored");
   expect(living.binding != nullptr && living.binding->zone_index == 4,
          "persist: zone binding restored");
+  expect(living.binding != nullptr && living.binding->name_source == ZoneNameSource::TOUCH,
+         "persist: zone name source restored");
   expect(living.binding != nullptr && living.binding->comfort_setpoint_c > 21.7f &&
              living.binding->comfort_bias_c > 0.3f && living.binding->priority == 2,
          "persist: comfort intent restored");
@@ -610,6 +652,7 @@ int main() {
   test_node_unreachable_marks_zones_stale();
   test_node_trust_updates();
   test_zone_registry();
+  test_zone_name_sources();
   test_remove_node_remaps_zones();
   test_persisted_state_roundtrip();
   test_zone_live_state();

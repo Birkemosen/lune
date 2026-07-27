@@ -1822,6 +1822,16 @@ void HV6Dashboard::dispatch_set_(const DashboardAction &act) {
   } else if (strcmp(key, "zone_exterior_walls") == 0 && has_str && zone_valid && this->zone_controller_) {
     this->zone_controller_->set_zone_exterior_walls(zi, parse_exterior_walls(str_val));
 
+  // ---- coordinator weather metadata (same durable V6 zone config) ----
+  } else if (strcmp(key, "zone_wind_exposure") == 0 && has_num && zone_valid && this->zone_controller_) {
+    this->zone_controller_->set_zone_wind_exposure(zi, num_val);
+
+  } else if (strcmp(key, "zone_solar_gain") == 0 && has_num && zone_valid && this->zone_controller_) {
+    this->zone_controller_->set_zone_solar_gain(zi, num_val);
+
+  } else if (strcmp(key, "zone_thermal_lead_h") == 0 && has_num && zone_valid && this->zone_controller_) {
+    this->zone_controller_->set_zone_thermal_lead_h(zi, static_cast<uint8_t>(std::clamp(num_val, 0.0f, 48.0f)));
+
   // ---- zone_area_m2 ----
   } else if (strcmp(key, "zone_area_m2") == 0 && has_num && zone_valid && this->zone_controller_) {
     this->zone_controller_->set_zone_area_m2(zi, num_val);

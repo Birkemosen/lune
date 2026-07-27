@@ -32,10 +32,14 @@ Read endpoints return the standard envelope:
 - `GET /events`
 - `GET /diagnostics`
 - `GET /settings`
+- `GET /heat-source`
 
 `GET /nodes` reports both configured hostname/IP and runtime poll evidence:
 `last_success_host` shows whether the latest successful poll used mDNS hostname
 or fallback IP, while `last_failure` carries the latest poll failure reason.
+Each node has a stable registry `id` plus a Touch-owned friendly `name`;
+dashboards should display `name` first and keep `id` for confirmations,
+automation, and diagnostics.
 `trust` remains the compact enum value and `trust_label` is the stable human/tool
 label: `paired` or `trusted`. `pairing_fingerprint` is the stored V6 identity
 hint used to detect a different device answering on the same address.
@@ -46,6 +50,7 @@ V6 diagnostics poll is promoted:
 ```json
 {
   "id": "v6-ground",
+  "name": "Ground floor manifold",
   "reachable": true,
   "trust_label": "trusted",
   "health": {
@@ -70,9 +75,9 @@ V6 diagnostics poll is promoted:
 
 ### `GET /strategy`
 
-Returns the read-only Asgard / Odin strategy snapshot. The signal intentionally
-keeps physical house temperature separate from comfort demand so external
-bridges do not have to overload one thermostat value with two meanings:
+Returns the read-only house strategy snapshot. `weighted_temperature` is the
+priority-weighted room temperature that a heat source receives; it is not a
+generic signal. Comfort demand remains separate:
 
 ```json
 {
@@ -100,13 +105,23 @@ bridges do not have to overload one thermostat value with two meanings:
     "driver_setpoint_c": 22.0,
     "driver_priority": 3
   },
-  "asgard_odin": {
-    "physical_signal": "priority_weighted_house_temp",
-    "comfort_signal": "separate_weighted_demand",
-    "mode": "advisory"
-  }
+  "weighted_temperature": {
+    "available": true,
+    "value_c": 20.7,
+    "contributing_rooms": 8
+  },
+  "heat_source": { "enabled": true, "mode": "active" }
 }
 ```
+
+`physical` and `asgard_odin` remain temporary compatibility fields for older
+clients. New clients must use `weighted_temperature` and `GET /heat-source`.
+
+### `GET /heat-source`
+
+Returns heat-source configuration, current weighted temperature, and the last
+push result. `weighted_temperature_variable` is the ESPHome number object ID
+written at `POST /number/<variable>/set?value=<temperature>`.
 
 `GET /diagnostics` also exposes a compact `learning` summary derived from the
 same persisted zone history, including zones with samples, total samples, heat-call
@@ -239,7 +254,7 @@ node/zone target even if a room mapping has since been removed:
 
 ### `GET /zones`
 
-Each zone includes Touch-owned comfort intent, latest live V6 state, forecast
+Each zone includes the V6-owned comfort target, latest live V6 state, forecast
 tuning, and a lightweight persisted learning history block. Live temperature /
 valve state still resets on reboot; history survives registry import/export:
 
@@ -247,6 +262,7 @@ valve state still resets on reboot; history survives registry import/export:
 {
   "room_id": "living",
   "name": "Living",
+  "name_source": "v6",
   "node_index": 0,
   "zone_index": 1,
   "temperature_c": 21.3,
@@ -301,6 +317,11 @@ valve state still resets on reboot; history survives registry import/export:
   }
 }
 ```
+
+`name_source` is `generated`, `v6`, or `touch`. During V6 polling, Touch imports
+the V6 `/api/hv6/v1/zones` friendly `name` as the default room name. Imported or
+generated names may refresh from V6; a Touch-edited room name is preserved as a
+local override.
 
 `comfort.effective_setpoint_c` is resolved by Touch. When local time is valid and
 the room schedule is active, `effective_source` is `schedule`; otherwise it is
@@ -374,6 +395,17 @@ stored `pairing_fingerprint` and `confirm` must exactly match that displayed
 fingerprint. If the node was added without one, probe or re-add the candidate
 after V6 identity is available. Use `POST /nodes/{node_id}/remove` to remove a
 node from the registry instead of writing `unpaired`.
+
+### `POST /nodes/{node_id}/profile`
+
+Stores Touch-owned manifold display metadata without changing the stable node id,
+hostname/IP, or pairing fingerprint:
+
+```json
+{
+  "name": "Ground floor manifold"
+}
+```
 
 ### `POST /nodes/{node_id}/remove`
 
@@ -463,8 +495,9 @@ the installer renames or remaps rooms.
 
 ### `POST /zones/{room_id}/comfort`
 
-Stores Touch-owned comfort intent separately from the V6 node's local measured
-temperature and safety-clamped command path:
+Writes the permanent comfort target to the mapped V6 zone. Touch mirrors the
+value immediately and refreshes it from V6 on every zone poll, so changes made
+in either dashboard converge on the V6 value:
 
 ```json
 {
@@ -474,10 +507,8 @@ temperature and safety-clamped command path:
 }
 ```
 
-`comfort_bias_c` is clamped to `-3..3` and is added to the stored comfort
-setpoint for forecasting and Asgard / Odin demand. `priority` is clamped to
-`0..3`, where higher values are more important for future whole-house
-optimization.
+`comfort_bias_c` and `priority` remain optional Touch coordination metadata;
+the normal target itself is owned and persisted by V6.
 
 ### `POST /zones/{room_id}/schedule`
 
@@ -502,7 +533,9 @@ paths layered on top of that base.
 
 ### `POST /zones/{room_id}/forecast-profile`
 
-Stores Touch-owned per-room weather exposure inputs used by forecast preload:
+Writes weather exposure inputs to the mapped V6 zone and mirrors them into the
+Touch forecast model. V6 is the persisted source of truth and Touch refreshes
+these values on every zone poll:
 
 ```json
 {
@@ -515,9 +548,11 @@ Stores Touch-owned per-room weather exposure inputs used by forecast preload:
 ```
 
 `exterior_walls` is a bitmask for north/east/south/west walls (`1|2|4|8`).
-`wind_exposure` and `solar_gain` are clamped to `0..1`, `thermal_lead_h` to
-`1..24`, and `max_offset_c` to `0..5`. Saving the profile recomputes current
-forecast decisions and persists the zone registry.
+`wind_exposure` and `solar_gain` are clamped to `0..1`, and `thermal_lead_h` to
+`1..24`. `max_offset_c` is retained as imported V6 legacy metadata and advanced
+diagnostics context, but normal Touch forecast decisions use the house-level
+`weather.max_boost_c` cap. Saving the profile recomputes current forecast
+decisions and persists the mirrored zone registry.
 
 ### `POST /zones/{room_id}/setpoint-command`
 
@@ -553,6 +588,22 @@ valid fetch location. `POST /forecast/fetch` can still be used to queue an
 immediate manual refresh; it returns `queued` while the poll task performs the
 HTTPS request and command dispatch in the background.
 
+### `POST /weather/settings`
+
+Stores house-level weather preload settings owned by Touch:
+
+```json
+{
+  "max_boost_c": 1.5
+}
+```
+
+`max_boost_c` is clamped to `0..5` and caps forecast preload offsets before
+Touch sends expiring commands to V6. If no Touch value has been stored yet,
+first V6 import seeds this from legacy V6 zone `max_offset_c` values using a
+conservative minimum aggregate. V6 still applies its local per-zone command
+clamps, absolute setpoint limits, expiry, and safety validation.
+
 ### `POST /settings`
 
 Stores coordinator-owned identity and install profile fields:
@@ -562,17 +613,36 @@ Stores coordinator-owned identity and install profile fields:
   "name": "Lune Touch",
   "install_id": "house-main",
   "site_label": "Birkemosen",
-  "install_mode": "commissioning",
-  "asgard_enabled": 1,
-  "asgard_mode": "advisory"
+  "install_mode": "commissioning"
 }
 ```
 
 All fields are optional, but at least one must be present. `install_mode` is one
-of `commissioning`, `active`, or `service`. `asgard_mode` is `advisory` or
-`disabled`; writing `disabled` also clears `asgard_enabled`. `GET /settings`
-returns the same coordinator block plus the current Asgard / Odin integration
-settings.
+of `commissioning`, `active`, or `service`. `GET /settings` returns the same
+coordinator block and the Touch-owned `weather.max_boost_c` cap.
+
+### `POST /heat-source/settings`
+
+Stores the direct heat-source connection. All configuration fields should be
+sent together by management clients:
+
+```json
+{
+  "enabled": 1,
+  "host": "asgard.local",
+  "port": 80,
+  "weighted_temperature_variable": "virtual_thermostat_input_z1",
+  "push_interval_s": 30
+}
+```
+
+`host` accepts a hostname or IPv4 address. Variable names accept letters,
+digits, `_`, and `-`. Push interval is 5–3600 seconds.
+
+### `POST /heat-source/push`
+
+Queues an immediate weighted-temperature push on the coordinator task. The
+alias `POST /heat-source/test` has the same behavior.
 
 ### `POST /forecast/fetch`
 
@@ -588,6 +658,9 @@ accepted response.
 
 ```json
 {
+  "weather": {
+    "max_boost_c": 1.5
+  },
   "hours": [
     {
       "h": 0,

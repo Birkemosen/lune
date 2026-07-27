@@ -7,6 +7,7 @@
 #include <cctype>
 #include <cstdlib>
 #include <cstring>
+#include <limits>
 
 namespace esphome {
 namespace lune_touch_dashboard {
@@ -307,7 +308,7 @@ static const char DASHBOARD_HTML[] =
     "<title>Lune Touch</title>"
     "</head><body>"
     "<div id=\"app\">Loading Lune Touch...</div>"
-    "<script src=\"/dashboard.js?v=zone-cards-20260708\"></script>"
+    "<script src=\"/dashboard.js?v=lune-touch-setup-20260709\"></script>"
     "</body></html>";
 
 void LuneTouchDashboard::setup() {
@@ -596,6 +597,14 @@ void LuneTouchDashboard::handle_v1_(AsyncWebServerRequest *request, const char *
       send_ok_(request, data_buf_);
       return;
     }
+    if (strcmp(path, "/heat-source") == 0) {
+      if (coordinator_)
+        coordinator_->write_heat_source_json(data_buf_, sizeof(data_buf_));
+      else
+        snprintf(data_buf_, sizeof(data_buf_), "{}");
+      send_ok_(request, data_buf_);
+      return;
+    }
     send_error_(request, 404, "unknown_route", "Unknown route");
     return;
   }
@@ -666,6 +675,16 @@ void LuneTouchDashboard::handle_v1_post_(ApiRequest &api, const char *path) {
     parse_text_param(api, api.json_body, "confirm", confirm, sizeof(confirm));
     const bool accepted = coordinator_->set_node_trust(node_id, trust, confirm,
                                                        data_buf_, sizeof(data_buf_));
+    send_write_result_(api, accepted, 404);
+  } else if (strstr(path, "/profile") != nullptr) {
+    char node_id[32]{};
+    if (!extract_middle_segment(path, "/nodes/", "/profile", node_id, sizeof(node_id))) {
+      send_error_(api, 404, "unknown_route", "Unknown node profile route");
+      return;
+    }
+    char name[64];
+    parse_text_param(api, api.json_body, "name", name, sizeof(name));
+    const bool accepted = coordinator_->set_node_profile(node_id, name, data_buf_, sizeof(data_buf_));
     send_write_result_(api, accepted, 404);
   } else if (strstr(path, "/remove") != nullptr) {
     char node_id[32]{};
@@ -748,7 +767,7 @@ void LuneTouchDashboard::handle_v1_post_(ApiRequest &api, const char *path) {
     uint32_t thermal_lead_h = 4;
     float wind_exposure = 0.5f;
     float solar_gain = 0.3f;
-    float max_offset_c = 1.5f;
+    float max_offset_c = std::numeric_limits<float>::quiet_NaN();
     parse_uint_param(api, api.json_body, "exterior_walls", &exterior_walls);
     parse_uint_param(api, api.json_body, "thermal_lead_h", &thermal_lead_h);
     parse_float_param(api, api.json_body, "wind_exposure", &wind_exposure);
@@ -789,6 +808,37 @@ void LuneTouchDashboard::handle_v1_post_(ApiRequest &api, const char *path) {
     char source[24];
     parse_text_param(api, api.json_body, "source", source, sizeof(source));
     const bool accepted = coordinator_->set_forecast_location(latitude, longitude, source, data_buf_, sizeof(data_buf_));
+    send_write_result_(api, accepted, 400);
+  } else if (strcmp(path, "/weather/settings") == 0) {
+    float max_boost_c = 1.5f;
+    if (!parse_float_param(api, api.json_body, "max_boost_c", &max_boost_c)) {
+      send_error_(api, 400, "missing_param", "max_boost_c is required");
+      return;
+    }
+    const bool accepted = coordinator_->set_weather_settings(max_boost_c, data_buf_, sizeof(data_buf_));
+    send_write_result_(api, accepted, 400);
+  } else if (strcmp(path, "/heat-source/settings") == 0) {
+    char host[80];
+    char weighted_temperature_variable[64];
+    uint32_t enabled = 0;
+    uint32_t port = 0;
+    uint32_t push_interval_s = 0;
+    parse_text_param(api, api.json_body, "host", host, sizeof(host));
+    parse_text_param(api, api.json_body, "weighted_temperature_variable",
+                     weighted_temperature_variable, sizeof(weighted_temperature_variable));
+    const bool has_enabled = parse_uint_param(api, api.json_body, "enabled", &enabled);
+    parse_uint_param(api, api.json_body, "port", &port);
+    parse_uint_param(api, api.json_body, "push_interval_s", &push_interval_s);
+    if (port > 65535 || push_interval_s > 65535) {
+      send_error_(api, 400, "invalid_param", "port or push_interval_s is outside range");
+      return;
+    }
+    const bool accepted = coordinator_->set_heat_source_settings(
+        has_enabled, enabled != 0, host, static_cast<uint16_t>(port), weighted_temperature_variable,
+        static_cast<uint16_t>(push_interval_s), data_buf_, sizeof(data_buf_));
+    send_write_result_(api, accepted, 400);
+  } else if (strcmp(path, "/heat-source/push") == 0 || strcmp(path, "/heat-source/test") == 0) {
+    const bool accepted = coordinator_->request_heat_source_push(data_buf_, sizeof(data_buf_));
     send_write_result_(api, accepted, 400);
   } else if (strcmp(path, "/settings") == 0) {
     char coordinator_name[40];
