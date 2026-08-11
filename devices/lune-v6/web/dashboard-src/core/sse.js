@@ -4,11 +4,11 @@ import { startMock } from './mock.js';
 import { setEntity, setLive, sampleHistory, addActivity, setI2cResult, shouldSuppressStateUpdate } from './store.js';
 import { fetchHistory, fetchLogs } from './api.js';
 
-let reconnectTimer = null;
 let pollAbortController = null;
 let historyRefreshTimer = null;
 let logsRefreshTimer = null;
-let eventSource = null;
+let revisionTimer = null;
+let lastRevision = null;
 
 async function fetchStateOnce() {
   if (pollAbortController) {
@@ -61,14 +61,6 @@ function onMessage(message) {
   }
 }
 
-function scheduleReconnect() {
-  if (reconnectTimer) return;
-  reconnectTimer = setTimeout(() => {
-    reconnectTimer = null;
-    connect();
-  }, 1000);
-}
-
 function ensureAuxiliaryPollers() {
   // Fetch history on initial connection and then every 5 minutes.
   fetchHistory();
@@ -88,42 +80,26 @@ function pollStateCycle() {
       setLive(true);
       onMessage(message);
       ensureAuxiliaryPollers();
-      scheduleReconnect();
     })
     .catch(() => {
       setLive(false);
-      scheduleReconnect();
     });
 }
 
-function connectEventSource() {
-  if (!window.EventSource || eventSource) return false;
-
-  let handledHello = false;
-  eventSource = new EventSource('/api/hv6/v1/events');
-  eventSource.addEventListener('hello', () => {
-    handledHello = true;
-    if (eventSource) {
-      eventSource.close();
-      eventSource = null;
+async function pollRevision() {
+  try {
+    const response = await fetch('/api/hv6/v1/revision', { cache: 'no-store' });
+    if (!response.ok) throw new Error('Revision fetch failed');
+    const payload = await response.json();
+    const revision = payload && payload.data && payload.data.data_revision;
+    if (lastRevision === null || revision !== lastRevision) {
+      lastRevision = revision;
+      pollStateCycle();
     }
-    pollStateCycle();
-  });
-  eventSource.onmessage = (event) => {
-    try {
-      onMessage(JSON.parse(event.data));
-    } catch {
-      // Ignore malformed future events; the polling path remains authoritative.
-    }
-  };
-  eventSource.onerror = () => {
-    if (eventSource) {
-      eventSource.close();
-      eventSource = null;
-    }
-    if (!handledHello) pollStateCycle();
-  };
-  return true;
+    setLive(true);
+  } catch {
+    setLive(false);
+  }
 }
 
 export function connect() {
@@ -134,5 +110,6 @@ export function connect() {
     return;
   }
 
-  if (!connectEventSource()) pollStateCycle();
+  pollStateCycle();
+  if (!revisionTimer) revisionTimer = setInterval(pollRevision, 3000);
 }

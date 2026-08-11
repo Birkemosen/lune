@@ -6,19 +6,15 @@
 # The MAC is printed on the device label (e.g. "AA:BB:CC:DD:EE:FF").
 
 esp32_ble_tracker:
+  id: hv6_ble_tracker
   scan_parameters:
-    # Active scanning sends scan requests so devices reply with their scan
-    # response, which carries the local name (Shelly BLU H&T put the name there,
-    # not in the primary advertisement). Costs a little extra battery on the
-    # sensors; set to false if that matters and you only need MAC-based pairing.
-    active: true
-    # ~9% listen duty cycle (window/interval). High enough to reliably catch
-    # BTHome advertisements from Shelly BLU H&T (which broadcast every few
-    # seconds) while keeping radio/heap pressure modest alongside the HTTP(S)
-    # client tasks. A much lower duty cycle (e.g. 30ms/3000ms) misses most
-    # advertisements and leaves the discovery cache empty.
+    # BTHome sensors advertise briefly and may not repeat during a very low
+    # duty-cycle scan. Use the proven pre-Lune cadence, but keep the scan
+    # passive so it does not send scan-request bursts into the WiFi link.
+    active: false
     interval: 320ms
     window: 30ms
+    continuous: false
   on_ble_advertise:
     then:
       - lambda: |-
@@ -140,6 +136,10 @@ esp32_ble_tracker:
               pos += 1 + dlen;
             }
 
+            ESP_LOGD("ble_scan", "BTHome advertisement %s: temp=%s RSSI=%d dBm",
+                     mac_buf, std::isnan(temperature) ? "n/a" : "decoded",
+                     static_cast<int>(x.get_rssi()));
+
             // Record EVERY BTHome device in the discovery cache (even when this
             // packet had no parseable temperature) so the dashboard lists all
             // nearby sensors for tap-to-assign. The advertised local name (from
@@ -170,6 +170,30 @@ esp32_ble_tracker:
               }
             }
           }
+
+script:
+  - id: hv6_ble_start_after_wifi
+    mode: restart
+    then:
+      # Give DHCP/API/WiFi a quiet period before sharing the 2.4 GHz radio.
+      - delay: 15s
+      - if:
+          condition:
+            wifi.connected:
+          then:
+            - logger.log: "BLE scan starting after stable WiFi"
+            - esp32_ble_tracker.start_scan:
+                id: hv6_ble_tracker
+                continuous: true
+
+wifi:
+  on_connect:
+    - script.execute: hv6_ble_start_after_wifi
+  on_disconnect:
+    # Cancel a pending delayed start as well as stopping an active scan.
+    - script.stop: hv6_ble_start_after_wifi
+    - esp32_ble_tracker.stop_scan:
+        id: hv6_ble_tracker
 
 sensor:
   - platform: template

@@ -1,6 +1,7 @@
 #include "coordinator_model.h"
 
 #include <cmath>
+#include <cstdio>
 #include <cstring>
 
 namespace lune_touch {
@@ -20,6 +21,13 @@ static bool same_text_(const char *a, const char *b) {
   return std::strcmp(a, b) == 0;
 }
 
+static void make_loop_id_(char *out, size_t out_size, const char *node_id, size_t zone_index) {
+  if (out == nullptr || out_size == 0)
+    return;
+  std::snprintf(out, out_size, "loop-%s-%02u", node_id != nullptr ? node_id : "",
+                static_cast<unsigned>(zone_index + 1));
+}
+
 static float clamp_float_(float value, float lo, float hi, float fallback) {
   if (!std::isfinite(value))
     return fallback;
@@ -35,6 +43,51 @@ static float rolling_average_(float current, float sample, uint16_t count) {
     return sample;
   const uint16_t effective_count = count > 200 ? 200 : count;
   return current + (sample - current) / static_cast<float>(effective_count + 1);
+}
+
+LogicalRoom *HouseModel::find_room_(const char *room_id) {
+  if (room_id == nullptr || room_id[0] == '\0')
+    return nullptr;
+  for (size_t i = 0; i < room_count_; i++) {
+    if (same_text_(rooms_[i].room_id, room_id))
+      return &rooms_[i];
+  }
+  return nullptr;
+}
+
+const LogicalRoom *HouseModel::find_room_(const char *room_id) const {
+  return const_cast<HouseModel *>(this)->find_room_(room_id);
+}
+
+size_t HouseModel::room_index_(const char *room_id) const {
+  if (room_id == nullptr || room_id[0] == '\0')
+    return room_count_;
+  for (size_t i = 0; i < room_count_; i++) {
+    if (same_text_(rooms_[i].room_id, room_id))
+      return i;
+  }
+  return room_count_;
+}
+
+LogicalRoom *HouseModel::ensure_room_(const char *room_id, const char *room_name,
+                                      ZoneNameSource source) {
+  LogicalRoom *existing = find_room_(room_id);
+  if (existing != nullptr) {
+    if (room_name != nullptr && room_name[0] != '\0')
+      copy_text_(existing->room_name, sizeof(existing->room_name), room_name);
+    existing->name_source = source;
+    existing->enabled = true;
+    return existing;
+  }
+  if (room_count_ >= MAX_HOUSE_ROOMS)
+    return nullptr;
+  LogicalRoom &room = rooms_[room_count_++];
+  copy_text_(room.room_id, sizeof(room.room_id), room_id);
+  copy_text_(room.room_name, sizeof(room.room_name), room_name);
+  room.name_source = source;
+  room.enabled = true;
+  room_revisions_[room_count_ - 1] = 1;
+  return &room;
 }
 
 int HouseModel::upsert_node(const char *node_id, const char *hostname, const char *fallback_ip,
@@ -193,30 +246,92 @@ bool HouseModel::bind_zone_with_source(const char *room_id, const char *room_nam
     return false;
 
   for (size_t i = 0; i < zone_count_; i++) {
-    if (same_text_(zones_[i].room_id, room_id)) {
+    if (zones_[i].node_index != node_index || zones_[i].zone_index != zone_index)
+      continue;
+    // Polling may rediscover the same binding, but another logical room may
+    // never claim this physical valve loop.
+    if (!same_text_(zones_[i].room_id, room_id) || !zones_[i].enabled)
+      return false;
+    if (source == ZoneNameSource::TOUCH || zones_[i].name_source != ZoneNameSource::TOUCH) {
       copy_text_(zones_[i].room_name, sizeof(zones_[i].room_name), room_name);
-      zones_[i].node_index = static_cast<uint8_t>(node_index);
-      zones_[i].zone_index = static_cast<uint8_t>(zone_index);
       zones_[i].name_source = source;
-      zones_[i].enabled = true;
-      return true;
+      LogicalRoom *room = ensure_room_(room_id, room_name, source);
+      if (room == nullptr)
+        return false;
     }
+    return true;
   }
 
-  if (zone_count_ >= MAX_HOUSE_ZONES)
+  LogicalRoom *room = ensure_room_(room_id, room_name, source);
+  if (room == nullptr || zone_count_ >= MAX_HOUSE_ZONES)
     return false;
 
   const size_t index = zone_count_++;
   ZoneBinding &zone = zones_[index];
   copy_text_(zone.room_id, sizeof(zone.room_id), room_id);
-  copy_text_(zone.room_name, sizeof(zone.room_name), room_name);
+  copy_text_(zone.room_name, sizeof(zone.room_name), room->room_name);
+  make_loop_id_(zone.loop_id, sizeof(zone.loop_id), nodes_[node_index].node_id, zone_index);
+  copy_text_(zone.node_id, sizeof(zone.node_id), nodes_[node_index].node_id);
   zone.node_index = static_cast<uint8_t>(node_index);
   zone.zone_index = static_cast<uint8_t>(zone_index);
   zone.name_source = source;
   zone.enabled = true;
+  zone.commissioned = true;
+  if (room->primary_loop_id[0] == '\0')
+    copy_text_(room->primary_loop_id, sizeof(room->primary_loop_id), zone.loop_id);
   live_[index] = {};
   copy_text_(live_[index].room_id, sizeof(live_[index].room_id), room_id);
   return true;
+}
+
+bool HouseModel::remove_loop(const char *loop_id) {
+  if (loop_id == nullptr || loop_id[0] == '\0')
+    return false;
+  for (size_t i = 0; i < zone_count_; i++) {
+    if (!same_text_(zones_[i].loop_id, loop_id))
+      continue;
+    LogicalRoom *room = find_room_(zones_[i].room_id);
+    zones_[i].enabled = false;
+    zones_[i].commissioned = false;
+    history_[i] = {};
+    live_[i] = {};
+    if (room != nullptr && same_text_(room->primary_loop_id, loop_id)) {
+      room->primary_loop_id[0] = '\0';
+      for (size_t candidate = 0; candidate < zone_count_; candidate++) {
+        if (zones_[candidate].enabled && zones_[candidate].commissioned &&
+            same_text_(zones_[candidate].room_id, room->room_id)) {
+          copy_text_(room->primary_loop_id, sizeof(room->primary_loop_id), zones_[candidate].loop_id);
+          break;
+        }
+      }
+    }
+    return true;
+  }
+  return false;
+}
+
+bool HouseModel::set_room_geometry(const char *room_id, float total_area_m2, float physical_weight,
+                                   bool include_in_house_temperature) {
+  LogicalRoom *room = find_room_(room_id);
+  if (room == nullptr || !std::isfinite(total_area_m2) || total_area_m2 < 0.0f ||
+      !std::isfinite(physical_weight) || physical_weight < 0.0f)
+    return false;
+  room->total_area_m2 = total_area_m2;
+  room->physical_weight = physical_weight;
+  room->include_in_house_temperature = include_in_house_temperature;
+  return true;
+}
+
+bool HouseModel::set_loop_served_area(const char *loop_id, float served_area_m2) {
+  if (loop_id == nullptr || !std::isfinite(served_area_m2) || served_area_m2 < 0.0f)
+    return false;
+  for (size_t i = 0; i < zone_count_; i++) {
+    if (same_text_(zones_[i].loop_id, loop_id)) {
+      zones_[i].served_area_m2 = served_area_m2;
+      return true;
+    }
+  }
+  return false;
 }
 
 bool HouseModel::update_zone_name_from_v6_by_binding(size_t node_index, size_t zone_index,
@@ -231,6 +346,24 @@ bool HouseModel::update_zone_name_from_v6_by_binding(size_t node_index, size_t z
       return false;
     copy_text_(zones_[i].room_name, sizeof(zones_[i].room_name), room_name);
     zones_[i].name_source = ZoneNameSource::V6;
+    // The dashboard renders logical rooms from the separate room list. Keep
+    // that aggregate in sync as well, otherwise a V6 name updates the loop
+    // but the UI continues to show the old generated room name.
+    LogicalRoom *room = find_room_(zones_[i].room_id);
+    bool touch_owned = false;
+    if (room != nullptr) {
+      for (size_t candidate = 0; candidate < zone_count_; candidate++) {
+        if (zones_[candidate].enabled && same_text_(zones_[candidate].room_id, room->room_id) &&
+            zones_[candidate].name_source == ZoneNameSource::TOUCH) {
+          touch_owned = true;
+          break;
+        }
+      }
+    }
+    if (room != nullptr && !touch_owned) {
+      copy_text_(room->room_name, sizeof(room->room_name), room_name);
+      room->name_source = ZoneNameSource::V6;
+    }
     return true;
   }
   return false;
@@ -274,54 +407,122 @@ bool HouseModel::update_zone_forecast_profile(const char *room_id, uint8_t exter
 
 bool HouseModel::update_zone_comfort(const char *room_id, float comfort_setpoint_c, uint8_t priority,
                                      float comfort_bias_c) {
-  if (room_id == nullptr || room_id[0] == '\0')
+  LogicalRoom *room = find_room_(room_id);
+  if (room == nullptr)
     return false;
+  room->comfort_setpoint_c = clamp_float_(comfort_setpoint_c, 5.0f, 35.0f,
+                                          room->comfort_setpoint_c);
+  room->comfort_bias_c = clamp_float_(comfort_bias_c, -3.0f, 3.0f, room->comfort_bias_c);
+  room->priority = priority > 3 ? 3 : priority;
+  bool updated = false;
   for (size_t i = 0; i < zone_count_; i++) {
     if (!zones_[i].enabled || !same_text_(zones_[i].room_id, room_id))
       continue;
-    zones_[i].comfort_setpoint_c = clamp_float_(comfort_setpoint_c, 5.0f, 35.0f,
-                                                zones_[i].comfort_setpoint_c);
-    zones_[i].comfort_bias_c = clamp_float_(comfort_bias_c, -3.0f, 3.0f, zones_[i].comfort_bias_c);
-    zones_[i].priority = priority > 3 ? 3 : priority;
-    return true;
+    zones_[i].comfort_setpoint_c = room->comfort_setpoint_c;
+    zones_[i].comfort_bias_c = room->comfort_bias_c;
+    zones_[i].priority = room->priority;
+    updated = true;
   }
-  return false;
-}
-
-bool HouseModel::update_zone_comfort_from_v6_by_binding(size_t node_index, size_t zone_index,
-                                                        float comfort_setpoint_c) {
-  if (!std::isfinite(comfort_setpoint_c))
-    return false;
-  for (size_t i = 0; i < zone_count_; i++) {
-    if (!zones_[i].enabled || zones_[i].node_index != node_index || zones_[i].zone_index != zone_index)
-      continue;
-    zones_[i].comfort_setpoint_c = std::fmax(5.0f, std::fmin(35.0f, comfort_setpoint_c));
-    return true;
-  }
-  return false;
+  return updated;
 }
 
 bool HouseModel::update_zone_schedule(const char *room_id, bool enabled, uint8_t day_mask,
                                       uint16_t start_min, uint16_t end_min, float setpoint_c) {
-  if (room_id == nullptr || room_id[0] == '\0')
+  LogicalRoom *room = find_room_(room_id);
+  if (room == nullptr)
     return false;
   if (start_min > 1439 || end_min > 1440 || start_min >= end_min)
     return false;
   day_mask &= 0x7F;
   if (enabled && day_mask == 0)
     return false;
+  room->schedule_enabled = enabled;
+  room->schedule_day_mask = day_mask;
+  room->schedule_start_min = start_min;
+  room->schedule_end_min = end_min;
+  room->schedule_setpoint_c = clamp_float_(setpoint_c, 5.0f, 35.0f, room->schedule_setpoint_c);
+  bool updated = false;
   for (size_t i = 0; i < zone_count_; i++) {
     if (!zones_[i].enabled || !same_text_(zones_[i].room_id, room_id))
       continue;
-    zones_[i].schedule_enabled = enabled;
-    zones_[i].schedule_day_mask = day_mask;
-    zones_[i].schedule_start_min = start_min;
-    zones_[i].schedule_end_min = end_min;
-    zones_[i].schedule_setpoint_c = clamp_float_(setpoint_c, 5.0f, 35.0f,
-                                                 zones_[i].schedule_setpoint_c);
-    return true;
+    zones_[i].schedule_enabled = room->schedule_enabled;
+    zones_[i].schedule_day_mask = room->schedule_day_mask;
+    zones_[i].schedule_start_min = room->schedule_start_min;
+    zones_[i].schedule_end_min = room->schedule_end_min;
+    zones_[i].schedule_setpoint_c = room->schedule_setpoint_c;
+    updated = true;
   }
-  return false;
+  return updated;
+}
+
+RoomUpdateResult HouseModel::apply_room_update(const char *room_id, const RoomUpdate &update,
+                                               uint32_t *new_revision) {
+  const size_t room_index = room_index_(room_id);
+  if (room_index >= room_count_)
+    return RoomUpdateResult::NOT_FOUND;
+  if (update.expected_revision != room_revisions_[room_index])
+    return RoomUpdateResult::STALE_REVISION;
+  if (!std::isfinite(update.total_area_m2) || update.total_area_m2 <= 0.0f ||
+      !std::isfinite(update.physical_weight) || update.physical_weight < 0.0f ||
+      !std::isfinite(update.comfort_setpoint_c) || update.comfort_setpoint_c < 5.0f ||
+      update.comfort_setpoint_c > 35.0f || !std::isfinite(update.comfort_bias_c) ||
+      update.comfort_bias_c < -3.0f || update.comfort_bias_c > 3.0f ||
+      !std::isfinite(update.schedule_setpoint_c) || update.schedule_setpoint_c < 5.0f ||
+      update.schedule_setpoint_c > 35.0f || update.priority > 3 || update.schedule_start_min > 1439 ||
+      update.schedule_end_min > 1440 || update.schedule_start_min >= update.schedule_end_min ||
+      (update.schedule_enabled && (update.schedule_day_mask & 0x7F) == 0) ||
+      !std::isfinite(update.wind_exposure) || update.wind_exposure < 0.0f || update.wind_exposure > 1.0f ||
+      !std::isfinite(update.solar_gain) || update.solar_gain < 0.0f || update.solar_gain > 1.0f ||
+      update.thermal_lead_h == 0 || update.thermal_lead_h > 24 || !std::isfinite(update.max_offset_c) ||
+      update.max_offset_c < 0.0f || update.max_offset_c > 5.0f)
+    return RoomUpdateResult::INVALID;
+  bool has_loop = false;
+  for (size_t i = 0; i < zone_count_; i++)
+    has_loop = has_loop || (zones_[i].enabled && same_text_(zones_[i].room_id, room_id));
+  if (!has_loop)
+    return RoomUpdateResult::NOT_FOUND;
+
+  // All validation is complete before mutating the room or any of its loops.
+  LogicalRoom &room = rooms_[room_index];
+  room.total_area_m2 = update.total_area_m2;
+  room.physical_weight = update.physical_weight;
+  room.include_in_house_temperature = update.include_in_house_temperature;
+  room.comfort_setpoint_c = update.comfort_setpoint_c;
+  room.comfort_bias_c = update.comfort_bias_c;
+  room.priority = update.priority;
+  room.schedule_enabled = update.schedule_enabled;
+  room.schedule_day_mask = update.schedule_day_mask & 0x7F;
+  room.schedule_start_min = update.schedule_start_min;
+  room.schedule_end_min = update.schedule_end_min;
+  room.schedule_setpoint_c = update.schedule_setpoint_c;
+  for (size_t i = 0; i < zone_count_; i++) {
+    ZoneBinding &zone = zones_[i];
+    if (!zone.enabled || !same_text_(zone.room_id, room_id))
+      continue;
+    zone.comfort_setpoint_c = room.comfort_setpoint_c;
+    zone.comfort_bias_c = room.comfort_bias_c;
+    zone.priority = room.priority;
+    zone.schedule_enabled = room.schedule_enabled;
+    zone.schedule_day_mask = room.schedule_day_mask;
+    zone.schedule_start_min = room.schedule_start_min;
+    zone.schedule_end_min = room.schedule_end_min;
+    zone.schedule_setpoint_c = room.schedule_setpoint_c;
+    zone.exterior_walls = update.exterior_walls & 0x0F;
+    zone.wind_exposure = update.wind_exposure;
+    zone.solar_gain = update.solar_gain;
+    zone.thermal_lead_h = update.thermal_lead_h;
+    zone.max_offset_c = update.max_offset_c;
+  }
+  if (room_revisions_[room_index] < UINT32_MAX)
+    room_revisions_[room_index]++;
+  if (new_revision != nullptr)
+    *new_revision = room_revisions_[room_index];
+  return RoomUpdateResult::STORED;
+}
+
+uint32_t HouseModel::room_revision(const char *room_id) const {
+  const size_t index = room_index_(room_id);
+  return index < room_count_ ? room_revisions_[index] : 0;
 }
 
 bool HouseModel::update_zone_live(const char *room_id, float temperature_c, bool has_temperature,
@@ -355,8 +556,18 @@ bool HouseModel::update_zone_live_by_binding(size_t node_index, size_t zone_inde
   for (size_t i = 0; i < zone_count_; i++) {
     if (!zones_[i].enabled || zones_[i].node_index != node_index || zones_[i].zone_index != zone_index)
       continue;
-    return update_zone_live(zones_[i].room_id, temperature_c, has_temperature,
-                            setpoint_c, has_setpoint, status, fresh, now_ms, valve_pct, has_valve);
+    copy_text_(live_[i].room_id, sizeof(live_[i].room_id), zones_[i].room_id);
+    live_[i].temperature_c = temperature_c;
+    live_[i].setpoint_c = setpoint_c;
+    live_[i].valve_pct = clamp_float_(valve_pct, 0.0f, 100.0f, 0.0f);
+    live_[i].has_temperature = has_temperature;
+    live_[i].has_setpoint = has_setpoint;
+    live_[i].has_valve = has_valve;
+    copy_text_(live_[i].status, sizeof(live_[i].status), status != nullptr && status[0] != '\0' ? status : "unknown");
+    live_[i].fresh = fresh;
+    live_[i].updated_at_ms = now_ms;
+    record_zone_history_(i, temperature_c, live_[i].status, fresh && has_temperature, now_ms);
+    return true;
   }
   return false;
 }
@@ -371,6 +582,18 @@ ResolvedZone HouseModel::resolve_room(const char *room_id) const {
     }
   }
   return {};
+}
+
+size_t HouseModel::resolve_room_loops(const char *room_id, ResolvedRoomLoop *out, size_t capacity) const {
+  if (room_id == nullptr || out == nullptr || capacity == 0 || find_room_(room_id) == nullptr)
+    return 0;
+  size_t count = 0;
+  for (size_t i = 0; i < zone_count_ && count < capacity; i++) {
+    if (!zones_[i].enabled || !zones_[i].commissioned || !same_text_(zones_[i].room_id, room_id))
+      continue;
+    out[count++] = {node(zones_[i].node_index), &zones_[i], &live_[i]};
+  }
+  return count;
 }
 
 size_t HouseModel::active_zone_count() const {
@@ -406,10 +629,11 @@ size_t HouseModel::stale_zone_count() const {
 float HouseModel::average_comfort_setpoint_c() const {
   float sum = 0.0f;
   size_t count = 0;
-  for (size_t i = 0; i < zone_count_; i++) {
-    if (!zones_[i].enabled)
+  for (size_t i = 0; i < room_count_; i++) {
+    if (!rooms_[i].enabled)
       continue;
-    sum += effective_comfort_setpoint_c(zones_[i]);
+    sum += clamp_float_(rooms_[i].comfort_setpoint_c + rooms_[i].comfort_bias_c, 5.0f, 35.0f,
+                        rooms_[i].comfort_setpoint_c);
     count++;
   }
   return count > 0 ? sum / static_cast<float>(count) : 0.0f;
@@ -466,6 +690,33 @@ float HouseModel::learned_comfort_offset_c(const ZoneBinding &zone, const ZoneLi
   return clamp_float_((deficit_c - 0.2f) * 0.25f, 0.0f, cap_c, 0.0f);
 }
 
+TargetResolution HouseModel::resolve_target(const TargetResolverInput &input) {
+  TargetResolution result{};
+  const float lower = std::isfinite(input.dispatch_min_c) ? input.dispatch_min_c : 5.0f;
+  const float upper = std::isfinite(input.dispatch_max_c) && input.dispatch_max_c >= lower
+                          ? input.dispatch_max_c : 35.0f;
+  result.fallback_base_target_c = clamp_float_(input.fallback_base_target_c, lower, upper, 21.0f);
+  result.touch_available = input.touch_available;
+  result.base_target_c = input.touch_available
+                             ? clamp_float_(input.touch_target_c, lower, upper, result.fallback_base_target_c)
+                             : result.fallback_base_target_c;
+  copy_text_(result.base_source, sizeof(result.base_source),
+             input.touch_available ? "touch" : "fallback");
+  if (input.command.has_manual_offset) {
+    result.manual_modifier_c = input.command.manual_offset_c;
+    copy_text_(result.modifier_source, sizeof(result.modifier_source), "manual");
+  } else if (input.command.has_forecast_offset) {
+    result.distribution_modifier_c = input.command.forecast_offset_c;
+    copy_text_(result.modifier_source, sizeof(result.modifier_source), "forecast");
+  }
+  if (input.learned_confident)
+    result.learned_modifier_c = input.learned_modifier_c;
+  result.pre_v6_target_c = result.base_target_c + result.manual_modifier_c +
+                           result.distribution_modifier_c + result.learned_modifier_c;
+  result.dispatch_target_c = clamp_float_(result.pre_v6_target_c, lower, upper, result.base_target_c);
+  return result;
+}
+
 uint8_t HouseModel::learned_thermal_lead_h(const ZoneBinding &zone) {
   if (zone.thermal_samples < 6 || !std::isfinite(zone.learned_heat_gain_c_per_h) ||
       zone.learned_heat_gain_c_per_h < 0.05f)
@@ -496,48 +747,134 @@ StrategySnapshot HouseModel::strategy_snapshot(bool time_valid, uint8_t day_inde
 
   float weighted_temp_sum = 0.0f;
   float weighted_demand_sum = 0.0f;
+  float weighted_target_sum = 0.0f;
   float weight_sum = 0.0f;
+  float preview_temperature_sum = 0.0f;
+  size_t preview_count = 0;
+  float preview_setpoint_sum = 0.0f;
+  size_t preview_setpoint_count = 0;
   float best_weighted_deficit = 0.0f;
   float comfort_sum = 0.0f;
   size_t comfort_count = 0;
+  bool contributing_nodes[MAX_NODES]{};
+  for (size_t node_index = 0; node_index < node_count_; node_index++) {
+    bool serves_included_room = false;
+    for (size_t loop_index = 0; loop_index < zone_count_; loop_index++) {
+      if (zones_[loop_index].enabled && zones_[loop_index].commissioned &&
+          zones_[loop_index].node_index == node_index) {
+        const LogicalRoom *room = find_room_(zones_[loop_index].room_id);
+        serves_included_room = room != nullptr && room->enabled && room->include_in_house_temperature;
+        if (serves_included_room)
+          break;
+      }
+    }
+    if (serves_included_room)
+      snapshot.expected_manifolds++;
+  }
 
-  for (size_t i = 0; i < zone_count_; i++) {
-    if (!zones_[i].enabled)
+  for (size_t room_index = 0; room_index < room_count_; room_index++) {
+    const LogicalRoom &room = rooms_[room_index];
+    if (!room.enabled)
       continue;
-    const EffectiveComfort effective = effective_comfort(zones_[i], time_valid,
+    const ZoneBinding *primary = nullptr;
+    const ZoneLiveState *live = nullptr;
+    for (size_t loop_index = 0; loop_index < zone_count_; loop_index++) {
+      if (zones_[loop_index].enabled && zones_[loop_index].commissioned &&
+          same_text_(zones_[loop_index].room_id, room.room_id) &&
+          same_text_(zones_[loop_index].loop_id, room.primary_loop_id)) {
+        primary = &zones_[loop_index];
+        live = &live_[loop_index];
+        break;
+      }
+    }
+    if (primary == nullptr)
+      continue;
+    const EffectiveComfort effective = effective_comfort(*primary, time_valid,
                                                          day_index, minute_of_day);
     comfort_sum += effective.setpoint_c;
     comfort_count++;
-    const ZoneLiveState &live = live_[i];
-    if (!live.fresh || !live.has_temperature)
+    if (live != nullptr && live->fresh && live->has_temperature &&
+        std::isfinite(live->temperature_c)) {
+      preview_temperature_sum += live->temperature_c;
+      preview_count++;
+    }
+    if (live != nullptr && live->fresh && live->has_setpoint &&
+        std::isfinite(live->setpoint_c) && live->setpoint_c >= 5.0f &&
+        live->setpoint_c <= 35.0f) {
+      preview_setpoint_sum += live->setpoint_c;
+      preview_setpoint_count++;
+    }
+    const float weight = room.physical_weight > 0.0f ? room.physical_weight : room.total_area_m2;
+    if (!room.include_in_house_temperature || !std::isfinite(weight) || weight <= 0.0f)
       continue;
-
-    const float priority_weight = 1.0f + static_cast<float>(zones_[i].priority);
-    weighted_temp_sum += live.temperature_c * priority_weight;
-    weight_sum += priority_weight;
+    snapshot.expected_area_m2 += weight;
+    if (live == nullptr || !live->fresh || !live->has_temperature || !std::isfinite(live->temperature_c)) {
+      snapshot.missing_rooms++;
+      snapshot.missing_area_m2 += weight;
+      continue;
+    }
+    weighted_temp_sum += live->temperature_c * weight;
+    weight_sum += weight;
+    weighted_target_sum += effective.setpoint_c * weight;
+    snapshot.target_contributing_area_m2 += weight;
+    if (snapshot.house_target_source[0] == '\0' || std::strcmp(snapshot.house_target_source, "none") == 0)
+      copy_text_(snapshot.house_target_source, sizeof(snapshot.house_target_source), effective.source);
+    else if (std::strcmp(snapshot.house_target_source, effective.source) != 0)
+      copy_text_(snapshot.house_target_source, sizeof(snapshot.house_target_source), "mixed");
     snapshot.contributing_zones++;
+    snapshot.contributing_rooms++;
+    snapshot.contributing_area_m2 += weight;
+    if (primary->node_index < MAX_NODES)
+      contributing_nodes[primary->node_index] = true;
 
-    const float deficit = effective.setpoint_c - live.temperature_c;
+    const float deficit = effective.setpoint_c - live->temperature_c;
     if (deficit > 0.0f) {
-      weighted_demand_sum += deficit * priority_weight;
+      weighted_demand_sum += deficit * weight;
       snapshot.demand_zones++;
-      const float weighted_deficit = deficit * priority_weight;
+      const float weighted_deficit = deficit * weight;
       if (weighted_deficit > best_weighted_deficit) {
         best_weighted_deficit = weighted_deficit;
         snapshot.driver_deficit_c = deficit;
-        snapshot.driver_priority = zones_[i].priority;
-        copy_text_(snapshot.driver_room_id, sizeof(snapshot.driver_room_id), zones_[i].room_id);
-        copy_text_(snapshot.driver_room_name, sizeof(snapshot.driver_room_name), zones_[i].room_name);
+        snapshot.driver_priority = room.priority;
+        copy_text_(snapshot.driver_room_id, sizeof(snapshot.driver_room_id), room.room_id);
+        copy_text_(snapshot.driver_room_name, sizeof(snapshot.driver_room_name), room.room_name);
       }
     }
   }
 
   if (comfort_count > 0)
     snapshot.comfort_average_c = comfort_sum / static_cast<float>(comfort_count);
+  if (preview_count > 0) {
+    snapshot.has_temperature_preview = true;
+    snapshot.temperature_preview_c = preview_temperature_sum / static_cast<float>(preview_count);
+    snapshot.preview_zones = preview_count;
+  }
+  if (preview_setpoint_count > 0) {
+    snapshot.has_setpoint_preview = true;
+    snapshot.setpoint_preview_c = preview_setpoint_sum / static_cast<float>(preview_setpoint_count);
+    snapshot.setpoint_preview_zones = preview_setpoint_count;
+  }
   if (weight_sum > 0.0f) {
-    snapshot.has_physical_temperature = true;
     snapshot.physical_temperature_c = weighted_temp_sum / weight_sum;
     snapshot.comfort_demand_c = weighted_demand_sum / weight_sum;
+    snapshot.has_house_target = true;
+    snapshot.house_target_c = weighted_target_sum / weight_sum;
+  }
+  if (snapshot.expected_area_m2 > 0.0f) {
+    snapshot.coverage_ratio = snapshot.contributing_area_m2 / snapshot.expected_area_m2;
+    snapshot.coverage_healthy = snapshot.coverage_ratio >= minimum_area_coverage_;
+  }
+  for (size_t node_index = 0; node_index < node_count_; node_index++) {
+    if (contributing_nodes[node_index])
+      snapshot.contributing_manifolds++;
+  }
+  snapshot.manifolds_healthy = allow_degraded_manifolds_ || snapshot.expected_manifolds < 2 ||
+                               snapshot.contributing_manifolds >= snapshot.expected_manifolds;
+  if (snapshot.coverage_healthy && snapshot.manifolds_healthy) {
+    snapshot.has_physical_temperature = true;
+    copy_text_(snapshot.quality, sizeof(snapshot.quality), "healthy");
+  } else if (weight_sum > 0.0f) {
+    copy_text_(snapshot.quality, sizeof(snapshot.quality), "degraded");
   }
   return snapshot;
 }
@@ -579,6 +916,14 @@ LearningSnapshot HouseModel::learning_snapshot() const {
 
 const PairedNode *HouseModel::node(size_t index) const {
   return index < node_count_ ? &nodes_[index] : nullptr;
+}
+
+const LogicalRoom *HouseModel::room(size_t index) const {
+  return index < room_count_ ? &rooms_[index] : nullptr;
+}
+
+const LogicalRoom *HouseModel::room_by_id(const char *room_id) const {
+  return find_room_(room_id);
 }
 
 const ZoneBinding *HouseModel::zone(size_t index) const {
@@ -656,11 +1001,13 @@ bool HouseModel::export_state(PersistedState *out) const {
   out->version = PERSISTED_STATE_VERSION;
   out->node_count = static_cast<uint32_t>(node_count_);
   out->zone_count = static_cast<uint32_t>(zone_count_);
+  out->room_count = static_cast<uint32_t>(room_count_);
   for (size_t i = 0; i < node_count_; i++)
     out->nodes[i] = nodes_[i];
+  for (size_t i = 0; i < room_count_; i++)
+    out->rooms[i] = rooms_[i];
   for (size_t i = 0; i < zone_count_; i++) {
     out->zones[i] = zones_[i];
-    out->histories[i] = history_[i];
   }
   return true;
 }
@@ -668,47 +1015,86 @@ bool HouseModel::export_state(PersistedState *out) const {
 bool HouseModel::import_state(const PersistedState &state) {
   if (state.magic != PERSISTED_STATE_MAGIC || state.version != PERSISTED_STATE_VERSION)
     return false;
-  if (state.node_count > MAX_NODES || state.zone_count > MAX_HOUSE_ZONES)
+  if (state.node_count > MAX_NODES || state.zone_count > MAX_HOUSE_ZONES ||
+      state.room_count > MAX_HOUSE_ROOMS)
     return false;
 
   std::memset(nodes_, 0, sizeof(nodes_));
+  std::memset(rooms_, 0, sizeof(rooms_));
   std::memset(zones_, 0, sizeof(zones_));
   std::memset(live_, 0, sizeof(live_));
   std::memset(history_, 0, sizeof(history_));
+  std::memset(room_revisions_, 0, sizeof(room_revisions_));
   node_count_ = state.node_count;
   zone_count_ = state.zone_count;
+  room_count_ = state.room_count;
   for (size_t i = 0; i < node_count_; i++)
     nodes_[i] = state.nodes[i];
   for (size_t i = 0; i < node_count_; i++) {
     if (nodes_[i].name[0] == '\0')
       copy_text_(nodes_[i].name, sizeof(nodes_[i].name), nodes_[i].node_id);
   }
+  for (size_t i = 0; i < room_count_; i++) {
+    rooms_[i] = state.rooms[i];
+    room_revisions_[i] = 1;
+  }
   for (size_t i = 0; i < zone_count_; i++) {
     zones_[i] = state.zones[i];
-    history_[i] = state.histories[i];
     copy_text_(live_[i].room_id, sizeof(live_[i].room_id), zones_[i].room_id);
     copy_text_(live_[i].status, sizeof(live_[i].status), "unknown");
     if (zones_[i].node_index >= node_count_) {
       zones_[i].enabled = false;
       history_[i] = {};
+      continue;
+    }
+    if (zones_[i].node_id[0] == '\0')
+      copy_text_(zones_[i].node_id, sizeof(zones_[i].node_id), nodes_[zones_[i].node_index].node_id);
+    if (find_room_(zones_[i].room_id) == nullptr) {
+      LogicalRoom *room = ensure_room_(zones_[i].room_id, zones_[i].room_name, zones_[i].name_source);
+      if (room == nullptr)
+        return false;
+      room->comfort_setpoint_c = zones_[i].comfort_setpoint_c;
+      room->comfort_bias_c = zones_[i].comfort_bias_c;
+      room->schedule_setpoint_c = zones_[i].schedule_setpoint_c;
+      room->schedule_start_min = zones_[i].schedule_start_min;
+      room->schedule_end_min = zones_[i].schedule_end_min;
+      room->schedule_day_mask = zones_[i].schedule_day_mask;
+      room->priority = zones_[i].priority;
+      room->schedule_enabled = zones_[i].schedule_enabled;
+      copy_text_(room->primary_loop_id, sizeof(room->primary_loop_id), zones_[i].loop_id);
     }
   }
   return true;
 }
 
 bool CommandLedger::append(const CommandRecord &record) {
-  records_[next_] = record;
+  CommandRecord stored = record;
+  if (stored.boot_id == 0)
+    stored.boot_id = boot_id_;
+  records_[next_] = stored;
   next_ = (next_ + 1) % LEDGER_CAPACITY;
   if (count_ < LEDGER_CAPACITY)
     count_++;
   return true;
 }
 
-size_t CommandLedger::expire_pending(uint32_t now_ms) {
+namespace {
+
+bool command_expired_(const CommandRecord &record, uint32_t now_ms, int64_t now_epoch_s) {
+  if (now_epoch_s > 0 && record.expires_at_epoch_s > 0)
+    return now_epoch_s >= record.expires_at_epoch_s;
+  return record.expires_at_ms != 0 &&
+         static_cast<int32_t>(now_ms - record.expires_at_ms) >= 0;
+}
+
+}  // namespace
+
+size_t CommandLedger::expire_pending(uint32_t now_ms, int64_t now_epoch_s) {
   size_t expired = 0;
   for (size_t i = 0; i < count_; i++) {
     CommandRecord &record = records_[i];
-    if (record.result == CommandResult::PENDING && record.expires_at_ms != 0 && now_ms >= record.expires_at_ms) {
+    if ((record.result == CommandResult::PENDING || record.result == CommandResult::ACCEPTED) &&
+        command_expired_(record, now_ms, now_epoch_s)) {
       record.result = CommandResult::EXPIRED;
       expired++;
     }
@@ -740,20 +1126,22 @@ size_t CommandLedger::count_blocked() const {
          count_result(CommandResult::BLOCKED_UNTRUSTED);
 }
 
-bool CommandLedger::has_recent_similar(const char *source, uint8_t node_index, uint8_t zone_index,
+bool CommandLedger::has_recent_similar(const char *source, const char *node_id, const char *loop_id,
                                        float requested_offset_c, uint32_t now_ms,
-                                       uint32_t min_interval_ms, float epsilon_c) const {
-  if (source == nullptr || source[0] == '\0')
+                                       uint32_t min_interval_ms, float epsilon_c,
+                                       int64_t now_epoch_s) const {
+  if (source == nullptr || source[0] == '\0' || node_id == nullptr || node_id[0] == '\0' ||
+      loop_id == nullptr || loop_id[0] == '\0')
     return false;
   for (size_t i = 0; i < count_; i++) {
     const CommandRecord &record = records_[i];
     if (!same_text_(record.source, source))
       continue;
-    if (record.node_index != node_index || record.zone_index != zone_index)
+    if (!same_text_(record.node_id, node_id) || !same_text_(record.loop_id, loop_id))
       continue;
     if (record.result != CommandResult::PENDING && record.result != CommandResult::ACCEPTED)
       continue;
-    if (record.expires_at_ms != 0 && static_cast<int32_t>(now_ms - record.expires_at_ms) >= 0)
+    if (command_expired_(record, now_ms, now_epoch_s))
       continue;
     if (min_interval_ms > 0 && static_cast<int32_t>(now_ms - record.created_at_ms) > static_cast<int32_t>(min_interval_ms))
       continue;
@@ -764,7 +1152,7 @@ bool CommandLedger::has_recent_similar(const char *source, uint8_t node_index, u
 }
 
 bool CommandLedger::active_offset_for(const char *source, uint8_t node_index, uint8_t zone_index,
-                                      uint32_t now_ms, float *offset_c) const {
+                                      uint32_t now_ms, float *offset_c, int64_t now_epoch_s) const {
   if (source == nullptr || source[0] == '\0')
     return false;
   const CommandRecord *best = nullptr;
@@ -776,7 +1164,7 @@ bool CommandLedger::active_offset_for(const char *source, uint8_t node_index, ui
       continue;
     if (record.result != CommandResult::PENDING && record.result != CommandResult::ACCEPTED)
       continue;
-    if (record.expires_at_ms != 0 && static_cast<int32_t>(now_ms - record.expires_at_ms) >= 0)
+    if (command_expired_(record, now_ms, now_epoch_s))
       continue;
     if (best == nullptr || static_cast<int32_t>(record.created_at_ms - best->created_at_ms) > 0)
       best = &record;
@@ -790,12 +1178,15 @@ bool CommandLedger::active_offset_for(const char *source, uint8_t node_index, ui
 
 CommandOffsetResolution CommandLedger::resolve_command_offset(uint8_t node_index,
                                                               uint8_t zone_index,
-                                                              uint32_t now_ms) const {
+                                                              uint32_t now_ms,
+                                                              int64_t now_epoch_s) const {
   CommandOffsetResolution resolution{};
   resolution.has_manual_offset =
-      active_offset_for("dashboard", node_index, zone_index, now_ms, &resolution.manual_offset_c);
+      active_offset_for("dashboard", node_index, zone_index, now_ms, &resolution.manual_offset_c,
+                        now_epoch_s);
   resolution.has_forecast_offset =
-      active_offset_for("forecast", node_index, zone_index, now_ms, &resolution.forecast_offset_c);
+      active_offset_for("forecast", node_index, zone_index, now_ms, &resolution.forecast_offset_c,
+                        now_epoch_s);
   if (resolution.has_manual_offset) {
     resolution.command_offset_c = resolution.manual_offset_c;
     copy_text_(resolution.command_source, sizeof(resolution.command_source), "manual");
@@ -813,13 +1204,13 @@ const CommandRecord *CommandLedger::latest() const {
   return &records_[latest_index];
 }
 
-const CommandRecord *CommandLedger::latest_active(uint32_t now_ms) const {
+const CommandRecord *CommandLedger::latest_active(uint32_t now_ms, int64_t now_epoch_s) const {
   for (size_t n = 0; n < count_; n++) {
     const size_t index = (next_ + LEDGER_CAPACITY - 1 - n) % LEDGER_CAPACITY;
     const CommandRecord &record = records_[index];
     if (record.result != CommandResult::PENDING && record.result != CommandResult::ACCEPTED)
       continue;
-    if (record.expires_at_ms != 0 && static_cast<int32_t>(now_ms - record.expires_at_ms) >= 0)
+    if (command_expired_(record, now_ms, now_epoch_s))
       continue;
     return &record;
   }
@@ -836,6 +1227,7 @@ bool CommandLedger::export_state(PersistedLedger *out) const {
   std::memset(out, 0, sizeof(*out));
   out->magic = PERSISTED_LEDGER_MAGIC;
   out->version = PERSISTED_LEDGER_VERSION;
+  out->boot_id = boot_id_;
   out->next = static_cast<uint32_t>(next_);
   out->count = static_cast<uint32_t>(count_);
   for (size_t i = 0; i < LEDGER_CAPACITY; i++)
@@ -843,7 +1235,8 @@ bool CommandLedger::export_state(PersistedLedger *out) const {
   return true;
 }
 
-bool CommandLedger::import_state(const PersistedLedger &state) {
+bool CommandLedger::import_state(const PersistedLedger &state, uint32_t current_boot_id,
+                                 int64_t now_epoch_s) {
   if (state.magic != PERSISTED_LEDGER_MAGIC || state.version != PERSISTED_LEDGER_VERSION)
     return false;
   if (state.next >= LEDGER_CAPACITY || state.count > LEDGER_CAPACITY)
@@ -851,8 +1244,18 @@ bool CommandLedger::import_state(const PersistedLedger &state) {
   std::memset(records_, 0, sizeof(records_));
   next_ = state.next;
   count_ = state.count;
+  boot_id_ = current_boot_id;
   for (size_t i = 0; i < LEDGER_CAPACITY; i++)
     records_[i] = state.records[i];
+  for (size_t i = 0; i < count_; i++) {
+    CommandRecord &record = records_[i];
+    if (record.result != CommandResult::PENDING && record.result != CommandResult::ACCEPTED)
+      continue;
+    if (current_boot_id == 0 || record.boot_id == 0 || record.boot_id != current_boot_id ||
+        command_expired_(record, 0, now_epoch_s)) {
+      record.result = CommandResult::EXPIRED;
+    }
+  }
   return true;
 }
 

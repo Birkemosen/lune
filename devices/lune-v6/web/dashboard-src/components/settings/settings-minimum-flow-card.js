@@ -7,14 +7,14 @@ import { localize, subscribeLanguage } from '../../core/i18n.js';
 
 const template = () => `
   <div class="ui-card settings-minimum-flow-card">
-    <div class="ui-card-title"><span class="ui-title-text"><span data-i18n="settings.minFlow.title">Minimum Zone Flow</span>${helpBadgeI18n('settings.minFlow.help')}</span></div>
+    <div class="ui-card-title"><span class="ui-title-text">Minimum active-loop opening${helpBadgeI18n('settings.minFlow.help')}</span></div>
     <div class="ui-row">
-      <span class="ui-label"><span data-i18n="common.enabled">Enabled</span> <span class="ui-sublabel" data-i18n="settings.minFlow.enabledSub">manual floor for a modulating heat source, independent of the bridge</span></span>
+      <span class="ui-label"><span data-i18n="common.enabled">Enabled</span> <span class="ui-sublabel">Local V6 hydraulic safeguard; heat-source and pump coordination stays external.</span></span>
       <span class="ui-field"><div class="ui-toggle smf-always" role="switch" data-i18n-label="settings.minFlow.title" aria-label="Enable minimum zone flow"></div></span>
     </div>
-    <div class="ui-row">
-      <span class="ui-label"><span data-i18n="settings.minFlow.opening">Min valve opening (%)</span> <span class="ui-sublabel" data-i18n="settings.minFlow.openingSub">floor held on every enabled zone while active</span></span>
-      <span class="ui-field"><input class="ui-input smf-pct" type="number" min="0" max="50" step="1" placeholder="15" /></span>
+    <div class="ui-row smf-pct-row">
+      <span class="ui-label">Minimum total opening (%) <span class="ui-sublabel">Added only across loops already accepting heat; closed satisfied rooms stay closed.</span></span>
+      <span class="ui-field"><input class="ui-input smf-pct" type="number" min="0" max="100" step="1" placeholder="0" /></span>
     </div>
   </div>
 `;
@@ -25,10 +25,18 @@ export default component({
   onMount(ctx, el) {
     const toggleEl = el.querySelector('.smf-always');
     const pctEl = el.querySelector('.smf-pct');
+    const pctRow = el.querySelector('.smf-pct-row');
     const form = cardForm(el);
+
+    const showOpening = (enabled) => {
+      pctRow.hidden = !enabled;
+      pctRow.setAttribute('aria-hidden', enabled ? 'false' : 'true');
+      pctEl.disabled = !enabled;
+    };
 
     form.toggle(toggleEl, {
       read: () => isEntityOn(gkey.minimumFlowAlways),
+      onChange: showOpening,
       commit: (on) => {
         const next = on ? 'on' : 'off';
         setEntity(gkey.minimumFlowAlways, { state: next });

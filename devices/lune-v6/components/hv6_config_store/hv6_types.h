@@ -8,6 +8,7 @@
 #pragma once
 
 #include <cstdint>
+#include <cstddef>
 #include <cmath>
 #include <algorithm>
 #include <array>
@@ -230,6 +231,16 @@ struct ZoneConfig {
   // heating so the zone reaches temperature on time). Adapts over time; persisted
   // so the device doesn't have to re-learn from zero after every reboot.
   float preheat_advance_c = 0.0f;
+  // Hydraulic commissioning identity. These fields describe the physical loop;
+  // they never affect demand calculation or valve safety.
+  char manifold_id[16] = "";       ///< Stable installed-manifold label, e.g. "UFH-A"
+  uint8_t manifold_port = 0;        ///< 1..6 when commissioned; 0 means unknown
+  char room_id[24] = "";            ///< Stable logical-room ID, not an array index
+  float loop_pipe_length_m = -1.0f; ///< -1 means not measured/known
+  float design_flow_l_h = -1.0f;    ///< -1 means not commissioned
+  float measured_flow_l_h = -1.0f;  ///< -1 means not measured
+  float actuator_calibration_pct = -1.0f;  ///< -1 means no commissioned result
+  float expected_thermal_delay_min = -1.0f; ///< -1 means not established
 };
 
 struct ControlConfig {
@@ -241,7 +252,7 @@ struct ControlConfig {
   float min_movement_pct = 5.0f;
   float tanh_steepness = 0.70f;
   bool simple_preheat_enabled = true;
-  // Preheat absorption — when an external optimizer (Odin via Asgard) pre-buffers
+  // Preheat absorption — when Lune Touch pre-buffers
   // the slab, hot water arrives while no zone demands heat. Without this, zones
   // hit OVERHEATED and close, blocking the buffer. While absorbing, the overheat
   // cutoff is raised by preheat_absorb_band_c (scaled per zone by floor thermal
@@ -284,27 +295,39 @@ static constexpr uint32_t SENSOR_CONFIG_VERSION = 1;
 /// firmware update. Bump only when ZoneConfig's layout changes.
 /// v2 adds balance_adapt (learned adaptive-balancing multiplier).
 /// v3 adds preheat_advance_c (learned simple-preheat head-start per zone).
-static constexpr uint32_t ZONE_CONFIG_VERSION = 3;
+/// v4 adds physical-loop hydraulic commissioning fields. v3 blobs are safely
+/// invalidated rather than guessing manifold identity or measured values.
+static constexpr uint32_t ZONE_CONFIG_VERSION = 4;
+
+inline constexpr bool zone_config_blob_is_current(uint32_t version, size_t bytes) {
+  return version == ZONE_CONFIG_VERSION &&
+         bytes == sizeof(uint32_t) + sizeof(ZoneConfig) * NUM_ZONES;
+}
 
 /// Per-section durable NVS blob versions. Each global-settings section is mirrored
 /// to its own NVS key (like zones/sensors above) so it survives any discard of
 /// the legacy main `config` blob. Bump an individual
 /// constant ONLY when that one struct's layout changes — that resets just that
 /// section, not the user's whole configuration. See hv6_config_store.cpp.
-static constexpr uint32_t SYSTEM_CONFIG_VERSION = 1;
+/// v3 removes obsolete heat-source/pump fields from the local system section.
+static constexpr uint32_t SYSTEM_CONFIG_VERSION = 3;
 static constexpr uint32_t CONTROL_CONFIG_VERSION = 1;
 static constexpr uint32_t PROBE_CONFIG_VERSION = 1;
 static constexpr uint32_t PID_CONFIG_VERSION = 1;
 static constexpr uint32_t MOTOR_CONFIG_VERSION = 1;
 static constexpr uint32_t MANIFOLD_CONFIG_VERSION = 1;
-static constexpr uint32_t BALANCING_CONFIG_VERSION = 1;
-static constexpr uint32_t ASGARD_CONFIG_VERSION = 1;
+/// v2 replaces unsafe per-zone "modulating heat source" floors with an explicit
+/// secondary-loop commissioning floor. Old values are safely invalidated.
+static constexpr uint32_t BALANCING_CONFIG_VERSION = 2;
+/// v2 adds the persisted authority identities and shared authentication key.
+/// Active leases remain runtime-only and are never restored from NVS.
+static constexpr uint32_t AUTHORITY_CONFIG_VERSION = 1;
 static constexpr uint32_t FORECAST_CONFIG_VERSION = 1;
 
 struct BalancingConfig {
   bool dynamic_balancing_enabled = false;   ///< Back-compat alias: true ⇒ mode == RETURN_TEMP
-  bool modulating_heat_source = false;      ///< Manually enforce per-zone minimum flow for a modulating heat source
-  float minimum_flow_pct = 15.0f;           ///< Per-zone minimum valve opening while manual minimum flow is active
+  bool secondary_flow_commissioning_enabled = false;  ///< Explicit UFH-secondary commissioning only
+  float secondary_min_total_opening_pct = 0.0f;       ///< Total across accepting loops; 0 disables
   float flow_increase_threshold_pct = 80.0f;///< Request higher flow temp when avg zone opening exceeds this
   float flow_decrease_threshold_pct = 30.0f;///< Request lower flow temp when avg zone opening drops below this
   float target_delta_t_c = 5.0f;            ///< Target ΔT (flow − return) for dynamic (RETURN_TEMP) balancing
@@ -320,8 +343,8 @@ struct BalancingConfig {
   float    adapt_heat_margin_c = 2.0f;      ///< flow_temp must exceed room by this to count a sample
 };
 
-/// The external Helios-3 optimizer client was removed; whole-house MPC is now
-/// handled by Odin via the Asgard bridge. All that remains is a quiesce gate:
+/// Whole-house MPC and heat-source coordination live outside V6. All that
+/// remains is a quiesce gate:
 /// `enabled` lets the on-device forecast preload stand down if a future external
 /// optimizer is reintroduced (it owns the per-zone command slots). It has no
 /// runtime setter today, so it stays false. The former host/port/mDNS fields
@@ -330,22 +353,12 @@ struct HeliosConfig {
   bool enabled = false;
 };
 
-static constexpr uint8_t ASGARD_HOST_LEN = 64;
-static constexpr uint8_t ASGARD_ENTITY_LEN = 48;
-
-/// Asgard (Ecodan heat-pump bridge) integration. Two HV6 boards run identical
-/// firmware; exactly one has `coordinator = true` and pushes the house-weighted
-/// room temperature to Asgard's virtual thermostat z1 (see docs/ecodan_integration.md).
-struct AsgardConfig {
-  bool enabled = false;
-  bool coordinator = false;                   ///< This board aggregates + pushes to Asgard
-  char host[ASGARD_HOST_LEN] = "";            ///< Asgard hostname or IP
-  uint16_t port = 80;                         ///< Asgard HTTP port
-  char entity_name[ASGARD_ENTITY_LEN] = "virtual_thermostat_input_z1";  ///< Asgard number entity (REST object_id)
-  uint16_t push_interval_s = 30;              ///< Weighted-temp push cadence
-  char peer_host[ASGARD_HOST_LEN] = "";       ///< The other HV6 board (coordinator only; empty = single board)
-  uint16_t peer_port = 80;                    ///< Peer dashboard HTTP port
-  uint16_t peer_stale_after_s = 300;          ///< Exclude peer zones when its snapshot is older than this
+/// Credentials used by Lune Touch to coordinate this local manifold node.
+/// Heat-source transport and whole-house aggregation live on Lune Touch.
+struct AuthorityConfig {
+  char installation_id[32] = "";
+  char coordinator_id[32] = "";
+  char shared_key[64] = "";
 };
 
 /// Legacy weather-forecast preload config. Kept in the schema so existing NVS
@@ -520,7 +533,7 @@ struct DeviceConfig {
   SensorConfig sensor_config;
   BalancingConfig balancing;
   HeliosConfig helios;
-  AsgardConfig asgard;
+  AuthorityConfig authority;
   ForecastConfig forecast;
 };
 

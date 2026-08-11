@@ -24,7 +24,6 @@ Public product references should use Lune V6.
 │                                                              │
 │  hv6_config_store ← hv6_valve_controller ← hv6_zone_controller
 │                                                  ↑           │
-│                                          hv6_asgard_bridge   │
 │                                          hv6_dashboard       │
 └────────────────────────────┬─────────────────────────────────┘
                              ▼
@@ -48,13 +47,12 @@ heatvalve-6/
 ├── packages/
 │   ├── board/                ESP32-S3 board definition
 │   ├── hardware/             BLE, display, I2C, motors, LED, 1-Wire, sensors
-│   ├── network/              WiFi, API, OTA, Asgard bridge
+│   ├── network/              WiFi, API, OTA
 │   └── zones/                Climate entities, zone sensors, UI, dashboard wiring
 ├── components/               Custom ESPHome external components (C++)
 │   ├── hv6_config_store/     NVS persistence (DeviceConfig struct)
 │   ├── hv6_valve_controller/ Motor FSM, endstop detection, ripple counting
 │   ├── hv6_zone_controller/  Zone state machine, algorithms, hydraulic balance
-│   ├── hv6_asgard_bridge/    Weighted house temp → Asgard/Ecodan thermostat
 │   └── hv6_dashboard/        HTTP API (/api/hv6/v1), dashboard asset serving
 ├── web/
 │   ├── dashboard-src/        Dashboard source (modular JS, esbuild)
@@ -70,10 +68,9 @@ heatvalve-6/
 |------|------|----------|--------|
 | `hv6_valve` (motor FSM) | 1 | 7 | 10 ms tick |
 | `hv6_ripple` (DMA ADC) | 1 | 7 | continuous |
-| `hv6_zone` (control cycle) | 0 | 6 | 10 s (configurable) |
-| `hv6_asgard` (HTTP) | 1 | 1 | 30 s push (coordinator only) |
+| `hv6_zone` (control cycle) | 1 | 6 | 10 s (configurable) |
 | `hv6_nvs` (flash commit) | 1 | 1 | event-driven |
-| ESPHome loopTask | 1 | 1 | — |
+| ESPHome loopTask | 0 | 1 | — |
 
 Cross-task state is exchanged via FreeRTOS queues and mutexes. Dashboard snapshots are
 assembled in `hv6_dashboard::loop()` (main loop) under a dedicated `snapshot_mutex_`.
@@ -99,7 +96,7 @@ Coordinator optimizers write per-zone setpoint-offset / preheat commands through
 safety limits; if a producer goes stale, its offsets are cleared and local control
 continues unchanged. `HeliosConfig.enabled` (NVS) remains as a compatibility quiesce gate.
 
-Whole-house MPC is provided by Odin via the [Asgard / Ecodan bridge](ecodan_integration.md),
+Whole-house coordination and heat-source integration are provided by Lune Touch,
 not an external HTTP optimizer — the previous `hv6_helios_client` was removed. Removing any
 producer reverts transparently to local control: no vendor lock-in, no safety dependency
 on an external service.
@@ -113,14 +110,15 @@ on an external service.
   limit) with per-direction parameters — see [endstop_detection.md](endstop_detection.md)
 - **Sensors**: 1-Wire DS18B20 (8 slots, NVS-persisted ROM mapping), BLE BTHome
 - **Communication**: WiFi, ESPHome native API (Home Assistant), HTTP/JSON (dashboard +
-  Asgard bridge). No message broker — MQTT was removed in favor of plain HTTP over LAN.
+  Lune Touch. No message broker — MQTT was removed in favor of plain HTTP over LAN.
 
 ## Dashboard API
 
 Dashboard transport uses the dedicated `/api/hv6/v1` JSON namespace served by
 `hv6_dashboard` on the device web server (port 80):
 
-- The dashboard app is served at `/dashboard` (+ `/dashboard.js`)
+- The dashboard app is served at `/` (+ `/dashboard.js`); `/dashboard` and
+  `/dashboard/` are retained as redirect-only legacy bookmarks
 - All dashboard reads/writes go through `/api/hv6/v1` — the dashboard must not call
   ESPHome entity REST routes (`/climate`, `/switch`, `/number`, …)
 - Home Assistant integration continues through the ESPHome native API

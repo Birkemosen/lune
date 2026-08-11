@@ -4,7 +4,6 @@ import { state, subscribe } from '../core/store.js';
 import { bindActions, renderCommands, renderDiagnostics, renderForecast, renderHeatSource, renderManifolds, renderOverview, renderSettings, renderSetup, renderZones } from '../components/views.js';
 
 const css = `
-@import url("https://fonts.googleapis.com/css2?family=Montserrat:wght@500;600;700;800&family=Source+Sans+3:wght@400;500;600;700&display=swap");
 :root {
   --accent:#ff8a3d; --blue:#7eb6d8; --series-warm:#ff8a3d; --series-cool:#7eb6d8; --series-solar:#ffd36a;
   --bg:#091217; --surface:rgba(18,30,36,.58); --band:rgba(22,35,42,.54); --band-strong:rgba(33,48,55,.72);
@@ -14,8 +13,8 @@ const css = `
   --panel-bg:rgba(255,255,255,.075); --control-bg:rgba(255,255,255,.085); --control-border:rgba(235,245,248,.22);
   --glass-highlight:rgba(255,255,255,.14); --glass-lowlight:rgba(0,0,0,.22);
   --panel-shadow:16px 18px 38px rgba(0,0,0,.34), -10px -10px 28px rgba(255,255,255,.035), inset 0 1px 0 rgba(255,255,255,.16);
-  --font-ui:"Source Sans 3",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
-  --font-display:"Montserrat",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  --font-ui:"Avenir Next","Segoe UI",sans-serif;
+  --font-display:"Avenir Next Condensed","Trebuchet MS",sans-serif;
 }
 *{box-sizing:border-box} html{font-size:100%} body{margin:0;font-family:var(--font-ui);background:linear-gradient(135deg,#071015 0%,#0c2026 38%,#171612 70%,#081015 100%);color:var(--text);line-height:1.45;-webkit-font-smoothing:antialiased;min-height:100vh}
 body::before{content:'';position:fixed;inset:0;pointer-events:none;background:linear-gradient(115deg,rgba(255,255,255,.08),transparent 28%,rgba(126,182,216,.07) 50%,transparent 72%,rgba(255,138,61,.08)),repeating-linear-gradient(90deg,rgba(255,255,255,.028) 0 1px,transparent 1px 84px),repeating-linear-gradient(0deg,rgba(255,255,255,.018) 0 1px,transparent 1px 84px);mask-image:linear-gradient(180deg,rgba(0,0,0,.92),rgba(0,0,0,.36));z-index:-1}
@@ -31,17 +30,20 @@ button,input,select{font:inherit}.shell{position:relative;width:min(1440px,100%)
 .manifold-register{display:grid;grid-template-columns:minmax(220px,.8fr) minmax(360px,1fr);gap:16px;align-items:end;margin:2px 0 14px;padding:0 0 14px;border-bottom:1px solid var(--border-soft)}.manifold-register h3{margin-bottom:4px}.manifold-register p{margin:0}.inline-form.manifold-form{grid-template-columns:minmax(220px,1fr) auto auto;margin:0}.scan-results{margin:0 0 14px;padding:0 0 12px;border-bottom:1px solid var(--border-soft)}.scan-results-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:8px}.scan-candidate{display:grid;grid-template-columns:minmax(120px,.8fr) minmax(160px,1fr) auto auto minmax(120px,.8fr) auto;gap:10px;align-items:center;min-height:34px;border-top:1px solid var(--border-soft);padding:7px 0;color:var(--muted)}.scan-results-head+.scan-candidate{border-top:0}.scan-candidate strong{color:var(--text-strong);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.scan-candidate span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.settings-panel .scan-results{margin:0;padding:0;border-bottom:0}
 .section-head{padding:4px 0 12px;border:0;border-bottom:1px solid var(--border-soft);border-radius:0;background:transparent;box-shadow:none;backdrop-filter:none}.zone-editor-layout{gap:0 28px;margin:2px 0 18px;padding:2px 0 6px}.zone-editor-layout .settings-panel{border:0;border-radius:0;background:transparent;box-shadow:none;backdrop-filter:none;padding:14px 0;border-bottom:1px solid var(--border-soft)}.zone-editor-layout .settings-panel h3{margin-bottom:10px}.zone-editor-layout .settings-panel .btn{min-height:38px}.data-table{border-color:var(--border-soft);background:rgba(255,255,255,.025);box-shadow:none;backdrop-filter:none}.tr{background:transparent}.tr.head{background:linear-gradient(135deg,rgba(255,138,61,.14),rgba(255,255,255,.035))}
 @media(max-width:1100px){.shell{grid-template-columns:200px minmax(0,1fr)}.zone-matrix{grid-template-columns:repeat(3,minmax(0,1fr))}.split-main,.node-panel,.zone-editor-layout,.manifold-register,.zone-row-main,.zone-editor,.setup-layout,.settings-grid,.zone-subgrid,.zone-target-card{grid-template-columns:1fr}.readiness-strip,.settings-status{grid-template-columns:repeat(2,minmax(0,1fr))}.zone-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.scan-candidate{grid-template-columns:minmax(120px,1fr) minmax(140px,1fr) auto auto}}
+.logical-room-card .zone-row-main{gap:12px}.logical-room-card .zone-live-facts{grid-template-columns:repeat(3,minmax(0,1fr))}.logical-room-card .zone-live-facts small{display:block;color:var(--text-faint);font-size:.78rem;margin-top:3px}.logical-room-card .zone-metrics{grid-template-columns:repeat(3,minmax(0,1fr))}.logical-room-card .zone-metrics strong{font-size:.9rem}.room-loops{border-top:1px solid var(--border-soft);padding-top:10px;color:var(--muted)}.room-loops summary{cursor:pointer;font-weight:800;color:var(--accent)}.room-loop{display:grid;grid-template-columns:1fr 1fr auto;gap:8px;padding:8px 0;border-bottom:1px solid var(--border-soft);font-size:.88rem}
 @media(max-width:900px){.shell,.shell.nav-collapsed{display:block;padding:12px 12px 78px}.topbar{margin-bottom:12px}.topbar-head{display:grid;justify-items:center}.top-meta{margin-left:0;justify-content:center;flex-wrap:wrap}.sidebar,.sidebar.collapsed{position:fixed;left:10px;right:10px;bottom:10px;top:auto;z-index:40;min-height:0;margin-bottom:0;padding:8px;border:1px solid var(--border);border-radius:8px;background:rgba(9,18,23,.82);box-shadow:var(--panel-shadow);backdrop-filter:blur(18px) saturate(1.25)}.sidebar .brand{display:none}.top-menu{grid-template-columns:repeat(4,minmax(0,1fr))}.menu-link,.sidebar.collapsed .menu-link{justify-content:center;text-align:center;font-size:.78rem;letter-spacing:.5px;padding:9px 6px}.sidebar.collapsed .menu-label{display:inline}.nav-collapse{display:none}.top-meta{grid-template-columns:repeat(3,minmax(0,1fr))}.stat-grid,.two-col,.zone-matrix,.inline-form,.inline-form.manifold-form,.readiness-strip,.health-grid,.metric-strip,.diagnostics-layout,.settings-grid,.settings-status,.settings-form-grid,.settings-facts,.commissioning-facts,.integration-grid,.zone-editor-layout,.field-grid.two,.field-grid.three,.field-grid.four,.field-grid.schedule,.field-grid.forecast{grid-template-columns:1fr}.settings-section-head{display:grid}.settings-side .action-row.stretch{grid-template-columns:1fr}.setup-step{grid-template-columns:32px minmax(0,1fr)}.setup-step .btn{grid-column:2}.stat,.metric,.readiness-chip{border-left:0;border-top:1px solid var(--border-soft)}.stat:first-child,.metric:first-child,.readiness-chip:first-child{border-top:0}.settings-status .metric,.settings-facts div{border-left:0;border-top:1px solid var(--border-soft)}.settings-status .metric:first-child,.settings-facts div:first-child{border-top:0}.ops-panel.wide,.settings-panel.wide{grid-column:auto}}
 @media(max-width:520px){.top-meta{gap:6px}.menu-link{text-align:center}.scan-candidate{grid-template-columns:1fr auto}.scan-candidate span:nth-of-type(n+2){display:none}}
+.section-actions{display:flex;align-items:center;gap:10px}.operation-status{display:inline-flex;align-items:center;gap:8px;color:var(--accent);font-size:.82rem;font-weight:800}.spinner{width:13px;height:13px;border:2px solid rgba(255,138,61,.28);border-top-color:var(--accent);border-radius:50%;animation:lt-spin .75s linear infinite}@keyframes lt-spin{to{transform:rotate(360deg)}}
 `;
 
 function view() {
   if (state.section === 'setup') return renderSetup();
-  if (state.section === 'rooms' || state.section === 'zones') return renderManifolds();
+  if (state.section === 'rooms' || state.section === 'zones') return renderZones();
   if (state.section === 'manifolds') return renderManifolds();
   if (state.section === 'weather') return renderForecast();
   if (state.section === 'heat-source') return renderHeatSource();
   if (state.section === 'commands') return renderCommands();
+  if (state.section === 'diagnostics') return renderDiagnostics();
   if (state.section === 'system' || state.section === 'settings') return renderSettings();
   return renderOverview();
 }
@@ -57,6 +59,41 @@ function shouldAutoRefresh(root) {
 }
 
 export function mountApp(root) {
+  const drafts = new Map();
+  let pendingFocus = null;
+  const draftKey = (el) => {
+    if (el.id) return `id:${el.id}`;
+    const zone = el.closest('[data-zone-index]')?.dataset.zoneIndex || '';
+    for (const name of ['zoneField', 'zoneWall', 'nodeName']) {
+      const value = el.dataset[name];
+      if (value) return `${name}:${zone}:${value}`;
+    }
+    return '';
+  };
+  const rememberDraft = (event) => {
+    const el = event.target;
+    if (!(el instanceof HTMLInputElement || el instanceof HTMLSelectElement || el instanceof HTMLTextAreaElement)) return;
+    const key = draftKey(el);
+    if (!key) return;
+    drafts.set(key, { value: el.value, checked: el.checked, type: el.type });
+  };
+  const restoreDrafts = () => {
+    let active = null;
+    root.querySelectorAll('input,select,textarea').forEach((el) => {
+      const draft = drafts.get(draftKey(el));
+      if (!draft) return;
+      if (draft.type === 'checkbox') el.checked = draft.checked;
+      else el.value = draft.value;
+      if (pendingFocus?.key === draftKey(el)) active = el;
+    });
+    if (active) {
+      active.focus({ preventScroll: true });
+      if (typeof active.setSelectionRange === 'function' && Number.isInteger(pendingFocus.start)) {
+        active.setSelectionRange(pendingFocus.start, pendingFocus.end);
+      }
+    }
+    pendingFocus = null;
+  };
   if (!document.getElementById('lt-style')) {
     const style = document.createElement('style');
     style.id = 'lt-style';
@@ -64,10 +101,27 @@ export function mountApp(root) {
     document.head.appendChild(style);
   }
   function render() {
+    const active = document.activeElement;
+    if (active && root.contains(active)) {
+      const key = draftKey(active);
+      pendingFocus = key ? { key, start: active.selectionStart, end: active.selectionEnd } : null;
+    } else {
+      pendingFocus = null;
+    }
     root.innerHTML = `<div class="shell ${state.navCollapsed ? 'nav-collapsed' : ''}">${renderTopbar()}${renderSidebar()}<main class="main">${state.error ? `<div class="error">${state.error}</div>` : ''}${view()}</main></div>`;
     bindHeader(root);
     bindActions(root);
+    restoreDrafts();
   }
+  root.addEventListener('input', rememberDraft, true);
+  root.addEventListener('change', rememberDraft, true);
+  root.addEventListener('click', (event) => {
+    if (event.target.closest('[data-discard-section],[data-cancel-zone-edit]')) drafts.clear();
+  }, true);
+  window.addEventListener('lune-touch-write-success', () => {
+    drafts.clear();
+    render();
+  });
   subscribe(render);
   render();
   refreshAll({ loading: true });

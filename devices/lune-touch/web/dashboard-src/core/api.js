@@ -1,6 +1,8 @@
 import { patch } from './store.js';
 
 const BASE = '/api/lune-touch/v1';
+let refreshController = null;
+let refreshGeneration = 0;
 
 function mockData(path) {
   if (path === '/overview') return { summary: { zones: 18, nodes: 3, calling: 5, stale_nodes: 1, comfort_avg_c: 21.1, forecast_status: 'stale', latest_command: 'accepted' } };
@@ -14,17 +16,23 @@ function mockData(path) {
     const statuses = ['heat','idle','call','hold','idle','preheat','idle','heat','idle','call','idle','hold','idle','heat','call','stale','idle','unused'];
     const comfortSetpoints = [21.5,21.0,22.5,20.0,21.0,19.5,20.0,19.0,18.5,18.0,18.0,20.0,20.5,20.5,22.0,18.0,12.0,18.0];
     const comfortBiases = [0.2,0.0,0.1,0.0,-0.2,0.0,0.0,0.3,0.0,0.4,0.0,0.0,0.0,0.2,0.0,0.0,0.0,0.0];
-    return { count: 18, zones: names.map((name, i) => ({
-      room_id: `room-${String(i + 1).padStart(2, '0')}`,
-      name,
+    const roomId = (i) => i < 3 ? 'room-01' : `room-${String(i + 1).padStart(2, '0')}`;
+    const roomName = (i) => i < 3 ? 'Living' : names[i];
+    return { count: 18, rooms: [
+      { room_id: 'room-01', name: 'Living', loop_count: 3, area_m2: 48, include_in_house_temperature: true },
+      ...names.slice(3).map((name, i) => ({ room_id: `room-${String(i + 4).padStart(2, '0')}`, name, loop_count: 1, area_m2: 12, include_in_house_temperature: true })),
+    ], zones: names.map((name, i) => ({
+      room_id: roomId(i),
+      name: roomName(i),
       name_source: i % 5 === 0 ? 'touch' : 'v6',
       node_index: Math.floor(i / 6),
       zone_index: i % 6,
-      temperature_c: [21.3,20.9,22.2,20.1,20.8,19.4,19.8,18.9,18.7,17.6,18.1,20.3,20.5,20.0,21.8,null,12.4,null][i],
+      temperature_c: [21.3,21.2,21.3,20.1,20.8,19.4,19.8,18.9,18.7,17.6,18.1,20.3,20.5,20.0,21.8,null,12.4,null][i],
       setpoint_c: [21.0,21.0,22.5,20.0,21.0,19.5,20.0,19.0,18.5,18.0,18.0,20.0,20.5,20.5,22.0,18.0,12.0,null][i],
       valve_pct: [45,18,28,15,15,35,10,42,15,58,12,15,16,38,30,null,15,null][i],
       status: statuses[i],
       fresh: statuses[i] !== 'stale',
+      room: { revision: 1, total_area_m2: i < 3 ? 48 : 12, physical_weight: i < 3 ? 48 : 12, include_in_house_temperature: true },
       comfort: {
         setpoint_c: comfortSetpoints[i],
         bias_c: comfortBiases[i],
@@ -45,6 +53,7 @@ function mockData(path) {
         target_setpoint_c: comfortSetpoints[i] + comfortBiases[i] + (i === 0 ? 0.5 : (i === 5 ? 0.2 : 0)) + (i === 9 ? 0.35 : 0),
       },
       schedule: { enabled: i < 8, day_mask: i < 8 ? 31 : 127, start_min: 360, end_min: 1320, setpoint_c: comfortSetpoints[i] },
+      sensor: { battery_pct: null },
       history: {
         samples: statuses[i] === 'unused' || statuses[i] === 'stale' ? 0 : 36 + i,
         calling_samples: [18,6,9,2,3,12,1,8,2,16,1,3,2,10,7,0,1,0][i],
@@ -62,12 +71,13 @@ function mockData(path) {
     })) };
   }
   if (path === '/forecast') {
+    const baseEpoch = Math.floor(Date.now() / 3600000) * 3600;
     const hours = Array.from({ length: 72 }, (_, h) => {
       const dayPhase = Math.sin((h - 8) / 24 * Math.PI * 2);
       const temp = 3.5 + dayPhase * 3.4 - Math.max(0, h - 36) * 0.04;
       const wind = 4.5 + Math.sin(h / 8) * 2.2 + (h > 18 && h < 34 ? 3.2 : 0);
       const solar = Math.max(0, Math.sin((h % 24 - 6) / 12 * Math.PI)) * 420;
-      return { h, temp_c: temp, wind_ms: wind, wind_dir_deg: 235 + Math.sin(h / 9) * 55, solar_wm2: solar };
+      return { h, timestamp_s: baseEpoch + h * 3600, temp_c: temp, wind_ms: wind, wind_dir_deg: 235 + Math.sin(h / 9) * 55, solar_wm2: solar };
     });
     return {
     status: 'ok',
@@ -75,7 +85,7 @@ function mockData(path) {
     weather: { max_boost_c: 1.5 },
     fetch_pending: false,
     last_fetch_age_s: 420,
-    cache: { hours: 72, min_temp_c: -2.1, max_wind_ms: 13.4, peak_wind_dir_deg: 275, max_solar_wm2: 180, restored: false },
+    cache: { hours: 72, min_temp_c: -2.1, max_wind_ms: 13.4, peak_wind_dir_deg: 275, max_solar_wm2: 180, fetch_epoch_s: baseEpoch, provider_timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, decision_start_index: 0, restored: false },
     last_error: '',
     commands: { active: 2, sent: 1, skipped: 1, failed: 0, blocked_stale: 1, blocked_unreachable: 0, blocked_untrusted: 0 },
     hours,
@@ -86,21 +96,23 @@ function mockData(path) {
   };
   }
   if (path === '/strategy') return {
-    physical: { has_temperature: true, temperature_c: 20.8, contributing_zones: 14 },
+    physical: { has_temperature: true, temperature_c: 20.8, contributing_rooms: 14, coverage_ratio: 1, quality: 'healthy', expected_manifolds: 2, contributing_manifolds: 2 },
     weighted_temperature: { available: true, value_c: 20.8, contributing_rooms: 14 },
     comfort: { average_c: 20.7, demand_c: 0.6, demand_zones: 5 },
     driver: { room_id: 'room-03', name: 'Bath', deficit_c: 1.3, priority: 3 },
     schedule: { time_valid: true, active_zones: 8, driver_room_id: 'room-03', driver_name: 'Bath', driver_setpoint_c: 22.0, driver_priority: 3 },
+    house_target: { available: true, value_c: 21.1, source: 'area_weighted_room_targets', contributing_area_m2: 164 },
     heat_source: { enabled: true, mode: 'active' },
   };
   if (path === '/heat-source') return {
     enabled: true,
-    host: 'asgard.local',
+    host: 'heat-source.local',
     port: 80,
-    weighted_temperature_variable: 'virtual_thermostat_input_z1',
+    weighted_temperature_variable: 'house_temperature',
     push_interval_s: 30,
     weighted_temperature: { available: true, value_c: 20.8, contributing_rooms: 14 },
-    push: { has_result: true, ok: true, last_value_c: 20.8, last_push_age_s: 12, failure_count: 0, last_error: '' },
+    send_preview: { available: true, value_c: 20.8, zones: 14, target_setpoint_c: 21.1, target_available: true, mode: 'active' },
+    push: { has_result: true, status: 'confirmed', http_status: 204, requested_value_c: 20.8, confirmed_value_c: 20.8, write_age_s: 12, confirmation_age_s: 12, failure_count: 3, failure_streak: 0, last_error: '' },
   };
   if (path === '/commands') return { commands: [
     { request_id: 'mock-forecast-1', source: 'forecast', reason: 'wind preload', room_id: 'room-01', name: 'Living', node_index: 0, zone_index: 0, requested_offset_c: 0.4, accepted_offset_c: 0.4, created_at_ms: Date.now() - 600000, expires_at_ms: Date.now() + 2100000, result: 'accepted', clamp_applied: false },
@@ -146,14 +158,15 @@ function mockData(path) {
   };
   if (path === '/settings') return {
     coordinator: { name: 'Lune Touch', install_id: 'house-main', site_label: 'Birkemosen', install_mode: 'commissioning' },
+    authority: { leader_node_id: 'v6-a', coordinator_id: 'lune-touch', authentication_configured: true, state: 'touch_normal', reason: 'lease_renewed', generation: 3, lease_remaining_s: 72 },
     weather: { max_boost_c: 1.5 },
   };
   return {};
 }
 
-async function get(path) {
+async function get(path, signal) {
   if (window.LUNE_TOUCH_DASHBOARD_CONFIG?.mock) return mockData(path);
-  const response = await fetch(BASE + path, { cache: 'no-store' });
+  const response = await fetch(BASE + path, { cache: 'no-store', signal });
   if (!response.ok) throw new Error(`${path} failed: ${response.status}`);
   const json = await response.json();
   if (json && json.ok === false) throw new Error(json.error?.message || 'API error');
@@ -169,15 +182,22 @@ function queryUrl(path, params = {}) {
 }
 
 async function refreshPaths(paths, { loading = false } = {}) {
+  refreshController?.abort();
+  refreshController = new AbortController();
+  const generation = ++refreshGeneration;
   if (loading) patch({ loading: true, error: '' });
   try {
-    const values = await Promise.all(paths.map(get));
+    const values = await Promise.all(paths.map((path) => get(path, refreshController.signal)));
+    if (generation !== refreshGeneration) return;
     const next = { error: '' };
     paths.forEach((path, index) => {
       const value = values[index];
       if (path === '/overview') next.overview = value;
       if (path === '/nodes') next.nodes = value.nodes || [];
-      if (path === '/zones') next.zones = value.zones || [];
+      if (path === '/zones') {
+        next.rooms = value.rooms || [];
+        next.zones = value.zones || [];
+      }
       if (path === '/strategy') next.strategy = value;
       if (path === '/forecast') next.forecast = value;
       if (path === '/commands') next.commands = value.commands || [];
@@ -189,6 +209,7 @@ async function refreshPaths(paths, { loading = false } = {}) {
     if (loading) next.loading = false;
     patch(next);
   } catch (error) {
+    if (error?.name === 'AbortError' || generation !== refreshGeneration) return;
     patch({ loading: false, error: error.message || String(error) });
   }
 }
@@ -207,6 +228,7 @@ export async function refreshSection(section) {
   if (section === 'weather' || section === 'forecast') return refreshPaths(['/forecast', '/diagnostics', '/settings']);
   if (section === 'heat-source') return refreshPaths(['/heat-source']);
   if (section === 'commands') return refreshPaths(['/commands', '/events']);
+  if (section === 'diagnostics') return refreshPaths(['/nodes', '/zones', '/strategy', '/forecast', '/commands', '/events', '/diagnostics']);
   if (section === 'system' || section === 'settings') return refreshPaths(['/settings', '/diagnostics', '/events']);
   return Promise.resolve();
 }
@@ -215,8 +237,11 @@ async function post(path, body = {}) {
   if (window.LUNE_TOUCH_DASHBOARD_CONFIG?.mock) {
     if (path === '/nodes/scan') return {
       scan: body.hostname || body.ip ? 'probe' : 'known_nodes',
-      discovery: body.hostname || body.ip ? 'manual_probe' : 'manual_or_known_nodes',
+      discovery: body.hostname || body.ip ? 'manual_probe' : 'registered_probe',
       found: [{ id: 'v6-a', hostname: body.hostname || 'lune-v6-a.local', ip: body.ip || '192.168.1.51', model: 'lune-v6', firmware: 'mock', pairing_fingerprint: 'hv6-mock-a', reachable: true, stale: false, source: body.hostname || body.ip ? 'manual_probe' : 'known_node' }],
+    };
+    if (path === '/nodes/refresh') return {
+      scan: 'known_nodes', discovery: 'registered_probe', found: [],
     };
     if (path.includes('/motor-action')) return { result: 'accepted', action: body.action || 'reset_fault', target_node: 'v6-a', zone_index: 0 };
     if (path === '/recovery/reset-registry') return { result: 'reset', registry: 'cleared', ledger: 'cleared', forecast_location: 'kept' };
@@ -239,6 +264,12 @@ async function post(path, body = {}) {
         ? 'Probe or add the V6 node with identity before trusting it'
         : code === 'fingerprint_confirmation_required'
           ? 'Trust requires confirming the displayed V6 fingerprint'
+          : code === 'node_not_found'
+            ? 'The V6 manifold is no longer registered; refresh the node list'
+          : code === 'node_id_too_long'
+            ? 'The V6 manifold name is too long; use a shorter hostname or IP'
+          : code === 'node_id_invalid'
+            ? 'The V6 manifold identity contains unsupported characters'
           : errorJson?.error?.message || code || message;
     } catch {
       // Keep the HTTP status fallback.
@@ -252,11 +283,14 @@ async function post(path, body = {}) {
 
 export const api = {
   scanNodes: (candidate = {}) => post('/nodes/scan', candidate),
+  nodePollStatus: () => get('/nodes'),
+  refreshNodes: () => post('/nodes/refresh'),
   addNode: (node) => post('/nodes', node),
   trustNode: (id, trust, confirm) => post(`/nodes/${encodeURIComponent(id)}/trust`, { trust, confirm }),
   removeNode: (id) => post(`/nodes/${encodeURIComponent(id)}/remove`, { confirm: id }),
   resetRegistry: () => post('/recovery/reset-registry', { confirm: 'reset-registry' }),
   saveZone: (roomId, data) => post(`/zones/${encodeURIComponent(roomId)}`, data),
+  saveRoomAtomic: (roomId, data) => post(`/zones/${encodeURIComponent(roomId)}/room`, data),
   saveComfort: (roomId, data) => post(`/zones/${encodeURIComponent(roomId)}/comfort`, data),
   saveSchedule: (roomId, data) => post(`/zones/${encodeURIComponent(roomId)}/schedule`, data),
   saveForecastProfile: (roomId, data) => post(`/zones/${encodeURIComponent(roomId)}/forecast-profile`, data),

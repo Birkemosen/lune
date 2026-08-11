@@ -84,6 +84,35 @@ void Hv6ValveController::setup() {
     motor_cfg_ = config_store_->get_config().motor;
   }
 
+  if (rev31_backend_enabled_) {
+    rev31_pins_.adc_current = ipropi_pin_;
+    rev31_pins_.motor_enable = nsleep_pin_;
+    rev31_pins_.latch_state = nfault_pin_;
+    rev31_backend_ = new Rev31MotorBackend(rev31_pins_, bemf_threshold_raw_);
+    if (!rev31_backend_->setup()) {
+      ESP_LOGE(TAG, "Rev 3.1 GPIO/ADC backend setup failed; motors remain inhibited");
+      this->mark_failed();
+      return;
+    }
+
+    const bool armed = rev31_backend_->arm_latch();
+    any_driver_present_ = true;  // Three populated dual bridges; actuator presence is learned on first move.
+    for (uint8_t i = 0; i < NUM_ZONES; ++i) {
+      telemetry_[i].present = true;
+      telemetry_[i].presence_known = false;
+    }
+    drivers_enabled_ = armed && auto_start_calibration_;
+    auto_start_done_ = !auto_start_calibration_;
+    ripple_enabled_ = true;  // For this backend the existing motion counter is fed by BEMF coast samples.
+    if (!drivers_enabled_)
+      rev31_backend_->coast();
+    ESP_LOGI(TAG,
+             "Rev 3.1 backend ready: latch=%s, automatic motion=%s, BEMF threshold=%u raw",
+             armed ? "armed" : "faulted",
+             auto_start_calibration_ ? "enabled" : "disabled pending manual enable",
+             bemf_threshold_raw_);
+  } else {
+
   // Configure nSLEEP (output, default LOW = sleep)
   gpio_config_t nsleep_cfg = {};
   nsleep_cfg.pin_bit_mask = 1ULL << nsleep_pin_;
@@ -171,9 +200,11 @@ void Hv6ValveController::setup() {
     ripple_enabled_ = false;
   }
 
-  // Wake DRV8215 chips for initial probe/setup only.
+  // Wake DRV8215 chips for initial probe/setup only.  Keep the bus asleep
+  // after probing if this PCB has no matching drivers; otherwise a pinout or
+  // power mismatch can draw current and destabilise WiFi before networking is
+  // even started.
   set_nsleep_(true);
-  drivers_enabled_ = true;
   vTaskDelay(pdMS_TO_TICKS(5));
 
   // Create DRV8215 instances
@@ -186,20 +217,31 @@ void Hv6ValveController::setup() {
     } else {
       telemetry_[i].present = true;
       telemetry_[i].presence_known = true;
+      any_driver_present_ = true;
     }
   }
 
   log_startup_self_test_();
 
-  // Boot default: keep motor drivers enabled.
-  // In development mode we keep nSLEEP high to avoid brownout/reset when toggling it.
-  if (!DEVELOPMENT_KEEP_NSLEEP_AWAKE)
-    set_nsleep_(true);
-  drivers_enabled_ = true;
-  ESP_LOGI(TAG, "Motors start enabled; auto-calibration will run in %" PRIu32 "s",
-           AUTO_START_DELAY_MS / 1000);
+  // Boot default: only keep the motor bus awake when at least one expected
+  // driver answered.  With no ACKs, leave nSLEEP low and permanently skip the
+  // automatic calibration pass.  This is both safer for a mismatched PCB and
+  // prevents a floating IPROPI input from producing false critical faults.
+  if (any_driver_present_) {
+    if (!DEVELOPMENT_KEEP_NSLEEP_AWAKE)
+      set_nsleep_(true);
+    drivers_enabled_ = true;
+    ESP_LOGI(TAG, "Motors start enabled; auto-calibration will run in %" PRIu32 "s",
+             AUTO_START_DELAY_MS / 1000);
+  } else {
+    set_nsleep_(false);
+    drivers_enabled_ = false;
+    auto_start_done_ = true;
+    ESP_LOGW(TAG, "No DRV8215 drivers detected; motors remain disabled and auto-calibration is skipped");
+  }
   if (DEVELOPMENT_KEEP_NSLEEP_AWAKE)
     ESP_LOGW(TAG, "Development mode: nSLEEP kept HIGH to avoid enable-time reboot");
+  }
 
   // Load persisted calibration data
   if (config_store_) {
@@ -254,6 +296,16 @@ void Hv6ValveController::setup() {
 
 void Hv6ValveController::dump_config() {
   ESP_LOGCONFIG(TAG, "HV6 Valve Controller:");
+  ESP_LOGCONFIG(TAG, "  backend: %s", rev31_backend_enabled_ ? "rev31_gpio" : "drv8215_i2c");
+  if (rev31_backend_enabled_) {
+    ESP_LOGCONFIG(TAG, "  MOTOR_ENABLE GPIO%d, LATCH_STATE GPIO%d, ADC_CURRENT GPIO%d, ADC_BEMF GPIO%d",
+                  nsleep_pin_, nfault_pin_, ipropi_pin_, rev31_pins_.adc_bemf);
+    ESP_LOGCONFIG(TAG, "  ADDR GPIO%d/%d/%d, DIR GPIO%d, LATCH_ARM GPIO%d, auto-calibration=%s",
+                  rev31_pins_.address0, rev31_pins_.address1, rev31_pins_.address2,
+                  rev31_pins_.terminal_direction, rev31_pins_.latch_arm,
+                  auto_start_calibration_ ? "yes" : "no");
+    return;
+  }
   ESP_LOGCONFIG(TAG, "  nSLEEP pin: GPIO%d", nsleep_pin_);
   ESP_LOGCONFIG(TAG, "  nFAULT pin: GPIO%d", nfault_pin_);
   ESP_LOGCONFIG(TAG, "  IPROPI pin: GPIO%d  ripple=%s  dma=%s", ipropi_pin_,
@@ -327,6 +379,33 @@ void Hv6ValveController::loop() {
 // =============================================================================
 
 void Hv6ValveController::set_drivers_enabled(bool enabled) {
+  if (enabled && !any_driver_present_) {
+    ESP_LOGW(TAG, "Motor enable rejected: no compatible driver backend detected");
+    return;
+  }
+
+  if (rev31_backend_enabled_) {
+    if (!rev31_backend_)
+      return;
+    if (!enabled) {
+      if (motor_turning_)
+        stop_motor_(false);
+      rev31_backend_->coast();
+      drivers_enabled_ = false;
+      ESP_LOGI(TAG, "Rev 3.1 motor path DISABLED");
+      return;
+    }
+    if (rev31_backend_->fault_latched() && !rev31_backend_->arm_latch()) {
+      drivers_enabled_ = false;
+      ESP_LOGE(TAG, "Rev 3.1 motor enable rejected: hardware fault remains latched");
+      return;
+    }
+    rev31_backend_->coast();
+    drivers_enabled_ = true;
+    ESP_LOGI(TAG, "Rev 3.1 motor path ENABLED (decoder remains inhibited until a move)");
+    return;
+  }
+
   if (enabled == drivers_enabled_)
     return;
 
@@ -716,8 +795,15 @@ bool Hv6ValveController::reset_fault(uint8_t zone) {
     return false;
   }
 
-  if (drivers_[zone] != nullptr)
+  if (rev31_backend_enabled_) {
+    if (!rev31_backend_ || !rev31_backend_->arm_latch()) {
+      ESP_LOGE(TAG, "Zone %d fault reset rejected: Rev 3.1 hardware fault remains active",
+               zone + 1);
+      return false;
+    }
+  } else if (drivers_[zone] != nullptr) {
     drivers_[zone]->clear_fault();
+  }
 
   xSemaphoreTake(telemetry_mutex_, portMAX_DELAY);
   auto &t = telemetry_[zone];
@@ -824,7 +910,7 @@ void Hv6ValveController::run_() {
   TickType_t last_wake = xTaskGetTickCount();
 
   while (true) {
-    // Auto-start: enable drivers and calibrate all zones once after boot delay
+    // Auto-start: enable drivers and calibrate all detected zones once after boot delay
     if (!auto_start_done_ && boot_time_ms_ > 0) {
       uint32_t uptime_ms = static_cast<uint32_t>(esp_timer_get_time() / 1000) - boot_time_ms_;
       if (uptime_ms >= AUTO_START_DELAY_MS) {
@@ -832,6 +918,10 @@ void Hv6ValveController::run_() {
         ESP_LOGI(TAG, "Auto-start: enabling motor drivers and calibrating enabled zones");
         set_drivers_enabled(true);
         for (uint8_t z = 0; z < NUM_ZONES; z++) {
+          if (!telemetry_[z].present) {
+            ESP_LOGW(TAG, "Auto-start: zone %d has no detected driver, skipping calibration", z + 1);
+            continue;
+          }
           bool enabled = true;
           if (config_store_) {
             const auto &cfg = config_store_->get_config();
@@ -1074,19 +1164,28 @@ void Hv6ValveController::execute_move_(uint8_t zone, float target_pct) {
     }
   }
 
-  if (motor_turning_)
-    stop_motor_(true);
+  if (motor_turning_) {
+    if (drive_to_endstop && !endpoint_confirmed_)
+      trigger_fault_(FaultCode::MECHANICAL_OVERRUN,
+                     "drive-to-endstop window expired without qualified endpoint");
+    else
+      stop_motor_(true);
+  }
 
   // Update position
   xSemaphoreTake(telemetry_mutex_, portMAX_DELAY);
   if (current_fault_code_ == FaultCode::NONE) {
     if (drive_to_endstop) {
-      // Endstop reached — position is definitively at the limit
-      telemetry_[zone].current_position_pct = target_pct;
+      if (endpoint_confirmed_) {
+        // Endstop reached — position is definitively at the limit.
+        telemetry_[zone].current_position_pct = target_pct;
+      }
+      // Otherwise retain the previous position: a timeout or unclassified
+      // stop must never be promoted to a confirmed mechanical limit.
     } else if (target_ripples > 0 && learned_ripples > 0 &&
-               ripple_counter_.getRippleCount() > 0) {
+               get_motion_count_() > 0) {
       // Precise position from actual ripple count (safe: DMA stopped in stop_motor_)
-      float actual_pct = (static_cast<float>(ripple_counter_.getRippleCount()) /
+      float actual_pct = (static_cast<float>(get_motion_count_()) /
                           static_cast<float>(learned_ripples)) * 100.0f;
       float new_pos = (dir == MotorDirection::OPEN)
           ? current_pct + actual_pct
@@ -1120,22 +1219,28 @@ float Hv6ValveController::estimate_travel_time_ms_(uint8_t zone, float from_pct,
 // =============================================================================
 
 bool Hv6ValveController::start_motor_(uint8_t zone, MotorDirection dir, bool override_drivers) {
-  if (motor_turning_ || (!drivers_enabled_ && !override_drivers))
+  if (zone >= NUM_ZONES || motor_turning_ || (!drivers_enabled_ && !override_drivers))
     return false;
 
-  DRV8215 *driver = drivers_[zone];
-  if (!driver)
+  DRV8215 *driver = nullptr;
+  if (!rev31_backend_enabled_) {
+    driver = drivers_[zone];
+    if (!driver)
+      return false;
+  } else if (!rev31_backend_) {
     return false;
+  }
 
   // If drivers are physically asleep and we're overriding, temporarily wake nSLEEP
   nsleep_overridden_ = false;
-  if (override_drivers && !drivers_enabled_ && !DEVELOPMENT_KEEP_NSLEEP_AWAKE) {
+  if (!rev31_backend_enabled_ && override_drivers && !drivers_enabled_ && !DEVELOPMENT_KEEP_NSLEEP_AWAKE) {
     set_nsleep_(true);
     vTaskDelay(pdMS_TO_TICKS(5));  // DRV8215 wakeup time
     nsleep_overridden_ = true;
   }
 
-  driver->clear_fault();
+  if (driver)
+    driver->clear_fault();
 
   current_zone_ = zone;
   current_dir_ = dir;
@@ -1164,6 +1269,7 @@ bool Hv6ValveController::start_motor_(uint8_t zone, MotorDirection dir, bool ove
   // just past boost + settle (not the old ~1.2 s) so the high-current close endstop
   // is detected quickly even when the valve starts already closed (pop-off safety).
   drive_to_endstop_active_ = false;
+  endpoint_confirmed_ = false;
   soft_approach_active_ = false;
   endstop_guard_ms_ = motor_cfg_.pwm_boost_ms + ENDSTOP_SETTLE_MS;
   approach_stroke_ripples_ = 0;
@@ -1188,14 +1294,40 @@ bool Hv6ValveController::start_motor_(uint8_t zone, MotorDirection dir, bool ove
   ripple_drive_was_on_ = false;
   fsm_tick_count_ = 0;
   trace_reset_();
+  last_bemf_sample_ms_ = 0;
+  rev31_invalid_bemf_samples_ = 0;
+  rev31_diag_raw_a_ = 0;
+  rev31_diag_raw_b_ = 0;
+  rev31_diag_differential_ = 0;
+  rev31_diag_separation_us_ = 0;
+  rev31_diag_sample_valid_ = 0;
+  rev31_diag_sample_moving_ = 0;
+  rev31_diag_invalid_samples_ = 0;
+  rev31_diag_evidence_count_ = 0;
+  rev31_diag_sample_sequence_ = 0;
+  rev31_diag_motor_runtime_ms_ = 0;
+  rev31_diag_current_ma_x10_ = 0;
+  if (rev31_backend_)
+    rev31_backend_->reset_motion();
 
   if (ripple_enabled_ && adc_continuous_handle_)
     adc_continuous_start(static_cast<adc_continuous_handle_t>(adc_continuous_handle_));
 
-  if (dir == MotorDirection::OPEN)
+  if (rev31_backend_enabled_) {
+    const Rev31Direction hw_dir = dir == MotorDirection::OPEN
+        ? Rev31Direction::REVERSE : Rev31Direction::FORWARD;
+    if (!rev31_backend_->select(zone, hw_dir) || !rev31_backend_->drive()) {
+      motor_turning_ = false;
+      fsm_state_ = MotorFsmState::IDLE;
+      drive_output_enabled_ = false;
+      ESP_LOGE(TAG, "Motor %d start rejected by Rev 3.1 safety backend", zone + 1);
+      return false;
+    }
+  } else if (dir == MotorDirection::OPEN) {
     driver->reverse();
-  else
+  } else {
     driver->forward();
+  }
   drive_output_enabled_ = true;
 
   ESP_LOGI(TAG, "Motor %d started %s", zone + 1,
@@ -1208,7 +1340,9 @@ void Hv6ValveController::stop_motor_(bool record_event) {
     return;
 
   DRV8215 *driver = drivers_[current_zone_];
-  if (driver)
+  if (rev31_backend_enabled_ && rev31_backend_)
+    rev31_backend_->coast();
+  else if (driver)
     driver->coast();
   drive_output_enabled_ = false;
 
@@ -1286,6 +1420,12 @@ void Hv6ValveController::process_tick_() {
   // Check nFAULT — only react to thermal and overcurrent, not stall
   // (DRV8215 stall threshold ~500mA is too high for these valve motors)
   if (!read_nfault_()) {
+    if (rev31_backend_enabled_) {
+      trigger_fault_(FaultCode::UNKNOWN_FAULT,
+                     "persistent hardware fault latch asserted");
+      drivers_enabled_ = false;
+      return;
+    }
     DRV8215 *driver = drivers_[current_zone_];
     if (driver) {
       auto fault = driver->read_fault();
@@ -1366,6 +1506,56 @@ void Hv6ValveController::process_tick_() {
   if (debounce_count_ < 255)
     debounce_count_++;
 
+  // Rev 3.1 proves motion independently of current by briefly inhibiting the
+  // decoder and sampling both motor terminals through the shared 4067.  The
+  // backend restores the original latched direction only after the mandatory
+  // 1 ms coast interval.
+  if (rev31_backend_enabled_ && rev31_backend_ && drive_output_enabled_ &&
+      (last_bemf_sample_ms_ == 0 ||
+       motor_run_time_ms_ - last_bemf_sample_ms_ >= REV31_BEMF_SAMPLE_PERIOD_MS)) {
+    last_bemf_sample_ms_ = motor_run_time_ms_;
+    const auto sample = rev31_backend_->sample_bemf(motor_run_time_ms_, true);
+    rev31_diag_raw_a_.store(static_cast<uint16_t>(sample.raw_a & 0x0FFF),
+                            std::memory_order_relaxed);
+    rev31_diag_raw_b_.store(static_cast<uint16_t>(sample.raw_b & 0x0FFF),
+                            std::memory_order_relaxed);
+    rev31_diag_differential_.store(sample.motion.differential_raw,
+                                   std::memory_order_relaxed);
+    rev31_diag_separation_us_.store(sample.motion.separation_us,
+                                    std::memory_order_relaxed);
+    rev31_diag_sample_valid_.store(sample.motion.valid ? 1 : 0,
+                                   std::memory_order_relaxed);
+    rev31_diag_sample_moving_.store(sample.motion.moving ? 1 : 0,
+                                    std::memory_order_relaxed);
+    rev31_diag_evidence_count_.store(rev31_backend_->motion_evidence_count(),
+                                     std::memory_order_relaxed);
+    rev31_diag_motor_runtime_ms_.store(motor_run_time_ms_,
+                                       std::memory_order_relaxed);
+    rev31_diag_sample_sequence_.fetch_add(1, std::memory_order_relaxed);
+    drive_output_enabled_ = !rev31_backend_->fault_latched();
+    live_ripple_count_.store(rev31_backend_->motion_evidence_count(),
+                             std::memory_order_relaxed);
+    if (!sample.motion.valid) {
+      if (rev31_invalid_bemf_samples_ < UINT8_MAX)
+        rev31_invalid_bemf_samples_++;
+      rev31_diag_invalid_samples_.store(rev31_invalid_bemf_samples_,
+                                        std::memory_order_relaxed);
+      ESP_LOGW(TAG, "BEMF sample rejected (%u/%u): ADC failure or terminal separation %u us exceeds 50 us",
+               rev31_invalid_bemf_samples_, REV31_MAX_INVALID_BEMF_SAMPLES,
+               sample.motion.separation_us);
+      trace_sample_(-1, current_raw_ma_);
+      if (rev31_invalid_bemf_samples_ >= REV31_MAX_INVALID_BEMF_SAMPLES) {
+        trigger_fault_(FaultCode::UNKNOWN_FAULT,
+                       "BEMF endpoint sensor invalid");
+        return;
+      }
+    } else {
+      rev31_invalid_bemf_samples_ = 0;
+      rev31_diag_invalid_samples_ = 0;
+      trace_sample_(-1, current_raw_ma_);
+    }
+  }
+
   // Early already-at-stop — evaluated DURING boost, before the current-filter debounce,
   // so it can fire before sustained boost force pops an already-closed actuator off its
   // pin. The motor commutates within the first tens of ms of the 100%-duty boost, so
@@ -1376,6 +1566,14 @@ void Hv6ValveController::process_tick_() {
       motor_run_time_ms_ >= EARLY_STALL_MS &&
       live_ripple_count_.load(std::memory_order_relaxed) == 0 &&
       current_raw_ma_ >= motor_cfg_.low_current_threshold_ma) {
+    if (rev31_backend_enabled_) {
+      // With no prior motion, current+BEMF cannot distinguish a genuine
+      // already-at-stop condition from a pre-existing mechanical obstruction.
+      // Stop early, but do not promote the ambiguous state to a known endpoint.
+      trigger_fault_(FaultCode::BLOCKED,
+                     "no startup motion under load; endpoint versus jam is ambiguous");
+      return;
+    }
     ESP_LOGI(TAG, "Motor %d endstop (at_stop_early: raw=%.1f mA, t=%" PRIu32 "ms)",
              current_zone_ + 1, current_raw_ma_, motor_run_time_ms_);
     xSemaphoreTake(telemetry_mutex_, portMAX_DELAY);
@@ -1388,6 +1586,7 @@ void Hv6ValveController::process_tick_() {
       t.current_position_pct = 0.0f;
     }
     xSemaphoreGive(telemetry_mutex_);
+    endpoint_confirmed_ = true;
     stop_motor_(true);
     return;
   }
@@ -1402,16 +1601,30 @@ void Hv6ValveController::process_tick_() {
 
 void Hv6ValveController::apply_drive_output_() {
   DRV8215 *driver = drivers_[current_zone_];
-  if (!driver)
+  if (rev31_backend_enabled_ && !rev31_backend_)
     return;
+  if (!rev31_backend_enabled_ && !driver)
+    return;
+
+  auto drive_selected = [&]() -> bool {
+    if (rev31_backend_enabled_)
+      return rev31_backend_->drive();
+    if (current_dir_ == MotorDirection::OPEN)
+      driver->reverse();
+    else
+      driver->forward();
+    return true;
+  };
+  auto coast_selected = [&]() {
+    if (rev31_backend_enabled_)
+      rev31_backend_->coast();
+    else
+      driver->coast();
+  };
 
   if (fsm_state_ == MotorFsmState::BOOST) {
     if (!drive_output_enabled_) {
-      if (current_dir_ == MotorDirection::OPEN)
-        driver->reverse();
-      else
-        driver->forward();
-      drive_output_enabled_ = true;
+      drive_output_enabled_ = drive_selected();
     }
     if (motor_run_time_ms_ >= motor_cfg_.pwm_boost_ms) {
       fsm_state_ = MotorFsmState::HOLD;
@@ -1426,15 +1639,11 @@ void Hv6ValveController::apply_drive_output_() {
 
     if (phase_pos < on_time) {
       if (!drive_output_enabled_) {
-        if (current_dir_ == MotorDirection::OPEN)
-          driver->reverse();
-        else
-          driver->forward();
-        drive_output_enabled_ = true;
+        drive_output_enabled_ = drive_selected();
       }
     } else {
       if (drive_output_enabled_) {
-        driver->coast();
+        coast_selected();
         drive_output_enabled_ = false;
       }
     }
@@ -1486,6 +1695,10 @@ uint8_t Hv6ValveController::effective_hold_duty_() {
 
 void Hv6ValveController::detect_endstop_() {
   bool past_boost = motor_run_time_ms_ >= motor_cfg_.pwm_boost_ms;
+  const bool rev31_motion_observed = rev31_backend_enabled_ && rev31_backend_ &&
+                                     rev31_backend_->motion_observed();
+  const bool rev31_motion_stopped = rev31_backend_enabled_ && rev31_backend_ &&
+      rev31_backend_->motion_stopped_for(motor_run_time_ms_, RIPPLE_STALL_MS);
 
   // --- Fast hard safety cap (low latency) ---
   // Evaluate the absolute over-current cap against the *raw* per-frame current
@@ -1657,6 +1870,36 @@ void Hv6ValveController::detect_endstop_() {
       live_ripple_count_.load(std::memory_order_relaxed) == 0 &&
       current_filtered_ma_ >= motor_cfg_.low_current_threshold_ma;
 
+  if (rev31_backend_enabled_) {
+    // Normal Rev 3.1 endpoint acceptance is two-factor: elevated force plus
+    // previously observed motion that has now ceased.  Current alone may stop
+    // the drive as a safety event, but cannot establish a position endpoint.
+    threshold_endstop = threshold_endstop && rev31_motion_observed && rev31_motion_stopped;
+    slope_endstop = slope_endstop && rev31_motion_observed && rev31_motion_stopped;
+    open_fast_endstop = open_fast_endstop && rev31_motion_observed && rev31_motion_stopped;
+    stall_endstop = stall_endstop && rev31_motion_observed && rev31_motion_stopped;
+
+    if (already_at_stop) {
+      trigger_fault_(FaultCode::BLOCKED,
+                     "no qualified motion; endpoint versus jam is ambiguous");
+      return;
+    }
+
+    if (hard_cap_endstop && !(rev31_motion_observed && rev31_motion_stopped)) {
+      trigger_fault_(FaultCode::OVERCURRENT,
+                     "current safety cap reached without qualified stopped-motion endpoint");
+      return;
+    }
+
+    const bool stopped_under_load = rev31_motion_observed && rev31_motion_stopped &&
+        current_filtered_ma_ >= motor_cfg_.low_current_threshold_ma;
+    if (stopped_under_load && !calibrating_ && !drive_to_endstop_active_) {
+      trigger_fault_(FaultCode::BLOCKED,
+                     "motion stopped under load outside a commanded endpoint window");
+      return;
+    }
+  }
+
   if (!threshold_endstop && !slope_endstop && !hard_cap_endstop && !stall_endstop &&
       !already_at_stop && !open_fast_endstop)
     return;
@@ -1682,6 +1925,7 @@ void Hv6ValveController::detect_endstop_() {
   }
   xSemaphoreGive(telemetry_mutex_);
 
+  endpoint_confirmed_ = true;
   stop_motor_(true);
 }
 
@@ -1746,7 +1990,7 @@ void Hv6ValveController::detect_pin_engagement_() {
 
   if (pin_detect_sustained_ >= PIN_ENGAGE_DEBOUNCE_TICKS) {
     pin_detected_ = true;
-    pin_detected_ripples_ = ripple_counter_.getRippleCount();
+    pin_detected_ripples_ = get_motion_count_();
     ESP_LOGI(TAG, "Motor %d pin engagement at ripple %" PRIu32
              " (baseline=%.1f mA, current=%.1f mA)",
              current_zone_ + 1, pin_detected_ripples_,
@@ -1959,6 +2203,13 @@ float Hv6ValveController::adc_raw_to_ma_(int raw) {
 }
 
 float Hv6ValveController::read_current_ma_() {
+  if (rev31_backend_enabled_ && rev31_backend_) {
+    latest_current_ma_ = rev31_backend_->read_current_ma();
+    rev31_diag_current_ma_x10_.store(
+        static_cast<int32_t>(std::lround(latest_current_ma_ * 10.0f)),
+        std::memory_order_relaxed);
+    return latest_current_ma_;
+  }
   // With DMA ripple task running, latest_current_ma_ is updated at ~60 Hz
   // (per 17 ms frame) — more than sufficient for the 10 ms FSM tick.
   if (ripple_enabled_)
@@ -1972,11 +2223,26 @@ float Hv6ValveController::read_current_ma_() {
 }
 
 void Hv6ValveController::set_nsleep_(bool enabled) {
+  if (rev31_backend_enabled_) {
+    // Rev 3.1 MOTOR_ENABLE is a per-move decoder gate, not a global nSLEEP.
+    // A generic enable request only arms policy; it must never energize a motor.
+    if (!enabled && rev31_backend_)
+      rev31_backend_->coast();
+    return;
+  }
   gpio_set_level(nsleep_pin_, enabled ? 1 : 0);
 }
 
 bool Hv6ValveController::read_nfault_() {
+  if (rev31_backend_enabled_ && rev31_backend_)
+    return !rev31_backend_->fault_latched();
   return gpio_get_level(nfault_pin_) == 1;
+}
+
+uint32_t Hv6ValveController::get_motion_count_() const {
+  if (rev31_backend_enabled_ && rev31_backend_)
+    return rev31_backend_->motion_evidence_count();
+  return ripple_counter_.getRippleCount();
 }
 
 void Hv6ValveController::save_telemetry_(uint8_t zone) {
@@ -2044,7 +2310,7 @@ uint32_t Hv6ValveController::calibration_pass_(uint8_t zone, MotorDirection dir)
 
   ESP_LOGI(TAG, "Calibration pass %s zone %d: %" PRIu32 "ms, %" PRIu32 " ripples",
            dir == MotorDirection::CLOSE ? "CLOSE" : "OPEN",
-           zone + 1, elapsed, ripple_counter_.getRippleCount());
+           zone + 1, elapsed, get_motion_count_());
 
   vTaskDelay(pdMS_TO_TICKS(500));
   return elapsed;
@@ -2132,7 +2398,7 @@ void Hv6ValveController::run_calibration_(uint8_t zone) {
 
     // Pass 2: open fully (measure opening travel)
     uint32_t open_ms = calibration_pass_(zone, MotorDirection::OPEN);
-    uint32_t open_ripples = ripple_counter_.getRippleCount();
+    uint32_t open_ripples = get_motion_count_();
     if (open_ms == 0) {
       ESP_LOGW(TAG, "Calibration zone %d: open pass failed", zone + 1);
       break;
@@ -2140,7 +2406,7 @@ void Hv6ValveController::run_calibration_(uint8_t zone) {
 
     // Pass 3: close fully again (measure closing travel + compute deadzone)
     uint32_t close2_ms = calibration_pass_(zone, MotorDirection::CLOSE);
-    uint32_t close2_ripples = ripple_counter_.getRippleCount();
+    uint32_t close2_ripples = get_motion_count_();
     if (close2_ms == 0) {
       ESP_LOGW(TAG, "Calibration zone %d: second close failed", zone + 1);
       break;
@@ -2245,7 +2511,27 @@ void Hv6ValveController::trace_sample_(int raw_adc, float current_ma) {
   sample.t_ms = static_cast<uint32_t>((now_us - trace_start_us_) / 1000);
   sample.ripple_count = live_ripple_count_.load(std::memory_order_relaxed);
   sample.current_ma_x10 = static_cast<int16_t>(current_ma * 10.0f);
-  sample.adc_raw = static_cast<uint16_t>(raw_adc & 0xFFF);
+  sample.adc_raw = raw_adc < 0 ? 0xFFFF : static_cast<uint16_t>(raw_adc & 0x0FFF);
+  if (rev31_backend_enabled_) {
+    sample.bemf_raw_a = rev31_diag_raw_a_.load(std::memory_order_relaxed);
+    sample.bemf_raw_b = rev31_diag_raw_b_.load(std::memory_order_relaxed);
+    sample.bemf_differential_raw =
+        rev31_diag_differential_.load(std::memory_order_relaxed);
+    sample.bemf_separation_us =
+        rev31_diag_separation_us_.load(std::memory_order_relaxed);
+    sample.bemf_valid = rev31_diag_sample_valid_.load(std::memory_order_relaxed);
+    sample.bemf_moving = rev31_diag_sample_moving_.load(std::memory_order_relaxed);
+    sample.invalid_bemf_samples =
+        rev31_diag_invalid_samples_.load(std::memory_order_relaxed);
+  } else {
+    sample.bemf_raw_a = 0xFFFF;
+    sample.bemf_raw_b = 0xFFFF;
+    sample.bemf_differential_raw = 0;
+    sample.bemf_separation_us = 0xFFFF;
+    sample.bemf_valid = 0;
+    sample.bemf_moving = 0;
+    sample.invalid_bemf_samples = 0;
+  }
   sample.drive_on = drive_output_enabled_ ? 1 : 0;
 
   trace_write_index_++;
@@ -2267,6 +2553,25 @@ uint16_t Hv6ValveController::get_motor_trace_sample_count() const {
   return count;
 }
 
+bool Hv6ValveController::get_motor_trace_sample(
+    uint16_t logical_index, MotorTraceSample *out) const {
+  if (trace_mutex_ == nullptr || trace_samples_ == nullptr || out == nullptr)
+    return false;
+
+  xSemaphoreTake(trace_mutex_, portMAX_DELAY);
+  const uint16_t count = trace_wrapped_ ? TRACE_MAX_SAMPLES : trace_write_index_;
+  if (logical_index >= count) {
+    xSemaphoreGive(trace_mutex_);
+    return false;
+  }
+  const uint16_t oldest = trace_wrapped_ ? trace_write_index_ : 0;
+  const uint16_t physical_index = static_cast<uint16_t>(
+      (oldest + logical_index) % TRACE_MAX_SAMPLES);
+  *out = trace_samples_[physical_index];
+  xSemaphoreGive(trace_mutex_);
+  return true;
+}
+
 void Hv6ValveController::clear_motor_trace() {
   if (trace_mutex_ == nullptr)
     return;
@@ -2277,6 +2582,33 @@ void Hv6ValveController::clear_motor_trace() {
   if (trace_samples_ != nullptr)
     memset(trace_samples_, 0, TRACE_MAX_SAMPLES * sizeof(MotorTraceSample));
   xSemaphoreGive(trace_mutex_);
+}
+
+Rev31Diagnostics Hv6ValveController::get_rev31_diagnostics() const {
+  Rev31Diagnostics result;
+  result.backend_enabled = rev31_backend_enabled_;
+  result.motor_busy = motor_turning_.load(std::memory_order_acquire);
+  result.drive_on = drive_output_enabled_.load(std::memory_order_acquire);
+  result.drivers_enabled = drivers_enabled_.load(std::memory_order_acquire);
+  result.latch_faulted = rev31_backend_enabled_ &&
+      (!rev31_backend_ || rev31_backend_->fault_latched());
+  result.sample_valid = rev31_diag_sample_valid_.load(std::memory_order_relaxed) != 0;
+  result.sample_moving = rev31_diag_sample_moving_.load(std::memory_order_relaxed) != 0;
+  result.bemf_raw_a = rev31_diag_raw_a_.load(std::memory_order_relaxed);
+  result.bemf_raw_b = rev31_diag_raw_b_.load(std::memory_order_relaxed);
+  result.bemf_differential_raw = rev31_diag_differential_.load(std::memory_order_relaxed);
+  result.sample_separation_us = rev31_diag_separation_us_.load(std::memory_order_relaxed);
+  result.bemf_threshold_raw = bemf_threshold_raw_;
+  result.consecutive_invalid_samples =
+      rev31_diag_invalid_samples_.load(std::memory_order_relaxed);
+  result.motion_evidence_count =
+      rev31_diag_evidence_count_.load(std::memory_order_relaxed);
+  result.sample_sequence = rev31_diag_sample_sequence_.load(std::memory_order_relaxed);
+  result.motor_runtime_ms = rev31_diag_motor_runtime_ms_.load(std::memory_order_relaxed);
+  result.current_ma = static_cast<float>(
+      rev31_diag_current_ma_x10_.load(std::memory_order_relaxed)) / 10.0f;
+  result.fault = current_fault_code_.load(std::memory_order_acquire);
+  return result;
 }
 
 }  // namespace hv6

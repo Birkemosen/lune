@@ -9,10 +9,12 @@ DEVICE_DIR ?= devices/lune-touch
 CONFIG_PATH ?= $(ROOT_ABS)/$(DEVICE_DIR)/$(CONFIG)
 ESPHOME ?= $(if $(wildcard $(ROOT_ABS)/.venv313/bin/esphome),$(ROOT_ABS)/.venv313/bin/esphome,$(if $(wildcard $(ROOT_ABS)/.venv/bin/esphome),$(ROOT_ABS)/.venv/bin/esphome,esphome))
 PIO ?= $(if $(wildcard $(ROOT_ABS)/.venv313/bin/platformio),$(ROOT_ABS)/.venv313/bin/platformio,$(if $(wildcard $(ROOT_ABS)/.venv/bin/platformio),$(ROOT_ABS)/.venv/bin/platformio,platformio))
+ESPTOOL ?= $(if $(wildcard $(ROOT_ABS)/.venv313/bin/esptool),$(ROOT_ABS)/.venv313/bin/esptool,$(if $(wildcard $(ROOT_ABS)/.venv/bin/esptool),$(ROOT_ABS)/.venv/bin/esptool,esptool))
 PLATFORMIO_CORE_DIR ?= $(ROOT_ABS)/.cache/platformio
 CXX ?= clang++
 BUILD_ROOT ?= $(ROOT_ABS)/$(DEVICE_DIR)/configurations/.esphome/build/$(BUILD_NAME)
 FIRMWARE_BIN ?= $(BUILD_ROOT)/.pio/build/$(BUILD_NAME)/firmware.bin
+PARTITION_BIN ?= $(BUILD_ROOT)/.pio/build/$(BUILD_NAME)/partitions.bin
 OTA_SLOT_BYTES ?= 6553600
 OTA_WARN_PERCENT ?= 85
 HOST ?=
@@ -30,16 +32,21 @@ FORECAST_TEST_DIR := tests/forecast
 FORECAST_SRCS := $(FORECAST_COMPONENT_DIR)/forecast_model.cpp \
                  $(FORECAST_TEST_DIR)/test_forecast_model.cpp
 FORECAST_OUT ?= /tmp/test_lune_touch_forecast_model
+FORECAST_TIMELINE_OUT ?= /tmp/test_lune_touch_forecast_timeline
 
 COORDINATOR_COMPONENT_DIR := components/lune_touch_coordinator
 COORDINATOR_TEST_DIR := tests/coordinator
 COORDINATOR_SRCS := $(COORDINATOR_COMPONENT_DIR)/coordinator_model.cpp \
                     $(COORDINATOR_TEST_DIR)/test_coordinator_model.cpp
 COORDINATOR_OUT ?= /tmp/test_lune_touch_coordinator_model
+ASGARD_URL_OUT ?= /tmp/test_lune_touch_asgard_url
+ASGARD_ADAPTER_OUT ?= /tmp/test_lune_touch_asgard_adapter
+ODIN_PLAN_OUT ?= /tmp/test_lune_touch_odin_plan
+SIMULATION_OUT ?= /tmp/test_lune_touch_end_to_end_simulation
 
-.PHONY: help check ensure-secrets-link config build build-verify ota-size-check ota deploy monitor \
+.PHONY: help check ensure-secrets-link config build build-verify ota-size-check ota deploy install-registry-partition monitor \
         config-mini build-mini deploy-mini ota-mini dashboard dashboard-tooling dashboard-build dashboard-watch \
-        test test-forecast test-coordinator clean
+        test test-forecast test-coordinator test-asgard-url test-asgard-adapter test-odin-plan test-simulation test-dashboard test-display clean
 
 help:
 	@echo "Lune Touch coordinator tasks"
@@ -54,6 +61,7 @@ help:
 	@echo "  make deploy           Build + upload Lune Touch (USB or HOST OTA)"
 	@echo "  make deploy PORT=/dev/cu.usbmodemXXXX"
 	@echo "  make deploy HOST=192.168.x.x"
+	@echo "  make install-registry-partition PORT=/dev/cu.usbmodemXXXX  One-time 64 KiB Touch registry partition install"
 	@echo "  make monitor          Open serial monitor on PORT"
 	@echo "  make monitor PORT=/dev/cu.usbmodemXXXX"
 	@echo "  make dashboard-build  Build Lune Touch dashboard bundle"
@@ -142,6 +150,16 @@ deploy: build
 		PLATFORMIO_CORE_DIR=$(PLATFORMIO_CORE_DIR) $(PIO) run -d $(BUILD_ROOT) -t upload --upload-port $$AUTO_PORT; \
 	fi
 
+# Writes only the partition table at 0x8000. It preserves the existing WiFi
+# NVS and application slots; run it once over USB before flashing firmware
+# that uses the dedicated touchreg partition.
+install-registry-partition: build
+	@if [ -z "$(SERIAL_PORT)" ]; then \
+		echo "No serial port detected. Use PORT=/dev/cu.usbmodemXXXX"; \
+		exit 1; \
+	fi
+	$(ESPTOOL) --chip esp32s3 --port $(SERIAL_PORT) write-flash 0x8000 $(PARTITION_BIN)
+
 monitor: check
 	@if [ -z "$(SERIAL_PORT)" ]; then \
 		echo "No serial port detected. Use PORT=/dev/cu.usbmodemXXXX"; \
@@ -153,12 +171,36 @@ monitor: check
 test-forecast:
 	$(CXX) -std=c++17 -O2 -Wall -Wextra -I $(FORECAST_COMPONENT_DIR) $(FORECAST_SRCS) -o $(FORECAST_OUT) -lm
 	$(FORECAST_OUT)
+	$(CXX) -std=c++17 -O2 -Wall -Wextra -I $(COORDINATOR_COMPONENT_DIR) $(FORECAST_TEST_DIR)/test_forecast_timeline.cpp -o $(FORECAST_TIMELINE_OUT)
+	$(FORECAST_TIMELINE_OUT)
 
 test-coordinator:
 	$(CXX) -std=c++17 -O2 -Wall -Wextra -I $(COORDINATOR_COMPONENT_DIR) $(COORDINATOR_SRCS) -o $(COORDINATOR_OUT)
 	$(COORDINATOR_OUT)
 
-test: test-forecast test-coordinator
+test-asgard-url:
+	$(CXX) -std=c++17 -O2 -Wall -Wextra -I components/lune_touch_coordinator tests/asgard_url/test_asgard_url.cpp -o $(ASGARD_URL_OUT)
+	$(ASGARD_URL_OUT)
+
+test-asgard-adapter:
+	$(CXX) -std=c++17 -O2 -Wall -Wextra -I components/lune_touch_coordinator tests/asgard_adapter/test_asgard_adapter.cpp -o $(ASGARD_ADAPTER_OUT)
+	$(ASGARD_ADAPTER_OUT)
+
+test-odin-plan:
+	$(CXX) -std=c++17 -O2 -Wall -Wextra -I components/lune_touch_coordinator tests/odin_plan/test_odin_plan.cpp -o $(ODIN_PLAN_OUT)
+	$(ODIN_PLAN_OUT)
+
+test-simulation:
+	$(CXX) -std=c++17 -O2 -Wall -Wextra -I components/lune_touch_coordinator -I components/hv6_forecast -I ../lune-v6/components/hv6_dashboard components/lune_touch_coordinator/coordinator_model.cpp components/hv6_forecast/forecast_model.cpp tests/simulation/test_end_to_end_simulation.cpp -o $(SIMULATION_OUT) -lm
+	$(SIMULATION_OUT)
+
+test: test-forecast test-coordinator test-asgard-url test-asgard-adapter test-odin-plan test-simulation test-dashboard test-display
+
+test-dashboard:
+	sh tests/dashboard/test_phase8_overview.sh
+
+test-display:
+	sh tests/display/test_phase8_display.sh
 
 dashboard: dashboard-build
 

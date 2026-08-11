@@ -308,7 +308,7 @@ body::before {
   grid-template-columns: 1fr;
 }
 
-.settings-heat-source-grid {
+.settings-hydraulic-grid {
   grid-template-columns: 1fr;
 }
 
@@ -316,7 +316,7 @@ body::before {
   grid-template-columns: 1fr;
 }
 
-.settings-heat-source-stack,
+.settings-hydraulic-stack,
 .manual-control-col {
   display: grid;
   gap: 12px;
@@ -336,7 +336,7 @@ body::before {
 .settings-group-grid > * + *,
 .settings-group .ui-card + .ui-card,
 .settings-group .settings-card + .settings-card,
-.settings-heat-source-stack > * + * {
+.settings-hydraulic-stack > * + * {
   padding-top: 12px;
   border-top: 1px dashed var(--divider-dashed);
 }
@@ -424,7 +424,7 @@ body::before {
   border-bottom-color: var(--panel-border-soft);
 }
 
-.diagnostics-group .asgard-bridge-status-card .setpoint-box {
+.diagnostics-group .authority-card .setpoint-box {
   padding: 10px 0 12px;
   border: 0;
   border-top: 1px solid var(--panel-border-soft);
@@ -587,11 +587,10 @@ const template = (ctx) => `
                 <div class="settings-manifold-slot"></div>
               </div>
             </div>
-            <div class="settings-group settings-heat-source-group">
-              <div class="settings-group-head"><span class="settings-group-title" data-i18n="settings.group.heatSource">Heat Source</span></div>
-              <div class="settings-group-grid settings-heat-source-grid">
-                <div class="settings-asgard-slot"></div>
-                <div class="settings-heat-source-stack">
+            <div class="settings-group settings-hydraulic-group">
+              <div class="settings-group-head"><span class="settings-group-title" data-i18n="settings.group.hydraulic">Hydraulic Safety</span></div>
+              <div class="settings-group-grid settings-hydraulic-grid">
+                <div class="settings-hydraulic-stack">
                   <div class="settings-min-flow-slot"></div>
                   <div class="settings-preheat-slot"></div>
                 </div>
@@ -654,7 +653,6 @@ component({
     el.querySelector('.zone-room-slot').appendChild(mountComponent('zone-room-card'));
 
     el.querySelector('.settings-manifold-slot').appendChild(mountComponent('settings-manifold-card'));
-    el.querySelector('.settings-asgard-slot').appendChild(mountComponent('settings-asgard-card'));
     el.querySelector('.settings-min-flow-slot').appendChild(mountComponent('settings-minimum-flow-card'));
     el.querySelector('.settings-preheat-slot').appendChild(mountComponent('smart-preheat-card'));
     el.querySelector('.settings-motor-cal-slot').appendChild(mountComponent('settings-motor-calibration-card'));
@@ -666,7 +664,6 @@ component({
     manualCol.appendChild(mountComponent('diag-zone-motor-card', { zone: getDashboardValue('selectedZone') || 1 }));
     const healthGrid = el.querySelector('.diag-health-grid');
     healthGrid.appendChild(mountComponent('connectivity-card'));
-    healthGrid.appendChild(mountComponent('asgard-bridge-status-card'));
     healthGrid.appendChild(mountComponent('diag-system-card'));
     healthGrid.appendChild(mountComponent('diag-i2c'));
     const actionsGrid = el.querySelector('.diag-actions-grid');

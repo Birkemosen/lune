@@ -82,6 +82,34 @@ bool load_section(nvs_handle_t handle, const char *key, uint32_t version, T &out
   return true;
 }
 
+// Firmware before the manifold/Touch split stored the three Touch credentials
+// at the tail of the legacy heat-source section. Import them once so an upgrade does
+// not silently orphan the coordinator authentication key.
+struct LegacyAuthoritySection {
+  bool enabled;
+  bool coordinator;
+  char host[64];
+  uint16_t port;
+  char entity_name[48];
+  uint16_t push_interval_s;
+  char peer_host[64];
+  uint16_t peer_port;
+  uint16_t peer_stale_after_s;
+  char authority_installation_id[32];
+  char authority_coordinator_id[32];
+  char authority_shared_key[64];
+};
+
+bool load_legacy_authority(nvs_handle_t handle, AuthorityConfig &out) {
+  LegacyAuthoritySection legacy{};
+  if (!load_section(handle, "asgard", 2, legacy))
+    return false;
+  trim_copy(out.installation_id, sizeof(out.installation_id), legacy.authority_installation_id);
+  trim_copy(out.coordinator_id, sizeof(out.coordinator_id), legacy.authority_coordinator_id);
+  trim_copy(out.shared_key, sizeof(out.shared_key), legacy.authority_shared_key);
+  return out.installation_id[0] || out.coordinator_id[0] || out.shared_key[0];
+}
+
 
 }  // namespace
 
@@ -256,6 +284,18 @@ void Hv6ConfigStore::update_zone(uint8_t zone, const ZoneConfig &zone_cfg) {
   mark_dirty();
 }
 
+void Hv6ConfigStore::update_system(const SystemConfig &system) {
+  if (mutex_ == nullptr) {
+    config_.system = system;
+    mark_dirty();
+    return;
+  }
+  xSemaphoreTake(mutex_, portMAX_DELAY);
+  config_.system = system;
+  xSemaphoreGive(mutex_);
+  mark_dirty();
+}
+
 void Hv6ConfigStore::update_control(const ControlConfig &ctrl) {
   if (mutex_ == nullptr) {
     config_.control = ctrl;
@@ -337,36 +377,28 @@ HeliosConfig Hv6ConfigStore::get_helios_config() const {
   return copy;
 }
 
-AsgardConfig Hv6ConfigStore::get_asgard_config() const {
+AuthorityConfig Hv6ConfigStore::get_authority_config() const {
   if (mutex_ == nullptr)
-    return config_.asgard;
+    return config_.authority;
   xSemaphoreTake(mutex_, portMAX_DELAY);
-  AsgardConfig copy = config_.asgard;
+  AuthorityConfig copy = config_.authority;
   xSemaphoreGive(mutex_);
   return copy;
 }
 
-void Hv6ConfigStore::update_asgard(const AsgardConfig &asgard) {
-  AsgardConfig sanitized = asgard;
-  trim_copy(sanitized.host, sizeof(sanitized.host), asgard.host);
-  trim_copy(sanitized.entity_name, sizeof(sanitized.entity_name), asgard.entity_name);
-  trim_copy(sanitized.peer_host, sizeof(sanitized.peer_host), asgard.peer_host);
-  if (sanitized.port == 0)
-    sanitized.port = 80;
-  if (sanitized.peer_port == 0)
-    sanitized.peer_port = 80;
-  if (sanitized.entity_name[0] == '\0')
-    strncpy(sanitized.entity_name, "virtual_thermostat_input_z1", sizeof(sanitized.entity_name) - 1);
-  sanitized.push_interval_s = std::max<uint16_t>(5, sanitized.push_interval_s);
-  sanitized.peer_stale_after_s = std::max<uint16_t>(30, sanitized.peer_stale_after_s);
+void Hv6ConfigStore::update_authority(const AuthorityConfig &authority) {
+  AuthorityConfig sanitized = authority;
+  trim_copy(sanitized.installation_id, sizeof(sanitized.installation_id), authority.installation_id);
+  trim_copy(sanitized.coordinator_id, sizeof(sanitized.coordinator_id), authority.coordinator_id);
+  trim_copy(sanitized.shared_key, sizeof(sanitized.shared_key), authority.shared_key);
 
   if (mutex_ == nullptr) {
-    config_.asgard = sanitized;
+    config_.authority = sanitized;
     mark_dirty();
     return;
   }
   xSemaphoreTake(mutex_, portMAX_DELAY);
-  config_.asgard = sanitized;
+  config_.authority = sanitized;
   xSemaphoreGive(mutex_);
   mark_dirty();
 }
@@ -510,7 +542,7 @@ bool Hv6ConfigStore::load_zone_config_(nvs_handle_t handle) {
 
   uint32_t version = 0;
   memcpy(&version, blob, sizeof(uint32_t));
-  if (version != ZONE_CONFIG_VERSION)
+  if (!zone_config_blob_is_current(version, read_size))
     return false;
 
   xSemaphoreTake(mutex_, portMAX_DELAY);
@@ -631,7 +663,10 @@ void Hv6ConfigStore::load_config_() {
   had_all_sections &= load_section(handle, KEY_MOTOR_CFG, MOTOR_CONFIG_VERSION, config_.motor);
   had_all_sections &= load_section(handle, KEY_MANIFOLD, MANIFOLD_CONFIG_VERSION, config_.manifold_type);
   had_all_sections &= load_section(handle, KEY_BALANCING, BALANCING_CONFIG_VERSION, config_.balancing);
-  had_all_sections &= load_section(handle, KEY_ASGARD, ASGARD_CONFIG_VERSION, config_.asgard);
+  bool had_authority = load_section(handle, KEY_AUTHORITY, AUTHORITY_CONFIG_VERSION, config_.authority);
+  if (!had_authority)
+    had_authority = load_legacy_authority(handle, config_.authority);
+  had_all_sections &= had_authority;
   had_all_sections &= load_section(handle, KEY_FORECAST, FORECAST_CONFIG_VERSION, config_.forecast);
   xSemaphoreGive(mutex_);
   if (had_all_sections)
@@ -677,7 +712,7 @@ void Hv6ConfigStore::save_config_() {
   save_section(handle, KEY_MOTOR_CFG, MOTOR_CONFIG_VERSION, snapshot.motor);
   save_section(handle, KEY_MANIFOLD, MANIFOLD_CONFIG_VERSION, snapshot.manifold_type);
   save_section(handle, KEY_BALANCING, BALANCING_CONFIG_VERSION, snapshot.balancing);
-  save_section(handle, KEY_ASGARD, ASGARD_CONFIG_VERSION, snapshot.asgard);
+  save_section(handle, KEY_AUTHORITY, AUTHORITY_CONFIG_VERSION, snapshot.authority);
   save_section(handle, KEY_FORECAST, FORECAST_CONFIG_VERSION, snapshot.forecast);
 
   nvs_commit(handle);

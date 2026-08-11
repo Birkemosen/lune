@@ -1,0 +1,859 @@
+{
+  "nodes": [
+    {
+      "id": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_readme_lune_v6_rev_3_1_lean",
+      "label": "Lune V6 Rev 3.1 Lean",
+      "file_type": "document",
+      "source_file": "/Users/birkemose/workspace/github.com/birkemosen/heatvalve-6/devices/lune-v6/hardware/lune-v6-rev3.1-lean/README.md",
+      "source_location": "lines 1-64",
+      "source_url": "",
+      "captured_at": "",
+      "author": "",
+      "contributor": ""
+    },
+    {
+      "id": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_readme_six_channel_decision",
+      "label": "Six-channel product decision",
+      "file_type": "rationale",
+      "source_file": "/Users/birkemose/workspace/github.com/birkemosen/heatvalve-6/devices/lune-v6/hardware/lune-v6-rev3.1-lean/README.md",
+      "source_location": "lines 12-14",
+      "source_url": "",
+      "captured_at": "",
+      "author": "",
+      "contributor": "",
+      "rationale": "Six channels meet the actual product need; channels seven and eight do not save enough feeder cost to justify their added connector, driver, protection, and board-edge requirements."
+    },
+    {
+      "id": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_readme_drv8411_h_bridges",
+      "label": "Three dual DRV8411PWPR H-bridges",
+      "file_type": "concept",
+      "source_file": "/Users/birkemose/workspace/github.com/birkemosen/heatvalve-6/devices/lune-v6/hardware/lune-v6-rev3.1-lean/README.md",
+      "source_location": "lines 15-17",
+      "source_url": "",
+      "captured_at": "",
+      "author": "",
+      "contributor": ""
+    },
+    {
+      "id": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_readme_one_hot_drive_path",
+      "label": "Physically one-hot drive path",
+      "file_type": "rationale",
+      "source_file": "/Users/birkemose/workspace/github.com/birkemosen/heatvalve-6/devices/lune-v6/hardware/lune-v6-rev3.1-lean/README.md",
+      "source_location": "lines 18-19",
+      "source_url": "",
+      "captured_at": "",
+      "author": "",
+      "contributor": "",
+      "rationale": "An active-high 4-to-16 decoder ensures only one bridge input is driven, making shared current and BEMF attribution deterministic."
+    },
+    {
+      "id": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_readme_force_and_motion_endpoint_evidence",
+      "label": "Force-and-motion endpoint evidence",
+      "file_type": "rationale",
+      "source_file": "/Users/birkemose/workspace/github.com/birkemosen/heatvalve-6/devices/lune-v6/hardware/lune-v6-rev3.1-lean/README.md",
+      "source_location": "lines 20-24",
+      "source_url": "",
+      "captured_at": "",
+      "author": "",
+      "contributor": "",
+      "rationale": "Endpoint classification requires direction-specific current and BEMF motion evidence; neither signal is accepted alone."
+    },
+    {
+      "id": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_readme_nested_protection_layers",
+      "label": "Nested motor protection layers",
+      "file_type": "rationale",
+      "source_file": "/Users/birkemose/workspace/github.com/birkemosen/heatvalve-6/devices/lune-v6/hardware/lune-v6-rev3.1-lean/README.md",
+      "source_location": "lines 25-27",
+      "source_url": "",
+      "captured_at": "",
+      "author": "",
+      "contributor": "",
+      "rationale": "Fixed bridge regulation, rail overcurrent, a persistent latch, firmware limits, and an independent hardware timer prevent a single failure from leaving a motor energized."
+    },
+    {
+      "id": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_readme_optional_display_interface",
+      "label": "Optional display pads",
+      "file_type": "rationale",
+      "source_file": "/Users/birkemose/workspace/github.com/birkemosen/heatvalve-6/devices/lune-v6/hardware/lune-v6-rev3.1-lean/README.md",
+      "source_location": "lines 28-30",
+      "source_url": "",
+      "captured_at": "",
+      "author": "",
+      "contributor": "",
+      "rationale": "Unpopulated I2C pads preserve a display option without the area and assembly cost of an onboard OLED that adds no heating-safety function."
+    },
+    {
+      "id": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_readme_size_assembly_and_cost_target",
+      "label": "Size, assembly, and cost target",
+      "file_type": "concept",
+      "source_file": "/Users/birkemose/workspace/github.com/birkemosen/heatvalve-6/devices/lune-v6/hardware/lune-v6-rev3.1-lean/README.md",
+      "source_location": "lines 32-44",
+      "source_url": "",
+      "captured_at": "",
+      "author": "",
+      "contributor": ""
+    },
+    {
+      "id": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_readme_fabrication_release_gates",
+      "label": "Fabrication release gates",
+      "file_type": "concept",
+      "source_file": "/Users/birkemose/workspace/github.com/birkemosen/heatvalve-6/devices/lune-v6/hardware/lune-v6-rev3.1-lean/README.md",
+      "source_location": "lines 46-59",
+      "source_url": "",
+      "captured_at": "",
+      "author": "",
+      "contributor": ""
+    },
+    {
+      "id": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_architecture_electrical_architecture",
+      "label": "Rev 3.1 Lean electrical architecture",
+      "file_type": "document",
+      "source_file": "/Users/birkemose/workspace/github.com/birkemosen/heatvalve-6/devices/lune-v6/hardware/lune-v6-rev3.1-lean/architecture.md",
+      "source_location": "lines 1-174",
+      "source_url": "",
+      "captured_at": "",
+      "author": "",
+      "contributor": ""
+    },
+    {
+      "id": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_architecture_separated_logic_and_motor_power",
+      "label": "Separated logic and motor power",
+      "file_type": "rationale",
+      "source_file": "/Users/birkemose/workspace/github.com/birkemosen/heatvalve-6/devices/lune-v6/hardware/lune-v6-rev3.1-lean/architecture.md",
+      "source_location": "lines 5-12",
+      "source_url": "",
+      "captured_at": "",
+      "author": "",
+      "contributor": "",
+      "rationale": "Separate 3V3_LOGIC and 3V3_MOTOR rails prevent stall and commutation disturbances from corrupting ADC evidence or resetting the ESP32."
+    },
+    {
+      "id": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_architecture_drv8411_current_ceiling",
+      "label": "DRV8411 fixed current ceiling",
+      "file_type": "concept",
+      "source_file": "/Users/birkemose/workspace/github.com/birkemosen/heatvalve-6/devices/lune-v6/hardware/lune-v6-rev3.1-lean/architecture.md",
+      "source_location": "lines 32-42",
+      "source_url": "",
+      "captured_at": "",
+      "author": "",
+      "contributor": ""
+    },
+    {
+      "id": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_architecture_74hc4514_one_hot_control",
+      "label": "74HC4514 one-hot motor control",
+      "file_type": "concept",
+      "source_file": "/Users/birkemose/workspace/github.com/birkemosen/heatvalve-6/devices/lune-v6/hardware/lune-v6-rev3.1-lean/architecture.md",
+      "source_location": "lines 44-59",
+      "source_url": "",
+      "captured_at": "",
+      "author": "",
+      "contributor": ""
+    },
+    {
+      "id": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_architecture_shared_current_measurement",
+      "label": "Shared calibrated current measurement",
+      "file_type": "concept",
+      "source_file": "/Users/birkemose/workspace/github.com/birkemosen/heatvalve-6/devices/lune-v6/hardware/lune-v6-rev3.1-lean/architecture.md",
+      "source_location": "lines 61-80",
+      "source_url": "",
+      "captured_at": "",
+      "author": "",
+      "contributor": ""
+    },
+    {
+      "id": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_architecture_buffered_differential_bemf",
+      "label": "Buffered sequential differential BEMF",
+      "file_type": "rationale",
+      "source_file": "/Users/birkemose/workspace/github.com/birkemosen/heatvalve-6/devices/lune-v6/hardware/lune-v6-rev3.1-lean/architecture.md",
+      "source_location": "lines 82-104",
+      "source_url": "",
+      "captured_at": "",
+      "author": "",
+      "contributor": "",
+      "rationale": "The TLV9001 buffer isolates the 47k terminal taps and mux resistance from the ESP32 sampling capacitor, avoiding acquisition-dependent BEMF errors while retaining transient-current limiting."
+    },
+    {
+      "id": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_architecture_bidirectional_endpoint_classifier",
+      "label": "Bidirectional endpoint classifier",
+      "file_type": "rationale",
+      "source_file": "/Users/birkemose/workspace/github.com/birkemosen/heatvalve-6/devices/lune-v6/hardware/lune-v6-rev3.1-lean/architecture.md",
+      "source_location": "lines 106-131",
+      "source_url": "",
+      "captured_at": "",
+      "author": "",
+      "contributor": "",
+      "rationale": "Separate open and close learning combines current, observed then stopped commutation, debounce, and plausible travel time to distinguish normal endpoints, jams, disconnects, and sensor faults."
+    },
+    {
+      "id": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_architecture_independent_runtime_cutoff",
+      "label": "74HC4060 independent runtime cutoff",
+      "file_type": "rationale",
+      "source_file": "/Users/birkemose/workspace/github.com/birkemosen/heatvalve-6/devices/lune-v6/hardware/lune-v6-rev3.1-lean/architecture.md",
+      "source_location": "lines 133-144",
+      "source_url": "",
+      "captured_at": "",
+      "author": "",
+      "contributor": "",
+      "rationale": "The hardware timer bounds harm if the ESP32, ADC, mux, or firmware fails; it supplements rather than performs endpoint detection."
+    },
+    {
+      "id": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_architecture_display_population_option",
+      "label": "Display daughterboard population option",
+      "file_type": "rationale",
+      "source_file": "/Users/birkemose/workspace/github.com/birkemosen/heatvalve-6/devices/lune-v6/hardware/lune-v6-rev3.1-lean/architecture.md",
+      "source_location": "lines 146-157",
+      "source_url": "",
+      "captured_at": "",
+      "author": "",
+      "contributor": "",
+      "rationale": "A fixed display is deferred until enclosure and connector mechanics are known because common modules vary and contribute no safety function."
+    },
+    {
+      "id": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_architecture_two_layer_layout_rules",
+      "label": "Two-layer mixed-signal layout rules",
+      "file_type": "concept",
+      "source_file": "/Users/birkemose/workspace/github.com/birkemosen/heatvalve-6/devices/lune-v6/hardware/lune-v6-rev3.1-lean/architecture.md",
+      "source_location": "lines 159-174",
+      "source_url": "",
+      "captured_at": "",
+      "author": "",
+      "contributor": ""
+    },
+    {
+      "id": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_rev2_review_addendum_rev2_1_review_addendum",
+      "label": "Rev 2.1 review addendum",
+      "file_type": "document",
+      "source_file": "/Users/birkemose/workspace/github.com/birkemosen/heatvalve-6/devices/lune-v6/hardware/lune-v6-rev3.1-lean/rev2-review-addendum.md",
+      "source_location": "lines 1-57",
+      "source_url": "",
+      "captured_at": "",
+      "author": "",
+      "contributor": ""
+    },
+    {
+      "id": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_rev2_review_addendum_rev2_1_no_fabrication",
+      "label": "Rev 2.1 no-fabrication disposition",
+      "file_type": "rationale",
+      "source_file": "/Users/birkemose/workspace/github.com/birkemosen/heatvalve-6/devices/lune-v6/hardware/lune-v6-rev3.1-lean/rev2-review-addendum.md",
+      "source_location": "lines 9-27",
+      "source_url": "",
+      "captured_at": "",
+      "author": "",
+      "contributor": "",
+      "rationale": "Rev 2.1 contains unqualified switches, firmware-only selection, unsafe latch and analog details, coupled motor and logic power, missing hard ceilings and timeout, reversed TVS polarity, and an unrouted oversized PCB."
+    },
+    {
+      "id": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_rev2_review_addendum_retained_force_motion_principle",
+      "label": "Retained force-plus-motion principle",
+      "file_type": "rationale",
+      "source_file": "/Users/birkemose/workspace/github.com/birkemosen/heatvalve-6/devices/lune-v6/hardware/lune-v6-rev3.1-lean/rev2-review-addendum.md",
+      "source_location": "lines 29-39",
+      "source_url": "",
+      "captured_at": "",
+      "author": "",
+      "contributor": "",
+      "rationale": "Current observes force, load, jam, and connection while BEMF independently observes rotor motion, so both physical observations are preserved in the Lean design."
+    },
+    {
+      "id": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_rev2_review_addendum_six_not_eight",
+      "label": "Six channels instead of eight",
+      "file_type": "rationale",
+      "source_file": "/Users/birkemose/workspace/github.com/birkemosen/heatvalve-6/devices/lune-v6/hardware/lune-v6-rev3.1-lean/rev2-review-addendum.md",
+      "source_location": "lines 41-48",
+      "source_url": "",
+      "captured_at": "",
+      "author": "",
+      "contributor": "",
+      "rationale": "Six channels meet the installation need, remove a driver group and two connectors, shorten the board edge, and improve two-layer routing margin."
+    },
+    {
+      "id": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_rev2_review_addendum_protected_integrated_bridges",
+      "label": "Protected integrated bridges over discrete bridges",
+      "file_type": "rationale",
+      "source_file": "/Users/birkemose/workspace/github.com/birkemosen/heatvalve-6/devices/lune-v6/hardware/lune-v6-rev3.1-lean/rev2-review-addendum.md",
+      "source_location": "lines 50-57",
+      "source_url": "",
+      "captured_at": "",
+      "author": "",
+      "contributor": "",
+      "rationale": "At five-unit prototype volume, protected dual H-bridge ICs require fewer placements and less characterized safety behavior than discrete bridges; DRV8214 is too expensive and insufficiently stocked."
+    },
+    {
+      "id": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_validation_plan_validation_and_release_plan",
+      "label": "Rev 3.1 Lean validation and release plan",
+      "file_type": "document",
+      "source_file": "/Users/birkemose/workspace/github.com/birkemosen/heatvalve-6/devices/lune-v6/hardware/lune-v6-rev3.1-lean/validation-plan.md",
+      "source_location": "lines 1-90",
+      "source_url": "",
+      "captured_at": "",
+      "author": "",
+      "contributor": ""
+    },
+    {
+      "id": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_validation_plan_electrical_design_gates",
+      "label": "Electrical design verification gates",
+      "file_type": "concept",
+      "source_file": "/Users/birkemose/workspace/github.com/birkemosen/heatvalve-6/devices/lune-v6/hardware/lune-v6-rev3.1-lean/validation-plan.md",
+      "source_location": "lines 6-16",
+      "source_url": "",
+      "captured_at": "",
+      "author": "",
+      "contributor": ""
+    },
+    {
+      "id": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_validation_plan_analog_fixture_characterization",
+      "label": "Analog fixture characterization",
+      "file_type": "concept",
+      "source_file": "/Users/birkemose/workspace/github.com/birkemosen/heatvalve-6/devices/lune-v6/hardware/lune-v6-rev3.1-lean/validation-plan.md",
+      "source_location": "lines 18-33",
+      "source_url": "",
+      "captured_at": "",
+      "author": "",
+      "contributor": ""
+    },
+    {
+      "id": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_validation_plan_bidirectional_actuator_endpoint_matrix",
+      "label": "Bidirectional actuator endpoint matrix",
+      "file_type": "concept",
+      "source_file": "/Users/birkemose/workspace/github.com/birkemosen/heatvalve-6/devices/lune-v6/hardware/lune-v6-rev3.1-lean/validation-plan.md",
+      "source_location": "lines 35-65",
+      "source_url": "",
+      "captured_at": "",
+      "author": "",
+      "contributor": ""
+    },
+    {
+      "id": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_validation_plan_timeout_and_fault_latch_tests",
+      "label": "Independent timeout and fault-latch tests",
+      "file_type": "concept",
+      "source_file": "/Users/birkemose/workspace/github.com/birkemosen/heatvalve-6/devices/lune-v6/hardware/lune-v6-rev3.1-lean/validation-plan.md",
+      "source_location": "lines 67-78",
+      "source_url": "",
+      "captured_at": "",
+      "author": "",
+      "contributor": ""
+    },
+    {
+      "id": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_validation_plan_emc_thermal_and_production_tests",
+      "label": "EMC, thermal, and production tests",
+      "file_type": "concept",
+      "source_file": "/Users/birkemose/workspace/github.com/birkemosen/heatvalve-6/devices/lune-v6/hardware/lune-v6-rev3.1-lean/validation-plan.md",
+      "source_location": "lines 80-90",
+      "source_url": "",
+      "captured_at": "",
+      "author": "",
+      "contributor": ""
+    },
+    {
+      "id": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_validation_plan_measured_endpoint_safety_evidence",
+      "label": "Measured endpoint safety evidence",
+      "file_type": "rationale",
+      "source_file": "/Users/birkemose/workspace/github.com/birkemosen/heatvalve-6/devices/lune-v6/hardware/lune-v6-rev3.1-lean/validation-plan.md",
+      "source_location": "lines 3-4",
+      "source_url": "",
+      "captured_at": "",
+      "author": "",
+      "contributor": "",
+      "rationale": "Schematic analysis cannot prove that an endpoint will never be overrun; release requires measured evidence from electrical, actuator, fault, EMC, thermal, and production testing."
+    }
+  ],
+  "edges": [
+    {
+      "source": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_readme_lune_v6_rev_3_1_lean",
+      "target": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_readme_six_channel_decision",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "/Users/birkemose/workspace/github.com/birkemosen/heatvalve-6/devices/lune-v6/hardware/lune-v6-rev3.1-lean/README.md",
+      "source_location": "lines 10-14",
+      "weight": 1.0
+    },
+    {
+      "source": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_readme_lune_v6_rev_3_1_lean",
+      "target": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_readme_drv8411_h_bridges",
+      "relation": "specifies",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "/Users/birkemose/workspace/github.com/birkemosen/heatvalve-6/devices/lune-v6/hardware/lune-v6-rev3.1-lean/README.md",
+      "source_location": "lines 15-17",
+      "weight": 1.0
+    },
+    {
+      "source": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_readme_lune_v6_rev_3_1_lean",
+      "target": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_readme_one_hot_drive_path",
+      "relation": "specifies",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "/Users/birkemose/workspace/github.com/birkemosen/heatvalve-6/devices/lune-v6/hardware/lune-v6-rev3.1-lean/README.md",
+      "source_location": "lines 18-19",
+      "weight": 1.0
+    },
+    {
+      "source": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_readme_lune_v6_rev_3_1_lean",
+      "target": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_readme_force_and_motion_endpoint_evidence",
+      "relation": "requires",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "/Users/birkemose/workspace/github.com/birkemosen/heatvalve-6/devices/lune-v6/hardware/lune-v6-rev3.1-lean/README.md",
+      "source_location": "lines 20-24",
+      "weight": 1.0
+    },
+    {
+      "source": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_readme_lune_v6_rev_3_1_lean",
+      "target": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_readme_nested_protection_layers",
+      "relation": "requires",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "/Users/birkemose/workspace/github.com/birkemosen/heatvalve-6/devices/lune-v6/hardware/lune-v6-rev3.1-lean/README.md",
+      "source_location": "lines 25-27",
+      "weight": 1.0
+    },
+    {
+      "source": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_readme_lune_v6_rev_3_1_lean",
+      "target": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_readme_optional_display_interface",
+      "relation": "provides_option",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "/Users/birkemose/workspace/github.com/birkemosen/heatvalve-6/devices/lune-v6/hardware/lune-v6-rev3.1-lean/README.md",
+      "source_location": "lines 28-30",
+      "weight": 1.0
+    },
+    {
+      "source": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_readme_lune_v6_rev_3_1_lean",
+      "target": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_readme_size_assembly_and_cost_target",
+      "relation": "targets",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "/Users/birkemose/workspace/github.com/birkemosen/heatvalve-6/devices/lune-v6/hardware/lune-v6-rev3.1-lean/README.md",
+      "source_location": "lines 32-44",
+      "weight": 1.0
+    },
+    {
+      "source": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_readme_lune_v6_rev_3_1_lean",
+      "target": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_readme_fabrication_release_gates",
+      "relation": "blocked_by",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "/Users/birkemose/workspace/github.com/birkemosen/heatvalve-6/devices/lune-v6/hardware/lune-v6-rev3.1-lean/README.md",
+      "source_location": "lines 46-59",
+      "weight": 1.0
+    },
+    {
+      "source": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_readme_lune_v6_rev_3_1_lean",
+      "target": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_architecture_electrical_architecture",
+      "relation": "cites",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "/Users/birkemose/workspace/github.com/birkemosen/heatvalve-6/devices/lune-v6/hardware/lune-v6-rev3.1-lean/README.md",
+      "source_location": "lines 61-64",
+      "weight": 1.0
+    },
+    {
+      "source": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_readme_lune_v6_rev_3_1_lean",
+      "target": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_rev2_review_addendum_rev2_1_review_addendum",
+      "relation": "cites",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "/Users/birkemose/workspace/github.com/birkemosen/heatvalve-6/devices/lune-v6/hardware/lune-v6-rev3.1-lean/README.md",
+      "source_location": "lines 61-64",
+      "weight": 1.0
+    },
+    {
+      "source": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_readme_lune_v6_rev_3_1_lean",
+      "target": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_validation_plan_validation_and_release_plan",
+      "relation": "cites",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "/Users/birkemose/workspace/github.com/birkemosen/heatvalve-6/devices/lune-v6/hardware/lune-v6-rev3.1-lean/README.md",
+      "source_location": "lines 61-64",
+      "weight": 1.0
+    },
+    {
+      "source": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_architecture_electrical_architecture",
+      "target": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_architecture_separated_logic_and_motor_power",
+      "relation": "defines",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "/Users/birkemose/workspace/github.com/birkemosen/heatvalve-6/devices/lune-v6/hardware/lune-v6-rev3.1-lean/architecture.md",
+      "source_location": "lines 3-22",
+      "weight": 1.0
+    },
+    {
+      "source": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_architecture_electrical_architecture",
+      "target": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_architecture_drv8411_current_ceiling",
+      "relation": "defines",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "/Users/birkemose/workspace/github.com/birkemosen/heatvalve-6/devices/lune-v6/hardware/lune-v6-rev3.1-lean/architecture.md",
+      "source_location": "lines 24-42",
+      "weight": 1.0
+    },
+    {
+      "source": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_architecture_electrical_architecture",
+      "target": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_architecture_74hc4514_one_hot_control",
+      "relation": "defines",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "/Users/birkemose/workspace/github.com/birkemosen/heatvalve-6/devices/lune-v6/hardware/lune-v6-rev3.1-lean/architecture.md",
+      "source_location": "lines 44-59",
+      "weight": 1.0
+    },
+    {
+      "source": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_architecture_electrical_architecture",
+      "target": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_architecture_shared_current_measurement",
+      "relation": "defines",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "/Users/birkemose/workspace/github.com/birkemosen/heatvalve-6/devices/lune-v6/hardware/lune-v6-rev3.1-lean/architecture.md",
+      "source_location": "lines 61-80",
+      "weight": 1.0
+    },
+    {
+      "source": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_architecture_electrical_architecture",
+      "target": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_architecture_buffered_differential_bemf",
+      "relation": "defines",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "/Users/birkemose/workspace/github.com/birkemosen/heatvalve-6/devices/lune-v6/hardware/lune-v6-rev3.1-lean/architecture.md",
+      "source_location": "lines 82-104",
+      "weight": 1.0
+    },
+    {
+      "source": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_architecture_electrical_architecture",
+      "target": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_architecture_bidirectional_endpoint_classifier",
+      "relation": "defines",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "/Users/birkemose/workspace/github.com/birkemosen/heatvalve-6/devices/lune-v6/hardware/lune-v6-rev3.1-lean/architecture.md",
+      "source_location": "lines 106-131",
+      "weight": 1.0
+    },
+    {
+      "source": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_architecture_electrical_architecture",
+      "target": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_architecture_independent_runtime_cutoff",
+      "relation": "defines",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "/Users/birkemose/workspace/github.com/birkemosen/heatvalve-6/devices/lune-v6/hardware/lune-v6-rev3.1-lean/architecture.md",
+      "source_location": "lines 133-144",
+      "weight": 1.0
+    },
+    {
+      "source": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_architecture_electrical_architecture",
+      "target": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_architecture_display_population_option",
+      "relation": "defines",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "/Users/birkemose/workspace/github.com/birkemosen/heatvalve-6/devices/lune-v6/hardware/lune-v6-rev3.1-lean/architecture.md",
+      "source_location": "lines 146-157",
+      "weight": 1.0
+    },
+    {
+      "source": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_architecture_electrical_architecture",
+      "target": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_architecture_two_layer_layout_rules",
+      "relation": "constrained_by",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "/Users/birkemose/workspace/github.com/birkemosen/heatvalve-6/devices/lune-v6/hardware/lune-v6-rev3.1-lean/architecture.md",
+      "source_location": "lines 159-174",
+      "weight": 1.0
+    },
+    {
+      "source": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_architecture_74hc4514_one_hot_control",
+      "target": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_architecture_shared_current_measurement",
+      "relation": "makes_unambiguous",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "/Users/birkemose/workspace/github.com/birkemosen/heatvalve-6/devices/lune-v6/hardware/lune-v6-rev3.1-lean/architecture.md",
+      "source_location": "lines 53-59",
+      "weight": 1.0
+    },
+    {
+      "source": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_architecture_74hc4514_one_hot_control",
+      "target": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_architecture_buffered_differential_bemf",
+      "relation": "makes_unambiguous",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "/Users/birkemose/workspace/github.com/birkemosen/heatvalve-6/devices/lune-v6/hardware/lune-v6-rev3.1-lean/architecture.md",
+      "source_location": "lines 53-59",
+      "weight": 1.0
+    },
+    {
+      "source": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_architecture_shared_current_measurement",
+      "target": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_architecture_bidirectional_endpoint_classifier",
+      "relation": "provides_force_evidence_to",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "/Users/birkemose/workspace/github.com/birkemosen/heatvalve-6/devices/lune-v6/hardware/lune-v6-rev3.1-lean/architecture.md",
+      "source_location": "lines 106-131",
+      "weight": 1.0
+    },
+    {
+      "source": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_architecture_buffered_differential_bemf",
+      "target": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_architecture_bidirectional_endpoint_classifier",
+      "relation": "provides_motion_evidence_to",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "/Users/birkemose/workspace/github.com/birkemosen/heatvalve-6/devices/lune-v6/hardware/lune-v6-rev3.1-lean/architecture.md",
+      "source_location": "lines 106-131",
+      "weight": 1.0
+    },
+    {
+      "source": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_architecture_drv8411_current_ceiling",
+      "target": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_architecture_bidirectional_endpoint_classifier",
+      "relation": "bounds_force_independently_of",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "/Users/birkemose/workspace/github.com/birkemosen/heatvalve-6/devices/lune-v6/hardware/lune-v6-rev3.1-lean/architecture.md",
+      "source_location": "lines 32-35",
+      "weight": 1.0
+    },
+    {
+      "source": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_architecture_independent_runtime_cutoff",
+      "target": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_architecture_74hc4514_one_hot_control",
+      "relation": "disables_on_timeout",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "/Users/birkemose/workspace/github.com/birkemosen/heatvalve-6/devices/lune-v6/hardware/lune-v6-rev3.1-lean/architecture.md",
+      "source_location": "lines 133-140",
+      "weight": 1.0
+    },
+    {
+      "source": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_rev2_review_addendum_rev2_1_review_addendum",
+      "target": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_rev2_review_addendum_rev2_1_no_fabrication",
+      "relation": "concludes",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "/Users/birkemose/workspace/github.com/birkemosen/heatvalve-6/devices/lune-v6/hardware/lune-v6-rev3.1-lean/rev2-review-addendum.md",
+      "source_location": "lines 9-27",
+      "weight": 1.0
+    },
+    {
+      "source": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_rev2_review_addendum_rev2_1_review_addendum",
+      "target": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_rev2_review_addendum_retained_force_motion_principle",
+      "relation": "retains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "/Users/birkemose/workspace/github.com/birkemosen/heatvalve-6/devices/lune-v6/hardware/lune-v6-rev3.1-lean/rev2-review-addendum.md",
+      "source_location": "lines 29-39",
+      "weight": 1.0
+    },
+    {
+      "source": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_rev2_review_addendum_rev2_1_review_addendum",
+      "target": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_rev2_review_addendum_six_not_eight",
+      "relation": "recommends",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "/Users/birkemose/workspace/github.com/birkemosen/heatvalve-6/devices/lune-v6/hardware/lune-v6-rev3.1-lean/rev2-review-addendum.md",
+      "source_location": "lines 41-48",
+      "weight": 1.0
+    },
+    {
+      "source": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_rev2_review_addendum_rev2_1_review_addendum",
+      "target": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_rev2_review_addendum_protected_integrated_bridges",
+      "relation": "recommends",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "/Users/birkemose/workspace/github.com/birkemosen/heatvalve-6/devices/lune-v6/hardware/lune-v6-rev3.1-lean/rev2-review-addendum.md",
+      "source_location": "lines 50-57",
+      "weight": 1.0
+    },
+    {
+      "source": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_rev2_review_addendum_retained_force_motion_principle",
+      "target": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_architecture_bidirectional_endpoint_classifier",
+      "relation": "semantically_similar_to",
+      "confidence": "INFERRED",
+      "confidence_score": 0.95,
+      "source_file": "/Users/birkemose/workspace/github.com/birkemosen/heatvalve-6/devices/lune-v6/hardware/lune-v6-rev3.1-lean/rev2-review-addendum.md",
+      "source_location": "lines 31-39",
+      "weight": 0.95
+    },
+    {
+      "source": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_rev2_review_addendum_six_not_eight",
+      "target": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_readme_six_channel_decision",
+      "relation": "semantically_similar_to",
+      "confidence": "INFERRED",
+      "confidence_score": 0.95,
+      "source_file": "/Users/birkemose/workspace/github.com/birkemosen/heatvalve-6/devices/lune-v6/hardware/lune-v6-rev3.1-lean/rev2-review-addendum.md",
+      "source_location": "lines 41-48",
+      "weight": 0.95
+    },
+    {
+      "source": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_rev2_review_addendum_protected_integrated_bridges",
+      "target": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_architecture_drv8411_current_ceiling",
+      "relation": "supports",
+      "confidence": "INFERRED",
+      "confidence_score": 0.85,
+      "source_file": "/Users/birkemose/workspace/github.com/birkemosen/heatvalve-6/devices/lune-v6/hardware/lune-v6-rev3.1-lean/rev2-review-addendum.md",
+      "source_location": "lines 50-57",
+      "weight": 0.85
+    },
+    {
+      "source": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_validation_plan_validation_and_release_plan",
+      "target": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_validation_plan_measured_endpoint_safety_evidence",
+      "relation": "requires",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "/Users/birkemose/workspace/github.com/birkemosen/heatvalve-6/devices/lune-v6/hardware/lune-v6-rev3.1-lean/validation-plan.md",
+      "source_location": "lines 3-4",
+      "weight": 1.0
+    },
+    {
+      "source": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_validation_plan_validation_and_release_plan",
+      "target": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_validation_plan_electrical_design_gates",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "/Users/birkemose/workspace/github.com/birkemosen/heatvalve-6/devices/lune-v6/hardware/lune-v6-rev3.1-lean/validation-plan.md",
+      "source_location": "lines 6-16",
+      "weight": 1.0
+    },
+    {
+      "source": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_validation_plan_validation_and_release_plan",
+      "target": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_validation_plan_analog_fixture_characterization",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "/Users/birkemose/workspace/github.com/birkemosen/heatvalve-6/devices/lune-v6/hardware/lune-v6-rev3.1-lean/validation-plan.md",
+      "source_location": "lines 18-33",
+      "weight": 1.0
+    },
+    {
+      "source": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_validation_plan_validation_and_release_plan",
+      "target": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_validation_plan_bidirectional_actuator_endpoint_matrix",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "/Users/birkemose/workspace/github.com/birkemosen/heatvalve-6/devices/lune-v6/hardware/lune-v6-rev3.1-lean/validation-plan.md",
+      "source_location": "lines 35-65",
+      "weight": 1.0
+    },
+    {
+      "source": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_validation_plan_validation_and_release_plan",
+      "target": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_validation_plan_timeout_and_fault_latch_tests",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "/Users/birkemose/workspace/github.com/birkemosen/heatvalve-6/devices/lune-v6/hardware/lune-v6-rev3.1-lean/validation-plan.md",
+      "source_location": "lines 67-78",
+      "weight": 1.0
+    },
+    {
+      "source": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_validation_plan_validation_and_release_plan",
+      "target": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_validation_plan_emc_thermal_and_production_tests",
+      "relation": "contains",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "/Users/birkemose/workspace/github.com/birkemosen/heatvalve-6/devices/lune-v6/hardware/lune-v6-rev3.1-lean/validation-plan.md",
+      "source_location": "lines 80-90",
+      "weight": 1.0
+    },
+    {
+      "source": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_validation_plan_analog_fixture_characterization",
+      "target": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_architecture_shared_current_measurement",
+      "relation": "validates",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "/Users/birkemose/workspace/github.com/birkemosen/heatvalve-6/devices/lune-v6/hardware/lune-v6-rev3.1-lean/validation-plan.md",
+      "source_location": "lines 22-27",
+      "weight": 1.0
+    },
+    {
+      "source": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_validation_plan_analog_fixture_characterization",
+      "target": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_architecture_buffered_differential_bemf",
+      "relation": "validates",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "/Users/birkemose/workspace/github.com/birkemosen/heatvalve-6/devices/lune-v6/hardware/lune-v6-rev3.1-lean/validation-plan.md",
+      "source_location": "lines 28-33",
+      "weight": 1.0
+    },
+    {
+      "source": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_validation_plan_bidirectional_actuator_endpoint_matrix",
+      "target": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_architecture_bidirectional_endpoint_classifier",
+      "relation": "validates",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "/Users/birkemose/workspace/github.com/birkemosen/heatvalve-6/devices/lune-v6/hardware/lune-v6-rev3.1-lean/validation-plan.md",
+      "source_location": "lines 35-65",
+      "weight": 1.0
+    },
+    {
+      "source": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_validation_plan_timeout_and_fault_latch_tests",
+      "target": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_architecture_independent_runtime_cutoff",
+      "relation": "validates",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "/Users/birkemose/workspace/github.com/birkemosen/heatvalve-6/devices/lune-v6/hardware/lune-v6-rev3.1-lean/validation-plan.md",
+      "source_location": "lines 67-78",
+      "weight": 1.0
+    },
+    {
+      "source": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_validation_plan_electrical_design_gates",
+      "target": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_architecture_two_layer_layout_rules",
+      "relation": "validates",
+      "confidence": "INFERRED",
+      "confidence_score": 0.95,
+      "source_file": "/Users/birkemose/workspace/github.com/birkemosen/heatvalve-6/devices/lune-v6/hardware/lune-v6-rev3.1-lean/validation-plan.md",
+      "source_location": "lines 8-16",
+      "weight": 0.95
+    },
+    {
+      "source": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_validation_plan_emc_thermal_and_production_tests",
+      "target": "devices_lune_v6_hardware_lune_v6_rev3_1_lean_readme_size_assembly_and_cost_target",
+      "relation": "validates",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "/Users/birkemose/workspace/github.com/birkemosen/heatvalve-6/devices/lune-v6/hardware/lune-v6-rev3.1-lean/validation-plan.md",
+      "source_location": "lines 87-90",
+      "weight": 1.0
+    }
+  ],
+  "hyperedges": [
+    {
+      "id": "lean_endpoint_evidence_and_classification",
+      "label": "Force plus motion endpoint classification",
+      "nodes": [
+        "devices_lune_v6_hardware_lune_v6_rev3_1_lean_architecture_shared_current_measurement",
+        "devices_lune_v6_hardware_lune_v6_rev3_1_lean_architecture_buffered_differential_bemf",
+        "devices_lune_v6_hardware_lune_v6_rev3_1_lean_architecture_bidirectional_endpoint_classifier",
+        "devices_lune_v6_hardware_lune_v6_rev3_1_lean_validation_plan_bidirectional_actuator_endpoint_matrix"
+      ],
+      "relation": "jointly_establish_endpoint_safety",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "/Users/birkemose/workspace/github.com/birkemosen/heatvalve-6/devices/lune-v6/hardware/lune-v6-rev3.1-lean/architecture.md"
+    },
+    {
+      "id": "lean_nested_motor_shutdown",
+      "label": "Nested motor shutdown chain",
+      "nodes": [
+        "devices_lune_v6_hardware_lune_v6_rev3_1_lean_architecture_drv8411_current_ceiling",
+        "devices_lune_v6_hardware_lune_v6_rev3_1_lean_architecture_shared_current_measurement",
+        "devices_lune_v6_hardware_lune_v6_rev3_1_lean_architecture_74hc4514_one_hot_control",
+        "devices_lune_v6_hardware_lune_v6_rev3_1_lean_architecture_independent_runtime_cutoff"
+      ],
+      "relation": "forms_nested_protection",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "/Users/birkemose/workspace/github.com/birkemosen/heatvalve-6/devices/lune-v6/hardware/lune-v6-rev3.1-lean/architecture.md"
+    },
+    {
+      "id": "lean_production_release_evidence",
+      "label": "Production release evidence",
+      "nodes": [
+        "devices_lune_v6_hardware_lune_v6_rev3_1_lean_validation_plan_electrical_design_gates",
+        "devices_lune_v6_hardware_lune_v6_rev3_1_lean_validation_plan_analog_fixture_characterization",
+        "devices_lune_v6_hardware_lune_v6_rev3_1_lean_validation_plan_bidirectional_actuator_endpoint_matrix",
+        "devices_lune_v6_hardware_lune_v6_rev3_1_lean_validation_plan_timeout_and_fault_latch_tests",
+        "devices_lune_v6_hardware_lune_v6_rev3_1_lean_validation_plan_emc_thermal_and_production_tests"
+      ],
+      "relation": "jointly_gate_release",
+      "confidence": "EXTRACTED",
+      "confidence_score": 1.0,
+      "source_file": "/Users/birkemose/workspace/github.com/birkemosen/heatvalve-6/devices/lune-v6/hardware/lune-v6-rev3.1-lean/validation-plan.md"
+    }
+  ],
+  "input_tokens": 4971,
+  "output_tokens": 8916
+}

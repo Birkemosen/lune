@@ -15,6 +15,7 @@ export const state = {
   error: '',
   overview: null,
   nodes: [],
+  rooms: [],
   zones: [],
   strategy: null,
   forecast: null,
@@ -24,6 +25,7 @@ export const state = {
   settings: null,
   heatSource: null,
   scanResult: null,
+  nodeActivity: '',
   zoneEditRoomId: '',
 };
 

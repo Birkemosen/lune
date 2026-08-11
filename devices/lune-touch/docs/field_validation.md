@@ -18,14 +18,41 @@ The Touch build must pass the OTA slot-size check. Do not increase LVGL buffers,
 dashboard bundle size, or HTTPS memory use after this point without re-running
 the build and a display/WiFi soak.
 
+## Phase 9 Staged Rollout Record
+
+This is an operator-run field record. Do not mark a stage complete from a host test,
+an HTTP response alone, or a dashboard screenshot. Capture the UTC interval, device
+firmware hashes, room/loop IDs involved, diagnostics JSON, relevant V6/Touch logs, and
+an explicit **go** or **no-go** decision for every stage. A no-go returns the system to
+the previous safe stage; it must not be bypassed by changing a dashboard role toggle.
+
+| Stage | Permitted behavior | Evidence to record | Go decision |
+| --- | --- | --- | --- |
+| 1. V6 local only | Touch off or disconnected; each V6 uses its own conservative local heating. No Asgard write from Touch or V6 fallback test. | Fresh local sensor status, valve movement/endstop faults, room temperature trend, and V6 diagnostics for every commissioned loop. | All local zones are safe, stable, and independently heat-capable; no stale sensor produces an unsafe command. |
+| 2. Touch read-only comparison | Touch polls V6 and calculates house/room diagnostics, but sends no room commands and performs no Asgard write. | Side-by-side Touch calculated physical/target values and V6 observations, plus coverage/manifold quality. | Touch reports truthful values, degrades on incomplete coverage, and has no unexplained command/Asgard ledger entry. |
+| 3. Shadow Asgard publishing | Generate and retain the exact candidate physical signal and readback expectation without sending it to Asgard. | Timestamped candidate value, source room coverage, encoded would-be URL, and simulated readback decision. | Candidate is physically derived, bounded, and agrees with independent operator calculation; any mismatch is no-go. |
+| 4. Touch normal writer, learning/forecast off | Touch may hold the normal V6-A lease and write only the physical house signal. Forecast and learning modifiers remain disabled. | Lease generation/age, Touch write ledger, V6-A authority diagnostics, Asgard request/readback outcomes, and room temperatures. | One writer only; every successful write has a matching readback or declared bounded transport failure; no physical aggregation falsification. |
+| 5. Intentional fallback/recovery | Under supervised maintenance, withdraw Touch renewal and verify the ordered V6-A fallback and Touch recovery. V6-B never writes. | Transition logs for expiry, 30 s guard, fallback, 120 s recovery stability, handover generation, and both writer ledgers. | No overlapping writers, V6-A is the only fallback writer, Touch is read-only until ordered handover. |
+| 6. Learning shadow | Calculate learning/distribution suggestions but do not send their offsets. | Suggested versus baseline targets, confidence/sample counts, sensor freshness, and per-room expected effect. | Suggestions are bounded, attributable to stable loop IDs, and never alter physical house temperature aggregation. |
+| 7. Bounded optimization room-by-room | Enable one logical room at a time, including every loop assigned to that room; retain rollback to Stage 4. | Requested/accepted/clamped V6 results, expiry, room temperature response, loop coverage, and impact on other rooms. | No partial multi-loop room success is hidden; each command is bounded, expires safely, and improves or at least does not degrade the stage baseline. |
+
+Before each stage, run the repository gate above and archive the exact command output.
+After a no-go, stop the rollout, preserve diagnostics, and return to the prior permitted
+stage. ODIN remains advisory throughout: DHW, unavailable, and unknown/defrost context
+must not manufacture a room command or alter physical temperature aggregation.
+
 ## Flash And Boot
 
-1. Flash `devices/lune-touch/configurations/lune-touch-7.yaml`.
-2. Confirm the local display reaches the operating console and does not drift,
+1. On the first install of the dedicated Touch registry storage, connect USB and run
+   `make install-registry-partition-touch PORT=/dev/cu.usbmodemXXXX`. This writes
+   only the partition table and preserves the existing WiFi/default NVS data.
+2. Flash `devices/lune-touch/configurations/lune-touch-7.yaml`.
+3. Confirm the boot log reports `Using dedicated Touch registry NVS partition`.
+4. Confirm the local display reaches the operating console and does not drift,
    smear, or redraw in a loop.
-3. Confirm `/`, `/dashboard`, `/dashboard.js`, and `/api/lune-touch/v1/diagnostics`
+5. Confirm `/`, `/dashboard`, `/dashboard.js`, and `/api/lune-touch/v1/diagnostics`
    are reachable from a browser on the local LAN.
-4. Confirm `GET /api/lune-touch/v1/diagnostics` reports `ota.slot_size` and does
+6. Confirm `GET /api/lune-touch/v1/diagnostics` reports `ota.slot_size` and does
    not show `pending_verify` unexpectedly after a normal boot.
 
 ## Commissioning Flow

@@ -15,6 +15,7 @@
 #include "../hv6_config_store/hv6_types.h"
 #include "drv8215.h"
 #include "ripple_counter.h"
+#include "rev31_motor_backend.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/queue.h"
@@ -40,7 +41,38 @@ struct MotorTraceSample {
   uint32_t ripple_count = 0;
   int16_t current_ma_x10 = 0;
   uint16_t adc_raw = 0xFFFF;
+  uint16_t bemf_raw_a = 0xFFFF;
+  uint16_t bemf_raw_b = 0xFFFF;
+  int16_t bemf_differential_raw = 0;
+  uint16_t bemf_separation_us = 0xFFFF;
   uint8_t drive_on = 0;
+  uint8_t bemf_valid = 0;
+  uint8_t bemf_moving = 0;
+  uint8_t invalid_bemf_samples = 0;
+};
+
+// Thread-safe, read-only bring-up snapshot for the Rev 3.1 analog/safety path.
+// Raw ADC values are intentionally exposed: production thresholds must be
+// derived from measured actuator populations rather than nominal assumptions.
+struct Rev31Diagnostics {
+  bool backend_enabled{false};
+  bool motor_busy{false};
+  bool drive_on{false};
+  bool drivers_enabled{false};
+  bool latch_faulted{true};
+  bool sample_valid{false};
+  bool sample_moving{false};
+  uint16_t bemf_raw_a{0};
+  uint16_t bemf_raw_b{0};
+  int16_t bemf_differential_raw{0};
+  uint16_t sample_separation_us{0};
+  uint16_t bemf_threshold_raw{0};
+  uint8_t consecutive_invalid_samples{0};
+  uint32_t motion_evidence_count{0};
+  uint32_t sample_sequence{0};
+  uint32_t motor_runtime_ms{0};
+  float current_ma{0.0f};
+  FaultCode fault{FaultCode::NONE};
 };
 
 class Hv6ValveController : public esphome::Component {
@@ -56,6 +88,15 @@ class Hv6ValveController : public esphome::Component {
   void set_nsleep_pin(int pin) { nsleep_pin_ = static_cast<gpio_num_t>(pin); }
   void set_nfault_pin(int pin) { nfault_pin_ = static_cast<gpio_num_t>(pin); }
   void set_ipropi_pin(int pin) { ipropi_pin_ = static_cast<gpio_num_t>(pin); }
+  void set_rev31_backend(bool enabled) { rev31_backend_enabled_ = enabled; }
+  void set_adc_bemf_pin(int pin) { rev31_pins_.adc_bemf = static_cast<gpio_num_t>(pin); }
+  void set_address0_pin(int pin) { rev31_pins_.address0 = static_cast<gpio_num_t>(pin); }
+  void set_address1_pin(int pin) { rev31_pins_.address1 = static_cast<gpio_num_t>(pin); }
+  void set_address2_pin(int pin) { rev31_pins_.address2 = static_cast<gpio_num_t>(pin); }
+  void set_direction_pin(int pin) { rev31_pins_.terminal_direction = static_cast<gpio_num_t>(pin); }
+  void set_latch_arm_pin(int pin) { rev31_pins_.latch_arm = static_cast<gpio_num_t>(pin); }
+  void set_bemf_threshold_raw(uint16_t threshold) { bemf_threshold_raw_ = threshold; }
+  void set_auto_start_calibration(bool enabled) { auto_start_calibration_ = enabled; }
   void set_current_sensor(esphome::sensor::Sensor *sensor) { current_sensor_ = sensor; }
   void set_motor_address(uint8_t index, uint8_t address) {
     if (index < NUM_ZONES)
@@ -82,7 +123,9 @@ class Hv6ValveController : public esphome::Component {
   void set_manifold_type(ManifoldType type);
   ManifoldType get_manifold_type() const;
   uint16_t get_motor_trace_sample_count() const;
+  bool get_motor_trace_sample(uint16_t logical_index, MotorTraceSample *out) const;
   void clear_motor_trace();
+  Rev31Diagnostics get_rev31_diagnostics() const;
 
   /// Enable or disable all motor drivers (nSLEEP control).
   /// When disabled, all motors are put to sleep and commands are rejected.
@@ -178,6 +221,7 @@ class Hv6ValveController : public esphome::Component {
   uint32_t effective_runtime_limit_s_(uint8_t zone) const;
   float effective_current_factor_(uint8_t zone, MotorDirection dir) const;
   void update_learned_factor_(uint8_t zone, MotorDirection dir, float average_ma, float peak_ma, bool sample_valid);
+  uint32_t get_motion_count_() const;
 
   // Ripple counting (DMA continuous processor task)
   void motor_loop_();
@@ -220,6 +264,32 @@ class Hv6ValveController : public esphome::Component {
   gpio_num_t nfault_pin_ = GPIO_NUM_4;
   gpio_num_t ipropi_pin_ = GPIO_NUM_7;
   std::array<uint8_t, NUM_ZONES> motor_addresses_{};
+  // Set after the startup I²C probe.  A controller mounted on an unpowered or
+  // different PCB must never raise nSLEEP and energise a floating motor bus.
+  bool any_driver_present_{false};
+
+  // Rev 3.1 Lean backend.  Here nsleep_pin_ is MOTOR_ENABLE, nfault_pin_ is
+  // active-high LATCH_STATE, and ipropi_pin_ is the shared INA180 ADC_CURRENT.
+  bool rev31_backend_enabled_{false};
+  Rev31PinConfig rev31_pins_{};
+  Rev31MotorBackend *rev31_backend_{nullptr};
+  uint16_t bemf_threshold_raw_{40};
+  bool auto_start_calibration_{true};
+  uint32_t last_bemf_sample_ms_{0};
+  uint8_t rev31_invalid_bemf_samples_{0};
+  std::atomic<uint16_t> rev31_diag_raw_a_{0};
+  std::atomic<uint16_t> rev31_diag_raw_b_{0};
+  std::atomic<int16_t> rev31_diag_differential_{0};
+  std::atomic<uint16_t> rev31_diag_separation_us_{0};
+  std::atomic<uint8_t> rev31_diag_sample_valid_{0};
+  std::atomic<uint8_t> rev31_diag_sample_moving_{0};
+  std::atomic<uint8_t> rev31_diag_invalid_samples_{0};
+  std::atomic<uint32_t> rev31_diag_evidence_count_{0};
+  std::atomic<uint32_t> rev31_diag_sample_sequence_{0};
+  std::atomic<uint32_t> rev31_diag_motor_runtime_ms_{0};
+  std::atomic<int32_t> rev31_diag_current_ma_x10_{0};
+  static constexpr uint32_t REV31_BEMF_SAMPLE_PERIOD_MS = 20;
+  static constexpr uint8_t REV31_MAX_INVALID_BEMF_SAMPLES = 3;
 
   // DRV8215 driver instances
   std::array<DRV8215 *, NUM_ZONES> drivers_{};
@@ -264,6 +334,7 @@ class Hv6ValveController : public esphome::Component {
 
   // Per-move context for soft-approach + adaptive endstop guard (set at move start)
   bool drive_to_endstop_active_ = false;  ///< Current move targets a mechanical limit
+  bool endpoint_confirmed_ = false;       ///< Set only by a qualified endpoint classifier
   bool soft_approach_active_ = false;     ///< Reduced drive duty engaged this tick
   uint32_t endstop_guard_ms_ = ENDSTOP_MIN_RUNTIME_MS;  ///< Blind window before threshold/slope detection
   uint32_t approach_stroke_ripples_ = 0;  ///< Estimated ripples for this move (0 = unknown)

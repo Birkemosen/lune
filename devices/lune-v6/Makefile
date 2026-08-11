@@ -2,7 +2,7 @@
 # Lune V6 firmware build (BLE BTHome sensors, ESPHome native API)
 # -----------------------------------------------------------------------------
 CONFIG ?= configurations/heatvalve-6-ble.yaml
-BUILD_NAME ?= heatvalve-6
+BUILD_NAME ?= lune-v6
 ROOT_DIR ?= ../..
 ROOT_ABS := $(abspath $(ROOT_DIR))
 DEVICE_DIR ?= devices/lune-v6
@@ -28,7 +28,7 @@ SECRETS_TARGET ?= ../../../secrets.yaml
 LANG ?= en
 DASHBOARD_COMPILED_LANG := $(if $(filter en da,$(LANG)),$(LANG),en)
 
-.PHONY: help check ensure-secrets-link config build build-verify deploy ota logs discover monitor erase erase-nvs clean dashboard dashboard-tooling dashboard-build dashboard-watch test test-ripple test-balance
+.PHONY: help check ensure-secrets-link config build build-verify deploy ota logs discover monitor erase erase-nvs clean dashboard dashboard-tooling dashboard-build dashboard-watch test test-ripple test-rev31-logic test-rev31-trace test-balance test-authority-lease test-preheat-policy test-hydraulic-policy test-hydraulic-diagnostics test-commissioning-schema test-request-guard
 
 help:
 	@echo "Lune V6 ESPHome tasks"
@@ -44,6 +44,8 @@ help:
 	@echo "  make erase-nvs     Erase NVS partition only (clears calibration data)"
 	@echo "  make test          Run all host unit tests"
 	@echo "  make test-ripple   Run ripple-counter unit tests (5 rates × 5 cases)"
+	@echo "  make test-rev31-logic  Run Rev 3.1 one-hot and endpoint-evidence tests"
+	@echo "  make test-rev31-trace  Run Rev 3.1 trace analyzer tests"
 	@echo "  make test-balance  Run adaptive-balancing step-math unit tests"
 	@echo ""
 	@echo "Examples:"
@@ -54,7 +56,7 @@ help:
 	@echo "  make monitor PORT=/dev/cu.usbmodemXXXX"
 	@echo "  make erase PORT=/dev/cu.usbmodemXXXX"
 	@echo "  make ota HOST=192.168.x.x"
-	@echo "  make ota HOST=heatvalve-6-a1b2c3.local  # current internal hostname pattern"
+	@echo "  make ota HOST=lune-v6-a1b2c3.local  # current internal hostname pattern"
 	@echo "  make discover"
 
 ensure-secrets-link:
@@ -100,7 +102,7 @@ deploy: check
 	else \
 		echo "No serial port detected. Scanning for Lune V6 devices (3s)..."; \
 		hosts=$$($(PYTHON) discover_devices.py 2>/dev/null); \
-		if [ -z "$$hosts" ]; then echo "No Lune V6 devices found. Use PORT=/dev/cu.usbmodemXXXX or HOST=heatvalve-6-XXXXXX.local (current internal hostname pattern)"; exit 1; fi; \
+		if [ -z "$$hosts" ]; then echo "No Lune V6 devices found. Use PORT=/dev/cu.usbmodemXXXX or HOST=lune-v6-XXXXXX.local (current internal hostname pattern)"; exit 1; fi; \
 		count=$$(echo "$$hosts" | wc -l | tr -d ' '); \
 		echo "Found devices:"; \
 		i=1; for h in $$hosts; do printf "  %d) %s\n" $$i $$h; i=$$((i+1)); done; \
@@ -120,26 +122,68 @@ RIPPLE_CXXFLAGS  = -std=c++17 -O2 -Wall -Wextra -Wno-unused-parameter \
 RIPPLE_SRCS      = components/hv6_valve_controller/ripple_counter.cpp \
                    test/ripple_counter/test_ripple_counter.cpp
 RIPPLE_OUT       = /tmp/test_ripple_counter
+REV31_LOGIC_SRCS = test/rev31_logic/test_rev31_logic.cpp
+REV31_LOGIC_OUT  = /tmp/test_hv6_rev31_logic
 
 test-ripple:
 	$(RIPPLE_CXX) $(RIPPLE_CXXFLAGS) $(RIPPLE_SRCS) -o $(RIPPLE_OUT) -lm
 	$(RIPPLE_OUT)
 
+test-rev31-logic:
+	$(RIPPLE_CXX) $(RIPPLE_CXXFLAGS) $(REV31_LOGIC_SRCS) -o $(REV31_LOGIC_OUT)
+	$(REV31_LOGIC_OUT)
+
+test-rev31-trace:
+	$(PYTHON) -m unittest discover -s test/rev31_trace -p 'test_*.py'
+
 BALANCE_SRCS = test/adaptive_balance/test_adaptive_balance.cpp
 BALANCE_OUT  = /tmp/test_adaptive_balance
+AUTHORITY_LEASE_SRCS = test/authority_lease/test_authority_lease.cpp
+AUTHORITY_LEASE_OUT  = /tmp/test_hv6_authority_lease
+PREHEAT_POLICY_SRCS = test/preheat_policy/test_preheat_policy.cpp
+PREHEAT_POLICY_OUT  = /tmp/test_hv6_preheat_policy
+HYDRAULIC_POLICY_SRCS = test/hydraulic_policy/test_hydraulic_policy.cpp
+HYDRAULIC_POLICY_OUT  = /tmp/test_hv6_hydraulic_policy
+HYDRAULIC_DIAGNOSTICS_SRCS = test/hydraulic_diagnostics/test_hydraulic_diagnostics.cpp
+HYDRAULIC_DIAGNOSTICS_OUT  = /tmp/test_hv6_hydraulic_diagnostics
+REQUEST_GUARD_SRCS = test/request_guard/test_request_guard.cpp
+REQUEST_GUARD_OUT  = /tmp/test_hv6_request_guard
 
 test-balance:
 	$(RIPPLE_CXX) -std=c++17 -O2 -Wall -Wextra -I components/hv6_zone_controller $(BALANCE_SRCS) -o $(BALANCE_OUT) -lm
 	$(BALANCE_OUT)
 
-test: test-ripple test-balance
+test-authority-lease:
+	$(RIPPLE_CXX) -std=c++17 -O2 -Wall -Wextra -I components/hv6_dashboard $(AUTHORITY_LEASE_SRCS) -o $(AUTHORITY_LEASE_OUT)
+	$(AUTHORITY_LEASE_OUT)
+
+test-preheat-policy:
+	$(RIPPLE_CXX) -std=c++17 -O2 -Wall -Wextra -I components/hv6_zone_controller $(PREHEAT_POLICY_SRCS) -o $(PREHEAT_POLICY_OUT)
+	$(PREHEAT_POLICY_OUT)
+
+test-hydraulic-policy:
+	$(RIPPLE_CXX) -std=c++17 -O2 -Wall -Wextra -I components/hv6_zone_controller $(HYDRAULIC_POLICY_SRCS) -o $(HYDRAULIC_POLICY_OUT)
+	$(HYDRAULIC_POLICY_OUT)
+
+test-hydraulic-diagnostics:
+	$(RIPPLE_CXX) -std=c++17 -O2 -Wall -Wextra -I components/hv6_zone_controller $(HYDRAULIC_DIAGNOSTICS_SRCS) -o $(HYDRAULIC_DIAGNOSTICS_OUT)
+	$(HYDRAULIC_DIAGNOSTICS_OUT)
+
+test-commissioning-schema:
+	sh test/commissioning/test_persistence_schema.sh
+
+test-request-guard:
+	$(RIPPLE_CXX) -std=c++17 -O2 -Wall -Wextra -I components/hv6_dashboard $(REQUEST_GUARD_SRCS) -o $(REQUEST_GUARD_OUT)
+	$(REQUEST_GUARD_OUT)
+
+test: test-ripple test-rev31-logic test-rev31-trace test-balance test-authority-lease test-preheat-policy test-hydraulic-policy test-hydraulic-diagnostics test-commissioning-schema test-request-guard
 
 ota: check
 	$(MAKE) build
 	@if [ -z "$(HOST)" ]; then \
 		echo "Scanning for Lune V6 devices (3s)..."; \
 		hosts=$$($(PYTHON) discover_devices.py 2>/dev/null); \
-		if [ -z "$$hosts" ]; then echo "No Lune V6 devices found. Use: make ota HOST=heatvalve-6-XXXXXX.local (current internal hostname pattern)"; exit 1; fi; \
+		if [ -z "$$hosts" ]; then echo "No Lune V6 devices found. Use: make ota HOST=lune-v6-XXXXXX.local (current internal hostname pattern)"; exit 1; fi; \
 		count=$$(echo "$$hosts" | wc -l | tr -d ' '); \
 		echo "Found devices:"; \
 		i=1; for h in $$hosts; do printf "  %d) %s\n" $$i $$h; i=$$((i+1)); done; \
@@ -156,7 +200,7 @@ logs: check
 	@if [ -z "$(HOST)" ]; then \
 		echo "Scanning for Lune V6 devices (3s)..."; \
 		hosts=$$($(PYTHON) discover_devices.py 2>/dev/null); \
-		if [ -z "$$hosts" ]; then echo "No Lune V6 devices found. Use: make logs HOST=heatvalve-6-XXXXXX.local (current internal hostname pattern)"; exit 1; fi; \
+		if [ -z "$$hosts" ]; then echo "No Lune V6 devices found. Use: make logs HOST=lune-v6-XXXXXX.local (current internal hostname pattern)"; exit 1; fi; \
 		count=$$(echo "$$hosts" | wc -l | tr -d ' '); \
 		echo "Found devices:"; \
 		i=1; for h in $$hosts; do printf "  %d) %s\n" $$i $$h; i=$$((i+1)); done; \

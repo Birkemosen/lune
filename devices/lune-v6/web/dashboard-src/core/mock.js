@@ -16,7 +16,6 @@ const MOCK_LOG_SAMPLES = [
   [3, 'hv6_valve', 'Motor 2 reached open endstop (ripples=412)'],
   [5, 'hv6_ripple', 'ADC DMA buffer drained, 2048 samples'],
   [2, 'hv6_zone', 'Zone 5 disabled — skipping control'],
-  [3, 'hv6_asgard', 'Pushed z1 thermostat 21.4°C to Asgard'],
 ];
 
 const state = {

@@ -12,7 +12,7 @@ from esphome.components import sensor
 
 CODEOWNERS = ["@birkemosen"]
 # (No JSON dependency — this component builds no JSON; the former `json` dep was
-# vestigial and only masked that forecast/asgard, the real ArduinoJson users,
+# vestigial and only masked legacy forecast integration, the real ArduinoJson users,
 # weren't declaring it themselves. They now AUTO_LOAD json directly.)
 AUTO_LOAD = ["hv6_config_store", "hv6_valve_controller"]
 

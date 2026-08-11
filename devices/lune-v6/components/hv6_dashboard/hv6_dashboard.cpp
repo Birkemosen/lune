@@ -1,11 +1,9 @@
 #include "hv6_dashboard.h"
+#include "../hv6_zone_controller/hydraulic_diagnostics.h"
 
 #include "esphome/core/log.h"
 #ifdef USE_LOGGER
 #include "esphome/components/logger/logger.h"
-#endif
-#ifdef USE_HV6_ASGARD_BRIDGE
-#include "../hv6_asgard_bridge/hv6_asgard_bridge.h"
 #endif
 #include <algorithm>
 #include <cmath>
@@ -313,7 +311,12 @@ static const char DASHBOARD_HTML[] =
     "</body></html>";
 
 void HV6Dashboard::update_snapshot_() {
-  DashboardSnapshot s{};
+  // This function runs on ESPHome's loopTask.  DashboardSnapshot is several
+  // kilobytes and used to be allocated here alongside temporary DeviceConfig
+  // copies, exhausting loopTask during boot on 4 MB modules.  Reuse the
+  // component-owned scratch buffer instead; it is never read by HTTP handlers.
+  DashboardSnapshot &s = this->update_snap_buf_;
+  memset(&s, 0, sizeof(s));
 
   s.uptime_s = millis() / 1000UL;
   // System diagnostics — per-core CPU load (sampled in loop()) + live heap.
@@ -359,32 +362,27 @@ void HV6Dashboard::update_snapshot_() {
 
   s.drivers_enabled = this->valve_controller_ && this->valve_controller_->are_drivers_enabled();
 
-  // Asgard bridge status
-#ifdef USE_HV6_ASGARD_BRIDGE
-  if (this->asgard_bridge_ != nullptr) {
-    auto *ab = static_cast<hv6_asgard_bridge::Hv6AsgardBridge *>(this->asgard_bridge_);
-    strncpy(s.asgard_role, ab->get_role_str(), sizeof(s.asgard_role) - 1);
-    strncpy(s.asgard_peer_status, ab->get_peer_status_str(), sizeof(s.asgard_peer_status) - 1);
-    strncpy(s.asgard_last_error, ab->get_last_error(), sizeof(s.asgard_last_error) - 1);
-    s.asgard_last_push_c      = ab->get_last_push_value();
-    s.asgard_setpoint_c       = ab->get_recommended_setpoint_c();
-    s.asgard_last_push_age_s  = ab->get_last_push_age_s();
-    s.asgard_push_fail_streak = ab->get_push_fail_streak();
-    s.asgard_local_zones      = ab->get_local_zones_used();
-    s.asgard_peer_zones       = ab->get_peer_zones_used();
-  } else {
-    strncpy(s.asgard_role, "slave", sizeof(s.asgard_role) - 1);
-    strncpy(s.asgard_peer_status, "n/a", sizeof(s.asgard_peer_status) - 1);
+  // Touch authority is local coordination state only; heat-source transport is
+  // owned by Lune Touch. Expiry is checked here so stale leases stop gating
+  // local command handling without a second background task.
+  if (this->config_store_) {
+    s.authority = this->config_store_->get_authority_config();
+    this->authority_.configure(s.authority.installation_id, s.authority.coordinator_id);
+    this->authority_.expire_if_needed(millis());
+    if (this->zone_controller_)
+      this->zone_controller_->set_touch_authority_active(this->authority_.snapshot(millis()).touch_lease_active);
   }
-#else
-  strncpy(s.asgard_role, "slave", sizeof(s.asgard_role) - 1);
-  strncpy(s.asgard_peer_status, "n/a", sizeof(s.asgard_peer_status) - 1);
-#endif
-  s.asgard_role[sizeof(s.asgard_role) - 1] = '\0';
-  s.asgard_peer_status[sizeof(s.asgard_peer_status) - 1] = '\0';
-  s.asgard_last_error[sizeof(s.asgard_last_error) - 1] = '\0';
+  const auto authority_snapshot = this->authority_.snapshot(millis());
+  strncpy(s.authority_state, hv6_authority::state_name(authority_snapshot.state), sizeof(s.authority_state) - 1);
+  strncpy(s.authority_reason, authority_snapshot.last_reason, sizeof(s.authority_reason) - 1);
+  s.authority_lease_remaining_s = authority_snapshot.remaining_ms / 1000UL;
+  s.authority_generation = authority_snapshot.lease_generation;
+  s.authority_v6_write_allowed = false;
+  s.authority_state[sizeof(s.authority_state) - 1] = '\0';
+  s.authority_reason[sizeof(s.authority_reason) - 1] = '\0';
 
   if (this->config_store_) {
+    s.system                 = this->config_store_->get_config().system;
     s.probes                 = this->config_store_->get_probe_config();
     s.motor                  = this->config_store_->get_motor_config();
     s.manifold_type          = this->config_store_->get_manifold_type();
@@ -394,10 +392,10 @@ void HV6Dashboard::update_snapshot_() {
     s.preheat_absorb_band_c  = ctrl_cfg.preheat_absorb_band_c;
     s.preheat_detect_delta_c = ctrl_cfg.preheat_detect_delta_c;
     s.preheat_absorbing = this->zone_controller_ && this->zone_controller_->is_preheat_absorbing();
-    s.asgard                 = this->config_store_->get_asgard_config();
+    s.authority              = this->config_store_->get_authority_config();
     s.balancing              = this->config_store_->get_config().balancing;
-    s.min_zone_flow_pct      = s.balancing.minimum_flow_pct;
-    s.minimum_flow_always    = s.balancing.modulating_heat_source;
+    s.min_zone_flow_pct      = s.balancing.secondary_min_total_opening_pct;
+    s.minimum_flow_always    = s.balancing.secondary_flow_commissioning_enabled;
     for (uint8_t i = 0; i < hv6::NUM_ZONES; i++) {
       s.zones[i]            = this->config_store_->get_zone_config(i);
       s.zone_temp_source[i] = this->config_store_->get_zone_temp_source(i);
@@ -436,7 +434,7 @@ void HV6Dashboard::setup() {
 
   this->base_->init();
   this->base_->add_handler(this);
-  ESP_LOGI(TAG, "Dashboard endpoints registered: /dashboard, /dashboard.js");
+  ESP_LOGI(TAG, "Dashboard endpoints registered: /, /dashboard (redirect), /dashboard.js");
 }
 
 // =============================================================================
@@ -519,6 +517,8 @@ void HV6Dashboard::loop() {
   }
   for (const auto &act : todo) {
     dispatch_set_(act);
+    if (data_revision_ != UINT32_MAX)
+      data_revision_++;
   }
   this->expire_coordinator_commands_();
 
@@ -547,7 +547,7 @@ static constexpr size_t V1_PREFIX_LEN = sizeof(V1_PREFIX) - 1;
 bool HV6Dashboard::canHandle(AsyncWebServerRequest *request) const {
   char url_buf[AsyncWebServerRequest::URL_BUF_SIZE];
   auto url = request->url_to(url_buf);
-  if (url == "/dashboard" || url == "/dashboard/" || is_dashboard_js_url(url.c_str()))
+  if (url == "/" || url == "/dashboard" || url == "/dashboard/" || is_dashboard_js_url(url.c_str()))
     return true;
   return strncmp(url.c_str(), V1_PREFIX, V1_PREFIX_LEN) == 0 && url.c_str()[V1_PREFIX_LEN] == '/';
 }
@@ -557,6 +557,14 @@ void HV6Dashboard::handleRequest(AsyncWebServerRequest *request) {
   auto url = request->url_to(url_buf);
 
   if (url == "/dashboard" || url == "/dashboard/") {
+    httpd_req_t *req = *request;
+    httpd_resp_set_status(req, "308 Permanent Redirect");
+    httpd_resp_set_hdr(req, "Location", "/");
+    httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+    httpd_resp_send(req, nullptr, 0);
+    return;
+  }
+  if (url == "/") {
     this->handle_root_(request);
     return;
   }
@@ -598,8 +606,9 @@ void HV6Dashboard::send_text_(AsyncWebServerRequest *request, int code, const ch
   httpd_resp_set_hdr(req, "Connection", "close");
   if (cache_control != nullptr)
     httpd_resp_set_hdr(req, "Cache-Control", cache_control);
-  if (cors)
-    httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
+  // Browser reads are same-origin. Deliberately do not emit wildcard CORS:
+  // custom write headers are part of the CSRF boundary.
+  (void) cors;
   httpd_resp_send(req, body != nullptr ? body : "", HTTPD_RESP_USE_STRLEN);
 }
 
@@ -645,7 +654,6 @@ void HV6Dashboard::handle_state_(AsyncWebServerRequest *request) {
   httpd_resp_set_status(req, "200 OK");
   httpd_resp_set_type(req, "application/json");
   httpd_resp_set_hdr(req, "Cache-Control", "no-cache");
-  httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
   httpd_resp_set_hdr(req, "Connection", "close");
 
   constexpr size_t BUF_SIZE = 2048;
@@ -950,59 +958,22 @@ void HV6Dashboard::handle_state_(AsyncWebServerRequest *request) {
   appendf(buf, BUF_SIZE, offset,
       "\"number-learned_factor_max_deviation_pct\":{\"value\":%s},", num_buf);
 
-  // flush before asgard section
+  // flush before authority/flow section
   if (!flush()) return;
 
-  // --- asgard config + status ---
+  // --- Touch authority + local secondary-flow commissioning ---
   appendf(buf, BUF_SIZE, offset,
-      "\"switch-asgard_enabled\":{\"state\":\"%s\"},"
-      "\"switch-asgard_coordinator\":{\"state\":\"%s\"},"
-      "\"text-asgard_host\":{\"state\":\"%s\"},"
-      "\"text-asgard_entity_name\":{\"state\":\"%s\"},"
-      "\"text-asgard_peer_host\":{\"state\":\"%s\"},",
-      snap->asgard.enabled ? "on" : "off",
-      snap->asgard.coordinator ? "on" : "off",
-      snap->asgard.host,
-      snap->asgard.entity_name,
-      snap->asgard.peer_host);
-  appendf(buf, BUF_SIZE, offset,
-      "\"number-asgard_port\":{\"value\":%u},"
-      "\"number-asgard_peer_port\":{\"value\":%u},"
-      "\"number-asgard_push_interval_s\":{\"value\":%u},"
-      "\"number-asgard_peer_stale_after_s\":{\"value\":%u},",
-      static_cast<unsigned>(snap->asgard.port),
-      static_cast<unsigned>(snap->asgard.peer_port),
-      static_cast<unsigned>(snap->asgard.push_interval_s),
-      static_cast<unsigned>(snap->asgard.peer_stale_after_s));
+      "\"text-authority_state\":{\"state\":\"%s\"},"
+      "\"text-authority_reason\":{\"state\":\"%s\"},"
+      "\"sensor-authority_lease_remaining_s\":{\"state\":%lu},",
+      snap->authority_state, snap->authority_reason,
+      static_cast<unsigned long>(snap->authority_lease_remaining_s));
   format_float_token(num_buf, sizeof(num_buf), snap->min_zone_flow_pct, 1);
   appendf(buf, BUF_SIZE, offset,
       "\"switch-minimum_flow_always\":{\"state\":\"%s\"},"
       "\"number-min_zone_flow_pct\":{\"value\":%s},",
       snap->minimum_flow_always ? "on" : "off",
       num_buf);
-  format_float_token(num_buf, sizeof(num_buf), snap->asgard_last_push_c, 2);
-  char sp_buf[16];
-  format_float_token(sp_buf, sizeof(sp_buf), snap->asgard_setpoint_c, 1);
-  appendf(buf, BUF_SIZE, offset,
-      "\"text-asgard_role\":{\"state\":\"%s\"},"
-      "\"text-asgard_peer_status\":{\"state\":\"%s\"},"
-      "\"text-asgard_last_error\":{\"state\":\"%s\"},"
-      "\"sensor-asgard_last_push_c\":{\"value\":%s},"
-      "\"sensor-asgard_setpoint_c\":{\"value\":%s},"
-      "\"sensor-asgard_last_push_age_s\":{\"state\":%lu},"
-      "\"sensor-asgard_push_fail_streak\":{\"state\":%lu},"
-      "\"sensor-asgard_local_zones\":{\"state\":%u},"
-      "\"sensor-asgard_peer_zones\":{\"state\":%u},",
-      snap->asgard_role,
-      snap->asgard_peer_status,
-      snap->asgard_last_error,
-      num_buf,
-      sp_buf,
-      static_cast<unsigned long>(snap->asgard_last_push_age_s),
-      static_cast<unsigned long>(snap->asgard_push_fail_streak),
-      static_cast<unsigned>(snap->asgard_local_zones),
-      static_cast<unsigned>(snap->asgard_peer_zones));
-
   // Sentinel field closes the JSON object and absorbs any trailing comma.
   appendf(buf, BUF_SIZE, offset, "\"_\":{}}");
   flush();
@@ -1095,6 +1066,9 @@ void HV6Dashboard::handle_zones_(AsyncWebServerRequest *request) {
             i ? "," : "", static_cast<unsigned>(i + 1));
     append_json_escaped(buf, sizeof(this->json_buf_), off, snap->zones[i].name);
     appendf(buf, sizeof(this->json_buf_), off,
+            "\",\"friendly_name\":\"");
+    append_json_escaped(buf, sizeof(this->json_buf_), off, snap->zones[i].name);
+    appendf(buf, sizeof(this->json_buf_), off,
             "\",\"enabled\":%s,\"temperature_c\":%s,\"setpoint_c\":%s,\"valve_pct\":%s,"
             "\"preheat_c\":%s,\"state\":\"%s\",\"temp_source\":\"%s\",\"fresh\":%s,"
             "\"forecast\":{\"exterior_walls\":%u,\"wind_exposure\":%s,\"solar_gain\":%s,"
@@ -1129,6 +1103,7 @@ void HV6Dashboard::handle_zone_(AsyncWebServerRequest *request, uint8_t zone) {
   char temp[24], setpoint[24], valve[24], preload[24], probe[24];
   char area[24], spacing[24], wind[24], solar[24], max_offset[24];
   char open_ripple[24], close_ripple[24], open_factor[24], close_factor[24];
+  char loop_length[24], design_flow[24], measured_flow[24], actuator_cal[24], thermal_delay[24];
   format_float_token(temp, sizeof(temp), snap->zone_temp_c[i], 1);
   format_float_token(setpoint, sizeof(setpoint), z.setpoint_c, 1);
   format_float_token(valve, sizeof(valve), snap->zone_valve_pct[i], 0);
@@ -1142,6 +1117,11 @@ void HV6Dashboard::handle_zone_(AsyncWebServerRequest *request, uint8_t zone) {
   format_float_token(close_ripple, sizeof(close_ripple), snap->motor_close_ripple[i], 0);
   format_float_token(open_factor, sizeof(open_factor), snap->motor_open_factor[i], 2);
   format_float_token(close_factor, sizeof(close_factor), snap->motor_close_factor[i], 2);
+  format_float_token(loop_length, sizeof(loop_length), z.loop_pipe_length_m, 1);
+  format_float_token(design_flow, sizeof(design_flow), z.design_flow_l_h, 1);
+  format_float_token(measured_flow, sizeof(measured_flow), z.measured_flow_l_h, 1);
+  format_float_token(actuator_cal, sizeof(actuator_cal), z.actuator_calibration_pct, 1);
+  format_float_token(thermal_delay, sizeof(thermal_delay), z.expected_thermal_delay_min, 1);
 
   const int8_t probe_idx = snap->probes.zone_return_probe[i];
   if (probe_idx >= 0 && probe_idx < static_cast<int8_t>(hv6::MAX_PROBES))
@@ -1164,6 +1144,9 @@ void HV6Dashboard::handle_zone_(AsyncWebServerRequest *request, uint8_t zone) {
           "\"min_offset_c\":%.2f,\"max_offset_c\":%.2f},"
           "\"forecast\":{\"exterior_walls\":%u,\"wind_exposure\":%s,\"solar_gain\":%s,"
           "\"thermal_lead_h\":%u,\"max_offset_c\":%s},"
+          "\"commissioning\":{\"manifold_id\":\"%s\",\"manifold_port\":%u,\"room_id\":\"%s\","
+          "\"loop_pipe_length_m\":%s,\"design_flow_l_h\":%s,\"measured_flow_l_h\":%s,"
+          "\"flooring_type\":%u,\"actuator_calibration_pct\":%s,\"expected_thermal_delay_min\":%s},"
           "\"motor\":{\"fault\":\"%s\",\"open_ripples\":%s,\"close_ripples\":%s,"
           "\"open_factor\":%s,\"close_factor\":%s}}}",
           z.enabled ? "true" : "false", snap->zone_state[i],
@@ -1175,6 +1158,8 @@ void HV6Dashboard::handle_zone_(AsyncWebServerRequest *request, uint8_t zone) {
           z.abs_min_c, z.abs_max_c, z.min_offset_c, z.max_offset_c,
           static_cast<unsigned>(z.exterior_walls), wind, solar,
           static_cast<unsigned>(z.thermal_lead_h), max_offset,
+          z.manifold_id, static_cast<unsigned>(z.manifold_port), z.room_id,
+          loop_length, design_flow, measured_flow, static_cast<unsigned>(z.floor_type), actuator_cal, thermal_delay,
           snap->motor_fault[i], open_ripple, close_ripple, open_factor, close_factor);
   send_text_(request, 200, "application/json", buf, true, "no-cache");
 }
@@ -1194,7 +1179,6 @@ void HV6Dashboard::handle_settings_(AsyncWebServerRequest *request) {
   httpd_resp_set_status(req, "200 OK");
   httpd_resp_set_type(req, "application/json");
   httpd_resp_set_hdr(req, "Cache-Control", "no-cache");
-  httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
   httpd_resp_set_hdr(req, "Connection", "close");
 
   constexpr size_t BUF_SIZE = 2048;
@@ -1222,7 +1206,7 @@ void HV6Dashboard::handle_settings_(AsyncWebServerRequest *request) {
           "\"motor\":{\"default_profile\":\"%s\",\"generic_runtime_limit_s\":%lu,"
           "\"hmip_runtime_limit_s\":%lu,\"relearn_after_movements\":%lu,"
           "\"relearn_after_hours\":%lu},"
-          "\"asgard\":{\"enabled\":%s,\"coordinator\":%s,\"host\":\"",
+          "\"authority\":{\"installation_id\":\"%s\",\"coordinator_id\":\"%s\",\"authentication_configured\":%s},\"zones\":[",
           snap->simple_preheat_enabled ? "true" : "false",
           snap->preheat_absorb_enabled ? "true" : "false",
           preheat_band, preheat_delta,
@@ -1235,20 +1219,8 @@ void HV6Dashboard::handle_settings_(AsyncWebServerRequest *request) {
           static_cast<unsigned long>(snap->motor.hmip_vdmot_runtime_limit_s),
           static_cast<unsigned long>(snap->motor.relearn_after_movements),
           static_cast<unsigned long>(snap->motor.relearn_after_hours),
-          snap->asgard.enabled ? "true" : "false",
-          snap->asgard.coordinator ? "true" : "false");
-  append_json_escaped(buf, BUF_SIZE, off, snap->asgard.host);
-  appendf(buf, BUF_SIZE, off,
-          "\",\"port\":%u,\"entity_name\":\"",
-          static_cast<unsigned>(snap->asgard.port));
-  append_json_escaped(buf, BUF_SIZE, off, snap->asgard.entity_name);
-  appendf(buf, BUF_SIZE, off,
-          "\",\"peer_host\":\"");
-  append_json_escaped(buf, BUF_SIZE, off, snap->asgard.peer_host);
-  appendf(buf, BUF_SIZE, off,
-          "\",\"peer_port\":%u,\"peer_stale_after_s\":%u},\"zones\":[",
-          static_cast<unsigned>(snap->asgard.peer_port),
-          static_cast<unsigned>(snap->asgard.peer_stale_after_s));
+          snap->authority.installation_id, snap->authority.coordinator_id,
+          snap->authority.shared_key[0] != '\0' ? "true" : "false");
   if (!flush()) return;
 
   for (uint8_t i = 0; i < hv6::NUM_ZONES; i++) {
@@ -1305,22 +1277,140 @@ void HV6Dashboard::handle_diagnostics_(AsyncWebServerRequest *request) {
   xSemaphoreGive(snapshot_lock_);
 
   const DashboardSnapshot *snap = &this->state_snap_buf_;
+  const hv6::Rev31Diagnostics motor_diag = this->valve_controller_
+      ? this->valve_controller_->get_rev31_diagnostics()
+      : hv6::Rev31Diagnostics{};
   char cpu0[24], cpu1[24], flow[24], ret[24];
   format_float_token(cpu0, sizeof(cpu0), snap->cpu0_pct, 1);
   format_float_token(cpu1, sizeof(cpu1), snap->cpu1_pct, 1);
   format_float_token(flow, sizeof(flow), snap->manifold_flow_c, 1);
   format_float_token(ret, sizeof(ret), snap->manifold_return_c, 1);
+  hv6::hydraulic_diagnostics::Input hydraulic{};
+  float valve_total = 0.0f;
+  uint8_t valve_count = 0;
+  for (uint8_t i = 0; i < hv6::NUM_ZONES; i++) {
+    if (std::isfinite(snap->zone_valve_pct[i])) {
+      valve_total += snap->zone_valve_pct[i];
+      valve_count++;
+    }
+  }
+  hydraulic.average_valve_pct = valve_count ? valve_total / valve_count : NAN;
+  hydraulic.manifold_delta_known = std::isfinite(snap->manifold_flow_c) &&
+                                    std::isfinite(snap->manifold_return_c);
+  hydraulic.manifold_delta_c = hydraulic.manifold_delta_known
+      ? snap->manifold_flow_c - snap->manifold_return_c : NAN;
+
+  // Keep the large diagnostic assembly buffer out of the HTTP task stack. The
+  // endpoint is serialized by ESP-IDF's single request worker, so a static
+  // buffer is safe here and leaves ample stack for snprintf/httpd internals.
+  static char hydraulic_json[2300];
+  memset(hydraulic_json, 0, sizeof(hydraulic_json));
+  size_t hydraulic_off = 0;
+  const char *const freshness = "snapshot_observed_source_timestamp_unavailable";
+  appendf(hydraulic_json, sizeof(hydraulic_json), hydraulic_off, "\"hydraulic_alarms\":[");
+  for (uint8_t i = 0; i < 3; i++) {
+    const auto alarm = hv6::hydraulic_diagnostics::evaluate(i, hydraulic);
+    const char *evidence = "required documented telemetry is unavailable";
+    if (i == 1 && hydraulic.manifold_delta_known)
+      evidence = "observed manifold supply-return delta";
+    appendf(hydraulic_json, sizeof(hydraulic_json), hydraulic_off,
+            "%s{\"id\":\"%s\",\"state\":\"%s\",\"freshness\":\"%s\",\"evidence\":\"%s\",\"suggested_action\":\"%s\"}",
+            i ? "," : "", alarm.id, hv6::hydraulic_diagnostics::state_str(alarm.state),
+            freshness, evidence, alarm.action);
+  }
+  appendf(hydraulic_json, sizeof(hydraulic_json), hydraulic_off, "]");
   snprintf(this->json_buf_, sizeof(this->json_buf_),
            "{\"ok\":true,\"version\":\"v1\",\"data\":{\"heap\":{\"internal_kb\":%lu,"
            "\"psram_kb\":%lu},\"cpu\":{\"core0_pct\":%s,\"core1_pct\":%s},"
            "\"manifold\":{\"flow_c\":%s,\"return_c\":%s},\"drivers_enabled\":%s,"
-           "\"asgard\":{\"role\":\"%s\",\"peer_status\":\"%s\",\"last_error\":\"%s\"},"
-           "\"logs_endpoint\":\"/api/hv6/v1/logs\"}}",
+           "\"motor_safety\":{\"backend\":\"%s\",\"motor_busy\":%s,\"drive_on\":%s,"
+           "\"latch_faulted\":%s,\"fault_code\":%u,\"current_ma\":%.1f,"
+           "\"bemf_raw_a\":%u,\"bemf_raw_b\":%u,\"bemf_differential_raw\":%d,"
+           "\"sample_separation_us\":%u,\"bemf_threshold_raw\":%u,"
+           "\"sample_valid\":%s,\"sample_moving\":%s,\"invalid_samples\":%u,"
+           "\"motion_evidence_count\":%lu,\"sample_sequence\":%lu,\"motor_runtime_ms\":%lu},"
+           "\"authority\":{\"state\":\"%s\",\"reason\":\"%s\",\"lease_remaining_s\":%lu,\"generation\":%lu,\"v6_write_allowed\":%s},"
+           "%s,\"logs_endpoint\":\"/api/hv6/v1/logs\"}}",
            static_cast<unsigned long>(snap->free_internal_kb),
            static_cast<unsigned long>(snap->free_psram_kb), cpu0, cpu1, flow, ret,
-           snap->drivers_enabled ? "true" : "false", snap->asgard_role,
-           snap->asgard_peer_status, snap->asgard_last_error);
+           snap->drivers_enabled ? "true" : "false",
+           motor_diag.backend_enabled ? "rev31_gpio" : "drv8215_i2c",
+           motor_diag.motor_busy ? "true" : "false",
+           motor_diag.drive_on ? "true" : "false",
+           motor_diag.latch_faulted ? "true" : "false",
+           static_cast<unsigned>(motor_diag.fault), motor_diag.current_ma,
+           static_cast<unsigned>(motor_diag.bemf_raw_a),
+           static_cast<unsigned>(motor_diag.bemf_raw_b),
+           static_cast<int>(motor_diag.bemf_differential_raw),
+           static_cast<unsigned>(motor_diag.sample_separation_us),
+           static_cast<unsigned>(motor_diag.bemf_threshold_raw),
+           motor_diag.sample_valid ? "true" : "false",
+           motor_diag.sample_moving ? "true" : "false",
+           static_cast<unsigned>(motor_diag.consecutive_invalid_samples),
+           static_cast<unsigned long>(motor_diag.motion_evidence_count),
+           static_cast<unsigned long>(motor_diag.sample_sequence),
+           static_cast<unsigned long>(motor_diag.motor_runtime_ms),
+           snap->authority_state,
+           snap->authority_reason, static_cast<unsigned long>(snap->authority_lease_remaining_s),
+           static_cast<unsigned long>(snap->authority_generation),
+           snap->authority_v6_write_allowed ? "true" : "false", hydraulic_json);
   send_text_(request, 200, "application/json", this->json_buf_, true, "no-cache");
+}
+
+void HV6Dashboard::handle_motor_trace_(AsyncWebServerRequest *request) {
+  if (this->valve_controller_ == nullptr) {
+    send_text_(request, 503, "application/json",
+               "{\"ok\":false,\"error\":{\"code\":\"controller_unavailable\"}}",
+               true, "no-cache");
+    return;
+  }
+  // Export only a stable, completed capture. Reading while the ring is being
+  // overwritten would silently mix different chronological windows.
+  if (this->valve_controller_->is_motor_busy()) {
+    send_text_(request, 409, "application/json",
+               "{\"ok\":false,\"error\":{\"code\":\"motor_busy\",\"message\":\"Stop the motor before exporting trace\"}}",
+               true, "no-cache");
+    return;
+  }
+
+  httpd_req_t *req = *request;
+  httpd_resp_set_status(req, "200 OK");
+  httpd_resp_set_type(req, "text/csv; charset=utf-8");
+  httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+  httpd_resp_set_hdr(req, "Content-Disposition", "attachment; filename=lune-v6-motor-trace.csv");
+  httpd_resp_set_hdr(req, "Connection", "close");
+
+  static constexpr char HEADER[] =
+      "t_ms,motion_count,current_ma,adc_current_raw,drive_on,bemf_raw_a,bemf_raw_b,"
+      "bemf_differential_raw,bemf_separation_us,bemf_valid,bemf_moving,invalid_bemf_samples\n";
+  if (httpd_resp_send_chunk(req, HEADER, sizeof(HEADER) - 1) != ESP_OK)
+    return;
+
+  const uint16_t count = this->valve_controller_->get_motor_trace_sample_count();
+  char line[176];
+  for (uint16_t index = 0; index < count; index++) {
+    hv6::MotorTraceSample sample{};
+    if (!this->valve_controller_->get_motor_trace_sample(index, &sample))
+      break;
+    const int length = snprintf(
+        line, sizeof(line), "%lu,%lu,%.1f,%u,%u,%u,%u,%d,%u,%u,%u,%u\n",
+        static_cast<unsigned long>(sample.t_ms),
+        static_cast<unsigned long>(sample.ripple_count),
+        static_cast<float>(sample.current_ma_x10) / 10.0f,
+        static_cast<unsigned>(sample.adc_raw),
+        static_cast<unsigned>(sample.drive_on),
+        static_cast<unsigned>(sample.bemf_raw_a),
+        static_cast<unsigned>(sample.bemf_raw_b),
+        static_cast<int>(sample.bemf_differential_raw),
+        static_cast<unsigned>(sample.bemf_separation_us),
+        static_cast<unsigned>(sample.bemf_valid),
+        static_cast<unsigned>(sample.bemf_moving),
+        static_cast<unsigned>(sample.invalid_bemf_samples));
+    if (length <= 0 || length >= static_cast<int>(sizeof(line)) ||
+        httpd_resp_send_chunk(req, line, static_cast<size_t>(length)) != ESP_OK)
+      return;
+  }
+  httpd_resp_send_chunk(req, nullptr, 0);
 }
 
 void HV6Dashboard::handle_events_(AsyncWebServerRequest *request) {
@@ -1328,6 +1418,15 @@ void HV6Dashboard::handle_events_(AsyncWebServerRequest *request) {
              "event: hello\n"
              "data: {\"resource\":\"/api/hv6/v1/state\",\"stream\":\"poll\"}\n\n",
              true, "no-cache");
+}
+
+void HV6Dashboard::handle_revision_(AsyncWebServerRequest *request) {
+  char response[192];
+  snprintf(response, sizeof(response),
+           "{\"ok\":true,\"version\":\"v1\",\"data\":{\"data_revision\":%lu,"
+           "\"poll_after_ms\":3000,\"freshness\":\"runtime\"}}",
+           static_cast<unsigned long>(data_revision_));
+  send_text_(request, 200, "application/json", response, false, "no-cache");
 }
 
 // =============================================================================
@@ -1466,6 +1565,10 @@ void HV6Dashboard::handle_v1_(AsyncWebServerRequest *request, const char *path) 
     this->handle_state_(request);
     return;
   }
+  if (strcmp(path, "/revision") == 0) {
+    this->handle_revision_(request);
+    return;
+  }
   if (strcmp(path, "/overview") == 0) {
     this->handle_overview_(request);
     return;
@@ -1490,6 +1593,10 @@ void HV6Dashboard::handle_v1_(AsyncWebServerRequest *request, const char *path) 
     this->handle_diagnostics_(request);
     return;
   }
+  if (strcmp(path, "/motor-trace.csv") == 0) {
+    this->handle_motor_trace_(request);
+    return;
+  }
   if (strcmp(path, "/events") == 0) {
     this->handle_events_(request);
     return;
@@ -1506,10 +1613,6 @@ void HV6Dashboard::handle_v1_(AsyncWebServerRequest *request, const char *path) 
     this->handle_ble_scan_(request);
     return;
   }
-  if (strcmp(path, "/peer") == 0) {
-    this->handle_peer_(request);
-    return;
-  }
 
   // ---- write endpoints ----
   if (request->method() != HTTP_POST) {
@@ -1522,6 +1625,11 @@ void HV6Dashboard::handle_v1_(AsyncWebServerRequest *request, const char *path) 
   bool flag = false;
   const std::string body_str = request->arg("plain");
   const char *body = body_str.c_str();
+
+  if (strcmp(path, "/authority/lease") == 0) {
+    this->handle_authority_lease_(request, body);
+    return;
+  }
 
   if ((zone = match_zone_route(path, "/zones", "setpoint")) != -1) {
     if (zone == 0) {
@@ -1551,6 +1659,30 @@ void HV6Dashboard::handle_v1_(AsyncWebServerRequest *request, const char *path) 
     }
     if (!std::isfinite(num)) {
       this->send_v1_(request, 400, "invalid_value", "setpoint_offset_c must be finite");
+      return;
+    }
+    // Coordinator commands require a provisioned per-installation key, valid UTC
+    // timestamp, and single-use nonce. A pairing fingerprint is never an authorizer.
+    if (this->config_store_ == nullptr) {
+      this->send_v1_(request, 503, "auth_unavailable", "Authentication configuration unavailable");
+      return;
+    }
+    const auto auth_cfg = this->config_store_->get_authority_config();
+    const auto key_header = request->get_header("X-Lune-Authority-Key");
+    const char *provided_key = key_header.has_value() ? key_header->c_str() : "";
+    float auth_timestamp_s = 0.0f;
+    char auth_nonce[48]{};
+    parse_num_param(request, body, "auth_timestamp_s", &auth_timestamp_s);
+    parse_text_param(request, body, "auth_nonce", "", auth_nonce, sizeof(auth_nonce));
+    const time_t now_s = ::time(nullptr);
+    if (!touch_auth::request_is_authenticated(auth_cfg.shared_key, provided_key,
+                                              now_s, auth_timestamp_s, auth_nonce)) {
+      this->send_v1_(request, 403, "touch_auth_failed",
+                     "Touch command requires provisioned key, valid UTC timestamp, and nonce");
+      return;
+    }
+    if (request_guard_.check(0, data_revision_, auth_nonce, millis()) == request_guard::Decision::DUPLICATE) {
+      this->send_v1_(request, 409, "replayed_nonce", "Touch command nonce was already used");
       return;
     }
     float ttl_s = 3600.0f;
@@ -1714,11 +1846,133 @@ void HV6Dashboard::handle_v1_(AsyncWebServerRequest *request, const char *path) 
     return;
   }
 
+  float expected_revision = 0.0f;
+  if (parse_num_param(request, body, "expected_revision", &expected_revision) &&
+      (!std::isfinite(expected_revision) || expected_revision < 0.0f)) {
+    this->send_v1_(request, 400, "invalid_revision", "expected_revision must be a non-negative integer");
+    return;
+  }
+  char idempotency_key[48]{};
+  const auto idempotency_header = request->get_header("Idempotency-Key");
+  if (idempotency_header.has_value())
+    sanitize_text(idempotency_header->c_str(), idempotency_key, sizeof(idempotency_key));
+  else
+    parse_text_param(request, body, "idempotency_key", "", idempotency_key, sizeof(idempotency_key));
+  // Once Touch has provisioned an authority key, same-origin dashboard writes
+  // require that key and a matching CSRF header. During standalone V6
+  // commissioning the key is intentionally empty; keep local setup usable in
+  // that state and let Touch provisioning close the write gate later. Cross-
+  // origin forms cannot add these headers because wildcard CORS is removed.
+  const auto local_key_header = request->get_header("X-Lune-Local-Key");
+  const auto csrf_header = request->get_header("X-Lune-CSRF");
+  const auto local_cfg = this->config_store_ ? this->config_store_->get_authority_config() : hv6::AuthorityConfig{};
+  const char *local_key = local_key_header.has_value() ? local_key_header->c_str() : "";
+  const char *csrf = csrf_header.has_value() ? csrf_header->c_str() : "";
+  const size_t local_len = strlen(local_cfg.shared_key);
+  const size_t supplied_len = strlen(local_key);
+  unsigned char local_diff = static_cast<unsigned char>(local_len ^ supplied_len);
+  for (size_t i = 0; i < std::max(local_len, supplied_len); i++)
+    local_diff |= static_cast<unsigned char>((i < local_len ? local_cfg.shared_key[i] : '\0') ^
+                                             (i < supplied_len ? local_key[i] : '\0'));
+  if (local_len != 0 && (local_diff != 0 || strcmp(local_key, csrf) != 0)) {
+    this->send_v1_(request, 403, "local_auth_failed", "Local credential and CSRF header required");
+    return;
+  }
+  const uint32_t now_ms = millis();
+  if (static_cast<int32_t>(now_ms - write_rate_window_ms_) >= 60000) {
+    write_rate_window_ms_ = now_ms;
+    write_rate_count_ = 0;
+  }
+  if (write_rate_count_ >= 30) {
+    this->send_v1_(request, 429, "rate_limited", "Too many write requests");
+    return;
+  }
+  write_rate_count_++;
+  const auto guard_result = request_guard_.check(static_cast<uint32_t>(expected_revision), data_revision_,
+                                                  idempotency_key, millis());
+  if (guard_result == request_guard::Decision::STALE) {
+    char response[192];
+    snprintf(response, sizeof(response),
+             "{\"ok\":false,\"version\":\"v1\",\"error\":{\"code\":\"stale_revision\","
+             "\"message\":\"write based on an older revision\",\"current_revision\":%lu}}",
+             static_cast<unsigned long>(data_revision_));
+    send_text_(request, 409, "application/json", response, false, "no-cache");
+    return;
+  }
+  if (guard_result == request_guard::Decision::DUPLICATE) {
+    char response[160];
+    snprintf(response, sizeof(response),
+             "{\"ok\":true,\"version\":\"v1\",\"data\":{\"duplicate\":true,\"data_revision\":%lu}}",
+             static_cast<unsigned long>(data_revision_));
+    send_text_(request, 200, "application/json", response, false, "no-cache");
+    return;
+  }
   if (!this->enqueue_action_(act)) {
     this->send_v1_(request, 503, "busy", "System busy, try again");
     return;
   }
-  this->send_v1_(request, 200);
+  char response[144];
+  snprintf(response, sizeof(response),
+           "{\"ok\":true,\"version\":\"v1\",\"data\":{\"accepted\":true,\"data_revision\":%lu}}",
+           static_cast<unsigned long>(data_revision_));
+  send_text_(request, 200, "application/json", response, false, "no-cache");
+}
+
+void HV6Dashboard::handle_authority_lease_(AsyncWebServerRequest *request, const char *body) {
+  if (this->config_store_ == nullptr) {
+    this->send_v1_(request, 503, "authority_unavailable", "Authority configuration unavailable");
+    return;
+  }
+  const hv6::AuthorityConfig cfg = this->config_store_->get_authority_config();
+  if (cfg.shared_key[0] == '\0') {
+    this->send_v1_(request, 403, "authority_auth_unconfigured", "Authority authentication is not provisioned");
+    return;
+  }
+  const auto header = request->get_header("X-Lune-Authority-Key");
+  const char *provided = header.has_value() ? header->c_str() : "";
+  const size_t expected_len = strlen(cfg.shared_key);
+  const size_t provided_len = strlen(provided);
+  unsigned char diff = static_cast<unsigned char>(expected_len ^ provided_len);
+  const size_t compare_len = std::max(expected_len, provided_len);
+  for (size_t i = 0; i < compare_len; i++) {
+    const char expected = i < expected_len ? cfg.shared_key[i] : '\0';
+    const char actual = i < provided_len ? provided[i] : '\0';
+    diff |= static_cast<unsigned char>(expected ^ actual);
+  }
+  char installation_id[32]{};
+  char coordinator_id[32]{};
+  char lease_id[32]{};
+  parse_text_param(request, body, "installation_id", "", installation_id, sizeof(installation_id));
+  parse_text_param(request, body, "coordinator_id", "", coordinator_id, sizeof(coordinator_id));
+  parse_text_param(request, body, "lease_id", "", lease_id, sizeof(lease_id));
+  float sequence = 0.0f;
+  float issued_ms = 0.0f;
+  float duration_ms = static_cast<float>(hv6_authority::DEFAULT_LEASE_MS);
+  bool degraded = false;
+  parse_num_param(request, body, "sequence", &sequence);
+  parse_num_param(request, body, "issued_ms", &issued_ms);
+  parse_num_param(request, body, "duration_ms", &duration_ms);
+  parse_bool_param(request, body, "degraded", &degraded);
+  hv6_authority::Request lease_request{installation_id, coordinator_id, lease_id,
+                                        static_cast<uint32_t>(sequence),
+                                        static_cast<uint32_t>(issued_ms),
+                                        static_cast<uint32_t>(duration_ms), degraded};
+  this->authority_.configure(cfg.installation_id, cfg.coordinator_id);
+  const auto result = this->authority_.acquire_or_renew(lease_request, diff == 0, millis());
+  const auto snapshot = this->authority_.snapshot(millis());
+  if (this->zone_controller_)
+    this->zone_controller_->set_touch_authority_active(snapshot.touch_lease_active);
+  const int status = (result == hv6_authority::Result::GRANTED || result == hv6_authority::Result::RENEWED) ? 200 :
+                     (result == hv6_authority::Result::AUTH_REQUIRED ? 401 : 409);
+  char response[512];
+  snprintf(response, sizeof(response),
+           "{\"ok\":%s,\"version\":\"v1\",\"data\":{\"result\":\"%s\",\"state\":\"%s\","
+           "\"generation\":%lu,\"lease_remaining_s\":%lu,\"reason\":\"%s\","
+           "\"authority_only\":true}}",
+           status == 200 ? "true" : "false", hv6_authority::result_name(result),
+           hv6_authority::state_name(snapshot.state), static_cast<unsigned long>(snapshot.lease_generation),
+           static_cast<unsigned long>(snapshot.remaining_ms / 1000UL), snapshot.last_reason);
+  send_text_(request, status, "application/json", response, true, "no-cache");
 }
 
 void HV6Dashboard::dispatch_set_(const DashboardAction &act) {
@@ -1814,6 +2068,42 @@ void HV6Dashboard::dispatch_set_(const DashboardAction &act) {
   } else if (strcmp(key, "zone_name") == 0 && has_str && zone_valid && this->zone_controller_) {
     this->zone_controller_->set_zone_name(zi, std::string(str_val));
 
+  // ---- physical-loop commissioning metadata (passive records only) ----
+  } else if (strcmp(key, "zone_manifold_id") == 0 && has_str && zone_valid && this->config_store_) {
+    auto cfg = this->config_store_->get_zone_config(zi);
+    strncpy(cfg.manifold_id, str_val, sizeof(cfg.manifold_id) - 1);
+    cfg.manifold_id[sizeof(cfg.manifold_id) - 1] = '\0';
+    this->config_store_->update_zone(zi, cfg);
+  } else if (strcmp(key, "zone_room_id") == 0 && has_str && zone_valid && this->config_store_) {
+    auto cfg = this->config_store_->get_zone_config(zi);
+    strncpy(cfg.room_id, str_val, sizeof(cfg.room_id) - 1);
+    cfg.room_id[sizeof(cfg.room_id) - 1] = '\0';
+    this->config_store_->update_zone(zi, cfg);
+  } else if (strcmp(key, "zone_manifold_port") == 0 && has_num && zone_valid && this->config_store_) {
+    auto cfg = this->config_store_->get_zone_config(zi);
+    cfg.manifold_port = static_cast<uint8_t>(std::clamp(num_val, 0.0f, 6.0f));
+    this->config_store_->update_zone(zi, cfg);
+  } else if (strcmp(key, "zone_loop_pipe_length_m") == 0 && has_num && zone_valid && this->config_store_) {
+    auto cfg = this->config_store_->get_zone_config(zi);
+    cfg.loop_pipe_length_m = std::max(-1.0f, num_val);
+    this->config_store_->update_zone(zi, cfg);
+  } else if (strcmp(key, "zone_design_flow_l_h") == 0 && has_num && zone_valid && this->config_store_) {
+    auto cfg = this->config_store_->get_zone_config(zi);
+    cfg.design_flow_l_h = std::max(-1.0f, num_val);
+    this->config_store_->update_zone(zi, cfg);
+  } else if (strcmp(key, "zone_measured_flow_l_h") == 0 && has_num && zone_valid && this->config_store_) {
+    auto cfg = this->config_store_->get_zone_config(zi);
+    cfg.measured_flow_l_h = std::max(-1.0f, num_val);
+    this->config_store_->update_zone(zi, cfg);
+  } else if (strcmp(key, "zone_actuator_calibration_pct") == 0 && has_num && zone_valid && this->config_store_) {
+    auto cfg = this->config_store_->get_zone_config(zi);
+    cfg.actuator_calibration_pct = std::clamp(num_val, -1.0f, 100.0f);
+    this->config_store_->update_zone(zi, cfg);
+  } else if (strcmp(key, "zone_expected_thermal_delay_min") == 0 && has_num && zone_valid && this->config_store_) {
+    auto cfg = this->config_store_->get_zone_config(zi);
+    cfg.expected_thermal_delay_min = std::max(-1.0f, num_val);
+    this->config_store_->update_zone(zi, cfg);
+
   // ---- zone_ble_mac ----
   } else if (strcmp(key, "zone_ble_mac") == 0 && has_str && zone_valid && this->zone_controller_) {
     this->zone_controller_->set_zone_ble_mac(zi, std::string(str_val));
@@ -1892,73 +2182,33 @@ void HV6Dashboard::dispatch_set_(const DashboardAction &act) {
       this->valve_controller_->reload_motor_config();
     }
 
-  // ---- asgard_enabled ----
-  } else if (strcmp(key, "asgard_enabled") == 0 && has_str && this->config_store_) {
-    auto asgard_cfg = this->config_store_->get_asgard_config();
-    asgard_cfg.enabled = (strcasecmp(str_val, "on") == 0 || strcmp(str_val, "1") == 0);
-    this->config_store_->update_asgard(asgard_cfg);
+  // ---- Touch authority provisioning ----
+  } else if (strcmp(key, "authority_installation_id") == 0 && has_str && this->config_store_) {
+    auto cfg = this->config_store_->get_authority_config();
+    strncpy(cfg.installation_id, str_val, sizeof(cfg.installation_id) - 1);
+    cfg.installation_id[sizeof(cfg.installation_id) - 1] = '\0';
+    this->config_store_->update_authority(cfg);
+  } else if (strcmp(key, "authority_coordinator_id") == 0 && has_str && this->config_store_) {
+    auto cfg = this->config_store_->get_authority_config();
+    strncpy(cfg.coordinator_id, str_val, sizeof(cfg.coordinator_id) - 1);
+    cfg.coordinator_id[sizeof(cfg.coordinator_id) - 1] = '\0';
+    this->config_store_->update_authority(cfg);
+  } else if (strcmp(key, "authority_shared_key") == 0 && has_str && this->config_store_) {
+    auto cfg = this->config_store_->get_authority_config();
+    strncpy(cfg.shared_key, str_val, sizeof(cfg.shared_key) - 1);
+    cfg.shared_key[sizeof(cfg.shared_key) - 1] = '\0';
+    this->config_store_->update_authority(cfg);
 
-  // ---- asgard_coordinator ----
-  } else if (strcmp(key, "asgard_coordinator") == 0 && has_str && this->config_store_) {
-    auto asgard_cfg = this->config_store_->get_asgard_config();
-    asgard_cfg.coordinator = (strcasecmp(str_val, "on") == 0 || strcmp(str_val, "1") == 0);
-    this->config_store_->update_asgard(asgard_cfg);
-
-  // ---- asgard_host ----
-  } else if (strcmp(key, "asgard_host") == 0 && this->config_store_) {
-    auto asgard_cfg = this->config_store_->get_asgard_config();
-    strncpy(asgard_cfg.host, str_val, sizeof(asgard_cfg.host) - 1);
-    asgard_cfg.host[sizeof(asgard_cfg.host) - 1] = '\0';
-    this->config_store_->update_asgard(asgard_cfg);
-
-  // ---- asgard_entity_name ----
-  } else if (strcmp(key, "asgard_entity_name") == 0 && has_str && this->config_store_) {
-    auto asgard_cfg = this->config_store_->get_asgard_config();
-    strncpy(asgard_cfg.entity_name, str_val, sizeof(asgard_cfg.entity_name) - 1);
-    asgard_cfg.entity_name[sizeof(asgard_cfg.entity_name) - 1] = '\0';
-    this->config_store_->update_asgard(asgard_cfg);
-
-  // ---- asgard_peer_host ----
-  } else if (strcmp(key, "asgard_peer_host") == 0 && this->config_store_) {
-    auto asgard_cfg = this->config_store_->get_asgard_config();
-    strncpy(asgard_cfg.peer_host, str_val, sizeof(asgard_cfg.peer_host) - 1);
-    asgard_cfg.peer_host[sizeof(asgard_cfg.peer_host) - 1] = '\0';
-    this->config_store_->update_asgard(asgard_cfg);
-
-  // ---- asgard_port ----
-  } else if (strcmp(key, "asgard_port") == 0 && has_num && this->config_store_) {
-    auto asgard_cfg = this->config_store_->get_asgard_config();
-    asgard_cfg.port = static_cast<uint16_t>(std::max(1.0f, std::min(65535.0f, num_val)));
-    this->config_store_->update_asgard(asgard_cfg);
-
-  // ---- asgard_peer_port ----
-  } else if (strcmp(key, "asgard_peer_port") == 0 && has_num && this->config_store_) {
-    auto asgard_cfg = this->config_store_->get_asgard_config();
-    asgard_cfg.peer_port = static_cast<uint16_t>(std::max(1.0f, std::min(65535.0f, num_val)));
-    this->config_store_->update_asgard(asgard_cfg);
-
-  // ---- asgard_push_interval_s ----
-  } else if (strcmp(key, "asgard_push_interval_s") == 0 && has_num && this->config_store_) {
-    auto asgard_cfg = this->config_store_->get_asgard_config();
-    asgard_cfg.push_interval_s = static_cast<uint16_t>(std::max(5.0f, std::min(3600.0f, num_val)));
-    this->config_store_->update_asgard(asgard_cfg);
-
-  // ---- asgard_peer_stale_after_s ----
-  } else if (strcmp(key, "asgard_peer_stale_after_s") == 0 && has_num && this->config_store_) {
-    auto asgard_cfg = this->config_store_->get_asgard_config();
-    asgard_cfg.peer_stale_after_s = static_cast<uint16_t>(std::max(30.0f, std::min(3600.0f, num_val)));
-    this->config_store_->update_asgard(asgard_cfg);
-
-  // ---- min_zone_flow_pct (active when minimum_flow_always is enabled) ----
+  // ---- min_zone_flow_pct (secondary total, active only during commissioning) ----
   } else if (strcmp(key, "min_zone_flow_pct") == 0 && has_num && this->config_store_) {
     auto bal = this->config_store_->get_config().balancing;
-    bal.minimum_flow_pct = std::max(0.0f, std::min(50.0f, num_val));
+    bal.secondary_min_total_opening_pct = std::max(0.0f, std::min(100.0f, num_val));
     this->config_store_->update_balancing(bal);
 
-  // ---- minimum_flow_always (modulating source exists independently of Asgard) ----
+  // ---- minimum_flow_always (legacy API key; explicit secondary commissioning) ----
   } else if (strcmp(key, "minimum_flow_always") == 0 && has_str && this->zone_controller_) {
     const bool enabled = (strcasecmp(str_val, "on") == 0 || strcmp(str_val, "1") == 0);
-    this->zone_controller_->set_modulating_heat_source(enabled);
+    this->zone_controller_->set_secondary_flow_commissioning(enabled);
 
   // ---- motor config numeric setters ----
   } else if (has_num && this->config_store_ && this->valve_controller_) {
@@ -2036,8 +2286,8 @@ void HV6Dashboard::sample_history_() {
   float demand_floor_pct = 0.0f;
   if (this->config_store_ != nullptr) {
     const auto cfg = this->config_store_->get_config();
-    if (cfg.balancing.modulating_heat_source)
-      demand_floor_pct = std::max(0.0f, std::min(50.0f, cfg.balancing.minimum_flow_pct));
+    if (cfg.balancing.secondary_flow_commissioning_enabled)
+      demand_floor_pct = std::max(0.0f, std::min(100.0f, cfg.balancing.secondary_min_total_opening_pct));
   }
 
   if (snapshot_lock_ != nullptr && snapshot_ready_ &&
@@ -2102,7 +2352,6 @@ void HV6Dashboard::handle_history_(AsyncWebServerRequest *request) {
   httpd_resp_set_status(req, "200 OK");
   httpd_resp_set_type(req, "application/json");
   httpd_resp_set_hdr(req, "Cache-Control", "no-cache");
-  httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
   httpd_resp_set_hdr(req, "Connection", "close");
 
   constexpr size_t BUF_SIZE = 2048;
@@ -2268,7 +2517,6 @@ void HV6Dashboard::handle_logs_(AsyncWebServerRequest *request) {
   httpd_resp_set_status(req, "200 OK");
   httpd_resp_set_type(req, "application/json");
   httpd_resp_set_hdr(req, "Cache-Control", "no-cache");
-  httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
   httpd_resp_set_hdr(req, "Connection", "close");
 
   constexpr size_t BUF_SIZE = 2048;
@@ -2315,59 +2563,6 @@ void HV6Dashboard::handle_logs_(AsyncWebServerRequest *request) {
   free(ring_copy);
 }
 
-// Compact board-to-board snapshot consumed by the peer board's Asgard bridge
-// (coordinator). Payload stays small (~250 bytes) so the ESP32 peer can parse
-// it with a fixed-size JSON document. Contract: docs/ecodan_integration.md
-void HV6Dashboard::handle_peer_(AsyncWebServerRequest *request) {
-  if (snapshot_lock_ == nullptr || !snapshot_ready_ ||
-      xSemaphoreTake(snapshot_lock_, pdMS_TO_TICKS(50)) != pdTRUE) {
-    send_text_(request, 503, "application/json", "{\"ok\":false,\"error\":\"snapshot not ready\"}",
-               false, "no-cache");
-    return;
-  }
-  float temps[hv6::NUM_ZONES];
-  float setpoints[hv6::NUM_ZONES];
-  float areas[hv6::NUM_ZONES];
-  bool enabled[hv6::NUM_ZONES];
-  for (uint8_t i = 0; i < hv6::NUM_ZONES; i++) {
-    temps[i] = this->snapshot_.zone_temp_c[i];
-    setpoints[i] = this->snapshot_.zones[i].setpoint_c;
-    areas[i] = this->snapshot_.zones[i].area_m2;
-    enabled[i] = this->snapshot_.zones[i].enabled;
-  }
-  xSemaphoreGive(snapshot_lock_);
-
-  // Static (not stack): the httpd worker thread stack is ~4 KB and the lwip
-  // send path is deep. Single-threaded httpd makes this safe.
-  static char buf[640];
-  size_t off = 0;
-  off += static_cast<size_t>(snprintf(buf + off, sizeof(buf) - off, "{\"ok\":true,\"zones\":["));
-  for (uint8_t i = 0; i < hv6::NUM_ZONES && off < sizeof(buf) - 80; i++) {
-    char temp_buf[16];
-    if (std::isfinite(temps[i]))
-      snprintf(temp_buf, sizeof(temp_buf), "%.2f", temps[i]);
-    else
-      snprintf(temp_buf, sizeof(temp_buf), "null");
-    char sp_buf[16];
-    if (std::isfinite(setpoints[i]))
-      snprintf(sp_buf, sizeof(sp_buf), "%.2f", setpoints[i]);
-    else
-      snprintf(sp_buf, sizeof(sp_buf), "null");
-    off += static_cast<size_t>(snprintf(buf + off, sizeof(buf) - off,
-        "%s{\"t\":%s,\"sp\":%s,\"area\":%.1f,\"en\":%s}",
-        (i > 0) ? "," : "", temp_buf, sp_buf, areas[i], enabled[i] ? "true" : "false"));
-  }
-  if (off < sizeof(buf) - 3)
-    off += static_cast<size_t>(snprintf(buf + off, sizeof(buf) - off, "]}"));
-
-  httpd_req_t *req = *request;
-  httpd_resp_set_status(req, "200 OK");
-  httpd_resp_set_type(req, "application/json");
-  httpd_resp_set_hdr(req, "Cache-Control", "no-cache");
-  httpd_resp_set_hdr(req, "Connection", "close");
-  httpd_resp_send(req, buf, static_cast<ssize_t>(off));
-}
-
 void HV6Dashboard::handle_ble_scan_(AsyncWebServerRequest *request) {
   if (zone_controller_ == nullptr) {
     send_text_(request, 503, "application/json", "{\"ok\":false,\"error\":\"no zone controller\"}",
@@ -2385,7 +2580,6 @@ void HV6Dashboard::handle_ble_scan_(AsyncWebServerRequest *request) {
   httpd_resp_set_status(req, "200 OK");
   httpd_resp_set_type(req, "application/json");
   httpd_resp_set_hdr(req, "Cache-Control", "no-cache");
-  httpd_resp_set_hdr(req, "Access-Control-Allow-Origin", "*");
   httpd_resp_set_hdr(req, "Connection", "close");
 
   static char buf[2048];

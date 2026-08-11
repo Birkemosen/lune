@@ -1,5 +1,10 @@
 api:
   reboot_timeout: 0s
+  # One Touch/HA client is sufficient for this local manifold node. Keep the
+  # native API from consuming the socket/heap budget needed by the dashboard.
+  listen_backlog: 2
+  max_connections: 3
+  max_send_queue: 4
   encryption:
     key: !secret api_key
   services:
@@ -32,4 +37,5 @@ api:
 # which on this BLE+WiFi+dashboard board drove free internal heap critically low
 # (~15 KB). Nothing uses it — the custom dashboard and /api/hv6/v1 are served on
 # `web_server_base` (auto-loaded by hv6_dashboard + captive_portal, port 80) and
-# Home Assistant uses the native API. The dashboard lives at /dashboard.
+# Home Assistant uses the native API. The custom dashboard lives at /; the
+# former /dashboard bookmark redirects there.

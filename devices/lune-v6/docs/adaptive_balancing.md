@@ -187,7 +187,7 @@ Using `(ē_i − ē)` cancels the **common mode**: if the whole house is cold be
 temperature is too low, every `e_i` rises together, `(ē_i − ē) ≈ 0`, and balancing does
 **not** react (that is the heat source's / thermostat's job, not balancing's). The controller
 only ever moves flow *between* loops, never demands more total heat — so it cannot fight the
-Asgard/Ecodan loop or the room thermostats.
+heat-source loop or the room thermostats.
 
 `k` is small (e.g. `adapt_step` ≈ 0.02 per update) and updates run on a slow cadence
 (`adapt_interval_s`, default 1 h), so full convergence takes days — appropriate for a slab

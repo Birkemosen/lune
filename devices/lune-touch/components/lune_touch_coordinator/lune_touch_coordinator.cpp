@@ -1,4 +1,7 @@
 #include "lune_touch_coordinator.h"
+#include "asgard_adapter.h"
+#include "asgard_confirmation.h"
+#include "forecast_timeline.h"
 #include "esphome/components/network/util.h"
 #include "esphome/core/hal.h"
 #include "esphome/core/log.h"
@@ -6,12 +9,15 @@
 #include "esp_heap_caps.h"
 #include "esp_http_client.h"
 #include "esp_ota_ops.h"
+#include "esp_system.h"
 #include <nvs.h>
+#include <nvs_flash.h>
 #include <ArduinoJson.h>
 #include <algorithm>
 #include <cctype>
 #include <cmath>
 #include <cstdarg>
+#include <ctime>
 #include <cstdio>
 #include <cstring>
 
@@ -23,6 +29,7 @@ static const char *const TOUCH_NAMESPACE = "touch";
 static const char *const WEATHER_NAMESPACE = "weather";
 static const char *const LEDGER_NAMESPACE = "ledger";
 static const char *const SETTINGS_NAMESPACE = "touch_settings";
+static const char *const TOUCH_REGISTRY_PARTITION = "touchreg";
 
 namespace {
 
@@ -34,7 +41,86 @@ static constexpr float LOAD_THRESHOLD = 1.0f;
 static constexpr float GAIN_C_PER_LOAD = 0.5f;
 static constexpr uint32_t OTA_SLOT_BYTES = 0x640000;
 static constexpr uint32_t FORECAST_CACHE_MAGIC = 0x4C544657;  // LTFW
-static constexpr uint16_t FORECAST_CACHE_VERSION = 1;
+static constexpr uint16_t FORECAST_CACHE_VERSION =
+    lune_touch_forecast_timeline::PERSISTED_FORECAST_CACHE_VERSION;
+static constexpr size_t REGISTRY_CHUNK_SIZE = 3072;
+static constexpr size_t REGISTRY_CHUNK_COUNT =
+    (sizeof(::lune_touch::PersistedState) + REGISTRY_CHUNK_SIZE - 1) / REGISTRY_CHUNK_SIZE;
+static constexpr const char *REGISTRY_CHUNK_KEYS[] = {
+    "registry_a", "registry_b", "registry_c", "registry_d",
+    "registry_e", "registry_f", "registry_g", "registry_h",
+};
+static_assert(REGISTRY_CHUNK_COUNT <= sizeof(REGISTRY_CHUNK_KEYS) / sizeof(REGISTRY_CHUNK_KEYS[0]),
+              "Touch registry chunk key list is too short");
+
+// Command records are expired on reboot by design.  Keep only a short recent
+// history in NVS so the human-readable ledger does not consume the space
+// needed by the coordinator registry.
+static constexpr size_t PERSISTED_LEDGER_RECORDS = 4;
+static bool touch_registry_partition_ready_ = false;
+
+void init_touch_registry_partition_() {
+  const esp_err_t err = nvs_flash_init_partition(TOUCH_REGISTRY_PARTITION);
+  if (err == ESP_OK) {
+    touch_registry_partition_ready_ = true;
+    ESP_LOGI(TAG, "Using dedicated Touch registry NVS partition");
+    return;
+  }
+  // Older partition tables do not contain touchreg yet. Keep the compatibility
+  // path operational until the one-time USB partition-table install is done.
+  touch_registry_partition_ready_ = false;
+  ESP_LOGW(TAG, "Dedicated Touch registry partition unavailable (%s); using legacy NVS",
+           esp_err_to_name(err));
+}
+
+esp_err_t open_touch_registry_nvs_(nvs_open_mode_t mode, nvs_handle_t *handle) {
+  if (touch_registry_partition_ready_)
+    return nvs_open_from_partition(TOUCH_REGISTRY_PARTITION, TOUCH_NAMESPACE, mode, handle);
+  return nvs_open(TOUCH_NAMESPACE, mode, handle);
+}
+struct PersistedLedgerCompact {
+  uint32_t magic{::lune_touch::PERSISTED_LEDGER_MAGIC};
+  uint16_t version{1};
+  uint16_t reserved{0};
+  uint32_t boot_id{0};
+  uint32_t count{0};
+  ::lune_touch::CommandRecord records[PERSISTED_LEDGER_RECORDS]{};
+};
+
+template <typename State>
+bool load_registry_chunks_for_(nvs_handle_t handle, State *state) {
+  if (state == nullptr)
+    return false;
+  size_t lengths[sizeof(REGISTRY_CHUNK_KEYS) / sizeof(REGISTRY_CHUNK_KEYS[0])]{};
+  size_t total = 0;
+  size_t chunk_count = 0;
+  while (total < sizeof(*state) && chunk_count < sizeof(REGISTRY_CHUNK_KEYS) / sizeof(REGISTRY_CHUNK_KEYS[0])) {
+    const size_t i = chunk_count++;
+    lengths[i] = 0;
+    if (nvs_get_blob(handle, REGISTRY_CHUNK_KEYS[i], nullptr, &lengths[i]) != ESP_OK ||
+        lengths[i] == 0 || lengths[i] > REGISTRY_CHUNK_SIZE ||
+        total + lengths[i] > sizeof(*state))
+      return false;
+    total += lengths[i];
+  }
+  if (total != sizeof(*state) || chunk_count == 0)
+    return false;
+
+  uint8_t *destination = reinterpret_cast<uint8_t *>(state);
+  size_t offset = 0;
+  for (size_t i = 0; i < chunk_count; i++) {
+    size_t length = lengths[i];
+    if (nvs_get_blob(handle, REGISTRY_CHUNK_KEYS[i], destination + offset, &length) != ESP_OK ||
+        length != lengths[i])
+      return false;
+    offset += length;
+  }
+  return true;
+}
+
+bool load_registry_chunks_(nvs_handle_t handle, ::lune_touch::PersistedState *state) {
+  return load_registry_chunks_for_(handle, state);
+}
 
 struct PersistedForecastCache {
   uint32_t magic{FORECAST_CACHE_MAGIC};
@@ -42,7 +128,8 @@ struct PersistedForecastCache {
   uint16_t reserved{0};
   uint8_t hours_count{0};
   uint8_t reserved2[3]{};
-  uint32_t saved_at_ms{0};
+  int64_t fetch_epoch_s{0};
+  char provider_timezone[48]{};
   float min_temp_c{0.0f};
   float max_wind_ms{0.0f};
   float peak_wind_dir_deg{0.0f};
@@ -100,9 +187,9 @@ bool entity_number_(JsonDocument &doc, const char *key, float *out) {
 const char *entity_state_(JsonDocument &doc, const char *key) {
   if (key == nullptr)
     return nullptr;
-  const char *state = doc[key]["state"] | nullptr;
+  const char *state = doc[key]["state"].as<const char *>();
   if (state == nullptr)
-    state = doc[key]["value"] | nullptr;
+    state = doc[key]["value"].as<const char *>();
   return state;
 }
 
@@ -114,11 +201,37 @@ bool state_is_on_(const char *state) {
 void nullable_float_(char *out, size_t out_len, bool has_value, float value) {
   if (out == nullptr || out_len == 0)
     return;
-  if (has_value)
+  if (has_value && std::isfinite(value))
     snprintf(out, out_len, "%.1f", value);
   else
     std::strncpy(out, "null", out_len - 1);
   out[out_len - 1] = '\0';
+}
+
+void json_float_token_(char *out, size_t out_len, float value, unsigned decimals) {
+  if (out == nullptr || out_len == 0)
+    return;
+  if (!std::isfinite(value)) {
+    std::strncpy(out, "null", out_len - 1);
+    out[out_len - 1] = '\0';
+    return;
+  }
+  const char *format = decimals >= 6 ? "%.6f" : decimals == 3 ? "%.3f" :
+                       decimals == 2 ? "%.2f" : decimals == 0 ? "%.0f" : "%.1f";
+  snprintf(out, out_len, format, value);
+  out[out_len - 1] = '\0';
+}
+
+// HTTP/TLS parsers expect ordinary byte-addressable memory. Keep their response
+// buffers in the internal heap whenever possible; PSRAM remains a fallback for
+// the larger legacy V6 snapshot and forecast responses.
+char *alloc_http_body_(size_t capacity) {
+  if (capacity == 0)
+    return nullptr;
+  char *body = static_cast<char *>(heap_caps_malloc(capacity, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
+  if (body == nullptr)
+    body = static_cast<char *>(heap_caps_malloc(capacity, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  return body;
 }
 
 bool current_schedule_time_(esphome::time::RealTimeClock *time, uint8_t *day_index,
@@ -133,6 +246,45 @@ bool current_schedule_time_(esphome::time::RealTimeClock *time, uint8_t *day_ind
   if (minute_of_day != nullptr)
     *minute_of_day = static_cast<uint16_t>(now.hour) * 60 + now.minute;
   return true;
+}
+
+int64_t current_epoch_s_() {
+  const int64_t epoch_s = static_cast<int64_t>(::time(nullptr));
+  return epoch_s >= lune_touch_forecast_timeline::MIN_VALID_EPOCH_S ? epoch_s : 0;
+}
+
+void stamp_command_timing_(::lune_touch::CommandRecord *record, uint32_t now_ms, uint32_t ttl_s) {
+  if (record == nullptr)
+    return;
+  record->created_at_ms = now_ms;
+  record->expires_at_ms = now_ms + ttl_s * 1000UL;
+  const int64_t now_epoch_s = current_epoch_s_();
+  if (now_epoch_s > 0) {
+    record->created_at_epoch_s = now_epoch_s;
+    record->expires_at_epoch_s = now_epoch_s + static_cast<int64_t>(ttl_s);
+  }
+}
+
+void stamp_command_target_(::lune_touch::CommandRecord *record,
+                           const ::lune_touch::PairedNode *node,
+                           const ::lune_touch::ZoneBinding *binding) {
+  if (record == nullptr || node == nullptr || binding == nullptr)
+    return;
+  std::strncpy(record->room_id, binding->room_id, sizeof(record->room_id) - 1);
+  std::strncpy(record->node_id, node->node_id, sizeof(record->node_id) - 1);
+  std::strncpy(record->loop_id, binding->loop_id, sizeof(record->loop_id) - 1);
+}
+
+const char *cache_validation_error_(lune_touch_forecast_timeline::CacheValidation validation) {
+  switch (validation) {
+    case lune_touch_forecast_timeline::CacheValidation::EXPIRED:
+      return "cache_expired";
+    case lune_touch_forecast_timeline::CacheValidation::UNALIGNABLE:
+      return "cache_unalignable";
+    case lune_touch_forecast_timeline::CacheValidation::FRESH:
+    default:
+      return "restored_cache";
+  }
 }
 
 void legacy_zone_status_(const char *raw, bool enabled, bool has_temp, float temp,
@@ -321,6 +473,125 @@ struct PersistedStateV8 {
   ::lune_touch::ZoneHistory histories[::lune_touch::MAX_HOUSE_ZONES]{};
 };
 
+struct ZoneBindingV9 {
+  char room_id[32]{}; char room_name[48]{}; uint8_t node_index{0}; uint8_t zone_index{0};
+  uint8_t exterior_walls{0}; float wind_exposure{0.5f}; float solar_gain{0.3f};
+  uint8_t thermal_lead_h{4}; float max_offset_c{1.5f}; float comfort_setpoint_c{21.0f};
+  float comfort_bias_c{0.0f}; float schedule_setpoint_c{21.0f}; uint16_t schedule_start_min{360};
+  uint16_t schedule_end_min{1320}; uint8_t schedule_day_mask{0x7F}; uint8_t priority{1};
+  ::lune_touch::ZoneNameSource name_source{::lune_touch::ZoneNameSource::GENERATED};
+  uint16_t thermal_samples{0}; float learned_heat_gain_c_per_h{0.0f};
+  float learned_cool_loss_c_per_h{0.0f}; bool enabled{false}; bool schedule_enabled{false};
+};
+struct PersistedStateV9 {
+  uint32_t magic{::lune_touch::PERSISTED_STATE_MAGIC}; uint16_t version{::lune_touch::PERSISTED_STATE_VERSION_V9};
+  uint16_t reserved{0}; uint32_t node_count{0}; uint32_t zone_count{0};
+  ::lune_touch::PairedNode nodes[::lune_touch::MAX_NODES]{};
+  ZoneBindingV9 zones[::lune_touch::MAX_HOUSE_ZONES]{};
+  ::lune_touch::ZoneHistory histories[::lune_touch::MAX_HOUSE_ZONES]{};
+};
+
+struct ZoneBindingV10 {
+  char room_id[32]{}; char room_name[48]{}; char loop_id[48]{};
+  uint8_t node_index{0}; uint8_t zone_index{0}; uint8_t exterior_walls{0};
+  float wind_exposure{0.5f}; float solar_gain{0.3f}; uint8_t thermal_lead_h{4};
+  float max_offset_c{1.5f}; float comfort_setpoint_c{21.0f}; float comfort_bias_c{0.0f};
+  float schedule_setpoint_c{21.0f}; uint16_t schedule_start_min{360};
+  uint16_t schedule_end_min{1320}; uint8_t schedule_day_mask{0x7F}; uint8_t priority{1};
+  ::lune_touch::ZoneNameSource name_source{::lune_touch::ZoneNameSource::GENERATED};
+  uint16_t thermal_samples{0}; float learned_heat_gain_c_per_h{0.0f};
+  float learned_cool_loss_c_per_h{0.0f}; bool enabled{false}; bool schedule_enabled{false};
+};
+struct PersistedStateV10 {
+  uint32_t magic{::lune_touch::PERSISTED_STATE_MAGIC};
+  uint16_t version{::lune_touch::PERSISTED_STATE_VERSION_V10}; uint16_t reserved{0};
+  uint32_t node_count{0}; uint32_t zone_count{0};
+  ::lune_touch::PairedNode nodes[::lune_touch::MAX_NODES]{};
+  ZoneBindingV10 zones[::lune_touch::MAX_HOUSE_ZONES]{};
+  ::lune_touch::ZoneHistory histories[::lune_touch::MAX_HOUSE_ZONES]{};
+};
+
+// v11 used the current node/room/zone records but persisted runtime-only
+// temperature history as a fixed array. Keep this wire shape solely to migrate
+// existing NVS data; v12 deliberately omits histories from the registry.
+struct PersistedStateV11 {
+  uint32_t magic{::lune_touch::PERSISTED_STATE_MAGIC};
+  uint16_t version{::lune_touch::PERSISTED_STATE_VERSION_V11};
+  uint16_t reserved{0};
+  uint32_t node_count{0};
+  uint32_t zone_count{0};
+  uint32_t room_count{0};
+  ::lune_touch::PairedNode nodes[::lune_touch::MAX_NODES]{};
+  ::lune_touch::LogicalRoom rooms[::lune_touch::MAX_HOUSE_ROOMS]{};
+  ::lune_touch::ZoneBinding zones[::lune_touch::MAX_HOUSE_ZONES]{};
+  ::lune_touch::ZoneHistory histories[::lune_touch::MAX_HOUSE_ZONES]{};
+};
+
+void copy_legacy_zone_v9_(::lune_touch::ZoneBinding &dest, const ZoneBindingV9 &src,
+                          const ::lune_touch::PairedNode *node) {
+  std::strncpy(dest.room_id, src.room_id, sizeof(dest.room_id) - 1);
+  std::strncpy(dest.room_name, src.room_name, sizeof(dest.room_name) - 1);
+  dest.node_index=src.node_index; dest.zone_index=src.zone_index; dest.exterior_walls=src.exterior_walls;
+  dest.wind_exposure=src.wind_exposure; dest.solar_gain=src.solar_gain; dest.thermal_lead_h=src.thermal_lead_h;
+  dest.max_offset_c=src.max_offset_c; dest.comfort_setpoint_c=src.comfort_setpoint_c;
+  dest.comfort_bias_c=src.comfort_bias_c; dest.schedule_setpoint_c=src.schedule_setpoint_c;
+  dest.schedule_start_min=src.schedule_start_min; dest.schedule_end_min=src.schedule_end_min;
+  dest.schedule_day_mask=src.schedule_day_mask; dest.priority=src.priority; dest.name_source=src.name_source;
+  dest.thermal_samples=src.thermal_samples; dest.learned_heat_gain_c_per_h=src.learned_heat_gain_c_per_h;
+  dest.learned_cool_loss_c_per_h=src.learned_cool_loss_c_per_h; dest.enabled=src.enabled;
+  dest.schedule_enabled=src.schedule_enabled;
+  if (node != nullptr && node->node_id[0] != '\0')
+    snprintf(dest.loop_id, sizeof(dest.loop_id), "loop-%s-%02u", node->node_id,
+             static_cast<unsigned>(src.zone_index + 1));
+}
+
+void copy_legacy_zone_v10_(::lune_touch::ZoneBinding &dest, const ZoneBindingV10 &src) {
+  std::strncpy(dest.room_id, src.room_id, sizeof(dest.room_id) - 1);
+  std::strncpy(dest.room_name, src.room_name, sizeof(dest.room_name) - 1);
+  std::strncpy(dest.loop_id, src.loop_id, sizeof(dest.loop_id) - 1);
+  dest.node_index = src.node_index; dest.zone_index = src.zone_index;
+  dest.exterior_walls = src.exterior_walls; dest.wind_exposure = src.wind_exposure;
+  dest.solar_gain = src.solar_gain; dest.thermal_lead_h = src.thermal_lead_h;
+  dest.max_offset_c = src.max_offset_c; dest.comfort_setpoint_c = src.comfort_setpoint_c;
+  dest.comfort_bias_c = src.comfort_bias_c; dest.schedule_setpoint_c = src.schedule_setpoint_c;
+  dest.schedule_start_min = src.schedule_start_min; dest.schedule_end_min = src.schedule_end_min;
+  dest.schedule_day_mask = src.schedule_day_mask; dest.priority = src.priority;
+  dest.name_source = src.name_source; dest.thermal_samples = src.thermal_samples;
+  dest.learned_heat_gain_c_per_h = src.learned_heat_gain_c_per_h;
+  dest.learned_cool_loss_c_per_h = src.learned_cool_loss_c_per_h;
+  dest.enabled = src.enabled; dest.schedule_enabled = src.schedule_enabled; dest.commissioned = src.enabled;
+}
+
+bool populate_missing_loop_ids_(::lune_touch::PersistedState *state) {
+  if (state == nullptr)
+    return false;
+  bool changed = false;
+  for (size_t i = 0; i < state->zone_count; i++) {
+    ::lune_touch::ZoneBinding &zone = state->zones[i];
+    if (!zone.enabled || zone.loop_id[0] != '\0')
+      continue;
+    if (zone.node_index >= state->node_count || state->nodes[zone.node_index].node_id[0] == '\0') {
+      // An unidentified legacy loop is not safe to command; retain it as disabled history.
+      zone.enabled = false;
+      changed = true;
+      continue;
+    }
+    std::snprintf(zone.loop_id, sizeof(zone.loop_id), "loop-%s-%02u",
+                  state->nodes[zone.node_index].node_id,
+                  static_cast<unsigned>(zone.zone_index + 1));
+    changed = true;
+  }
+  for (size_t i = 0; i < state->zone_count; i++) {
+    ::lune_touch::ZoneBinding &zone = state->zones[i];
+    if (zone.node_index < state->node_count && state->nodes[zone.node_index].node_id[0] != '\0' &&
+        zone.node_id[0] == '\0') {
+      std::strncpy(zone.node_id, state->nodes[zone.node_index].node_id, sizeof(zone.node_id) - 1);
+      changed = true;
+    }
+  }
+  return changed;
+}
+
 void copy_legacy_node_(::lune_touch::PairedNode &dest, const PairedNodeV5 &src) {
   std::strncpy(dest.node_id, src.node_id, sizeof(dest.node_id) - 1);
   std::strncpy(dest.name, src.node_id, sizeof(dest.name) - 1);
@@ -458,11 +729,20 @@ void json_escape_(const char *src, char *out, size_t out_len) {
 
 void LuneTouchCoordinator::setup() {
   state_lock_ = xSemaphoreCreateMutex();
+  init_touch_registry_partition_();
+  boot_id_ = esp_random();
+  if (boot_id_ == 0)
+    boot_id_ = 1;
+  ledger_.set_boot_id(boot_id_);
   model_.set_node_stale_after_ms(node_stale_after_ms_);
-  const bool loaded_registry = load_registry_();
+  // Compact the historical command ledger before migrating/saving the larger
+  // coordinator registry; both namespaces share the small NVS partition.
   load_ledger_();
+  const bool loaded_registry = load_registry_();
   load_forecast_settings_();
   load_settings_();
+  std::snprintf(authority_lease_id_, sizeof(authority_lease_id_), "touch-%08lx",
+                static_cast<unsigned long>(boot_id_));
   load_forecast_cache_();
   log_event_("info", "boot", "coordinator ready");
   if (!loaded_registry)
@@ -484,7 +764,7 @@ void LuneTouchCoordinator::loop() {
 
   if (!take_state_lock_(10))
     return;
-  const size_t expired = ledger_.expire_pending(now);
+  const size_t expired = ledger_.expire_pending(now, current_epoch_s_());
   give_state_lock_();
   if (expired > 0)
     save_ledger_();
@@ -535,7 +815,10 @@ void LuneTouchCoordinator::poll_task_func_(void *arg) {
 }
 
 void LuneTouchCoordinator::poll_task_() {
-  vTaskDelay(pdMS_TO_TICKS(POLL_BOOT_DELAY_MS));
+  // An explicit dashboard scan must wake the task even during the normal
+  // boot grace period; a plain vTaskDelay would leave the user waiting the
+  // full nine seconds before any V6 names could be fetched.
+  ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(POLL_BOOT_DELAY_MS));
   while (true) {
     if (esphome::network::is_connected()) {
       bool fetch_requested = false;
@@ -559,26 +842,86 @@ void LuneTouchCoordinator::poll_task_() {
         char response[384];
         perform_forecast_fetch_(response, sizeof(response));
       }
-      poll_once_();
-      bool push_due = false;
+      bool odin_due = false;
       if (take_state_lock_(100)) {
-        const uint32_t now = esphome::millis();
+        const uint32_t odin_now = esphome::millis();
+        odin_due = odin_plan_.enabled && odin_plan_.host[0] != '\0' &&
+                   (odin_plan_.last_fetch_ms == 0 ||
+                    odin_now - odin_plan_.last_fetch_ms >=
+                        static_cast<uint32_t>(odin_plan_.refresh_interval_s) * 1000UL);
+        give_state_lock_();
+      }
+      if (odin_due)
+        fetch_odin_plan_();
+      bool node_refresh_requested = false;
+      if (take_state_lock_(100)) {
+        node_refresh_requested = node_refresh_requested_;
+        node_refresh_requested_ = false;
+        give_state_lock_();
+      }
+      // Keep the normal periodic poll and let an explicit dashboard refresh
+      // wake this task without doing network I/O on the HTTP server stack.
+      (void) node_refresh_requested;
+      poll_once_();
+      if (take_state_lock_(100)) {
+        poll_generation_++;
+        give_state_lock_();
+      }
+      bool push_due = false;
+      const uint32_t now = esphome::millis();
+      if (take_state_lock_(100)) {
         push_due = heat_source_push_requested_ ||
                    (heat_source_.enabled && heat_source_.host[0] != '\0' &&
-                    (heat_source_.last_push_ms == 0 ||
-                     now - heat_source_.last_push_ms >=
+                    (heat_source_.last_write_ms == 0 ||
+                     now - heat_source_.last_write_ms >=
                          static_cast<uint32_t>(heat_source_.push_interval_s) * 1000UL));
         heat_source_push_requested_ = false;
         give_state_lock_();
       }
-      if (push_due)
+      const bool lease_due = authority_last_renew_ms_ == 0 ||
+                             now - authority_last_renew_ms_ >= 30000UL;
+      if (lease_due)
+        renew_authority_lease_();
+      if (push_due && authority_expires_at_ms_ != 0 &&
+          static_cast<int32_t>(esphome::millis() - authority_expires_at_ms_) < 0)
         push_weighted_temperature_();
     }
-    vTaskDelay(pdMS_TO_TICKS(POLL_INTERVAL_MS));
+    ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(POLL_INTERVAL_MS));
   }
 }
 
+bool LuneTouchCoordinator::read_asgard_number_(const HeatSourceState &source, float *value,
+                                               char *error, size_t error_capacity) {
+  if (value == nullptr || error == nullptr || error_capacity == 0)
+    return false;
+  *value = NAN;
+  error[0] = '\0';
+  const asgard_adapter::Config adapter_config{
+      source.host, source.port, source.weighted_temperature_variable};
+  char url[320];
+  if (!asgard_adapter::build_physical_read_url(adapter_config, url, sizeof(url))) {
+    std::snprintf(error, error_capacity, "invalid read endpoint");
+    return false;
+  }
+  for (uint8_t attempt = 0; attempt < asgard_confirmation::MAX_READ_ATTEMPTS; ++attempt) {
+    char body[384];
+    int status = 0;
+    if (esphome::network::is_connected() && fetch_json_(url, body, sizeof(body), &status)) {
+      if (asgard_adapter::parse_number_response(body, value)) {
+        return true;
+      }
+      std::snprintf(error, error_capacity, "read value missing");
+    } else {
+      std::snprintf(error, error_capacity, status > 0 ? "read http %d" : "read unreachable", status);
+    }
+    if (attempt + 1 < asgard_confirmation::MAX_READ_ATTEMPTS)
+      vTaskDelay(pdMS_TO_TICKS(asgard_confirmation::readback_backoff_ms(attempt)));
+  }
+  return false;
+}
+
 bool LuneTouchCoordinator::push_weighted_temperature_() {
+  static constexpr uint32_t COVERAGE_GRACE_MS = 300000;
   HeatSourceState source;
   ::lune_touch::StrategySnapshot strategy;
   if (!take_state_lock_(100))
@@ -589,19 +932,38 @@ bool LuneTouchCoordinator::push_weighted_temperature_() {
 
   char error[sizeof(heat_source_.last_error)]{};
   bool ok = false;
+  asgard_confirmation::Status confirmation_status = asgard_confirmation::Status::UNREACHABLE;
+  float confirmed_value = NAN;
+  float value_to_write = NAN;
+  int write_http_status = 0;
   if (!source.enabled) {
     std::strncpy(error, "disabled", sizeof(error) - 1);
   } else if (source.host[0] == '\0') {
     std::strncpy(error, "address missing", sizeof(error) - 1);
-  } else if (!strategy.has_physical_temperature || !std::isfinite(strategy.physical_temperature_c)) {
-    std::strncpy(error, "weighted temperature missing", sizeof(error) - 1);
+  } else if (strategy.has_physical_temperature && std::isfinite(strategy.physical_temperature_c)) {
+    value_to_write = strategy.physical_temperature_c;
+    if (authority_smooth_first_write_ && std::isfinite(authority_last_fallback_value_c_)) {
+      value_to_write = std::clamp(value_to_write, authority_last_fallback_value_c_ - 0.5f,
+                                  authority_last_fallback_value_c_ + 0.5f);
+    }
+  } else if (std::isfinite(source.last_confirmed_value_c) && source.last_healthy_physical_ms != 0 &&
+             esphome::millis() - source.last_healthy_physical_ms <= COVERAGE_GRACE_MS) {
+    value_to_write = source.last_confirmed_value_c;
+    std::strncpy(error, "coverage grace", sizeof(error) - 1);
+  } else {
+    std::strncpy(error, "coverage degraded", sizeof(error) - 1);
+  }
+  if (!std::isfinite(value_to_write)) {
+    // No healthy or safely held physical signal; do not publish a partial-house average.
   } else if (!esphome::network::is_connected()) {
     std::strncpy(error, "network down", sizeof(error) - 1);
   } else {
-    char url[224];
-    snprintf(url, sizeof(url), "http://%s:%u/number/%s/set?value=%.2f", source.host,
-             static_cast<unsigned>(source.port), source.weighted_temperature_variable,
-             strategy.physical_temperature_c);
+    char url[320];
+    const asgard_adapter::Config adapter_config{
+        source.host, source.port, source.weighted_temperature_variable};
+    if (!asgard_adapter::build_physical_write_url(adapter_config, value_to_write, url, sizeof(url))) {
+      std::strncpy(error, "invalid endpoint", sizeof(error) - 1);
+    } else {
     esp_http_client_config_t http_cfg{};
     http_cfg.url = url;
     http_cfg.method = HTTP_METHOD_POST;
@@ -614,37 +976,162 @@ bool LuneTouchCoordinator::push_weighted_temperature_() {
       esp_http_client_set_post_field(client, "", 0);
       const esp_err_t err = esp_http_client_perform(client);
       const int status = err == ESP_OK ? esp_http_client_get_status_code(client) : 0;
-      ok = err == ESP_OK && status >= 200 && status < 300;
-      if (!ok) {
+      write_http_status = status;
+      const bool write_ok = asgard_adapter::request_succeeded(err == ESP_OK, status);
+      if (!write_ok) {
         if (err == ESP_OK)
           snprintf(error, sizeof(error), "http %d", status);
         else
           snprintf(error, sizeof(error), "http %s", esp_err_to_name(err));
+      } else {
+        confirmation_status = asgard_confirmation::Status::SENT;
+        if (read_asgard_number_(source, &confirmed_value, error, sizeof(error))) {
+          if (asgard_confirmation::values_match(value_to_write, confirmed_value)) {
+            confirmation_status = asgard_confirmation::Status::CONFIRMED;
+            ok = true;
+            error[0] = '\0';
+          } else {
+            confirmation_status = asgard_confirmation::Status::MISMATCH;
+            std::snprintf(error, sizeof(error), "requested %.2f, read %.2f",
+                          value_to_write, confirmed_value);
+          }
+        }
       }
       esp_http_client_close(client);
       esp_http_client_cleanup(client);
+    }
     }
   }
 
   if (take_state_lock_(100)) {
     heat_source_.has_last_push = true;
-    heat_source_.last_push_ok = ok;
-    heat_source_.last_push_ms = esphome::millis();
-    if (strategy.has_physical_temperature)
-      heat_source_.last_value_c = strategy.physical_temperature_c;
+    std::strncpy(heat_source_.last_status, asgard_confirmation::status_name(confirmation_status),
+                 sizeof(heat_source_.last_status) - 1);
+    heat_source_.last_status[sizeof(heat_source_.last_status) - 1] = '\0';
+    heat_source_.last_write_ms = esphome::millis();
+    heat_source_.last_http_status = write_http_status;
+    if (std::isfinite(value_to_write))
+      heat_source_.last_requested_value_c = value_to_write;
+    if (std::isfinite(confirmed_value))
+      heat_source_.last_confirmed_value_c = confirmed_value;
     if (ok) {
-      heat_source_.failure_count = 0;
+      if (strategy.has_physical_temperature)
+        heat_source_.last_healthy_physical_ms = esphome::millis();
+      heat_source_.last_confirmed_ms = esphome::millis();
+      heat_source_.failure_streak = 0;
       heat_source_.last_error[0] = '\0';
+      authority_smooth_first_write_ = false;
     } else {
       if (heat_source_.failure_count < UINT32_MAX)
         heat_source_.failure_count++;
+      if (heat_source_.failure_streak < UINT32_MAX)
+        heat_source_.failure_streak++;
       std::strncpy(heat_source_.last_error, error, sizeof(heat_source_.last_error) - 1);
       heat_source_.last_error[sizeof(heat_source_.last_error) - 1] = '\0';
     }
     give_state_lock_();
   }
-  log_event_(ok ? "info" : "warn", "heat_source", ok ? "weighted temperature pushed" : error);
+  log_event_(ok ? "info" : "warn", "heat_source",
+             ok ? "weighted temperature confirmed" : error);
   return ok;
+}
+
+bool LuneTouchCoordinator::fetch_odin_plan_() {
+  OdinPlanState settings;
+  if (!take_state_lock_(100))
+    return false;
+  settings = odin_plan_;
+  give_state_lock_();
+  if (!settings.enabled || settings.host[0] == '\0')
+    return false;
+
+  char error[sizeof(settings.last_error)]{};
+  int status = 0;
+  odin_plan::Snapshot plan{};
+  static char body[12288];
+  char url[160];
+  std::snprintf(url, sizeof(url), "http://%s:%u/dashboard/odin", settings.host,
+                static_cast<unsigned>(settings.port));
+  const bool fetched = fetch_json_(url, body, sizeof(body), &status);
+  if (!fetched) {
+    std::snprintf(error, sizeof(error), status > 0 ? "http %d" : "unreachable", status);
+  } else {
+    JsonDocument doc;
+    const DeserializationError json_error = deserializeJson(doc, body);
+    JsonObjectConst response = doc.as<JsonObjectConst>();
+    auto copy_float_array = [](JsonVariantConst source, float *destination) {
+      JsonArrayConst values = source.as<JsonArrayConst>();
+      if (values.isNull() || values.size() != odin_plan::HORIZON_HOURS)
+        return false;
+      for (size_t i = 0; i < odin_plan::HORIZON_HOURS; ++i) {
+        const float value = values[i].as<float>();
+        if (!std::isfinite(value))
+          return false;
+        destination[i] = value;
+      }
+      return true;
+    };
+    auto copy_operation_mode_array = [](JsonVariantConst source, int *destination) {
+      JsonArrayConst values = source.as<JsonArrayConst>();
+      if (values.isNull() || values.size() != odin_plan::HORIZON_HOURS)
+        return false;
+      for (size_t i = 0; i < odin_plan::HORIZON_HOURS; ++i) {
+        const float value = values[i].as<float>();
+        if (!std::isfinite(value))
+          return false;
+        destination[i] = static_cast<int>(std::lround(value));
+      }
+      return true;
+    };
+    const int current_hour = response["current_hour"] | -1;
+    const int today_start_index = response["today_start_index"] | -1;
+    const int current_index = today_start_index + current_hour;
+    plan.success = !json_error && (response["success"] | false) && current_hour >= 0 &&
+                   current_hour < 24 && today_start_index >= 0 &&
+                   today_start_index < static_cast<int>(odin_plan::HORIZON_HOURS) &&
+                   current_index >= 0 && current_index < static_cast<int>(odin_plan::HORIZON_HOURS);
+    plan.current_hour = plan.success ? static_cast<uint8_t>(current_hour) : 0;
+    plan.today_start_index = plan.success ? static_cast<uint8_t>(today_start_index) : 0;
+    plan.current_index = plan.success ? static_cast<uint8_t>(current_index) : 0;
+    plan.success = plan.success &&
+                   copy_float_array(response["sched_base"], plan.sched_base) &&
+                   copy_float_array(response["sched_min"], plan.sched_min) &&
+                   copy_float_array(response["sched_max"], plan.sched_max) &&
+                   copy_float_array(response["expected_begin_temp"], plan.expected_begin_temp) &&
+                   copy_float_array(response["expected_end_temp"], plan.expected_end_temp) &&
+                   copy_float_array(response["prices"], plan.prices) &&
+                   copy_float_array(response["heat_production"], plan.heat_production) &&
+                   copy_operation_mode_array(response["operation_mode"], plan.operation_mode) &&
+                   odin_plan::validate(plan);
+    if (!plan.success)
+      std::strncpy(error, json_error ? "invalid json" : "invalid Asgard ODIN plan", sizeof(error) - 1);
+  }
+
+  const bool valid = fetched && plan.success;
+  if (take_state_lock_(100)) {
+    odin_plan_.last_fetch_ms = esphome::millis();
+    odin_plan_.last_http_status = status;
+    odin_plan_.available = valid;
+    if (valid) {
+      odin_plan_.current_hour = plan.current_hour;
+      odin_plan_.current_index = plan.current_index;
+      odin_plan_.current_target_c = plan.sched_base[plan.current_index];
+      odin_plan_.current_min_c = plan.sched_min[plan.current_index];
+      odin_plan_.current_max_c = plan.sched_max[plan.current_index];
+      odin_plan_.current_price = plan.prices[plan.current_index];
+      odin_plan_.current_planned_heat_kw = plan.heat_production[plan.current_index];
+      odin_plan_.current_operation_mode_raw = plan.operation_mode[plan.current_index];
+      std::strncpy(odin_plan_.status, "available", sizeof(odin_plan_.status) - 1);
+      odin_plan_.last_error[0] = '\0';
+    } else {
+      std::strncpy(odin_plan_.status, "invalid", sizeof(odin_plan_.status) - 1);
+      std::strncpy(odin_plan_.last_error, error, sizeof(odin_plan_.last_error) - 1);
+      odin_plan_.last_error[sizeof(odin_plan_.last_error) - 1] = '\0';
+    }
+    give_state_lock_();
+  }
+  log_event_(valid ? "info" : "warn", "odin_plan", valid ? "Asgard ODIN plan refreshed" : error);
+  return valid;
 }
 
 void LuneTouchCoordinator::poll_once_() {
@@ -706,9 +1193,7 @@ bool LuneTouchCoordinator::poll_node_overview_(size_t node_index, const ::lune_t
     return false;
 
   constexpr size_t BODY_CAP = 3072;
-  char *body = static_cast<char *>(heap_caps_malloc(BODY_CAP, MALLOC_CAP_SPIRAM));
-  if (body == nullptr)
-    body = static_cast<char *>(heap_caps_malloc(BODY_CAP, MALLOC_CAP_8BIT));
+  char *body = alloc_http_body_(BODY_CAP);
   if (body == nullptr) {
     note_node_poll_failure_(node_index, "overview no_body_heap");
     return false;
@@ -736,12 +1221,12 @@ bool LuneTouchCoordinator::poll_node_overview_(size_t node_index, const ::lune_t
     JsonVariant data = doc["data"];
     if (data.isNull())
       data = doc;
-    const char *model = data["node"]["model"] | nullptr;
-    const char *firmware = data["node"]["firmware"] | nullptr;
-    const char *ip = data["node"]["ip"] | nullptr;
-    const char *pairing_fingerprint = data["pairing"]["fingerprint"] | nullptr;
+    const char *model = data["node"]["model"].as<const char *>();
+    const char *firmware = data["node"]["firmware"].as<const char *>();
+    const char *ip = data["node"]["ip"].as<const char *>();
+    const char *pairing_fingerprint = data["pairing"]["fingerprint"].as<const char *>();
     if (pairing_fingerprint == nullptr || pairing_fingerprint[0] == '\0')
-      pairing_fingerprint = data["node"]["pairing_fingerprint"] | nullptr;
+      pairing_fingerprint = data["node"]["pairing_fingerprint"].as<const char *>();
     if (node.pairing_fingerprint[0] != '\0' && pairing_fingerprint != nullptr &&
         pairing_fingerprint[0] != '\0' &&
         std::strcmp(node.pairing_fingerprint, pairing_fingerprint) != 0) {
@@ -755,7 +1240,7 @@ bool LuneTouchCoordinator::poll_node_overview_(size_t node_index, const ::lune_t
     }
 
     if (!take_state_lock_(100)) {
-      free(body);
+      heap_caps_free(body);
       return false;
     }
     model_.update_node_metadata(node_index, model, firmware, ip);
@@ -791,14 +1276,14 @@ bool LuneTouchCoordinator::poll_node_overview_(size_t node_index, const ::lune_t
     }
     give_state_lock_();
     note_node_poll_success_(node_index, hosts[h]);
-    free(body);
+    heap_caps_free(body);
     return true;
   }
 
   char reason[80];
   snprintf(reason, sizeof(reason), "overview failed status=%d", last_status);
   note_node_poll_failure_(node_index, reason);
-  free(body);
+  heap_caps_free(body);
   return false;
 }
 
@@ -813,10 +1298,12 @@ bool LuneTouchCoordinator::poll_node_zones_(size_t node_index, const ::lune_touc
   if (host_count == 0)
     return false;
 
-  constexpr size_t V1_BODY_CAP = 4096;
-  char *v1_body = static_cast<char *>(heap_caps_malloc(V1_BODY_CAP, MALLOC_CAP_SPIRAM));
-  if (v1_body == nullptr)
-    v1_body = static_cast<char *>(heap_caps_malloc(V1_BODY_CAP, MALLOC_CAP_8BIT));
+  // The v1 zones document includes a forecast object for every valve.  The
+  // earlier 4 KiB buffer silently truncated valid six-zone responses; the
+  // truncated JSON then fell through to the legacy /state endpoint and
+  // recreated generated room names.
+  constexpr size_t V1_BODY_CAP = 12288;
+  char *v1_body = alloc_http_body_(V1_BODY_CAP);
   if (v1_body == nullptr) {
     note_node_poll_failure_(node_index, "zones no_body_heap");
     return false;
@@ -835,15 +1322,16 @@ bool LuneTouchCoordinator::poll_node_zones_(size_t node_index, const ::lune_touc
     }
     if (!ingest_v6_zones_(node_index, v1_body, now_ms)) {
       ESP_LOGW(TAG, "V6 zones poll returned unusable data for %s via %s", node.node_id, hosts[h]);
+      last_status = status;
       note_node_poll_failure_(node_index, "zones invalid_json");
       continue;
     }
     note_node_poll_success_(node_index, hosts[h]);
-    free(v1_body);
+    heap_caps_free(v1_body);
     return true;
   }
 
-  free(v1_body);
+  heap_caps_free(v1_body);
 
   // A real v1 response means the route exists. Do not follow a server-side 5xx
   // with the much larger legacy snapshot fetch; that failure path used to put
@@ -860,21 +1348,19 @@ bool LuneTouchCoordinator::poll_node_zones_(size_t node_index, const ::lune_touc
     snprintf(url, sizeof(url), "http://%s/api/hv6/v1/state", hosts[h]);
 
     constexpr size_t LEGACY_BODY_CAP = 14336;
-    char *body = static_cast<char *>(heap_caps_malloc(LEGACY_BODY_CAP, MALLOC_CAP_SPIRAM));
-    if (body == nullptr)
-      body = static_cast<char *>(heap_caps_malloc(LEGACY_BODY_CAP, MALLOC_CAP_8BIT));
+    char *body = alloc_http_body_(LEGACY_BODY_CAP);
     if (body == nullptr)
       continue;
 
     int status = 0;
     const bool fetched = fetch_json_(url, body, LEGACY_BODY_CAP, &status);
     if (fetched && ingest_v6_legacy_state_(node_index, node, body, now_ms)) {
-      free(body);
+      heap_caps_free(body);
       note_node_poll_success_(node_index, hosts[h]);
       return true;
     }
     last_status = status;
-    free(body);
+    heap_caps_free(body);
   }
 
   char reason[80];
@@ -946,7 +1432,8 @@ bool LuneTouchCoordinator::fetch_json_(const char *url, char *body, size_t body_
 }
 
 bool LuneTouchCoordinator::post_json_(const char *url, const char *payload, char *body,
-                                      size_t body_capacity, int *status_code) {
+                                      size_t body_capacity, int *status_code,
+                                      const char *authority_key) {
   if (body == nullptr || body_capacity == 0 || url == nullptr)
     return false;
   body[0] = '\0';
@@ -965,6 +1452,8 @@ bool LuneTouchCoordinator::post_json_(const char *url, const char *payload, char
 
   const char *post_body = payload != nullptr ? payload : "{}";
   esp_http_client_set_header(client, "Content-Type", "application/json");
+  if (authority_key != nullptr && authority_key[0] != '\0')
+    esp_http_client_set_header(client, "X-Lune-Authority-Key", authority_key);
   esp_http_client_set_post_field(client, post_body, std::strlen(post_body));
 
   bool ok = false;
@@ -975,10 +1464,10 @@ bool LuneTouchCoordinator::post_json_(const char *url, const char *payload, char
     if (status_code != nullptr)
       *status_code = status;
     const int len = esp_http_client_read_response(client, body, body_capacity - 1);
-    if (status >= 200 && status < 300 && len > 0) {
+    if (len > 0)
       body[len] = '\0';
+    if (status >= 200 && status < 300 && len > 0)
       ok = true;
-    }
   } else {
     ESP_LOGD(TAG, "HTTP POST failed: %s", esp_err_to_name(err));
   }
@@ -986,6 +1475,93 @@ bool LuneTouchCoordinator::post_json_(const char *url, const char *payload, char
   esp_http_client_close(client);
   esp_http_client_cleanup(client);
   return ok;
+}
+
+bool LuneTouchCoordinator::renew_authority_lease_() {
+  char leader_id[32]{};
+  char installation_id[32]{};
+  char coordinator_id[32]{};
+  char shared_key[64]{};
+  char host[64]{};
+  char lease_id[32]{};
+  uint32_t sequence = 0;
+  bool degraded = true;
+  if (!take_state_lock_(100))
+    return false;
+  std::strncpy(leader_id, authority_leader_node_id_, sizeof(leader_id) - 1);
+  std::strncpy(installation_id, install_id_, sizeof(installation_id) - 1);
+  std::strncpy(coordinator_id, authority_coordinator_id_, sizeof(coordinator_id) - 1);
+  std::strncpy(shared_key, authority_shared_key_, sizeof(shared_key) - 1);
+  std::strncpy(lease_id, authority_lease_id_, sizeof(lease_id) - 1);
+  if (leader_id[0] != '\0') {
+    for (size_t index = 0; index < model_.node_count(); index++) {
+      const auto *node = model_.node(index);
+      if (node != nullptr && std::strcmp(node->node_id, leader_id) == 0) {
+        std::strncpy(host, node->hostname[0] != '\0' ? node->hostname : node->fallback_ip,
+                     sizeof(host) - 1);
+        break;
+      }
+    }
+  }
+  sequence = authority_sequence_ + 1;
+  const auto strategy = model_.strategy_snapshot();
+  degraded = !strategy.has_physical_temperature;
+  give_state_lock_();
+  if (host[0] == '\0' || installation_id[0] == '\0' || coordinator_id[0] == '\0' ||
+      shared_key[0] == '\0') {
+    if (take_state_lock_(100)) {
+      std::strncpy(authority_state_, "no_publisher", sizeof(authority_state_) - 1);
+      std::strncpy(authority_reason_, "authority configuration incomplete", sizeof(authority_reason_) - 1);
+      authority_expires_at_ms_ = 0;
+      give_state_lock_();
+    }
+    return false;
+  }
+  char url[192];
+  char payload[256];
+  char response[384];
+  std::snprintf(url, sizeof(url), "http://%s/api/hv6/v1/authority/lease", host);
+  std::snprintf(payload, sizeof(payload),
+                "{\"installation_id\":\"%s\",\"coordinator_id\":\"%s\",\"lease_id\":\"%s\","
+                "\"sequence\":%lu,\"issued_ms\":%lu,\"duration_ms\":90000,\"degraded\":%s}",
+                installation_id, coordinator_id, lease_id, static_cast<unsigned long>(sequence),
+                static_cast<unsigned long>(esphome::millis()), degraded ? "true" : "false");
+  post_json_(url, payload, response, sizeof(response), nullptr, shared_key);
+  JsonDocument doc;
+  // A 409 is an expected, observable recovery-pending response. Keep its
+  // state/reason instead of presenting a reachable V6 as an outage.
+  const bool parsed = response[0] != '\0' && !deserializeJson(doc, response);
+  const char *result = parsed ? doc["data"]["result"] | "" : "";
+  const char *state = parsed ? doc["data"]["state"] | "no_publisher" : "no_publisher";
+  const char *reason = parsed ? doc["data"]["reason"] | "lease renewal failed" : "lease renewal failed";
+  const uint32_t remaining_s = parsed ? doc["data"]["lease_remaining_s"] | 0U : 0U;
+  const bool lease_granted = parsed &&
+      (std::strcmp(result, "granted") == 0 || std::strcmp(result, "renewed") == 0);
+  if (take_state_lock_(100)) {
+    const bool was_recovery = std::strcmp(authority_state_, "touch_recovery_pending") == 0;
+    authority_last_renew_ms_ = esphome::millis();
+    std::strncpy(authority_state_, state, sizeof(authority_state_) - 1);
+    std::strncpy(authority_reason_, reason, sizeof(authority_reason_) - 1);
+    if (lease_granted) {
+      authority_sequence_ = sequence;
+      authority_expires_at_ms_ = esphome::millis() + remaining_s * 1000UL;
+      authority_generation_ = doc["data"]["generation"] | 0U;
+      authority_last_fallback_value_c_ = doc["data"]["last_fallback_value_c"] | NAN;
+      authority_last_asgard_value_c_ = doc["data"]["last_asgard_value_c"] | NAN;
+      authority_v6_local_zones_ = doc["data"]["local_zones"] | 0U;
+      authority_v6_peer_zones_ = doc["data"]["peer_zones"] | 0U;
+      std::strncpy(authority_v6_peer_status_, doc["data"]["peer_status"] | "unknown",
+                   sizeof(authority_v6_peer_status_) - 1);
+      authority_v6_peer_status_[sizeof(authority_v6_peer_status_) - 1] = '\0';
+      authority_smooth_first_write_ = was_recovery && std::isfinite(authority_last_fallback_value_c_);
+    } else {
+      authority_expires_at_ms_ = 0;
+    }
+    give_state_lock_();
+  }
+  log_event_(lease_granted ? "info" : (parsed ? "info" : "warn"), "authority",
+             parsed ? result : "lease renewal failed");
+  return lease_granted;
 }
 
 bool LuneTouchCoordinator::ingest_v6_zones_(size_t node_index, const char *body, uint32_t now_ms) {
@@ -1024,10 +1600,16 @@ bool LuneTouchCoordinator::ingest_v6_zones_(size_t node_index, const char *body,
     const float temp = has_temp ? (zone["temperature_c"] | 0.0f) : 0.0f;
     const float setpoint = has_setpoint ? (zone["setpoint_c"] | 0.0f) : 0.0f;
     const float valve = has_valve ? (zone["valve_pct"] | 0.0f) : 0.0f;
-    const char *status = zone["state"] | nullptr;
+    const char *status = zone["state"].as<const char *>();
     if (status == nullptr)
       status = zone["status"] | "unknown";
-    const char *v6_name = zone["name"] | nullptr;
+    // Do not use `| nullptr` here.  With ArduinoJson that selects the
+    // generic default-value overload for std::nullptr_t, so it returns null
+    // even when the JSON member is a string.  Read the optional string
+    // directly, then fall back to the legacy `name` member.
+    const char *v6_name = zone["friendly_name"].as<const char *>();
+    if (v6_name == nullptr || v6_name[0] == '\0')
+      v6_name = zone["name"].as<const char *>();
     const bool fresh = zone["fresh"] | true;
     const size_t zone_index = static_cast<size_t>(zone_number - 1);
     if (v6_name != nullptr && v6_name[0] != '\0')
@@ -1053,8 +1635,6 @@ bool LuneTouchCoordinator::ingest_v6_zones_(size_t node_index, const char *body,
     }
     if (stored) {
       updated++;
-      if (has_setpoint)
-        model_.update_zone_comfort_from_v6_by_binding(node_index, zone_index, setpoint);
     }
     JsonVariant forecast = zone["forecast"];
     const uint8_t exterior_walls = forecast["exterior_walls"] | zone["exterior_walls"] | 0;
@@ -1196,11 +1776,14 @@ bool LuneTouchCoordinator::ingest_v6_legacy_state_(size_t node_index, const ::lu
 bool LuneTouchCoordinator::fetch_open_meteo_(float latitude, float longitude, char *error, size_t error_len,
                                              uint8_t *hours_count, float *min_temp_c, float *max_wind_ms,
                                              float *peak_wind_dir_deg, float *max_solar_wm2,
+                                             char *provider_timezone, size_t provider_timezone_capacity,
                                              ForecastHourState *hours_out, size_t hours_capacity) {
   if (error != nullptr && error_len > 0)
     error[0] = '\0';
   if (hours_count != nullptr)
     *hours_count = 0;
+  if (provider_timezone != nullptr && provider_timezone_capacity > 0)
+    provider_timezone[0] = '\0';
 
   char url[320];
   snprintf(url, sizeof(url),
@@ -1218,9 +1801,7 @@ bool LuneTouchCoordinator::fetch_open_meteo_(float latitude, float longitude, ch
   cfg.buffer_size = 2048;
 
   constexpr size_t BODY_CAP = 16384;
-  char *body = static_cast<char *>(heap_caps_malloc(BODY_CAP, MALLOC_CAP_SPIRAM));
-  if (body == nullptr)
-    body = static_cast<char *>(heap_caps_malloc(BODY_CAP, MALLOC_CAP_8BIT));
+  char *body = alloc_http_body_(BODY_CAP);
   if (body == nullptr) {
     snprintf(error, error_len, "no_body_heap");
     return false;
@@ -1228,7 +1809,7 @@ bool LuneTouchCoordinator::fetch_open_meteo_(float latitude, float longitude, ch
 
   esp_http_client_handle_t client = esp_http_client_init(&cfg);
   if (client == nullptr) {
-    free(body);
+    heap_caps_free(body);
     snprintf(error, error_len, "http_init_failed");
     return false;
   }
@@ -1243,6 +1824,8 @@ bool LuneTouchCoordinator::fetch_open_meteo_(float latitude, float longitude, ch
       body[len] = '\0';
 
       JsonDocument filter;
+      filter["timezone"] = true;
+      filter["hourly"]["time"] = true;
       filter["hourly"]["temperature_2m"] = true;
       filter["hourly"]["wind_speed_10m"] = true;
       filter["hourly"]["wind_direction_10m"] = true;
@@ -1251,24 +1834,37 @@ bool LuneTouchCoordinator::fetch_open_meteo_(float latitude, float longitude, ch
       JsonDocument doc;
       DeserializationError jerr = deserializeJson(doc, body, len, DeserializationOption::Filter(filter));
       if (!jerr) {
+        JsonArray times = doc["hourly"]["time"].as<JsonArray>();
         JsonArray temps = doc["hourly"]["temperature_2m"].as<JsonArray>();
         JsonArray winds = doc["hourly"]["wind_speed_10m"].as<JsonArray>();
         JsonArray dirs = doc["hourly"]["wind_direction_10m"].as<JsonArray>();
         JsonArray solar = doc["hourly"]["shortwave_radiation"].as<JsonArray>();
+        const char *timezone = doc["timezone"] | "";
         const size_t count = temps.size();
-        if (count >= 24 && winds.size() >= count && dirs.size() >= count && solar.size() >= count) {
+        if (times.size() == 0) {
+          snprintf(error, error_len, "missing_hourly_time");
+        } else if (!lune_touch_forecast_timeline::hourly_arrays_match(
+                       times.size(), temps.size(), winds.size(), dirs.size(), solar.size())) {
+          snprintf(error, error_len, "hourly_arrays_mismatch");
+        } else if (!lune_touch_forecast_timeline::provider_timezone_valid(timezone)) {
+          snprintf(error, error_len, "missing_timezone");
+        } else if (count >= 24 && hours_out != nullptr && hours_capacity >= 24) {
           float min_temp = temps[0] | 0.0f;
           float max_wind = 0.0f;
           float wind_dir = 0.0f;
           float max_solar = 0.0f;
           uint8_t kept = 0;
+          int64_t timestamps[72]{};
           for (size_t i = 0; i < count && kept < 72; i++, kept++) {
+            const int64_t timestamp_s = times[i] | 0LL;
             const float temp = temps[i] | 0.0f;
             const float wind = winds[i] | 0.0f;
             const float dir = dirs[i] | 0.0f;
             const float sun = solar[i] | 0.0f;
-            if (hours_out != nullptr && kept < hours_capacity)
-              hours_out[kept] = {temp, wind, dir, sun};
+            if (kept >= hours_capacity)
+              break;
+            timestamps[kept] = timestamp_s;
+            hours_out[kept] = {timestamp_s, temp, wind, dir, sun};
             if (temp < min_temp)
               min_temp = temp;
             if (wind > max_wind) {
@@ -1278,17 +1874,25 @@ bool LuneTouchCoordinator::fetch_open_meteo_(float latitude, float longitude, ch
             if (sun > max_solar)
               max_solar = sun;
           }
-          if (hours_count != nullptr)
-            *hours_count = kept;
-          if (min_temp_c != nullptr)
-            *min_temp_c = min_temp;
-          if (max_wind_ms != nullptr)
-            *max_wind_ms = max_wind;
-          if (peak_wind_dir_deg != nullptr)
-            *peak_wind_dir_deg = wind_dir;
-          if (max_solar_wm2 != nullptr)
-            *max_solar_wm2 = max_solar;
-          ok = true;
+          if (!lune_touch_forecast_timeline::timestamps_are_consecutive_hours(timestamps, kept)) {
+            snprintf(error, error_len, "hourly_time_unalignable");
+          } else {
+            if (hours_count != nullptr)
+              *hours_count = kept;
+            if (min_temp_c != nullptr)
+              *min_temp_c = min_temp;
+            if (max_wind_ms != nullptr)
+              *max_wind_ms = max_wind;
+            if (peak_wind_dir_deg != nullptr)
+              *peak_wind_dir_deg = wind_dir;
+            if (max_solar_wm2 != nullptr)
+              *max_solar_wm2 = max_solar;
+            if (provider_timezone != nullptr && provider_timezone_capacity > 0) {
+              std::strncpy(provider_timezone, timezone, provider_timezone_capacity - 1);
+              provider_timezone[provider_timezone_capacity - 1] = '\0';
+            }
+            ok = true;
+          }
         } else {
           snprintf(error, error_len, "short_forecast");
         }
@@ -1304,13 +1908,22 @@ bool LuneTouchCoordinator::fetch_open_meteo_(float latitude, float longitude, ch
 
   esp_http_client_close(client);
   esp_http_client_cleanup(client);
-  free(body);
+  heap_caps_free(body);
   return ok;
 }
 
 void LuneTouchCoordinator::recompute_forecast_decisions_() {
   forecast_decision_count_ = 0;
   if (forecast_hours_count_ == 0)
+    return;
+
+  int64_t timestamps[72]{};
+  for (uint8_t i = 0; i < forecast_hours_count_; i++)
+    timestamps[i] = forecast_hours_[i].timestamp_s;
+  const size_t now_index = lune_touch_forecast_timeline::first_index_at_or_after(
+      timestamps, forecast_hours_count_, current_epoch_s_());
+  // A forecast with no wall-clock alignment must never create a preload command.
+  if (now_index == lune_touch_forecast_timeline::NO_INDEX)
     return;
 
   uint8_t day_index = 0;
@@ -1343,14 +1956,14 @@ void LuneTouchCoordinator::recompute_forecast_decisions_() {
 
     const float indoor_ref_c = out.comfort_setpoint_c;
     const size_t last = std::min(static_cast<size_t>(forecast_hours_count_) - 1,
-                                 static_cast<size_t>(out.active_thermal_lead_h));
+                                 now_index + static_cast<size_t>(out.active_thermal_lead_h));
     float peak_load = 0.0f;
     int8_t peak_in_h = -1;
-    for (size_t h = 0; h <= last; h++) {
+    for (size_t h = now_index; h <= last; h++) {
       const float load = zone_hour_load_(forecast_hours_[h], *zone, indoor_ref_c);
       if (load > peak_load) {
         peak_load = load;
-        peak_in_h = static_cast<int8_t>(h);
+        peak_in_h = static_cast<int8_t>(h - now_index);
       }
     }
     if (peak_in_h < 0)
@@ -1388,9 +2001,12 @@ ForecastDispatchSummary LuneTouchCoordinator::dispatch_forecast_commands_() {
     if (!decision.active || decision.offset_c <= 0.01f)
       continue;
     summary.active++;
-    if (ledger_.has_recent_similar("forecast", decision.node_index, decision.zone_index,
+    const auto target = model_.resolve_room(decision.room_id);
+    if (target.node == nullptr || target.binding == nullptr)
+      continue;
+    if (ledger_.has_recent_similar("forecast", target.node->node_id, target.binding->loop_id,
                                    decision.offset_c, now, FORECAST_COMMAND_DEDUPE_MS,
-                                   FORECAST_COMMAND_EPSILON_C)) {
+                                   FORECAST_COMMAND_EPSILON_C, current_epoch_s_())) {
       summary.skipped++;
       continue;
     }
@@ -1404,8 +2020,9 @@ ForecastDispatchSummary LuneTouchCoordinator::dispatch_forecast_commands_() {
       record.zone_index = decision.zone_index;
       record.requested_offset_c = decision.offset_c;
       record.accepted_offset_c = 0.0f;
-      record.created_at_ms = now;
-      record.expires_at_ms = now;
+      stamp_command_timing_(&record, now, 0);
+      const auto target = model_.resolve_room(decision.room_id);
+      stamp_command_target_(&record, target.node, target.binding);
       record.result = result;
       ledger_.append(record);
       ledger_changed = true;
@@ -1456,8 +2073,9 @@ ForecastDispatchSummary LuneTouchCoordinator::dispatch_forecast_commands_() {
     record.node_index = decision.node_index;
     record.zone_index = decision.zone_index;
     record.requested_offset_c = decision.offset_c;
-    record.created_at_ms = now;
-    record.expires_at_ms = now + FORECAST_COMMAND_TTL_S * 1000UL;
+    stamp_command_timing_(&record, now, FORECAST_COMMAND_TTL_S);
+    const auto target = model_.resolve_room(decision.room_id);
+    stamp_command_target_(&record, target.node, target.binding);
     record.result = ::lune_touch::CommandResult::PENDING;
 
     ::lune_touch::CommandRecord final_record = record;
@@ -1608,12 +2226,14 @@ bool LuneTouchCoordinator::send_v6_setpoint_command_(const ::lune_touch::PairedN
   json_escape_("lune-touch", source, sizeof(source));
   json_escape_(request.reason, reason, sizeof(reason));
 
-  char payload[320];
+  char payload[512];
+  const int64_t auth_timestamp_s = current_epoch_s_();
   snprintf(payload, sizeof(payload),
            "{\"request_id\":\"%s\",\"source\":\"%s\",\"reason\":\"%s\","
-           "\"setpoint_offset_c\":%.2f,\"ttl_s\":%lu}",
+           "\"setpoint_offset_c\":%.2f,\"ttl_s\":%lu,\"auth_timestamp_s\":%lld,"
+           "\"auth_nonce\":\"%s\"}",
            request_id, source, reason, request.requested_offset_c,
-           static_cast<unsigned long>(ttl_s));
+           static_cast<unsigned long>(ttl_s), static_cast<long long>(auth_timestamp_s), request_id);
 
   for (size_t i = 0; i < host_count; i++) {
     char url[320];
@@ -1622,7 +2242,7 @@ bool LuneTouchCoordinator::send_v6_setpoint_command_(const ::lune_touch::PairedN
 
     char body[512];
     int status = 0;
-    if (!post_json_(url, payload, body, sizeof(body), &status)) {
+    if (!post_json_(url, payload, body, sizeof(body), &status, authority_shared_key_)) {
       ESP_LOGD(TAG, "V6 setpoint command failed via %s (%d)", hosts[i], status);
       continue;
     }
@@ -1635,7 +2255,7 @@ bool LuneTouchCoordinator::send_v6_setpoint_command_(const ::lune_touch::PairedN
     }
 
     JsonVariant data = doc["data"];
-    const char *result_name = data["result"] | nullptr;
+    const char *result_name = data["result"].as<const char *>();
     if (result_name == nullptr)
       result_name = doc["result"] | "";
     const bool accepted = std::strcmp(result_name, "accepted") == 0 ||
@@ -1657,25 +2277,205 @@ bool LuneTouchCoordinator::send_v6_setpoint_command_(const ::lune_touch::PairedN
 }
 
 bool LuneTouchCoordinator::load_registry_() {
+  static ::lune_touch::PersistedState state;
+  std::memset(&state, 0, sizeof(state));
+  state.magic = ::lune_touch::PERSISTED_STATE_MAGIC;
+  state.version = ::lune_touch::PERSISTED_STATE_VERSION;
+
+  // Prefer the dedicated partition when it is installed. Its format is v12;
+  // v11 migration is deliberately read from the legacy default partition below.
+  if (touch_registry_partition_ready_) {
+    nvs_handle_t dedicated_handle;
+    if (nvs_open_from_partition(TOUCH_REGISTRY_PARTITION, TOUCH_NAMESPACE, NVS_READONLY,
+                                &dedicated_handle) == ESP_OK) {
+      if (load_registry_chunks_(dedicated_handle, &state)) {
+        nvs_close(dedicated_handle);
+        if (state.magic == ::lune_touch::PERSISTED_STATE_MAGIC &&
+            state.version == ::lune_touch::PERSISTED_STATE_VERSION) {
+          const bool registry_migrated = populate_missing_loop_ids_(&state);
+          if (!model_.import_state(state)) {
+            ESP_LOGW(TAG, "Ignoring incompatible dedicated Touch registry");
+            return false;
+          }
+          ESP_LOGI(TAG, "Loaded dedicated Touch registry: nodes=%u zones=%u",
+                   static_cast<unsigned>(model_.node_count()),
+                   static_cast<unsigned>(model_.zone_count()));
+          if (registry_migrated)
+            save_registry_();
+          return true;
+        }
+      } else {
+        nvs_close(dedicated_handle);
+      }
+    }
+    std::memset(&state, 0, sizeof(state));
+    state.magic = ::lune_touch::PERSISTED_STATE_MAGIC;
+    state.version = ::lune_touch::PERSISTED_STATE_VERSION;
+  }
+
   nvs_handle_t handle;
-  if (nvs_open(TOUCH_NAMESPACE, NVS_READONLY, &handle) != ESP_OK)
+  const esp_err_t open_err = nvs_open(TOUCH_NAMESPACE, NVS_READONLY, &handle);
+  if (open_err != ESP_OK) {
+    ESP_LOGI(TAG, "Touch registry unavailable: nvs_open(%s)=%s", TOUCH_NAMESPACE,
+             esp_err_to_name(open_err));
     return false;
+  }
+
+  bool registry_migrated = false;
+  static PersistedStateV11 legacy_chunked;
+  std::memset(&legacy_chunked, 0, sizeof(legacy_chunked));
+  if (load_registry_chunks_for_(handle, &legacy_chunked)) {
+    nvs_close(handle);
+    if (legacy_chunked.magic != ::lune_touch::PERSISTED_STATE_MAGIC ||
+        legacy_chunked.version != ::lune_touch::PERSISTED_STATE_VERSION_V11 ||
+        legacy_chunked.node_count > ::lune_touch::MAX_NODES ||
+        legacy_chunked.room_count > ::lune_touch::MAX_HOUSE_ROOMS ||
+        legacy_chunked.zone_count > ::lune_touch::MAX_HOUSE_ZONES) {
+      ESP_LOGW(TAG, "Ignoring incompatible v11 chunked Touch registry");
+      return false;
+    }
+    state.node_count = legacy_chunked.node_count;
+    state.room_count = legacy_chunked.room_count;
+    state.zone_count = legacy_chunked.zone_count;
+    for (size_t i = 0; i < legacy_chunked.node_count; i++)
+      state.nodes[i] = legacy_chunked.nodes[i];
+    for (size_t i = 0; i < legacy_chunked.room_count; i++)
+      state.rooms[i] = legacy_chunked.rooms[i];
+    for (size_t i = 0; i < legacy_chunked.zone_count; i++)
+      state.zones[i] = legacy_chunked.zones[i];
+    registry_migrated = true;
+    ESP_LOGI(TAG, "Migrated chunked Touch registry from v11; runtime history reset");
+  }
+  if (registry_migrated) {
+    registry_migrated = populate_missing_loop_ids_(&state) || registry_migrated;
+    if (!model_.import_state(state)) {
+      ESP_LOGW(TAG, "Ignoring incompatible v11 chunked Touch registry");
+      return false;
+    }
+    ESP_LOGI(TAG, "Loaded migrated Touch registry: nodes=%u zones=%u",
+             static_cast<unsigned>(model_.node_count()),
+             static_cast<unsigned>(model_.zone_count()));
+    if (touch_registry_partition_ready_)
+      ESP_LOGI(TAG, "Copying migrated registry to dedicated Touch NVS");
+    save_registry_();
+    return true;
+  }
+  if (load_registry_chunks_(handle, &state)) {
+    nvs_close(handle);
+    if (state.magic != ::lune_touch::PERSISTED_STATE_MAGIC ||
+        state.version > ::lune_touch::PERSISTED_STATE_VERSION) {
+      ESP_LOGW(TAG, "Ignoring chunked Touch registry magic/version mismatch (magic=0x%08lx version=%u)",
+               static_cast<unsigned long>(state.magic), static_cast<unsigned>(state.version));
+      return false;
+    }
+    if (state.version != ::lune_touch::PERSISTED_STATE_VERSION) {
+      state.version = ::lune_touch::PERSISTED_STATE_VERSION;
+      registry_migrated = true;
+    }
+    registry_migrated = populate_missing_loop_ids_(&state) || registry_migrated;
+    if (!model_.import_state(state)) {
+      ESP_LOGW(TAG, "Ignoring incompatible chunked Touch registry blob");
+      return false;
+    }
+    ESP_LOGI(TAG, "Loaded chunked Touch registry: nodes=%u zones=%u",
+             static_cast<unsigned>(model_.node_count()),
+             static_cast<unsigned>(model_.zone_count()));
+    if (registry_migrated || touch_registry_partition_ready_) {
+      if (touch_registry_partition_ready_)
+        ESP_LOGI(TAG, "Copying legacy Touch registry to dedicated NVS");
+      save_registry_();
+    }
+    return true;
+  }
 
   size_t len = 0;
   esp_err_t err = nvs_get_blob(handle, "registry", nullptr, &len);
   if (err != ESP_OK) {
     nvs_close(handle);
+    ESP_LOGI(TAG, "Touch registry not stored yet: %s", esp_err_to_name(err));
     return false;
   }
 
-  static ::lune_touch::PersistedState state;
-  std::memset(&state, 0, sizeof(state));
   if (len == sizeof(state)) {
     err = nvs_get_blob(handle, "registry", &state, &len);
     nvs_close(handle);
     if (err != ESP_OK)
       return false;
+    // Some releases changed only the schema marker after an append-only
+    // change. Keep the registry when the binary layout is still identical;
+    // otherwise a normal OTA update looks like a factory reset to the user.
+    if (state.magic != ::lune_touch::PERSISTED_STATE_MAGIC ||
+        state.version > ::lune_touch::PERSISTED_STATE_VERSION) {
+      ESP_LOGW(TAG, "Ignoring Touch registry magic/version mismatch (magic=0x%08lx version=%u)",
+               static_cast<unsigned long>(state.magic), static_cast<unsigned>(state.version));
+      return false;
+    }
+    if (state.version != ::lune_touch::PERSISTED_STATE_VERSION) {
+      ESP_LOGI(TAG, "Migrating compatible Touch registry version %u to %u",
+               static_cast<unsigned>(state.version),
+               static_cast<unsigned>(::lune_touch::PERSISTED_STATE_VERSION));
+      state.version = ::lune_touch::PERSISTED_STATE_VERSION;
+      registry_migrated = true;
+    }
+  } else if (len == sizeof(PersistedStateV11)) {
+    registry_migrated = true;
+    static PersistedStateV11 legacy;
+    std::memset(&legacy, 0, sizeof(legacy));
+    err = nvs_get_blob(handle, "registry", &legacy, &len);
+    nvs_close(handle);
+    if (err != ESP_OK || legacy.magic != ::lune_touch::PERSISTED_STATE_MAGIC ||
+        legacy.version != ::lune_touch::PERSISTED_STATE_VERSION_V11 ||
+        legacy.node_count > ::lune_touch::MAX_NODES || legacy.room_count > ::lune_touch::MAX_HOUSE_ROOMS ||
+        legacy.zone_count > ::lune_touch::MAX_HOUSE_ZONES)
+      return false;
+    state.node_count = legacy.node_count;
+    state.room_count = legacy.room_count;
+    state.zone_count = legacy.zone_count;
+    for (size_t i = 0; i < legacy.node_count; i++)
+      state.nodes[i] = legacy.nodes[i];
+    for (size_t i = 0; i < legacy.room_count; i++)
+      state.rooms[i] = legacy.rooms[i];
+    for (size_t i = 0; i < legacy.zone_count; i++)
+      state.zones[i] = legacy.zones[i];
+    ESP_LOGI(TAG, "Migrated Touch registry from v11; runtime history reset");
+  } else if (len == sizeof(PersistedStateV10)) {
+    registry_migrated = true;
+    static PersistedStateV10 legacy;
+    std::memset(&legacy, 0, sizeof(legacy));
+    err = nvs_get_blob(handle, "registry", &legacy, &len);
+    nvs_close(handle);
+    if (err != ESP_OK || legacy.magic != ::lune_touch::PERSISTED_STATE_MAGIC ||
+        legacy.version != ::lune_touch::PERSISTED_STATE_VERSION_V10 ||
+        legacy.node_count > ::lune_touch::MAX_NODES || legacy.zone_count > ::lune_touch::MAX_HOUSE_ZONES)
+      return false;
+    state.node_count = legacy.node_count;
+    state.zone_count = legacy.zone_count;
+    for (size_t i = 0; i < legacy.node_count; i++)
+      state.nodes[i] = legacy.nodes[i];
+    for (size_t i = 0; i < legacy.zone_count; i++) {
+      copy_legacy_zone_v10_(state.zones[i], legacy.zones[i]);
+    }
+    ESP_LOGI(TAG, "Migrated Touch registry from v10 to v11");
+  } else if (len == sizeof(PersistedStateV9)) {
+    registry_migrated = true;
+    static PersistedStateV9 legacy;
+    std::memset(&legacy, 0, sizeof(legacy));
+    err = nvs_get_blob(handle, "registry", &legacy, &len);
+    nvs_close(handle);
+    if (err != ESP_OK || legacy.magic != ::lune_touch::PERSISTED_STATE_MAGIC ||
+        legacy.version != ::lune_touch::PERSISTED_STATE_VERSION_V9 ||
+        legacy.node_count > ::lune_touch::MAX_NODES || legacy.zone_count > ::lune_touch::MAX_HOUSE_ZONES)
+      return false;
+    state.node_count = legacy.node_count; state.zone_count = legacy.zone_count;
+    for (size_t i = 0; i < legacy.node_count; i++) state.nodes[i] = legacy.nodes[i];
+    for (size_t i = 0; i < legacy.zone_count; i++) {
+      const auto *node = legacy.zones[i].node_index < legacy.node_count ?
+          &legacy.nodes[legacy.zones[i].node_index] : nullptr;
+      copy_legacy_zone_v9_(state.zones[i], legacy.zones[i], node);
+    }
+    ESP_LOGI(TAG, "Migrated Touch registry from v9 to v10");
   } else if (len == sizeof(PersistedStateV8)) {
+    registry_migrated = true;
     static PersistedStateV8 legacy;
     std::memset(&legacy, 0, sizeof(legacy));
     err = nvs_get_blob(handle, "registry", &legacy, &len);
@@ -1692,10 +2492,10 @@ bool LuneTouchCoordinator::load_registry_() {
       copy_legacy_node_(state.nodes[i], legacy.nodes[i]);
     for (size_t i = 0; i < legacy.zone_count; i++) {
       copy_legacy_zone_(state.zones[i], legacy.zones[i]);
-      state.histories[i] = legacy.histories[i];
     }
     ESP_LOGI(TAG, "Migrated Touch registry from v8 to v9");
   } else if (len == sizeof(PersistedStateV7)) {
+    registry_migrated = true;
     static PersistedStateV7 legacy;
     std::memset(&legacy, 0, sizeof(legacy));
     err = nvs_get_blob(handle, "registry", &legacy, &len);
@@ -1712,10 +2512,10 @@ bool LuneTouchCoordinator::load_registry_() {
       copy_legacy_node_(state.nodes[i], legacy.nodes[i]);
     for (size_t i = 0; i < legacy.zone_count; i++) {
       copy_legacy_zone_(state.zones[i], legacy.zones[i]);
-      state.histories[i] = legacy.histories[i];
     }
     ESP_LOGI(TAG, "Migrated Touch registry from v7 to v9");
   } else if (len == sizeof(PersistedStateV6)) {
+    registry_migrated = true;
     static PersistedStateV6 legacy;
     std::memset(&legacy, 0, sizeof(legacy));
     err = nvs_get_blob(handle, "registry", &legacy, &len);
@@ -1734,6 +2534,7 @@ bool LuneTouchCoordinator::load_registry_() {
       copy_legacy_zone_(state.zones[i], legacy.zones[i]);
     ESP_LOGI(TAG, "Migrated Touch registry from v6 to v9");
   } else if (len == sizeof(PersistedStateV5)) {
+    registry_migrated = true;
     static PersistedStateV5 legacy;
     std::memset(&legacy, 0, sizeof(legacy));
     err = nvs_get_blob(handle, "registry", &legacy, &len);
@@ -1752,6 +2553,7 @@ bool LuneTouchCoordinator::load_registry_() {
       copy_legacy_zone_(state.zones[i], legacy.zones[i]);
     ESP_LOGI(TAG, "Migrated Touch registry from v5 to v9");
   } else if (len == sizeof(PersistedStateV4)) {
+    registry_migrated = true;
     static PersistedStateV4 legacy;
     std::memset(&legacy, 0, sizeof(legacy));
     err = nvs_get_blob(handle, "registry", &legacy, &len);
@@ -1788,6 +2590,7 @@ bool LuneTouchCoordinator::load_registry_() {
     }
     ESP_LOGI(TAG, "Migrated Touch registry from v4 to v9");
   } else if (len == sizeof(PersistedStateV3)) {
+    registry_migrated = true;
     static PersistedStateV3 legacy;
     std::memset(&legacy, 0, sizeof(legacy));
     err = nvs_get_blob(handle, "registry", &legacy, &len);
@@ -1825,20 +2628,32 @@ bool LuneTouchCoordinator::load_registry_() {
     ESP_LOGI(TAG, "Migrated Touch registry from v3 to v9");
   } else {
     nvs_close(handle);
+    ESP_LOGW(TAG, "Ignoring Touch registry with unsupported blob size: %u (expected %u)",
+             static_cast<unsigned>(len), static_cast<unsigned>(sizeof(state)));
     return false;
   }
 
+  registry_migrated = populate_missing_loop_ids_(&state) || registry_migrated;
+
   if (!model_.import_state(state)) {
-    ESP_LOGW(TAG, "Ignoring incompatible Touch registry blob");
+    ESP_LOGW(TAG, "Ignoring incompatible Touch registry blob (version=%u nodes=%u zones=%u rooms=%u)",
+             static_cast<unsigned>(state.version), static_cast<unsigned>(state.node_count),
+             static_cast<unsigned>(state.zone_count), static_cast<unsigned>(state.room_count));
     return false;
   }
   ESP_LOGI(TAG, "Loaded Touch registry: nodes=%u zones=%u",
            static_cast<unsigned>(model_.node_count()),
            static_cast<unsigned>(model_.zone_count()));
+  if (registry_migrated || touch_registry_partition_ready_) {
+    if (touch_registry_partition_ready_)
+      ESP_LOGI(TAG, "Copying legacy Touch registry to dedicated NVS");
+    save_registry_();
+  }
   return true;
 }
 
 void LuneTouchCoordinator::save_registry_() {
+  static bool registry_namespace_ready = false;
   if (!take_state_lock_(250)) {
     ESP_LOGW(TAG, "Could not lock registry for save");
     return;
@@ -1851,12 +2666,65 @@ void LuneTouchCoordinator::save_registry_() {
   }
 
   nvs_handle_t handle;
-  if (nvs_open(TOUCH_NAMESPACE, NVS_READWRITE, &handle) != ESP_OK) {
+  const esp_err_t open_err = open_touch_registry_nvs_(NVS_READWRITE, &handle);
+  if (open_err != ESP_OK) {
+    ESP_LOGE(TAG, "Could not open Touch registry for save: %s", esp_err_to_name(open_err));
     give_state_lock_();
     return;
   }
-  if (nvs_set_blob(handle, "registry", &state, sizeof(state)) == ESP_OK)
-    nvs_commit(handle);
+  // The legacy fallback partition may contain a large single blob. Remove it
+  // before writing the chunked registry; the in-memory model remains intact if
+  // a write still fails and the error is explicit in the monitor log.
+  // Clear stale single-blob/chunk remnants once per boot before the first
+  // successful chunked write. This handles interrupted migrations where no
+  // legacy key remains but old chunk entries still consume NVS pages. Normal
+  // subsequent saves overwrite the four chunks in place. WiFi, weather,
+  // settings, and ledger use separate namespaces.
+  if (!registry_namespace_ready) {
+    const esp_err_t erase_err = nvs_erase_all(handle);
+    if (erase_err != ESP_OK && erase_err != ESP_ERR_NVS_NOT_FOUND) {
+      ESP_LOGE(TAG, "Could not clear Touch registry namespace: %s", esp_err_to_name(erase_err));
+      nvs_close(handle);
+      give_state_lock_();
+      return;
+    }
+    const esp_err_t erase_commit = nvs_commit(handle);
+    if (erase_commit != ESP_OK) {
+      ESP_LOGE(TAG, "Could not clear legacy Touch registry blob: %s", esp_err_to_name(erase_commit));
+      nvs_close(handle);
+      give_state_lock_();
+      return;
+    }
+  }
+  esp_err_t set_err = ESP_OK;
+  const uint8_t *source = reinterpret_cast<const uint8_t *>(&state);
+  for (size_t i = 0; i < REGISTRY_CHUNK_COUNT; i++) {
+    const size_t offset = i * REGISTRY_CHUNK_SIZE;
+    const size_t length = std::min(REGISTRY_CHUNK_SIZE, sizeof(state) - offset);
+    set_err = nvs_set_blob(handle, REGISTRY_CHUNK_KEYS[i], source + offset, length);
+    if (set_err != ESP_OK) {
+      ESP_LOGE(TAG, "Touch registry chunk %u/%u failed (%u bytes): %s",
+               static_cast<unsigned>(i + 1), static_cast<unsigned>(REGISTRY_CHUNK_COUNT),
+               static_cast<unsigned>(length), esp_err_to_name(set_err));
+      nvs_stats_t stats{};
+      const char *partition_name = touch_registry_partition_ready_ ? TOUCH_REGISTRY_PARTITION : nullptr;
+      if (nvs_get_stats(partition_name, &stats) == ESP_OK)
+        ESP_LOGE(TAG, "NVS usage: used=%u free=%u total=%u namespaces=%u",
+                 static_cast<unsigned>(stats.used_entries), static_cast<unsigned>(stats.free_entries),
+                 static_cast<unsigned>(stats.total_entries), static_cast<unsigned>(stats.namespace_count));
+      break;
+    }
+  }
+  const esp_err_t commit_err = set_err == ESP_OK ? nvs_commit(handle) : set_err;
+  if (commit_err != ESP_OK)
+    ESP_LOGE(TAG, "Could not save chunked Touch registry (%u bytes in %u chunks): %s",
+             static_cast<unsigned>(sizeof(state)), static_cast<unsigned>(REGISTRY_CHUNK_COUNT),
+             esp_err_to_name(commit_err));
+  else
+    ESP_LOGD(TAG, "Saved chunked Touch registry (%u bytes in %u chunks)",
+             static_cast<unsigned>(sizeof(state)), static_cast<unsigned>(REGISTRY_CHUNK_COUNT));
+  if (commit_err == ESP_OK)
+    registry_namespace_ready = true;
   nvs_close(handle);
   give_state_lock_();
 }
@@ -1866,6 +2734,27 @@ void LuneTouchCoordinator::load_ledger_() {
   if (nvs_open(LEDGER_NAMESPACE, NVS_READONLY, &handle) != ESP_OK)
     return;
 
+  PersistedLedgerCompact compact{};
+  size_t compact_len = sizeof(compact);
+  if (nvs_get_blob(handle, "recent4", &compact, &compact_len) == ESP_OK &&
+      compact_len == sizeof(compact) && compact.magic == ::lune_touch::PERSISTED_LEDGER_MAGIC &&
+      compact.version == 1 && compact.count <= PERSISTED_LEDGER_RECORDS) {
+    static ::lune_touch::PersistedLedger state;
+    std::memset(&state, 0, sizeof(state));
+    state.magic = ::lune_touch::PERSISTED_LEDGER_MAGIC;
+    state.version = ::lune_touch::PERSISTED_LEDGER_VERSION;
+    state.boot_id = compact.boot_id;
+    state.count = compact.count;
+    state.next = compact.count % ::lune_touch::LEDGER_CAPACITY;
+    for (size_t i = 0; i < compact.count; i++)
+      state.records[i] = compact.records[i];
+    nvs_close(handle);
+    if (ledger_.import_state(state, boot_id_, current_epoch_s_()))
+      ESP_LOGI(TAG, "Loaded compact Touch command ledger: records=%u",
+               static_cast<unsigned>(ledger_.count()));
+    return;
+  }
+
   static ::lune_touch::PersistedLedger state;
   std::memset(&state, 0, sizeof(state));
   size_t len = sizeof(state);
@@ -1873,12 +2762,14 @@ void LuneTouchCoordinator::load_ledger_() {
   nvs_close(handle);
   if (err != ESP_OK || len != sizeof(state))
     return;
-  if (!ledger_.import_state(state)) {
+  if (!ledger_.import_state(state, boot_id_, current_epoch_s_())) {
     ESP_LOGW(TAG, "Ignoring incompatible Touch command ledger blob");
     return;
   }
   ESP_LOGI(TAG, "Loaded Touch command ledger: records=%u",
            static_cast<unsigned>(ledger_.count()));
+  // Migrate the old large ledger blob to the compact form on the next save.
+  save_ledger_();
 }
 
 void LuneTouchCoordinator::save_ledger_() {
@@ -1887,11 +2778,43 @@ void LuneTouchCoordinator::save_ledger_() {
   if (!ledger_.export_state(&state))
     return;
 
+  PersistedLedgerCompact compact{};
+  compact.boot_id = state.boot_id;
+  compact.count = std::min<size_t>(state.count, PERSISTED_LEDGER_RECORDS);
+  const size_t start = state.count < ::lune_touch::LEDGER_CAPACITY
+                           ? (state.count > compact.count ? state.count - compact.count : 0)
+                           : (state.next + ::lune_touch::LEDGER_CAPACITY - compact.count) %
+                                 ::lune_touch::LEDGER_CAPACITY;
+  for (size_t i = 0; i < compact.count; i++) {
+    const size_t source_index = (start + i) % ::lune_touch::LEDGER_CAPACITY;
+    compact.records[i] = state.records[source_index];
+  }
+
   nvs_handle_t handle;
   if (nvs_open(LEDGER_NAMESPACE, NVS_READWRITE, &handle) != ESP_OK)
     return;
-  if (nvs_set_blob(handle, "recent", &state, sizeof(state)) == ESP_OK)
-    nvs_commit(handle);
+  // The previous ledger was a large single blob. Clear the ledger namespace
+  // only during that migration; normal saves overwrite the compact blob.
+  size_t legacy_len = 0;
+  const bool has_legacy_ledger = nvs_get_blob(handle, "recent", nullptr, &legacy_len) == ESP_OK;
+  if (has_legacy_ledger) {
+    const esp_err_t erase_err = nvs_erase_all(handle);
+    if (erase_err != ESP_OK && erase_err != ESP_ERR_NVS_NOT_FOUND) {
+      ESP_LOGE(TAG, "Could not clear Touch ledger namespace: %s", esp_err_to_name(erase_err));
+      nvs_close(handle);
+      return;
+    }
+    const esp_err_t erase_commit = nvs_commit(handle);
+    if (erase_commit != ESP_OK) {
+      ESP_LOGE(TAG, "Could not clear legacy Touch command ledger: %s", esp_err_to_name(erase_commit));
+      nvs_close(handle);
+      return;
+    }
+  }
+  const esp_err_t set_err = nvs_set_blob(handle, "recent4", &compact, sizeof(compact));
+  const esp_err_t commit_err = set_err == ESP_OK ? nvs_commit(handle) : set_err;
+  if (commit_err != ESP_OK)
+    ESP_LOGE(TAG, "Could not save compact Touch command ledger: %s", esp_err_to_name(commit_err));
   nvs_close(handle);
 }
 
@@ -1931,8 +2854,23 @@ void LuneTouchCoordinator::load_forecast_cache_() {
   const esp_err_t err = nvs_get_blob(handle, "cache", &cache, &len);
   nvs_close(handle);
   if (err != ESP_OK || len != sizeof(cache) || cache.magic != FORECAST_CACHE_MAGIC ||
-      cache.version != FORECAST_CACHE_VERSION || cache.hours_count == 0 ||
+      !lune_touch_forecast_timeline::cache_version_supported(cache.version) || cache.hours_count == 0 ||
       cache.hours_count > 72) {
+    return;
+  }
+  int64_t timestamps[72]{};
+  for (uint8_t i = 0; i < cache.hours_count; i++)
+    timestamps[i] = cache.hours[i].timestamp_s;
+  const auto validation = lune_touch_forecast_timeline::validate_cache(
+      cache.fetch_epoch_s, cache.provider_timezone, timestamps, cache.hours_count, current_epoch_s_(),
+      FORECAST_CACHE_MAX_AGE_S);
+  if (validation != lune_touch_forecast_timeline::CacheValidation::FRESH) {
+    std::strncpy(forecast_status_, "stale", sizeof(forecast_status_) - 1);
+    forecast_status_[sizeof(forecast_status_) - 1] = '\0';
+    std::strncpy(forecast_last_error_, cache_validation_error_(validation),
+                 sizeof(forecast_last_error_) - 1);
+    forecast_last_error_[sizeof(forecast_last_error_) - 1] = '\0';
+    clear_forecast_cache_();
     return;
   }
   forecast_hours_count_ = cache.hours_count;
@@ -1942,6 +2880,10 @@ void LuneTouchCoordinator::load_forecast_cache_() {
   forecast_max_wind_ms_ = cache.max_wind_ms;
   forecast_peak_wind_dir_deg_ = cache.peak_wind_dir_deg;
   forecast_max_solar_wm2_ = cache.max_solar_wm2;
+  forecast_fetch_epoch_s_ = cache.fetch_epoch_s;
+  std::strncpy(forecast_provider_timezone_, cache.provider_timezone,
+               sizeof(forecast_provider_timezone_) - 1);
+  forecast_provider_timezone_[sizeof(forecast_provider_timezone_) - 1] = '\0';
   forecast_last_fetch_ms_ = esphome::millis();
   forecast_cache_restored_ = true;
   forecast_boot_refresh_pending_ = true;
@@ -1961,7 +2903,10 @@ void LuneTouchCoordinator::save_forecast_cache_() {
   if (!take_state_lock_(100))
     return;
   cache.hours_count = forecast_hours_count_;
-  cache.saved_at_ms = esphome::millis();
+  cache.fetch_epoch_s = forecast_fetch_epoch_s_;
+  std::strncpy(cache.provider_timezone, forecast_provider_timezone_,
+               sizeof(cache.provider_timezone) - 1);
+  cache.provider_timezone[sizeof(cache.provider_timezone) - 1] = '\0';
   cache.min_temp_c = forecast_min_temp_c_;
   cache.max_wind_ms = forecast_max_wind_ms_;
   cache.peak_wind_dir_deg = forecast_peak_wind_dir_deg_;
@@ -2006,6 +2951,12 @@ void LuneTouchCoordinator::load_settings_() {
     asgard_enabled_ = asgard_enabled != 0;
   len = sizeof(asgard_mode_);
   nvs_get_str(handle, "asgard_mode", asgard_mode_, &len);
+  len = sizeof(authority_leader_node_id_);
+  nvs_get_str(handle, "auth_leader", authority_leader_node_id_, &len);
+  len = sizeof(authority_coordinator_id_);
+  nvs_get_str(handle, "auth_coord", authority_coordinator_id_, &len);
+  len = sizeof(authority_shared_key_);
+  nvs_get_str(handle, "auth_key", authority_shared_key_, &len);
   uint8_t heat_source_enabled = heat_source_.enabled ? 1 : 0;
   if (nvs_get_u8(handle, "hs_en", &heat_source_enabled) == ESP_OK)
     heat_source_.enabled = heat_source_enabled != 0;
@@ -2042,6 +2993,9 @@ void LuneTouchCoordinator::save_settings_() {
   nvs_set_str(handle, "mode", install_mode_);
   nvs_set_u8(handle, "asgard_en", asgard_enabled_ ? 1 : 0);
   nvs_set_str(handle, "asgard_mode", asgard_mode_);
+  nvs_set_str(handle, "auth_leader", authority_leader_node_id_);
+  nvs_set_str(handle, "auth_coord", authority_coordinator_id_);
+  nvs_set_str(handle, "auth_key", authority_shared_key_);
   nvs_set_u8(handle, "hs_en", heat_source_.enabled ? 1 : 0);
   nvs_set_str(handle, "hs_host", heat_source_.host);
   nvs_set_u16(handle, "hs_port", heat_source_.port);
@@ -2112,8 +3066,9 @@ void LuneTouchCoordinator::seed_mock_house_() {
   record.zone_index = 0;
   record.requested_offset_c = 0.4f;
   record.accepted_offset_c = 0.4f;
-  record.created_at_ms = esphome::millis();
-  record.expires_at_ms = esphome::millis() + 45UL * 60UL * 1000UL;
+  stamp_command_timing_(&record, esphome::millis(), 45UL * 60UL);
+  const auto mock_target = model_.resolve_room("room-01");
+  stamp_command_target_(&record, mock_target.node, mock_target.binding);
   record.result = ::lune_touch::CommandResult::ACCEPTED;
   ledger_.append(record);
   save_ledger_();
@@ -2126,6 +3081,22 @@ bool LuneTouchCoordinator::add_node(const char *node_id, const char *hostname, c
   if (node_id == nullptr || node_id[0] == '\0') {
     make_node_id_(hostname, fallback_ip, generated_id, sizeof(generated_id));
     node_id = generated_id;
+  }
+  // PairedNode::node_id is the canonical identity used by all subsequent
+  // /nodes/{id}/... routes.  Reject overlong caller-supplied ids instead of
+  // silently truncating them in HouseModel::upsert_node(); silent truncation
+  // leaves the UI holding an id that later trust/profile/remove calls cannot
+  // resolve and surfaces as the misleading node_not_found error.
+  if (std::strlen(node_id) >= sizeof(::lune_touch::PairedNode{}.node_id)) {
+    snprintf(response, capacity, "{\"result\":\"rejected\",\"error\":\"node_id_too_long\"}");
+    return false;
+  }
+  for (const char *p = node_id; *p != '\0'; ++p) {
+    const unsigned char c = static_cast<unsigned char>(*p);
+    if (!std::isalnum(c) && c != '-' && c != '_') {
+      snprintf(response, capacity, "{\"result\":\"rejected\",\"error\":\"node_id_invalid\"}");
+      return false;
+    }
   }
   if ((hostname == nullptr || hostname[0] == '\0') && (fallback_ip == nullptr || fallback_ip[0] == '\0')) {
     snprintf(response, capacity, "{\"result\":\"rejected\",\"error\":\"hostname_or_ip_required\"}");
@@ -2142,18 +3113,22 @@ bool LuneTouchCoordinator::add_node(const char *node_id, const char *hostname, c
     return false;
   }
   model_.update_node_identity(static_cast<size_t>(index), pairing_fingerprint);
+  const auto *stored_node = model_.node(static_cast<size_t>(index));
+  char canonical_node_id[sizeof(::lune_touch::PairedNode{}.node_id)]{};
+  std::strncpy(canonical_node_id, stored_node != nullptr ? stored_node->node_id : node_id,
+               sizeof(canonical_node_id) - 1);
   give_state_lock_();
   save_registry_();
   char node_id_esc[48];
   char pairing_fingerprint_esc[48];
-  json_escape_(node_id != nullptr ? node_id : "", node_id_esc, sizeof(node_id_esc));
+  json_escape_(canonical_node_id, node_id_esc, sizeof(node_id_esc));
   json_escape_(pairing_fingerprint != nullptr ? pairing_fingerprint : "",
                pairing_fingerprint_esc, sizeof(pairing_fingerprint_esc));
   snprintf(response, capacity, "{\"result\":\"stored\",\"node_id\":\"%s\",\"node_index\":%d,"
            "\"pairing_fingerprint\":\"%s\"}",
            node_id_esc, index, pairing_fingerprint_esc);
   char event[112];
-  snprintf(event, sizeof(event), "paired node %s", node_id);
+  snprintf(event, sizeof(event), "paired node %s", canonical_node_id);
   log_event_("info", "commissioning", event);
   return true;
 }
@@ -2194,9 +3169,7 @@ bool LuneTouchCoordinator::scan_node_candidate(const char *hostname, const char 
   }
 
   constexpr size_t PROBE_BODY_CAP = 3072;
-  char *body = static_cast<char *>(heap_caps_malloc(PROBE_BODY_CAP, MALLOC_CAP_SPIRAM));
-  if (body == nullptr)
-    body = static_cast<char *>(heap_caps_malloc(PROBE_BODY_CAP, MALLOC_CAP_8BIT));
+  char *body = alloc_http_body_(PROBE_BODY_CAP);
   if (body == nullptr) {
     snprintf(response, capacity,
              "{\"scan\":\"probe\",\"discovery\":\"manual_probe\",\"found\":[{\"id\":\"%s\","
@@ -2235,7 +3208,7 @@ bool LuneTouchCoordinator::scan_node_candidate(const char *hostname, const char 
              "\"hostname\":\"%s\",\"ip\":\"%s\",\"reachable\":false,\"stale\":true,"
              "\"source\":\"manual_probe\",\"http_status\":%d,\"error\":\"probe_failed\"}]}",
              id_esc, host_esc, ip_esc, last_status);
-    free(body);
+    heap_caps_free(body);
     return false;
   }
 
@@ -2244,10 +3217,10 @@ bool LuneTouchCoordinator::scan_node_candidate(const char *hostname, const char 
     data = doc;
   const char *model = data["node"]["model"] | "lune-v6";
   const char *firmware = data["node"]["firmware"] | "unknown";
-  const char *pairing_fingerprint = data["pairing"]["fingerprint"] | nullptr;
+  const char *pairing_fingerprint = data["pairing"]["fingerprint"].as<const char *>();
   if (pairing_fingerprint == nullptr || pairing_fingerprint[0] == '\0')
     pairing_fingerprint = data["node"]["pairing_fingerprint"] | "";
-  const char *reported_ip = data["node"]["ip"] | nullptr;
+  const char *reported_ip = data["node"]["ip"].as<const char *>();
   if (reported_ip == nullptr || reported_ip[0] == '\0')
     reported_ip = fallback_ip != nullptr ? fallback_ip : "";
   char model_esc[32];
@@ -2267,8 +3240,21 @@ bool LuneTouchCoordinator::scan_node_candidate(const char *hostname, const char 
            "\"reachable\":true,\"stale\":false,\"source\":\"manual_probe\",\"http_status\":%d}]}",
            id_esc, host_esc, reported_ip_esc, model_esc, firmware_esc,
            pairing_fingerprint_esc, status);
-  free(body);
+  heap_caps_free(body);
   return true;
+}
+
+bool LuneTouchCoordinator::scan_registered_nodes(char *response, size_t capacity) {
+  if (take_state_lock_(100)) {
+    node_refresh_requested_ = true;
+    give_state_lock_();
+  }
+  if (poll_task_handle_ != nullptr)
+    xTaskNotifyGive(poll_task_handle_);
+  // Return immediately. Network probing belongs to the coordinator task, not
+  // the HTTP worker; otherwise concurrent overview/nodes/zones requests fail.
+  write_node_scan_json(response, capacity);
+  return esphome::network::is_connected();
 }
 
 bool LuneTouchCoordinator::set_node_trust(const char *node_id, ::lune_touch::NodeTrust trust,
@@ -2400,13 +3386,13 @@ bool LuneTouchCoordinator::reset_registry(const char *confirmation, char *respon
   give_state_lock_();
 
   nvs_handle_t handle;
-  if (nvs_open(TOUCH_NAMESPACE, NVS_READWRITE, &handle) == ESP_OK) {
-    nvs_erase_key(handle, "registry");
+  if (open_touch_registry_nvs_(NVS_READWRITE, &handle) == ESP_OK) {
+    nvs_erase_all(handle);
     nvs_commit(handle);
     nvs_close(handle);
   }
   if (nvs_open(LEDGER_NAMESPACE, NVS_READWRITE, &handle) == ESP_OK) {
-    nvs_erase_key(handle, "recent");
+    nvs_erase_all(handle);
     nvs_commit(handle);
     nvs_close(handle);
   }
@@ -2640,6 +3626,47 @@ bool LuneTouchCoordinator::set_zone_forecast_profile(const char *room_id, uint8_
   return true;
 }
 
+bool LuneTouchCoordinator::update_room_atomically(const char *room_id,
+                                                  const ::lune_touch::RoomUpdate &update,
+                                                  char *response, size_t capacity) {
+  if (!take_state_lock_(250)) {
+    snprintf(response, capacity, "{\"result\":\"rejected\",\"error\":\"coordinator_busy\"}");
+    return false;
+  }
+  uint32_t revision = 0;
+  const auto result = model_.apply_room_update(room_id, update, &revision);
+  if (result == ::lune_touch::RoomUpdateResult::STORED)
+    recompute_forecast_decisions_();
+  give_state_lock_();
+  if (result != ::lune_touch::RoomUpdateResult::STORED) {
+    const char *error = result == ::lune_touch::RoomUpdateResult::STALE_REVISION
+                            ? "stale_revision"
+                            : result == ::lune_touch::RoomUpdateResult::NOT_FOUND
+                                  ? "room_not_mapped" : "invalid_room_update";
+    snprintf(response, capacity, "{\"result\":\"rejected\",\"error\":\"%s\"}", error);
+    return false;
+  }
+  save_registry_();
+  char room_id_esc[48];
+  json_escape_(room_id, room_id_esc, sizeof(room_id_esc));
+  snprintf(response, capacity,
+           "{\"result\":\"stored\",\"room\":{\"room_id\":\"%s\",\"revision\":%lu,"
+           "\"comfort_setpoint_c\":%.1f,\"comfort_bias_c\":%.1f,\"priority\":%u,"
+           "\"schedule\":{\"enabled\":%s,\"day_mask\":%u,\"start_min\":%u,\"end_min\":%u,\"setpoint_c\":%.1f},"
+           "\"forecast\":{\"exterior_walls\":%u,\"wind_exposure\":%.2f,\"solar_gain\":%.2f,\"thermal_lead_h\":%u,\"max_offset_c\":%.2f},"
+           "\"geometry\":{\"total_area_m2\":%.2f,\"physical_weight\":%.2f,\"include_in_house_temperature\":%s}}}",
+           room_id_esc, static_cast<unsigned long>(revision), update.comfort_setpoint_c,
+           update.comfort_bias_c, static_cast<unsigned>(update.priority),
+           update.schedule_enabled ? "true" : "false", static_cast<unsigned>(update.schedule_day_mask & 0x7F),
+           static_cast<unsigned>(update.schedule_start_min), static_cast<unsigned>(update.schedule_end_min),
+           update.schedule_setpoint_c, static_cast<unsigned>(update.exterior_walls & 0x0F),
+           update.wind_exposure, update.solar_gain, static_cast<unsigned>(update.thermal_lead_h),
+           update.max_offset_c, update.total_area_m2, update.physical_weight,
+           update.include_in_house_temperature ? "true" : "false");
+  log_event_("info", "zones", "atomic room configuration stored");
+  return true;
+}
+
 bool LuneTouchCoordinator::queue_setpoint_command(const char *room_id, float requested_offset_c, uint32_t ttl_s,
                                                   const char *reason, char *response, size_t capacity) {
   if (!std::isfinite(requested_offset_c)) {
@@ -2652,86 +3679,77 @@ bool LuneTouchCoordinator::queue_setpoint_command(const char *room_id, float req
     ttl_s = 21600;
 
   const uint32_t now = esphome::millis();
-  ::lune_touch::PairedNode target_node{};
-  uint8_t target_node_index = 0;
-  uint8_t target_zone = 0;
-  bool target_stale = true;
-  char preferred_host[64]{};
+  ::lune_touch::ResolvedRoomLoop loops[::lune_touch::MAX_HOUSE_ZONES]{};
   if (!take_state_lock_(100)) {
     snprintf(response, capacity, "{\"result\":\"rejected\",\"error\":\"coordinator_busy\"}");
     return false;
   }
-  const auto resolved = model_.resolve_room(room_id);
-  if (resolved.node == nullptr || resolved.binding == nullptr) {
+  const size_t loop_count = model_.resolve_room_loops(room_id, loops, ::lune_touch::MAX_HOUSE_ZONES);
+  if (loop_count == 0) {
     give_state_lock_();
     snprintf(response, capacity, "{\"result\":\"rejected\",\"error\":\"room_not_mapped\"}");
     return false;
   }
-  target_node = *resolved.node;
-  target_node_index = resolved.binding->node_index;
-  target_zone = resolved.binding->zone_index;
-  target_stale = model_.is_node_stale(target_node_index, now);
-  if (target_node_index < ::lune_touch::MAX_NODES) {
-    std::strncpy(preferred_host, node_last_success_host_[target_node_index],
-                 sizeof(preferred_host) - 1);
-    preferred_host[sizeof(preferred_host) - 1] = '\0';
-  }
   give_state_lock_();
-
-  ::lune_touch::CommandRecord record{};
-  snprintf(record.request_id, sizeof(record.request_id), "touch-%lu",
-           static_cast<unsigned long>(now));
-  std::strncpy(record.source, "dashboard", sizeof(record.source) - 1);
-  std::strncpy(record.reason, reason != nullptr && reason[0] != '\0' ? reason : "dashboard command",
-               sizeof(record.reason) - 1);
-  record.node_index = target_node_index;
-  record.zone_index = target_zone;
-  record.requested_offset_c = requested_offset_c;
-  record.accepted_offset_c = 0.0f;
-  record.created_at_ms = now;
-  record.expires_at_ms = record.created_at_ms + ttl_s * 1000UL;
-  record.result = ::lune_touch::CommandResult::PENDING;
-
-  ::lune_touch::CommandRecord final_record = record;
-  const bool is_mock_node = std::strcmp(target_node.firmware, "mock") == 0;
-  if (!target_node.reachable && !is_mock_node) {
-    final_record.result = ::lune_touch::CommandResult::BLOCKED_UNREACHABLE;
-    std::strncpy(final_record.reason, "blocked: node unreachable", sizeof(final_record.reason) - 1);
-  } else if (target_node.trust != ::lune_touch::NodeTrust::TRUSTED) {
-    final_record.result = ::lune_touch::CommandResult::BLOCKED_UNTRUSTED;
-    std::strncpy(final_record.reason, "blocked: node not trusted", sizeof(final_record.reason) - 1);
-  } else if (target_stale && !is_mock_node) {
-    final_record.result = ::lune_touch::CommandResult::BLOCKED_STALE;
-    std::strncpy(final_record.reason, "blocked: node stale", sizeof(final_record.reason) - 1);
-  } else {
-    const bool sent = send_v6_setpoint_command_(target_node, target_zone, record, ttl_s,
-                                                &final_record, preferred_host);
-    if (!sent)
-      final_record.result = ::lune_touch::CommandResult::FAILED;
-  }
-
-  if (take_state_lock_(100)) {
+  size_t accepted = 0;
+  char command_id[20]{};
+  snprintf(command_id, sizeof(command_id), "room-%08lx", static_cast<unsigned long>(now));
+  size_t off = 0;
+  appendf_(response, capacity, off, "{\"command_id\":\"%s\",\"room_id\":\"%s\",\"loops\":[",
+           command_id, room_id);
+  for (size_t i = 0; i < loop_count; i++) {
+    const auto &target = loops[i];
+    ::lune_touch::CommandRecord final_record{};
+    if (target.node != nullptr && target.binding != nullptr) {
+      std::strncpy(final_record.request_id, command_id, sizeof(final_record.request_id) - 1);
+      std::strncpy(final_record.source, "dashboard", sizeof(final_record.source) - 1);
+      std::strncpy(final_record.reason, reason != nullptr && reason[0] != '\0' ? reason : "dashboard command",
+                   sizeof(final_record.reason) - 1);
+      final_record.node_index = target.binding->node_index;
+      final_record.zone_index = target.binding->zone_index;
+      final_record.requested_offset_c = requested_offset_c;
+      stamp_command_timing_(&final_record, now, ttl_s);
+      stamp_command_target_(&final_record, target.node, target.binding);
+      const bool mock = std::strcmp(target.node->firmware, "mock") == 0;
+      if (!target.node->reachable && !mock)
+        final_record.result = ::lune_touch::CommandResult::BLOCKED_UNREACHABLE;
+      else if (target.node->trust != ::lune_touch::NodeTrust::TRUSTED)
+        final_record.result = ::lune_touch::CommandResult::BLOCKED_UNTRUSTED;
+      else if (model_.is_node_stale(target.binding->node_index, now) && !mock)
+        final_record.result = ::lune_touch::CommandResult::BLOCKED_STALE;
+      else {
+        char host[64]{};
+        std::strncpy(host, node_last_success_host_[target.binding->node_index], sizeof(host) - 1);
+        if (!send_v6_setpoint_command_(*target.node, target.binding->zone_index, final_record, ttl_s,
+                                       &final_record, host))
+          final_record.result = ::lune_touch::CommandResult::FAILED;
+      }
+    }
+    if (final_record.result == ::lune_touch::CommandResult::ACCEPTED ||
+        final_record.result == ::lune_touch::CommandResult::PENDING)
+      accepted++;
     ledger_.append(final_record);
-    give_state_lock_();
-  } else {
-    ledger_.append(final_record);
+    appendf_(response, capacity, off,
+             "%s{\"loop_id\":\"%s\",\"node_id\":\"%s\",\"zone_index\":%u,"
+             "\"result\":\"%s\",\"accepted_offset_c\":%.2f}",
+             i == 0 ? "" : ",", final_record.loop_id,
+             final_record.node_id, static_cast<unsigned>(final_record.zone_index),
+             ::lune_touch::command_result_name(final_record.result), final_record.accepted_offset_c);
   }
+  const auto outcome = ::lune_touch::room_command_outcome(accepted, loop_count);
+  appendf_(response, capacity, off, "],\"result\":\"%s\",\"ttl_s\":%lu,"
+           "\"partial_application\":%s}",
+           ::lune_touch::room_command_outcome_name(outcome),
+           static_cast<unsigned long>(ttl_s),
+           outcome == ::lune_touch::RoomCommandOutcome::PARTIAL ? "true" : "false");
   save_ledger_();
-
-  snprintf(response, capacity,
-           "{\"result\":\"%s\",\"request_id\":\"%s\",\"target_node\":\"%s\","
-           "\"zone_index\":%u,\"requested_offset_c\":%.2f,\"accepted_offset_c\":%.2f,"
-           "\"clamp_applied\":%s,\"ttl_s\":%lu}",
-           ::lune_touch::command_result_name(final_record.result), final_record.request_id,
-           target_node.node_id, static_cast<unsigned>(final_record.zone_index),
-           final_record.requested_offset_c, final_record.accepted_offset_c,
-           final_record.clamp_applied ? "true" : "false", static_cast<unsigned long>(ttl_s));
-  char event[112];
-  snprintf(event, sizeof(event), "setpoint %s %s",
-           final_record.request_id, ::lune_touch::command_result_name(final_record.result));
-  log_event_(final_record.result == ::lune_touch::CommandResult::ACCEPTED ? "info" : "warn",
-             "commands", event);
-  return true;
+  log_event_(outcome == ::lune_touch::RoomCommandOutcome::ACCEPTED ? "info" : "warn",
+             "commands", outcome == ::lune_touch::RoomCommandOutcome::PARTIAL
+                             ? "room command partially applied; child results retained"
+                             : "room command failed");
+  // V6 commands cannot be rolled back safely across a node outage. A partial
+  // application is explicit, persisted per loop, and never presented as room success.
+  return outcome == ::lune_touch::RoomCommandOutcome::ACCEPTED;
 }
 
 bool LuneTouchCoordinator::request_motor_action(const char *room_id, const char *action,
@@ -2892,6 +3910,8 @@ bool LuneTouchCoordinator::set_forecast_location(float latitude, float longitude
   forecast_status_[sizeof(forecast_status_) - 1] = '\0';
   forecast_last_error_[0] = '\0';
   forecast_last_fetch_ms_ = 0;
+  forecast_fetch_epoch_s_ = 0;
+  forecast_provider_timezone_[0] = '\0';
   forecast_fetch_requested_ = true;
   forecast_hours_count_ = 0;
   forecast_decision_count_ = 0;
@@ -2933,14 +3953,18 @@ bool LuneTouchCoordinator::set_weather_settings(float max_boost_c, char *respons
 bool LuneTouchCoordinator::set_settings(const char *coordinator_name, const char *install_id,
                                         const char *site_label, const char *install_mode,
                                         bool has_asgard_enabled, bool asgard_enabled,
-                                        const char *asgard_mode,
+                                        const char *asgard_mode, const char *authority_leader_node_id,
+                                        const char *authority_coordinator_id, const char *authority_shared_key,
                                         char *response, size_t capacity) {
   if ((coordinator_name == nullptr || coordinator_name[0] == '\0') &&
       (install_id == nullptr || install_id[0] == '\0') &&
       (site_label == nullptr || site_label[0] == '\0') &&
       (install_mode == nullptr || install_mode[0] == '\0') &&
       !has_asgard_enabled &&
-      (asgard_mode == nullptr || asgard_mode[0] == '\0')) {
+      (asgard_mode == nullptr || asgard_mode[0] == '\0') &&
+      (authority_leader_node_id == nullptr || authority_leader_node_id[0] == '\0') &&
+      (authority_coordinator_id == nullptr || authority_coordinator_id[0] == '\0') &&
+      (authority_shared_key == nullptr || authority_shared_key[0] == '\0')) {
     snprintf(response, capacity, "{\"result\":\"rejected\",\"error\":\"settings_required\"}");
     return false;
   }
@@ -2985,11 +4009,25 @@ bool LuneTouchCoordinator::set_settings(const char *coordinator_name, const char
     if (std::strcmp(asgard_mode_, "disabled") == 0)
       asgard_enabled_ = false;
   }
+  if (authority_leader_node_id != nullptr && authority_leader_node_id[0] != '\0')
+    std::strncpy(authority_leader_node_id_, authority_leader_node_id, sizeof(authority_leader_node_id_) - 1);
+  if (authority_coordinator_id != nullptr && authority_coordinator_id[0] != '\0')
+    std::strncpy(authority_coordinator_id_, authority_coordinator_id, sizeof(authority_coordinator_id_) - 1);
+  if (authority_shared_key != nullptr && authority_shared_key[0] != '\0')
+    std::strncpy(authority_shared_key_, authority_shared_key, sizeof(authority_shared_key_) - 1);
+  if ((authority_leader_node_id != nullptr && authority_leader_node_id[0] != '\0') ||
+      (authority_coordinator_id != nullptr && authority_coordinator_id[0] != '\0') ||
+      (authority_shared_key != nullptr && authority_shared_key[0] != '\0')) {
+    authority_expires_at_ms_ = 0;
+    std::strncpy(authority_state_, "no_publisher", sizeof(authority_state_) - 1);
+    std::strncpy(authority_reason_, "authority settings changed", sizeof(authority_reason_) - 1);
+  }
   save_settings_();
   give_state_lock_();
   snprintf(response, capacity, "{\"result\":\"saved\",\"install_mode\":\"%s\","
-           "\"asgard_enabled\":%s,\"asgard_mode\":\"%s\"}",
-           install_mode_, asgard_enabled_ ? "true" : "false", asgard_mode_);
+           "\"asgard_enabled\":%s,\"asgard_mode\":\"%s\",\"authority_configured\":%s}",
+           install_mode_, asgard_enabled_ ? "true" : "false", asgard_mode_,
+           authority_leader_node_id_[0] && authority_coordinator_id_[0] && authority_shared_key_[0] ? "true" : "false");
   log_event_("info", "settings", "coordinator settings updated");
   return true;
 }
@@ -3011,7 +4049,8 @@ bool LuneTouchCoordinator::set_heat_source_settings(
   }
   if (weighted_temperature_variable != nullptr && weighted_temperature_variable[0] != '\0') {
     for (const char *p = weighted_temperature_variable; *p != '\0'; ++p) {
-      if (!(std::isalnum(static_cast<unsigned char>(*p)) || *p == '_' || *p == '-')) {
+      const unsigned char c = static_cast<unsigned char>(*p);
+      if (c < 0x20 || c > 0x7e) {
         snprintf(response, capacity, "{\"result\":\"rejected\",\"error\":\"invalid_weighted_temperature_variable\"}");
         return false;
       }
@@ -3154,7 +4193,21 @@ bool LuneTouchCoordinator::perform_forecast_fetch_(char *response, size_t capaci
     return false;
   }
 
+  const int64_t fetch_epoch_s = current_epoch_s_();
+  if (fetch_epoch_s == 0) {
+    if (take_state_lock_(100)) {
+      std::strncpy(forecast_status_, "time_unaligned", sizeof(forecast_status_) - 1);
+      forecast_status_[sizeof(forecast_status_) - 1] = '\0';
+      std::strncpy(forecast_last_error_, "time_unavailable", sizeof(forecast_last_error_) - 1);
+      forecast_last_error_[sizeof(forecast_last_error_) - 1] = '\0';
+      give_state_lock_();
+    }
+    snprintf(response, capacity, "{\"result\":\"rejected\",\"error\":\"time_unavailable\"}");
+    return false;
+  }
+
   char error[96]{};
+  char provider_timezone[48]{};
   uint8_t hours = 0;
   ForecastHourState fetched_hours[72]{};
   float min_temp = 0.0f;
@@ -3163,7 +4216,7 @@ bool LuneTouchCoordinator::perform_forecast_fetch_(char *response, size_t capaci
   float max_solar = 0.0f;
   const bool ok = fetch_open_meteo_(latitude, longitude, error, sizeof(error),
                                     &hours, &min_temp, &max_wind, &wind_dir, &max_solar,
-                                    fetched_hours, 72);
+                                    provider_timezone, sizeof(provider_timezone), fetched_hours, 72);
 
   if (take_state_lock_(100)) {
     forecast_last_fetch_ms_ = esphome::millis();
@@ -3178,6 +4231,10 @@ bool LuneTouchCoordinator::perform_forecast_fetch_(char *response, size_t capaci
       forecast_max_wind_ms_ = max_wind;
       forecast_peak_wind_dir_deg_ = wind_dir;
       forecast_max_solar_wm2_ = max_solar;
+      forecast_fetch_epoch_s_ = fetch_epoch_s;
+      std::strncpy(forecast_provider_timezone_, provider_timezone,
+                   sizeof(forecast_provider_timezone_) - 1);
+      forecast_provider_timezone_[sizeof(forecast_provider_timezone_) - 1] = '\0';
       forecast_cache_restored_ = false;
       recompute_forecast_decisions_();
     } else {
@@ -3238,13 +4295,20 @@ std::string LuneTouchCoordinator::house_summary_text() const {
         ready_trusted_nodes++;
     }
   }
-  char buffer[96];
-  snprintf(buffer, sizeof(buffer), "%uz / ready %u/%u / stale %u / call %u",
+  const char *authority_label = "No publisher";
+  if (std::strcmp(authority_state_, "touch_normal") == 0) authority_label = "Touch normal";
+  else if (std::strcmp(authority_state_, "touch_degraded") == 0) authority_label = "Touch degraded";
+  else if (std::strcmp(authority_state_, "v6_fallback_pending") == 0) authority_label = "V6-A fallback pending";
+  else if (std::strcmp(authority_state_, "v6_fallback_active") == 0) authority_label = "V6-A fallback active";
+  else if (std::strcmp(authority_state_, "touch_recovery_pending") == 0) authority_label = "Recovery pending";
+  else if (std::strcmp(authority_state_, "conflict") == 0) authority_label = "Conflict";
+  char buffer[160];
+  snprintf(buffer, sizeof(buffer), "%uz / ready %u/%u / stale %u / call %u / %s",
            static_cast<unsigned>(model_.active_zone_count()),
            static_cast<unsigned>(ready_trusted_nodes),
            static_cast<unsigned>(trusted_nodes),
            static_cast<unsigned>(stale_nodes),
-           static_cast<unsigned>(model_.calling_zone_count()));
+           static_cast<unsigned>(model_.calling_zone_count()), authority_label);
   give_state_lock_();
   return buffer;
 }
@@ -3284,8 +4348,14 @@ std::string LuneTouchCoordinator::zone_line_text(uint8_t row) const {
                                                                      day_index, minute_of_day);
   const float learned_offset =
       ::lune_touch::HouseModel::learned_comfort_offset_c(*zone, live, effective.setpoint_c);
-  const float target_c = std::clamp(effective.setpoint_c + offset.command_offset_c + learned_offset,
-                                    5.0f, 35.0f);
+  ::lune_touch::TargetResolverInput target_input{};
+  target_input.fallback_base_target_c = zone->comfort_setpoint_c;
+  target_input.touch_target_c = effective.setpoint_c;
+  target_input.command = offset;
+  target_input.learned_modifier_c = learned_offset;
+  target_input.learned_confident = learned_offset > 0.0f;
+  const auto target = ::lune_touch::HouseModel::resolve_target(target_input);
+  const float target_c = target.dispatch_target_c;
   const char *name = zone->room_name[0] != '\0' ? zone->room_name : zone->room_id;
   const char *status = live != nullptr && live->fresh ? live->status : "stale";
   char temp[16];
@@ -3295,8 +4365,9 @@ std::string LuneTouchCoordinator::zone_line_text(uint8_t row) const {
     snprintf(temp, sizeof(temp), "--.- C");
 
   char command[32];
-  if (offset.command_offset_c > 0.01f)
-    snprintf(command, sizeof(command), "%s +%.1f C", offset.command_source, offset.command_offset_c);
+  if (target.manual_modifier_c > 0.01f || target.distribution_modifier_c > 0.01f)
+    snprintf(command, sizeof(command), "%s +%.1f C", target.modifier_source,
+             target.manual_modifier_c + target.distribution_modifier_c);
   else if (learned_offset > 0.01f)
     snprintf(command, sizeof(command), "learned +%.1f C", learned_offset);
   else
@@ -3314,11 +4385,15 @@ std::string LuneTouchCoordinator::forecast_summary_text() const {
   if (!take_state_lock_(50))
     return "forecast busy";
   char buffer[112];
+  const int64_t now_epoch_s = current_epoch_s_();
+  const unsigned long fetch_age_min =
+      forecast_fetch_epoch_s_ == 0 || now_epoch_s < forecast_fetch_epoch_s_
+          ? 0UL
+          : static_cast<unsigned long>((now_epoch_s - forecast_fetch_epoch_s_) / 60);
   snprintf(buffer, sizeof(buffer), "%s%s / %u h cache / %lu min old",
            forecast_status_, forecast_fetch_requested_ ? " pending" : "",
            static_cast<unsigned>(forecast_hours_count_),
-           forecast_last_fetch_ms_ == 0 ? 0UL :
-               static_cast<unsigned long>((esphome::millis() - forecast_last_fetch_ms_) / 60000UL));
+           fetch_age_min);
   give_state_lock_();
   return buffer;
 }
@@ -3352,7 +4427,7 @@ std::string LuneTouchCoordinator::command_summary_text() const {
   if (!take_state_lock_(50))
     return "commands busy";
   const uint32_t now = esphome::millis();
-  const auto *active = ledger_.latest_active(now);
+  const auto *active = ledger_.latest_active(now, current_epoch_s_());
   if (active != nullptr) {
     const uint32_t remaining_s = active->expires_at_ms > now ? (active->expires_at_ms - now) / 1000UL : 0UL;
     const float accepted_display =
@@ -3382,6 +4457,95 @@ std::string LuneTouchCoordinator::command_summary_text() const {
   return buffer;
 }
 
+std::string LuneTouchCoordinator::heating_summary_text() const {
+  if (!take_state_lock_(50))
+    return "heating state busy";
+  const auto operation_mode = odin_plan::to_operation_mode(odin_plan_.current_operation_mode_raw);
+  const char *mode = odin_plan::operation_mode_name(operation_mode);
+  char buffer[144];
+  snprintf(buffer, sizeof(buffer), "Asgard %s / ODIN %s / %s",
+           heat_source_.enabled ? heat_source_.last_status : "disabled",
+           odin_plan_.available ? mode : "plan unavailable",
+           odin_plan_.available && operation_mode == odin_plan::OperationMode::DHW_ON ? "DHW active" : "DHW unknown");
+  give_state_lock_();
+  return buffer;
+}
+
+std::string LuneTouchCoordinator::alarm_summary_text() const {
+  if (!take_state_lock_(50))
+    return "alarms busy";
+  size_t motor_faults = 0;
+  for (size_t i = 0; i < model_.node_count(); i++) {
+    if (node_telemetry_[i].has_motor_fault && node_telemetry_[i].motor_fault)
+      motor_faults++;
+  }
+  char buffer[112];
+  if (std::strcmp(authority_state_, "conflict") == 0)
+    snprintf(buffer, sizeof(buffer), "Alarm: authority conflict");
+  else if (motor_faults > 0)
+    snprintf(buffer, sizeof(buffer), "Alarm: %u motor fault%s", static_cast<unsigned>(motor_faults), motor_faults == 1 ? "" : "s");
+  else if (poll_fail_count_ > 0)
+    snprintf(buffer, sizeof(buffer), "Warning: %lu poll failures", static_cast<unsigned long>(poll_fail_count_));
+  else
+    snprintf(buffer, sizeof(buffer), "No active alarms");
+  give_state_lock_();
+  return buffer;
+}
+
+bool LuneTouchCoordinator::display_adjust_primary_target(float delta_c) {
+  if (!std::isfinite(delta_c) || !take_state_lock_(100))
+    return false;
+  uint8_t day_index = 0;
+  uint16_t minute_of_day = 0;
+  const bool time_valid = current_schedule_time_(time_, &day_index, &minute_of_day);
+  const auto strategy = model_.strategy_snapshot(time_valid, day_index, minute_of_day);
+  const auto room = model_.resolve_room(strategy.driver_room_id);
+  if (room.binding == nullptr || strategy.driver_room_id[0] == '\0') {
+    give_state_lock_();
+    return false;
+  }
+  char room_id[sizeof(room.binding->room_id)]{};
+  std::strncpy(room_id, room.binding->room_id, sizeof(room_id) - 1);
+  const float setpoint = room.binding->comfort_setpoint_c + delta_c;
+  const uint8_t priority = room.binding->priority;
+  const float bias = room.binding->comfort_bias_c;
+  give_state_lock_();
+  char response[192]{};
+  return set_zone_comfort(room_id, setpoint, priority, bias, response, sizeof(response));
+}
+
+bool LuneTouchCoordinator::display_boost_primary_room() {
+  if (!take_state_lock_(100))
+    return false;
+  uint8_t day_index = 0;
+  uint16_t minute_of_day = 0;
+  const bool time_valid = current_schedule_time_(time_, &day_index, &minute_of_day);
+  const auto strategy = model_.strategy_snapshot(time_valid, day_index, minute_of_day);
+  char room_id[32]{};
+  std::strncpy(room_id, strategy.driver_room_id, sizeof(room_id) - 1);
+  give_state_lock_();
+  if (room_id[0] == '\0')
+    return false;
+  char response[320]{};
+  return queue_setpoint_command(room_id, 0.5f, 2700, "local display boost", response, sizeof(response));
+}
+
+bool LuneTouchCoordinator::display_away_primary_room() {
+  if (!take_state_lock_(100))
+    return false;
+  uint8_t day_index = 0;
+  uint16_t minute_of_day = 0;
+  const bool time_valid = current_schedule_time_(time_, &day_index, &minute_of_day);
+  const auto strategy = model_.strategy_snapshot(time_valid, day_index, minute_of_day);
+  char room_id[32]{};
+  std::strncpy(room_id, strategy.driver_room_id, sizeof(room_id) - 1);
+  give_state_lock_();
+  if (room_id[0] == '\0')
+    return false;
+  char response[320]{};
+  return queue_setpoint_command(room_id, -2.0f, 21600, "local display away", response, sizeof(response));
+}
+
 void LuneTouchCoordinator::write_overview_json(char *buffer, size_t capacity) const {
   size_t stale_nodes = 0;
   const uint32_t now = esphome::millis();
@@ -3404,7 +4568,8 @@ void LuneTouchCoordinator::write_overview_json(char *buffer, size_t capacity) co
 
 void LuneTouchCoordinator::write_nodes_json(char *buffer, size_t capacity) const {
   size_t off = 0;
-  appendf_(buffer, capacity, off, "{\"nodes\":[");
+  appendf_(buffer, capacity, off, "{\"poll_generation\":%lu,\"nodes\":[",
+           static_cast<unsigned long>(poll_generation_));
   bool first = true;
   for (size_t i = 0; i < model_.node_count(); i++) {
     const auto *node = model_.node(i);
@@ -3506,7 +4671,14 @@ void LuneTouchCoordinator::write_node_scan_json(char *buffer, size_t capacity) c
   size_t off = 0;
   appendf_(buffer, capacity, off,
            "{\"scan\":\"known_nodes\",\"discovery\":\"manual_or_known_nodes\","
-           "\"found\":[");
+           "\"poll_generation\":%lu,\"poll_pending\":%s,"
+           "\"found\":[",
+           static_cast<unsigned long>(poll_generation_),
+           node_refresh_requested_ ? "true" : "false");
+  // The scan endpoint only queues work. Keep the response fast and expose
+  // the generation the UI should wait beyond before fetching names.
+  // The pending flag is conservative because the coordinator may consume the
+  // notification immediately after the response starts being assembled.
   bool first = true;
   for (size_t i = 0; i < model_.node_count(); i++) {
     const auto *node = model_.node(i);
@@ -3546,12 +4718,27 @@ void LuneTouchCoordinator::write_zones_json(char *buffer, size_t capacity) const
   uint8_t day_index = 0;
   uint16_t minute_of_day = 0;
   const bool time_valid = current_schedule_time_(time_, &day_index, &minute_of_day);
-  appendf_(buffer, capacity, off, "{\"count\":%u,\"zones\":[", static_cast<unsigned>(model_.active_zone_count()));
+  appendf_(buffer, capacity, off, "{\"count\":%u,\"rooms\":[", static_cast<unsigned>(model_.room_count()));
+  for (size_t room_index = 0; room_index < model_.room_count(); room_index++) {
+    const auto *room = model_.room(room_index);
+    if (room == nullptr || !room->enabled)
+      continue;
+    ::lune_touch::ResolvedRoomLoop room_loops[::lune_touch::MAX_HOUSE_ZONES]{};
+    const size_t loop_count = model_.resolve_room_loops(room->room_id, room_loops,
+                                                         ::lune_touch::MAX_HOUSE_ZONES);
+    appendf_(buffer, capacity, off, "%s{\"room_id\":\"%s\",\"name\":\"%s\","
+             "\"loop_count\":%u,\"area_m2\":%.1f,\"include_in_house_temperature\":%s}",
+             room_index == 0 ? "" : ",", room->room_id, room->room_name,
+             static_cast<unsigned>(loop_count), room->total_area_m2,
+             room->include_in_house_temperature ? "true" : "false");
+  }
+  appendf_(buffer, capacity, off, "],\"zones\":[");
   bool first = true;
   for (size_t i = 0; i < model_.zone_count() && i < 18; i++) {
     const auto *zone = model_.zone(i);
     const auto *live = model_.zone_live(i);
     const auto *history = model_.zone_history(i);
+    const auto *room = model_.room_by_id(zone != nullptr ? zone->room_id : "");
     if (zone == nullptr)
       continue;
     char temp_buf[16];
@@ -3598,8 +4785,14 @@ void LuneTouchCoordinator::write_zones_json(char *buffer, size_t capacity) const
         ledger_.resolve_command_offset(zone->node_index, zone->zone_index, now_ms);
     const float learned_offset_c =
         ::lune_touch::HouseModel::learned_comfort_offset_c(*zone, live, effective.setpoint_c);
-    const float resolved_target_c = std::fmin(35.0f, std::fmax(5.0f,
-        effective.setpoint_c + command_resolution.command_offset_c + learned_offset_c));
+    ::lune_touch::TargetResolverInput target_input{};
+    target_input.fallback_base_target_c = zone->comfort_setpoint_c;
+    target_input.touch_target_c = effective.setpoint_c;
+    target_input.command = command_resolution;
+    target_input.learned_modifier_c = learned_offset_c;
+    target_input.learned_confident = learned_offset_c > 0.0f;
+    const auto target = ::lune_touch::HouseModel::resolve_target(target_input);
+    const float resolved_target_c = target.dispatch_target_c;
     const float thermal_confidence = zone->thermal_samples >= 24 ? 1.0f :
         static_cast<float>(zone->thermal_samples) / 24.0f;
     const uint8_t learned_thermal_lead_h = ::lune_touch::HouseModel::learned_thermal_lead_h(*zone);
@@ -3607,14 +4800,17 @@ void LuneTouchCoordinator::write_zones_json(char *buffer, size_t capacity) const
     if (!appendf_(buffer, capacity, off,
                   "%s{\"room_id\":\"%s\",\"name\":\"%s\",\"name_source\":\"%s\","
                   "\"node_index\":%u,\"zone_index\":%u,"
+                  "\"room\":{\"revision\":%lu,\"total_area_m2\":%.2f,\"physical_weight\":%.2f,\"include_in_house_temperature\":%s},"
                   "\"temperature_c\":%s,\"setpoint_c\":%s,\"status\":\"%s\",\"fresh\":%s,"
                   "\"valve_pct\":%s,\"updated_at_ms\":%lu,\"comfort\":{\"setpoint_c\":%.1f,"
                   "\"bias_c\":%.1f,\"effective_setpoint_c\":%.1f,\"effective_source\":\"%s\","
                   "\"schedule_active\":%s,\"time_valid\":%s,\"priority\":%u},"
-                  "\"resolver\":{\"base_setpoint_c\":%.1f,\"base_source\":\"%s\","
+                  "\"resolver\":{\"fallback_base_target_c\":%.1f,\"touch_available\":%s,"
+                  "\"base_setpoint_c\":%.1f,\"base_source\":\"%s\","
                   "\"manual_offset_c\":%.2f,\"forecast_offset_c\":%.2f,"
                   "\"learned_offset_c\":%.2f,\"command_offset_c\":%.2f,"
-                  "\"command_source\":\"%s\",\"target_setpoint_c\":%.1f},"
+                  "\"command_source\":\"%s\",\"pre_v6_target_c\":%.1f,"
+                  "\"target_setpoint_c\":%.1f},"
                   "\"schedule\":{\"enabled\":%s,\"day_mask\":%u,\"start_min\":%u,"
                   "\"end_min\":%u,\"setpoint_c\":%.1f},"
                   "\"history\":{\"samples\":%lu,\"calling_samples\":%lu,"
@@ -3629,6 +4825,10 @@ void LuneTouchCoordinator::write_zones_json(char *buffer, size_t capacity) const
                   first ? "" : ",", room_id_esc, room_name_esc,
                   zone_name_source_name_(zone->name_source),
                   static_cast<unsigned>(zone->node_index), static_cast<unsigned>(zone->zone_index),
+                  static_cast<unsigned long>(model_.room_revision(zone->room_id)),
+                  room != nullptr ? room->total_area_m2 : 0.0f,
+                  room != nullptr ? room->physical_weight : 0.0f,
+                  room != nullptr && room->include_in_house_temperature ? "true" : "false",
                   temp_buf, sp_buf, status_esc, live != nullptr && live->fresh && zone->enabled ? "true" : "false",
                   valve_buf,
                   static_cast<unsigned long>(live != nullptr ? live->updated_at_ms : 0),
@@ -3638,13 +4838,12 @@ void LuneTouchCoordinator::write_zones_json(char *buffer, size_t capacity) const
                   effective.schedule_active ? "true" : "false",
                   effective.time_valid ? "true" : "false",
                   static_cast<unsigned>(zone->priority),
-                  effective.setpoint_c,
-                  effective.source,
-                  command_resolution.has_manual_offset ? command_resolution.manual_offset_c : 0.0f,
-                  command_resolution.has_forecast_offset ? command_resolution.forecast_offset_c : 0.0f,
-                  learned_offset_c,
-                  command_resolution.command_offset_c,
-                  command_resolution.command_source,
+                  target.fallback_base_target_c, target.touch_available ? "true" : "false",
+                  target.base_target_c, target.base_source,
+                  target.manual_modifier_c, target.distribution_modifier_c,
+                  target.learned_modifier_c,
+                  target.manual_modifier_c + target.distribution_modifier_c,
+                  target.modifier_source, target.pre_v6_target_c,
                   resolved_target_c,
                   zone->schedule_enabled ? "true" : "false",
                   static_cast<unsigned>(zone->schedule_day_mask),
@@ -3670,6 +4869,8 @@ void LuneTouchCoordinator::write_zones_json(char *buffer, size_t capacity) const
 }
 
 void LuneTouchCoordinator::write_strategy_json(char *buffer, size_t capacity) const {
+  if (buffer == nullptr || capacity == 0)
+    return;
   uint8_t day_index = 0;
   uint16_t minute_of_day = 0;
   const bool schedule_time_valid = current_schedule_time_(time_, &day_index, &minute_of_day);
@@ -3704,43 +4905,69 @@ void LuneTouchCoordinator::write_strategy_json(char *buffer, size_t capacity) co
   char schedule_driver_room_id[64];
   char schedule_driver_room_name[96];
   char asgard_mode[32];
+  char physical_temperature[16];
+  char comfort_average[16];
+  char comfort_demand[16];
+  char driver_deficit[16];
+  char schedule_setpoint[16];
+  char house_target[16];
+  char weighted_temperature[16];
   json_escape_(strategy.driver_room_id, driver_room_id, sizeof(driver_room_id));
   json_escape_(strategy.driver_room_name, driver_room_name, sizeof(driver_room_name));
   json_escape_(schedule_driver_room_id_raw, schedule_driver_room_id, sizeof(schedule_driver_room_id));
   json_escape_(schedule_driver_room_name_raw, schedule_driver_room_name, sizeof(schedule_driver_room_name));
   json_escape_(asgard_mode_, asgard_mode, sizeof(asgard_mode));
+  json_float_token_(physical_temperature, sizeof(physical_temperature), strategy.physical_temperature_c, 2);
+  json_float_token_(comfort_average, sizeof(comfort_average), strategy.comfort_average_c, 2);
+  json_float_token_(comfort_demand, sizeof(comfort_demand), strategy.comfort_demand_c, 2);
+  json_float_token_(driver_deficit, sizeof(driver_deficit), strategy.driver_deficit_c, 2);
+  json_float_token_(schedule_setpoint, sizeof(schedule_setpoint), schedule_driver_setpoint, 1);
+  json_float_token_(house_target, sizeof(house_target), strategy.house_target_c, 2);
+  json_float_token_(weighted_temperature, sizeof(weighted_temperature), strategy.physical_temperature_c, 2);
 
   snprintf(buffer, capacity,
-           "{\"physical\":{\"has_temperature\":%s,\"temperature_c\":%.2f,"
-           "\"contributing_zones\":%u},\"comfort\":{\"average_c\":%.2f,"
-           "\"demand_c\":%.2f,\"demand_zones\":%u},\"driver\":{\"room_id\":\"%s\","
-           "\"name\":\"%s\",\"deficit_c\":%.2f,\"priority\":%u},"
+           "{\"physical\":{\"has_temperature\":%s,\"temperature_c\":%s,"
+           "\"contributing_rooms\":%u,\"missing_rooms\":%u,\"contributing_area_m2\":%.1f,\"missing_area_m2\":%.1f,\"coverage_ratio\":%.3f,\"quality\":\"%s\",\"expected_manifolds\":%u,\"contributing_manifolds\":%u},\"comfort\":{\"average_c\":%s,"
+           "\"demand_c\":%s,\"demand_zones\":%u},\"driver\":{\"room_id\":\"%s\","
+           "\"name\":\"%s\",\"deficit_c\":%s,\"priority\":%u},"
            "\"schedule\":{\"time_valid\":%s,\"active_zones\":%u,"
            "\"driver_room_id\":\"%s\",\"driver_name\":\"%s\","
-           "\"driver_setpoint_c\":%.1f,\"driver_priority\":%u},"
-           "\"weighted_temperature\":{\"available\":%s,\"value_c\":%.2f,\"contributing_rooms\":%u},"
+           "\"driver_setpoint_c\":%s,\"driver_priority\":%u},"
+           "\"house_target\":{\"available\":%s,\"value_c\":%s,\"source\":\"%s\",\"contributing_area_m2\":%.1f},"
+           "\"weighted_temperature\":{\"source\":\"physical_area_weighted\",\"available\":%s,\"value_c\":%s,\"contributing_rooms\":%u},"
            "\"heat_source\":{\"enabled\":%s,\"mode\":\"%s\"},"
-           "\"asgard_odin\":{\"enabled\":%s,\"physical_signal\":\"priority_weighted_house_temp\","
+           "\"asgard_odin\":{\"enabled\":%s,\"physical_signal\":\"area_weighted_house_temp\","
            "\"comfort_signal\":\"separate_weighted_demand\",\"mode\":\"%s\"}}",
            strategy.has_physical_temperature ? "true" : "false",
-           strategy.physical_temperature_c,
-           static_cast<unsigned>(strategy.contributing_zones),
-           strategy.comfort_average_c,
-           strategy.comfort_demand_c,
+           physical_temperature,
+           static_cast<unsigned>(strategy.contributing_rooms),
+           static_cast<unsigned>(strategy.missing_rooms),
+           strategy.contributing_area_m2,
+           strategy.missing_area_m2,
+           strategy.coverage_ratio,
+           strategy.quality,
+           static_cast<unsigned>(strategy.expected_manifolds),
+           static_cast<unsigned>(strategy.contributing_manifolds),
+           comfort_average,
+           comfort_demand,
            static_cast<unsigned>(strategy.demand_zones),
            driver_room_id,
            driver_room_name,
-           strategy.driver_deficit_c,
+           driver_deficit,
            static_cast<unsigned>(strategy.driver_priority),
            schedule_time_valid ? "true" : "false",
            static_cast<unsigned>(schedule_active),
            schedule_driver_room_id,
            schedule_driver_room_name,
-           schedule_driver_setpoint,
+           schedule_setpoint,
            static_cast<unsigned>(schedule_driver_priority),
+           strategy.has_house_target ? "true" : "false",
+           house_target,
+           strategy.house_target_source,
+           strategy.target_contributing_area_m2,
            strategy.has_physical_temperature ? "true" : "false",
-           strategy.physical_temperature_c,
-           static_cast<unsigned>(strategy.contributing_zones),
+           weighted_temperature,
+           static_cast<unsigned>(strategy.contributing_rooms),
            heat_source_.enabled ? "true" : "false", heat_source_.enabled ? "active" : "disabled",
            asgard_enabled_ ? "true" : "false",
            asgard_mode);
@@ -3751,15 +4978,42 @@ void LuneTouchCoordinator::write_settings_json(char *buffer, size_t capacity) co
   char install_id[64];
   char site[96];
   char mode[32];
+  char authority_leader[64];
+  char authority_coordinator[64];
+  char authority_state[48];
+  char authority_reason[96];
+  char authority_peer_status[32];
+  char authority_last_fallback[16];
+  char authority_last_asgard[16];
+  char weather_max_boost[16];
   json_escape_(coordinator_name_, name, sizeof(name));
   json_escape_(install_id_, install_id, sizeof(install_id));
   json_escape_(site_label_, site, sizeof(site));
   json_escape_(install_mode_, mode, sizeof(mode));
+  json_escape_(authority_leader_node_id_, authority_leader, sizeof(authority_leader));
+  json_escape_(authority_coordinator_id_, authority_coordinator, sizeof(authority_coordinator));
+  json_escape_(authority_state_, authority_state, sizeof(authority_state));
+  json_escape_(authority_reason_, authority_reason, sizeof(authority_reason));
+  json_escape_(authority_v6_peer_status_, authority_peer_status, sizeof(authority_peer_status));
+  json_float_token_(authority_last_fallback, sizeof(authority_last_fallback), authority_last_fallback_value_c_, 2);
+  json_float_token_(authority_last_asgard, sizeof(authority_last_asgard), authority_last_asgard_value_c_, 2);
+  json_float_token_(weather_max_boost, sizeof(weather_max_boost), weather_max_boost_c_, 1);
   snprintf(buffer, capacity,
            "{\"coordinator\":{\"name\":\"%s\",\"install_id\":\"%s\","
            "\"site_label\":\"%s\",\"install_mode\":\"%s\"},"
-           "\"weather\":{\"max_boost_c\":%.1f}}",
-           name, install_id, site, mode, weather_max_boost_c_);
+           "\"authority\":{\"leader_node_id\":\"%s\",\"coordinator_id\":\"%s\","
+           "\"authentication_configured\":%s,\"state\":\"%s\",\"reason\":\"%s\","
+           "\"generation\":%lu,\"lease_remaining_s\":%lu,\"v6_sync\":{"
+           "\"last_fallback_value_c\":%s,\"last_asgard_value_c\":%s,"
+           "\"local_zones\":%u,\"peer_zones\":%u,\"peer_status\":\"%s\"}},"
+           "\"weather\":{\"max_boost_c\":%s}}",
+           name, install_id, site, mode, authority_leader, authority_coordinator,
+           authority_shared_key_[0] != '\0' ? "true" : "false", authority_state, authority_reason,
+           static_cast<unsigned long>(authority_generation_),
+           authority_expires_at_ms_ == 0 ? 0UL : static_cast<unsigned long>((authority_expires_at_ms_ - esphome::millis()) / 1000UL),
+           authority_last_fallback, authority_last_asgard,
+           static_cast<unsigned>(authority_v6_local_zones_), static_cast<unsigned>(authority_v6_peer_zones_), authority_peer_status,
+           weather_max_boost);
 }
 
 void LuneTouchCoordinator::write_heat_source_json(char *buffer, size_t capacity) const {
@@ -3773,46 +5027,158 @@ void LuneTouchCoordinator::write_heat_source_json(char *buffer, size_t capacity)
   char host[128];
   char variable[96];
   char error[192];
+  char target_blocker[128];
+  char operating_state_blocker[128];
+  char weighted_temperature[16];
+  char preview_setpoint[16];
+  char requested_value[16];
+  char confirmed_value[16];
   json_escape_(source.host, host, sizeof(host));
   json_escape_(source.weighted_temperature_variable, variable, sizeof(variable));
   json_escape_(source.last_error, error, sizeof(error));
+  const asgard_adapter::Config adapter_config{
+      source.host, source.port, source.weighted_temperature_variable};
+  const asgard_adapter::Compatibility adapter_compatibility =
+      asgard_adapter::compatibility(adapter_config);
+  json_escape_(adapter_compatibility.target_blocker, target_blocker, sizeof(target_blocker));
+  json_escape_(adapter_compatibility.operating_state_blocker, operating_state_blocker,
+               sizeof(operating_state_blocker));
+  json_float_token_(weighted_temperature, sizeof(weighted_temperature), strategy.physical_temperature_c, 2);
+  char preview_temperature[16];
+  json_float_token_(preview_temperature, sizeof(preview_temperature),
+                    strategy.temperature_preview_c, 2);
+  // Prefer the setpoint currently reported by V6. This is the useful value
+  // during commissioning, when Touch's local room comfort fields may still
+  // contain their default/clamped value. Once live data is unavailable, use
+  // the area-weighted Touch target or the configured comfort average.
+  const bool has_preview_setpoint = strategy.has_setpoint_preview || strategy.has_house_target ||
+                                    (std::isfinite(strategy.comfort_average_c) &&
+                                     strategy.comfort_average_c >= 5.0f &&
+                                     strategy.comfort_average_c <= 35.0f);
+  const float preview_setpoint_c = strategy.has_setpoint_preview
+                                       ? strategy.setpoint_preview_c
+                                       : strategy.has_house_target
+                                             ? strategy.house_target_c
+                                             : strategy.comfort_average_c;
+  json_float_token_(preview_setpoint, sizeof(preview_setpoint), preview_setpoint_c, 2);
+  json_float_token_(requested_value, sizeof(requested_value), source.last_requested_value_c, 2);
+  json_float_token_(confirmed_value, sizeof(confirmed_value), source.last_confirmed_value_c, 2);
   const uint32_t now = esphome::millis();
-  const uint32_t age_s = source.last_push_ms == 0 ? 0 : (now - source.last_push_ms) / 1000UL;
+  const uint32_t write_age_s = source.last_write_ms == 0 ? 0 : (now - source.last_write_ms) / 1000UL;
+  const uint32_t confirmation_age_s = source.last_confirmed_ms == 0 ? 0 :
+                                      (now - source.last_confirmed_ms) / 1000UL;
   snprintf(buffer, capacity,
            "{\"enabled\":%s,\"host\":\"%s\",\"port\":%u,"
            "\"weighted_temperature_variable\":\"%s\",\"push_interval_s\":%u,"
-           "\"weighted_temperature\":{\"available\":%s,\"value_c\":%.2f,\"contributing_rooms\":%u},"
-           "\"push\":{\"has_result\":%s,\"ok\":%s,\"last_value_c\":%.2f,\"last_push_age_s\":%u,"
-           "\"failure_count\":%u,\"last_error\":\"%s\"}}",
+           "\"compatibility\":{\"physical_temperature\":\"%s\",\"target_sync\":\"%s\","
+           "\"operating_state\":\"%s\",\"target_blocker\":\"%s\","
+           "\"operating_state_blocker\":\"%s\"},"
+           "\"weighted_temperature\":{\"available\":%s,\"value_c\":%s,\"contributing_rooms\":%u},"
+           "\"send_preview\":{\"available\":%s,\"value_c\":%s,\"zones\":%u,"
+           "\"target_setpoint_c\":%s,\"target_available\":%s,\"mode\":\"%s\"},"
+           "\"push\":{\"has_result\":%s,\"status\":\"%s\",\"http_status\":%d,\"requested_value_c\":%s,"
+           "\"confirmed_value_c\":%s,\"write_age_s\":%u,\"confirmation_age_s\":%u,"
+           "\"failure_count\":%u,\"failure_streak\":%u,\"last_error\":\"%s\"}}",
            source.enabled ? "true" : "false", host, static_cast<unsigned>(source.port), variable,
-           static_cast<unsigned>(source.push_interval_s), strategy.has_physical_temperature ? "true" : "false",
-           strategy.physical_temperature_c, static_cast<unsigned>(strategy.contributing_zones),
-           source.has_last_push ? "true" : "false", source.last_push_ok ? "true" : "false",
-           source.last_value_c, static_cast<unsigned>(age_s), static_cast<unsigned>(source.failure_count), error);
+           static_cast<unsigned>(source.push_interval_s),
+           asgard_adapter::capability_status_name(adapter_compatibility.physical_temperature),
+           asgard_adapter::capability_status_name(adapter_compatibility.target_sync),
+           asgard_adapter::capability_status_name(adapter_compatibility.operating_state), target_blocker,
+           operating_state_blocker,
+           strategy.has_physical_temperature ? "true" : "false",
+           weighted_temperature, static_cast<unsigned>(strategy.contributing_zones),
+           strategy.has_temperature_preview ? "true" : "false", preview_temperature,
+           static_cast<unsigned>(strategy.preview_zones),
+           preview_setpoint, has_preview_setpoint ? "true" : "false",
+           source.enabled ? "active" : "disabled_preview",
+           source.has_last_push ? "true" : "false", source.last_status, source.last_http_status,
+           requested_value, confirmed_value,
+           static_cast<unsigned>(write_age_s), static_cast<unsigned>(confirmation_age_s),
+           static_cast<unsigned>(source.failure_count), static_cast<unsigned>(source.failure_streak), error);
 }
 
 void LuneTouchCoordinator::write_forecast_json(char *buffer, size_t capacity) const {
   size_t off = 0;
+  OdinPlanState odin_plan;
+  if (take_state_lock_(50)) {
+    odin_plan = odin_plan_;
+    give_state_lock_();
+  }
   char forecast_last_error[128];
   char forecast_location_mode[32];
+  char forecast_provider_timezone[64];
+  char odin_status[24];
+  char odin_error[128];
   json_escape_(forecast_last_error_, forecast_last_error, sizeof(forecast_last_error));
   json_escape_(forecast_location_mode_, forecast_location_mode, sizeof(forecast_location_mode));
+  json_escape_(forecast_provider_timezone_, forecast_provider_timezone, sizeof(forecast_provider_timezone));
+  json_escape_(odin_plan.status, odin_status, sizeof(odin_status));
+  json_escape_(odin_plan.last_error, odin_error, sizeof(odin_error));
+  const int64_t now_epoch_s = current_epoch_s_();
+  const unsigned long fetch_age_s =
+      forecast_fetch_epoch_s_ == 0 || now_epoch_s < forecast_fetch_epoch_s_
+          ? 0UL
+          : static_cast<unsigned long>(now_epoch_s - forecast_fetch_epoch_s_);
+  const unsigned long odin_age_s = odin_plan.last_fetch_ms == 0 ? 0UL :
+      static_cast<unsigned long>((esphome::millis() - odin_plan.last_fetch_ms) / 1000UL);
+  const bool odin_fresh = odin_plan.available && odin_plan.last_fetch_ms != 0 &&
+      esphome::millis() - odin_plan.last_fetch_ms <= ODIN_PLAN_STALE_MS;
+  int64_t timestamps[72]{};
+  for (uint8_t i = 0; i < forecast_hours_count_; i++)
+    timestamps[i] = forecast_hours_[i].timestamp_s;
+  const size_t decision_start_index = lune_touch_forecast_timeline::first_index_at_or_after(
+      timestamps, forecast_hours_count_, now_epoch_s);
+  char weather_max_boost[16];
+  char odin_target[16];
+  char odin_min[16];
+  char odin_max[16];
+  char odin_price[16];
+  char odin_heat[16];
+  char forecast_min_temp[16];
+  char forecast_max_wind[16];
+  char forecast_peak_dir[16];
+  char forecast_max_solar[16];
+  json_float_token_(weather_max_boost, sizeof(weather_max_boost), weather_max_boost_c_, 1);
+  json_float_token_(odin_target, sizeof(odin_target), odin_plan.current_target_c, 2);
+  json_float_token_(odin_min, sizeof(odin_min), odin_plan.current_min_c, 2);
+  json_float_token_(odin_max, sizeof(odin_max), odin_plan.current_max_c, 2);
+  json_float_token_(odin_price, sizeof(odin_price), odin_plan.current_price, 3);
+  json_float_token_(odin_heat, sizeof(odin_heat), odin_plan.current_planned_heat_kw, 2);
+  json_float_token_(forecast_min_temp, sizeof(forecast_min_temp), forecast_min_temp_c_, 1);
+  json_float_token_(forecast_max_wind, sizeof(forecast_max_wind), forecast_max_wind_ms_, 1);
+  json_float_token_(forecast_peak_dir, sizeof(forecast_peak_dir), forecast_peak_wind_dir_deg_, 0);
+  json_float_token_(forecast_max_solar, sizeof(forecast_max_solar), forecast_max_solar_wm2_, 0);
   appendf_(buffer, capacity, off,
            "{\"status\":\"%s\",\"location\":{\"mode\":\"%s\",\"latitude\":%.6f,\"longitude\":%.6f},"
            "\"fetch_pending\":%s,\"last_fetch_age_s\":%lu,"
-           "\"weather\":{\"max_boost_c\":%.1f},"
-           "\"cache\":{\"hours\":%u,\"min_temp_c\":%.1f,"
-           "\"max_wind_ms\":%.1f,\"peak_wind_dir_deg\":%.0f,\"max_solar_wm2\":%.0f,"
+           "\"weather\":{\"max_boost_c\":%s},"
+           "\"odin_plan\":{\"enabled\":%s,\"source\":\"asgard_odin\",\"available\":%s,"
+           "\"fresh\":%s,\"status\":\"%s\",\"http_status\":%d,\"age_s\":%lu,"
+           "\"current_hour\":%u,\"current_index\":%u,\"target_c\":%s,\"min_c\":%s,\"max_c\":%s,"
+           "\"price\":%s,\"planned_heat_kw\":%s,\"operation_mode_raw\":%d,"
+           "\"applies_valve_commands\":false,\"last_error\":\"%s\"},"
+           "\"cache\":{\"hours\":%u,\"min_temp_c\":%s,"
+           "\"max_wind_ms\":%s,\"peak_wind_dir_deg\":%s,\"max_solar_wm2\":%s,"
+           "\"fetch_epoch_s\":%lld,\"provider_timezone\":\"%s\",\"decision_start_index\":%d,"
            "\"restored\":%s},"
            "\"last_error\":\"%s\",\"commands\":{\"active\":%u,\"sent\":%u,\"skipped\":%u,\"failed\":%u,"
            "\"blocked_stale\":%u,\"blocked_unreachable\":%u,\"blocked_untrusted\":%u},"
            "\"hours\":[",
            forecast_status_, forecast_location_mode, forecast_latitude_, forecast_longitude_,
            forecast_fetch_requested_ ? "true" : "false",
-           forecast_last_fetch_ms_ == 0 ? 0UL : static_cast<unsigned long>((esphome::millis() - forecast_last_fetch_ms_) / 1000UL),
-           weather_max_boost_c_,
-           static_cast<unsigned>(forecast_hours_count_), forecast_min_temp_c_, forecast_max_wind_ms_,
-           forecast_peak_wind_dir_deg_, forecast_max_solar_wm2_,
+           fetch_age_s,
+           weather_max_boost,
+           odin_plan.enabled ? "true" : "false", odin_plan.available ? "true" : "false",
+           odin_fresh ? "true" : "false", odin_status, odin_plan.last_http_status, odin_age_s,
+           static_cast<unsigned>(odin_plan.current_hour), static_cast<unsigned>(odin_plan.current_index), odin_target,
+           odin_min, odin_max, odin_price,
+           odin_heat, odin_plan.current_operation_mode_raw, odin_error,
+           static_cast<unsigned>(forecast_hours_count_), forecast_min_temp, forecast_max_wind,
+           forecast_peak_dir, forecast_max_solar,
+           static_cast<long long>(forecast_fetch_epoch_s_), forecast_provider_timezone,
+           decision_start_index == lune_touch_forecast_timeline::NO_INDEX
+               ? -1
+               : static_cast<int>(decision_start_index),
            forecast_cache_restored_ ? "true" : "false", forecast_last_error,
            static_cast<unsigned>(last_forecast_dispatch_.active),
            static_cast<unsigned>(last_forecast_dispatch_.sent),
@@ -3824,9 +5190,10 @@ void LuneTouchCoordinator::write_forecast_json(char *buffer, size_t capacity) co
   for (size_t i = 0; i < forecast_hours_count_ && i < 72 && off + 96 < capacity; i++) {
     const ForecastHourState &h = forecast_hours_[i];
     appendf_(buffer, capacity, off,
-             "%s{\"h\":%u,\"temp_c\":%.1f,\"wind_ms\":%.1f,"
+             "%s{\"h\":%u,\"timestamp_s\":%lld,\"temp_c\":%.1f,\"wind_ms\":%.1f,"
              "\"wind_dir_deg\":%.0f,\"solar_wm2\":%.0f}",
-             i ? "," : "", static_cast<unsigned>(i), h.temp_c, h.wind_speed_ms,
+             i ? "," : "", static_cast<unsigned>(i), static_cast<long long>(h.timestamp_s),
+             h.temp_c, h.wind_speed_ms,
              h.wind_dir_deg, h.shortwave_wm2);
   }
   appendf_(buffer, capacity, off, "],\"decisions\":[");
@@ -3866,33 +5233,28 @@ void LuneTouchCoordinator::write_commands_json(char *buffer, size_t capacity) co
     char reason[96];
     char room_id[48];
     char room_name[80];
-    const char *target_room_id = "";
-    const char *target_room_name = "";
-    for (size_t zone_index = 0; zone_index < model_.zone_count(); zone_index++) {
-      const auto *zone = model_.zone(zone_index);
-      if (zone == nullptr || !zone->enabled || zone->node_index != record->node_index ||
-          zone->zone_index != record->zone_index)
-        continue;
-      target_room_id = zone->room_id;
-      target_room_name = zone->room_name;
-      break;
-    }
     json_escape_(record->request_id, request_id, sizeof(request_id));
     json_escape_(record->source, source, sizeof(source));
     json_escape_(record->reason, reason, sizeof(reason));
-    json_escape_(target_room_id, room_id, sizeof(room_id));
-    json_escape_(target_room_name, room_name, sizeof(room_name));
+    json_escape_(record->room_id, room_id, sizeof(room_id));
+    json_escape_(record->room_id, room_name, sizeof(room_name));
     if (!appendf_(buffer, capacity, off,
                   "%s{\"request_id\":\"%s\",\"source\":\"%s\",\"reason\":\"%s\","
-                  "\"room_id\":\"%s\",\"name\":\"%s\",\"node_index\":%u,\"zone_index\":%u,"
+                  "\"room_id\":\"%s\",\"name\":\"%s\",\"node_id\":\"%s\",\"loop_id\":\"%s\","
+                  "\"node_index\":%u,\"zone_index\":%u,"
                   "\"requested_offset_c\":%.2f,"
                   "\"accepted_offset_c\":%.2f,\"created_at_ms\":%lu,\"expires_at_ms\":%lu,"
+                  "\"created_at_epoch_s\":%lld,\"expires_at_epoch_s\":%lld,\"boot_id\":%lu,"
                   "\"result\":\"%s\",\"clamp_applied\":%s}",
                   first ? "" : ",", request_id, source, reason, room_id, room_name,
+                  record->node_id, record->loop_id,
                   static_cast<unsigned>(record->node_index), static_cast<unsigned>(record->zone_index),
                   record->requested_offset_c, record->accepted_offset_c,
                   static_cast<unsigned long>(record->created_at_ms),
                   static_cast<unsigned long>(record->expires_at_ms),
+                  static_cast<long long>(record->created_at_epoch_s),
+                  static_cast<long long>(record->expires_at_epoch_s),
+                  static_cast<unsigned long>(record->boot_id),
                   ::lune_touch::command_result_name(record->result),
                   record->clamp_applied ? "true" : "false"))
       break;
@@ -4080,6 +5442,10 @@ void LuneTouchCoordinator::write_diagnostics_json(char *buffer, size_t capacity)
   snprintf(buffer, capacity,
            "{\"heap\":\"watching\",\"nodes\":%u,\"zones\":%u,\"ledger\":%u,"
            "\"screen\":\"sidebar-views\",\"api\":\"/api/lune-touch/v1\","
+           "\"ownership\":{\"odin\":\"heat_pump_timing_prices_weather_solar_compressor_dhw\","
+           "\"touch\":\"logical_rooms_distribution_schedules_house_signals_asgard_normal\","
+           "\"v6\":\"local_safe_heating_and_explicit_fallback_only\","
+           "\"touch_prices\":\"read_only\"},"
            "\"command_results\":{\"pending\":%u,\"accepted\":%u,\"rejected\":%u,"
            "\"failed\":%u,\"expired\":%u,\"blocked\":%u,\"blocked_stale\":%u,"
            "\"blocked_unreachable\":%u,\"blocked_untrusted\":%u,\"clamped\":%u},"

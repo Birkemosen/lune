@@ -246,6 +246,8 @@ const char *http_status_line(int code) {
       return "404 Not Found";
     case 405:
       return "405 Method Not Allowed";
+    case 409:
+      return "409 Conflict";
     case 411:
       return "411 Length Required";
     case 413:
@@ -646,7 +648,10 @@ void LuneTouchDashboard::handle_v1_post_(ApiRequest &api, const char *path) {
     if (hostname[0] != '\0' || ip[0] != '\0')
       coordinator_->scan_node_candidate(hostname, ip, data_buf_, sizeof(data_buf_));
     else
-      coordinator_->write_node_scan_json(data_buf_, sizeof(data_buf_));
+      coordinator_->scan_registered_nodes(data_buf_, sizeof(data_buf_));
+    send_ok_(api, data_buf_);
+  } else if (strcmp(path, "/nodes/refresh") == 0) {
+    coordinator_->scan_registered_nodes(data_buf_, sizeof(data_buf_));
     send_ok_(api, data_buf_);
   } else if (strcmp(path, "/nodes") == 0) {
     char node_id[32];
@@ -696,6 +701,45 @@ void LuneTouchDashboard::handle_v1_post_(ApiRequest &api, const char *path) {
     parse_text_param(api, api.json_body, "confirm", confirm, sizeof(confirm));
     const bool accepted = coordinator_->remove_node(node_id, confirm, data_buf_, sizeof(data_buf_));
     send_write_result_(api, accepted, 404);
+  } else if (strstr(path, "/room") != nullptr) {
+    char room_id[40]{};
+    if (!extract_middle_segment(path, "/zones/", "/room", room_id, sizeof(room_id))) {
+      send_error_(api, 404, "unknown_route", "Unknown atomic room route");
+      return;
+    }
+    ::lune_touch::RoomUpdate update{};
+    uint32_t value = 0;
+    bool valid = parse_uint_param(api, api.json_body, "expected_revision", &update.expected_revision) &&
+        parse_float_param(api, api.json_body, "total_area_m2", &update.total_area_m2) &&
+        parse_float_param(api, api.json_body, "physical_weight", &update.physical_weight) &&
+        parse_uint_param(api, api.json_body, "include_in_house_temperature", &value);
+    update.include_in_house_temperature = value != 0;
+    valid = valid && parse_float_param(api, api.json_body, "comfort_setpoint_c", &update.comfort_setpoint_c) &&
+        parse_float_param(api, api.json_body, "comfort_bias_c", &update.comfort_bias_c) &&
+        parse_uint_param(api, api.json_body, "priority", &value);
+    update.priority = static_cast<uint8_t>(value);
+    valid = valid && parse_uint_param(api, api.json_body, "schedule_enabled", &value);
+    update.schedule_enabled = value != 0;
+    valid = valid && parse_uint_param(api, api.json_body, "schedule_day_mask", &value);
+    update.schedule_day_mask = static_cast<uint8_t>(value);
+    valid = valid && parse_uint_param(api, api.json_body, "schedule_start_min", &value);
+    update.schedule_start_min = static_cast<uint16_t>(value);
+    valid = valid && parse_uint_param(api, api.json_body, "schedule_end_min", &value);
+    update.schedule_end_min = static_cast<uint16_t>(value);
+    valid = valid && parse_float_param(api, api.json_body, "schedule_setpoint_c", &update.schedule_setpoint_c) &&
+        parse_uint_param(api, api.json_body, "exterior_walls", &value);
+    update.exterior_walls = static_cast<uint8_t>(value);
+    valid = valid && parse_float_param(api, api.json_body, "wind_exposure", &update.wind_exposure) &&
+        parse_float_param(api, api.json_body, "solar_gain", &update.solar_gain) &&
+        parse_uint_param(api, api.json_body, "thermal_lead_h", &value);
+    update.thermal_lead_h = static_cast<uint8_t>(value);
+    valid = valid && parse_float_param(api, api.json_body, "max_offset_c", &update.max_offset_c);
+    if (!valid) {
+      send_error_(api, 400, "missing_param", "Complete atomic room update is required");
+      return;
+    }
+    const bool accepted = coordinator_->update_room_atomically(room_id, update, data_buf_, sizeof(data_buf_));
+    send_write_result_(api, accepted, 409);
   } else if (strstr(path, "/setpoint-command") != nullptr) {
     char room_id[40]{};
     if (!extract_middle_segment(path, "/zones/", "/setpoint-command", room_id, sizeof(room_id))) {
@@ -846,16 +890,23 @@ void LuneTouchDashboard::handle_v1_post_(ApiRequest &api, const char *path) {
     char site_label[64];
     char install_mode[24];
     char asgard_mode[24];
+    char authority_leader_node_id[40];
+    char authority_coordinator_id[40];
+    char authority_shared_key[72];
     uint32_t asgard_enabled = 0;
     parse_text_param(api, api.json_body, "name", coordinator_name, sizeof(coordinator_name));
     parse_text_param(api, api.json_body, "install_id", install_id, sizeof(install_id));
     parse_text_param(api, api.json_body, "site_label", site_label, sizeof(site_label));
     parse_text_param(api, api.json_body, "install_mode", install_mode, sizeof(install_mode));
     parse_text_param(api, api.json_body, "asgard_mode", asgard_mode, sizeof(asgard_mode));
+    parse_text_param(api, api.json_body, "authority_leader_node_id", authority_leader_node_id, sizeof(authority_leader_node_id));
+    parse_text_param(api, api.json_body, "authority_coordinator_id", authority_coordinator_id, sizeof(authority_coordinator_id));
+    parse_text_param(api, api.json_body, "authority_shared_key", authority_shared_key, sizeof(authority_shared_key));
     const bool has_asgard_enabled = parse_uint_param(api, api.json_body, "asgard_enabled", &asgard_enabled);
     const bool accepted = coordinator_->set_settings(coordinator_name, install_id, site_label,
                                                      install_mode, has_asgard_enabled,
-                                                     asgard_enabled != 0, asgard_mode,
+                                                     asgard_enabled != 0, asgard_mode, authority_leader_node_id,
+                                                     authority_coordinator_id, authority_shared_key,
                                                      data_buf_, sizeof(data_buf_));
     send_write_result_(api, accepted, 400);
   } else if (strcmp(path, "/forecast/fetch") == 0) {

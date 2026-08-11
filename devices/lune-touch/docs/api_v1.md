@@ -1,5 +1,8 @@
 # Lune Touch API v1
 
+The cross-product v1 envelope, compatibility rules, and fixtures are in
+[`shared/contracts/lune_api_v1.md`](../../../shared/contracts/lune_api_v1.md).
+
 The embedded browser dashboard and external commissioning tools use:
 
 ```text
@@ -76,15 +79,25 @@ V6 diagnostics poll is promoted:
 ### `GET /strategy`
 
 Returns the read-only house strategy snapshot. `weighted_temperature` is the
-priority-weighted room temperature that a heat source receives; it is not a
-generic signal. Comfort demand remains separate:
+physical area-weighted room temperature that a heat source receives. `house_target`
+is a separate area-weighted comfort-intent advisory; it is never written to the
+physical-temperature endpoint. Temporary command offsets are not comfort intent.
+`physical.quality` is `healthy`, `degraded`, or `no_coverage`. A value is healthy
+only when fresh contributing area meets the configured coverage threshold (75% by
+default) and every expected manifold contributes, unless commissioning has explicitly
+enabled degraded-manifold operation. `coverage_ratio`, `expected_manifolds`, and
+`contributing_manifolds` make that decision observable to dashboards and clients.
 
 ```json
 {
   "physical": {
     "has_temperature": true,
     "temperature_c": 20.7,
-    "contributing_zones": 8
+    "contributing_rooms": 8,
+    "coverage_ratio": 1.0,
+    "quality": "healthy",
+    "expected_manifolds": 2,
+    "contributing_manifolds": 2
   },
   "comfort": {
     "average_c": 21.1,
@@ -105,6 +118,12 @@ generic signal. Comfort demand remains separate:
     "driver_setpoint_c": 22.0,
     "driver_priority": 3
   },
+  "house_target": {
+    "available": true,
+    "value_c": 21.4,
+    "source": "mixed",
+    "contributing_area_m2": 96.0
+  },
   "weighted_temperature": {
     "available": true,
     "value_c": 20.7,
@@ -120,15 +139,51 @@ clients. New clients must use `weighted_temperature` and `GET /heat-source`.
 ### `GET /heat-source`
 
 Returns heat-source configuration, current weighted temperature, and the last
-push result. `weighted_temperature_variable` is the ESPHome number object ID
-written at `POST /number/<variable>/set?value=<temperature>`.
+write/confirmation result. `weighted_temperature_variable` is the configured
+heat-source entity or variable name; Touch URL-encodes it once for
+`POST /number/<encoded-name>/set?value=<temperature>`,
+then performs bounded readback attempts against `GET /number/<encoded-name>`. The `push`
+object reports `status` as `sent`, `confirmed`, `mismatch`, or `unreachable`, together
+with the write `http_status`, requested and confirmed values, confirmation age, and both cumulative and consecutive
+failure counters. A `sent` status means the POST succeeded but readback was unavailable;
+it is not treated as confirmation.
+
+`send_preview` always exposes the current calculated value that would be sent when a
+healthy physical temperature is available, or the simple average of fresh primary zone
+sensors during commissioning before room geometry is configured. Its
+`target_setpoint_c` uses the fresh V6-reported setpoint while available, then falls back
+to the area-weighted house target or configured room-comfort average; it is the
+heat-source setpoint corresponding to the preview temperature. It is diagnostic-only while coverage is degraded and does not
+relax the safety gate for actual publishing.
+Its `mode` is `active` when publishing is enabled and `disabled_preview` otherwise.
+
+The `compatibility` object reports the adapter capabilities separately. The currently
+documented integration supports `physical_temperature` only. `target_sync` and
+`operating_state` are intentionally `unsupported`: Touch keeps the separately aggregated
+house target local and does not infer or write an external target endpoint or operating
+state source. `target_blocker` and `operating_state_blocker` state those intentional
+boundaries to dashboards and commissioning clients.
 
 `GET /diagnostics` also exposes a compact `learning` summary derived from the
-same persisted zone history, including zones with samples, total samples, heat-call
-sample count, calling ratio, zones with temperature-rate estimates, and warming /
-cooling counts. It also includes `ota` runtime data with the running partition
+current-boot in-memory zone history, including zones with samples, total samples,
+heat-call sample count, calling ratio, zones with temperature-rate estimates, and
+warming / cooling counts. The history is intentionally runtime-only; learned thermal
+coefficients are persisted separately in the zone registry. It also includes `ota` runtime data with the running partition
 label/subtype, slot size, rollback state, and `pending_verify` flag so installers
 can confirm OTA recovery assumptions.
+
+Its `ownership` block is the operational boundary: ODIN owns heat-pump timing,
+prices, whole-house weather/solar optimization, compressor behavior, and DHW; Touch
+owns logical rooms, room distribution, schedules, house signals, and normal
+heat-source integration; V6 owns safe local heating and explicit fallback only. Touch exposes
+electricity prices as read-only and does not schedule the heat pump.
+
+`GET /forecast` includes an `odin_plan` block from the explicitly approved read-only
+ODIN JSON source. It reports provenance, availability/freshness, the source's
+`current_hour` and resolved `current_index`, validated current schedule bounds, current
+price/planned heat, and the raw (not normalized) operation-mode code.
+`applies_valve_commands` is always false in this prototype. The schema and safety boundary
+are in [`odin_plan_ingestion.md`](odin_plan_ingestion.md).
 
 Diagnostics also includes `command_results`, a compact command-ledger summary for
 field troubleshooting:
@@ -226,9 +281,10 @@ forecast fetch outcomes, command dispatch results, and recovery actions:
 
 ### `GET /commands`
 
-Returns the persisted command ledger. `room_id` and `name` are resolved from the
-current zone registry when the command is read; older records still retain their
-node/zone target even if a room mapping has since been removed:
+Returns the persisted command ledger. `room_id`, `node_id`, and `loop_id` are
+captured when the command is issued; `name` is the stable room-ID display alias.
+Older records therefore retain their original target, timing, and outcome even
+after the registry changes:
 
 ```json
 {
@@ -239,12 +295,17 @@ node/zone target even if a room mapping has since been removed:
       "reason": "wind preload",
       "room_id": "living",
       "name": "Living",
+      "node_id": "v6-ground-a4d9",
+      "loop_id": "loop-v6-ground-a4d9-02",
       "node_index": 0,
       "zone_index": 1,
       "requested_offset_c": 0.4,
       "accepted_offset_c": 0.3,
       "created_at_ms": 12000,
       "expires_at_ms": 2712000,
+      "created_at_epoch_s": 1735734600,
+      "expires_at_epoch_s": 1735737300,
+      "boot_id": 1409833421,
       "result": "accepted",
       "clamp_applied": true
     }
@@ -252,11 +313,22 @@ node/zone target even if a room mapping has since been removed:
 }
 ```
 
+Command `room_id`, `node_id`, and `loop_id` are immutable target identity captured at
+issuance. Numeric indexes are non-authoritative execution-location metadata and are never
+used to retarget history after a node removal, reorder, or room rebind.
+
+`created_at_ms` and `expires_at_ms` remain same-boot diagnostic values. When the
+wall clock is valid, Touch also records UTC `*_epoch_s` timestamps. Every transient
+record has a random `boot_id`; on boot, prior-boot pending or accepted commands are
+retained as history but changed to `expired` before they can affect command resolution.
+If the wall clock is unavailable, the boot ID still provides the fail-closed boundary.
+
 ### `GET /zones`
 
-Each zone includes the V6-owned comfort target, latest live V6 state, forecast
-tuning, and a lightweight persisted learning history block. Live temperature /
-valve state still resets on reboot; history survives registry import/export:
+Each zone includes Touch-owned room intent, the latest V6-applied live state, forecast
+tuning, and a lightweight learned thermal model. Live temperature, valve state, and
+sampling history are runtime-only and reset on reboot; learned coefficients survive
+registry import/export:
 
 ```json
 {
@@ -340,12 +412,14 @@ expiring V6-clamped
 commands.
 
 `resolver` is the read-only ordering view used by the dashboard for field
-debugging. It starts with the comfort/schedule base, then chooses an active
-manual dashboard offset over an active forecast preload offset. `learned_offset_c`
-is then added only for fresh, slow, under-heated zones with enough thermal
-samples. `target_setpoint_c` is the resolved advisory target after the winning
-command offset plus any learned offset, still subject to V6 local clamps and
-safety validation when commands are sent.
+debugging. It starts with the persistent fallback base, uses Touch's current
+comfort/schedule target while Touch is available, then chooses an active manual
+dashboard offset over an active forecast distribution offset (never both).
+`learned_offset_c` is added only for fresh, slow, under-heated zones with enough
+thermal samples. `pre_v6_target_c` is clamped to Touch's dispatch envelope as
+`target_setpoint_c`; V6 applies its independent final safety clamp. On a stale
+Touch path, the resolver reports `base_source: "fallback"` and no temporary
+command from a previous boot may remain active.
 
 ## Writes
 
@@ -360,6 +434,37 @@ command ledger.
 If a POST body is present and starts as JSON (`{` or `[`), malformed JSON is
 rejected with HTTP `400` and `error.code = "invalid_json"`. Query-parameter
 compatibility is still available for tools that send no JSON body.
+
+### `POST /zones/{room_id}/room`
+
+Atomically stores the Touch-owned room configuration. The complete mapping
+validation, geometry/inclusion, comfort, schedule, and weather profile must be
+supplied with the current runtime `expected_revision`; an invalid field or stale
+revision returns no partial change (`409 stale_revision` for a conflicting edit).
+The response contains the saved room and its new revision. V6 local applied
+state is reported separately and is never silently copied back into this record.
+
+```json
+{
+  "expected_revision": 4,
+  "total_area_m2": 30,
+  "physical_weight": 30,
+  "include_in_house_temperature": true,
+  "comfort_setpoint_c": 21.5,
+  "comfort_bias_c": 0,
+  "priority": 2,
+  "schedule_enabled": true,
+  "schedule_day_mask": 127,
+  "schedule_start_min": 360,
+  "schedule_end_min": 1320,
+  "schedule_setpoint_c": 21,
+  "exterior_walls": 1,
+  "wind_exposure": 0.5,
+  "solar_gain": 0.3,
+  "thermal_lead_h": 4,
+  "max_offset_c": 1.5
+}
+```
 
 ### `POST /nodes`
 
@@ -556,6 +661,12 @@ decisions and persists the mirrored zone registry.
 
 ### `POST /zones/{room_id}/setpoint-command`
 
+A room command has one `command_id` and a child result for every required loop.
+The room result is `accepted` only when every loop accepts. If a node is stale,
+unreachable, or rejects its child, the result is `partial` (or `failed`) and
+`partial_application` is true; successful child commands are retained rather
+than rolled back unsafely across independent V6 nodes.
+
 ```json
 {
   "offset_c": 0.5,
@@ -629,15 +740,17 @@ sent together by management clients:
 ```json
 {
   "enabled": 1,
-  "host": "asgard.local",
+  "host": "heat-source.local",
   "port": 80,
-  "weighted_temperature_variable": "virtual_thermostat_input_z1",
+  "weighted_temperature_variable": "house_temperature",
   "push_interval_s": 30
 }
 ```
 
 `host` accepts a hostname or IPv4 address. Variable names accept letters,
-digits, `_`, and `-`. Push interval is 5–3600 seconds.
+digits, `_`, and `-`. Push interval is 5–3600 seconds. For example, an Asgard
+installation could use `asgard.local` with `Virtual Thermostat Input z1` as the
+entity name; other heat sources may use a different endpoint and variable.
 
 ### `POST /heat-source/push`
 
@@ -664,6 +777,7 @@ accepted response.
   "hours": [
     {
       "h": 0,
+      "timestamp_s": 1735736400,
       "temp_c": 14.1,
       "wind_ms": 5.2,
       "wind_dir_deg": 261,
@@ -672,6 +786,9 @@ accepted response.
   ],
   "cache": {
     "hours": 72,
+    "fetch_epoch_s": 1735734600,
+    "provider_timezone": "Europe/Copenhagen",
+    "decision_start_index": 1,
     "restored": false
   },
   "decisions": [
@@ -687,9 +804,17 @@ accepted response.
 }
 ```
 
-The hourly forecast cache is persisted in Touch NVS after a successful fetch.
-After reboot, `status` is `cached` and `cache.restored` is `true` until the next
-successful live fetch or location change.
+`timestamp_s` is the Open-Meteo Unix timestamp for that exact hourly sample. Touch
+uses the first sample at or after its current wall-clock time as the decision-window
+origin, so `peak_in_h: 0` means the current or next forecast hour rather than the
+midnight array entry. `cache.decision_start_index` identifies that origin in `hours`.
+
+The hourly forecast cache is persisted in Touch NVS after a successful fetch with the
+fetch epoch, provider timezone, and every hourly timestamp. After reboot, Touch restores
+only a fresh (at most two hours old), clock-aligned cache; an expired cache, a missing
+timezone, or malformed hourly timestamps is discarded safely. A restored cache reports
+`status: "cached"` and `cache.restored: true` until the next successful live fetch or
+location change.
 
 ### `POST /zones/{room_id}/motor-action`
 
@@ -712,8 +837,9 @@ responses with `result` set to `blocked_untrusted`, `blocked_unreachable`, or
 
 ### `POST /recovery/reset-registry`
 
-Clears the Touch-owned node registry, zone mappings, persisted learning history,
-and persisted command ledger. Forecast location settings are intentionally kept.
+Clears the Touch-owned node registry, zone mappings, current in-memory learning
+history, and persisted command ledger. Learned thermal coefficients are removed with
+the zone registry. Forecast location settings are intentionally kept.
 The request must include the confirmation token:
 
 ```json

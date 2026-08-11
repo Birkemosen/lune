@@ -200,6 +200,30 @@ text_sensor:
             id: touch_diagnostics_command_label
             text: !lambda |-
               return x.c_str();
+  - platform: template
+    id: touch_heating_summary_text
+    internal: true
+    update_interval: 15s
+    lambda: |-
+      return id(lune_touch_app).heating_summary_text();
+    on_value:
+      then:
+        - lvgl.label.update:
+            id: touch_heating_status_label
+            text: !lambda |-
+              return x.c_str();
+  - platform: template
+    id: touch_alarm_summary_text
+    internal: true
+    update_interval: 15s
+    lambda: |-
+      return id(lune_touch_app).alarm_summary_text();
+    on_value:
+      then:
+        - lvgl.label.update:
+            id: touch_alarm_status_label
+            text: !lambda |-
+              return x.c_str();
 
 lvgl:
   id: lune_touch_lvgl
@@ -516,13 +540,24 @@ lvgl:
                           text_font: montserrat_14
                           text_align: right
                 - label:
+                    id: touch_heating_status_label
                     x: 20
                     y: 94
-                    width: 828
+                    width: 470
                     height: 18
-                    text: "Room cards show current temperature, setpoint, coordinator status, and source V6."
-                    text_color: 0x9CA8B3
+                    text: "Asgard unknown / ODIN plan unavailable / DHW unknown"
+                    text_color: 0xAAB4BF
                     text_font: montserrat_12
+                - label:
+                    id: touch_alarm_status_label
+                    x: 500
+                    y: 94
+                    width: 348
+                    height: 18
+                    text: "No active alarms"
+                    text_color: 0xE3C16F
+                    text_font: montserrat_12
+                    text_align: right
                 - obj:
                     x: 20
                     y: 118
@@ -1874,7 +1909,7 @@ lvgl:
                     y: 16
                     width: 260
                     height: 32
-                    text: "System"
+                    text: "Quick controls"
                     text_color: 0xF3F6F8
                     text_font: montserrat_24
                 - obj:
@@ -1894,7 +1929,7 @@ lvgl:
                           y: 20
                           width: 780
                           height: 30
-                          text: "System"
+                          text: "Primary room controls"
                           text_color: 0xFFFFFF
                           text_font: montserrat_20
                       - label:
@@ -1902,28 +1937,80 @@ lvgl:
                           y: 86
                           width: 260
                           height: 28
-                          text: "Display dim test"
+                          text: "Only the active comfort driver is changed. V6 validates every result."
                           text_color: 0xD9DEE3
                           text_font: montserrat_18
-                      - switch:
-                          x: 330
-                          y: 78
-                          width: 74
-                          height: 38
-                      - label:
+                      - button:
                           x: 22
-                          y: 158
-                          width: 260
-                          height: 28
-                          text: "Weighted temperature"
-                          text_color: 0xD9DEE3
+                          y: 92
+                          width: 180
+                          height: 56
+                          bg_color: 0x26323D
+                          border_width: 0
+                          radius: 5
+                          text: "Target -0.5"
+                          text_color: 0xFFFFFF
                           text_font: montserrat_18
+                          on_click:
+                            - lvgl.label.update:
+                                id: quick_control_status_label
+                                text: !lambda |-
+                                  return std::string(id(lune_touch_app).display_adjust_primary_target(-0.5f) ? "Target stored" : "Target change rejected");
+                      - button:
+                          x: 218
+                          y: 92
+                          width: 180
+                          height: 56
+                          bg_color: 0x26323D
+                          border_width: 0
+                          radius: 5
+                          text: "Target +0.5"
+                          text_color: 0xFFFFFF
+                          text_font: montserrat_18
+                          on_click:
+                            - lvgl.label.update:
+                                id: quick_control_status_label
+                                text: !lambda |-
+                                  return std::string(id(lune_touch_app).display_adjust_primary_target(0.5f) ? "Target stored" : "Target change rejected");
+                      - button:
+                          x: 414
+                          y: 92
+                          width: 180
+                          height: 56
+                          bg_color: 0x224A4F
+                          border_width: 0
+                          radius: 5
+                          text: "Boost 45m"
+                          text_color: 0xEAFBFF
+                          text_font: montserrat_18
+                          on_click:
+                            - lvgl.label.update:
+                                id: quick_control_status_label
+                                text: !lambda |-
+                                  return std::string(id(lune_touch_app).display_boost_primary_room() ? "Boost accepted; V6 expiry applies" : "Boost rejected");
+                      - button:
+                          x: 610
+                          y: 92
+                          width: 180
+                          height: 56
+                          bg_color: 0x4A3322
+                          border_width: 0
+                          radius: 5
+                          text: "Away 6h"
+                          text_color: 0xFFF1D9
+                          text_font: montserrat_18
+                          on_click:
+                            - lvgl.label.update:
+                                id: quick_control_status_label
+                                text: !lambda |-
+                                  return std::string(id(lune_touch_app).display_away_primary_room() ? "Away accepted; V6 expiry applies" : "Away rejected");
                       - label:
-                          x: 330
-                          y: 164
-                          width: 440
+                          id: quick_control_status_label
+                          x: 22
+                          y: 182
+                          width: 780
                           height: 28
-                          text: "Configure in browser dashboard"
+                          text: "Use the browser for schedules, room mapping, and service."
                           text_color: 0xAAB4BF
                           text_font: montserrat_16
                       - label:
@@ -1931,7 +2018,7 @@ lvgl:
                           y: 292
                           width: 780
                           height: 28
-                          text: "Use the browser dashboard to configure the heat-source address, variable, and push interval."
+                          text: "Detailed commissioning and service remain browser-first."
                           text_color: 0xAAB4BF
                           text_font: montserrat_16
           - obj:
@@ -2007,6 +2094,7 @@ lvgl:
                     radius: 0
                     scrollable: false
                 - button:
+                    hidden: true
                     x: 14
                     y: 20
                     width: 122
@@ -2061,7 +2149,6 @@ lvgl:
                           id: header_status_label
                           text: "Dashboard"
                 - button:
-                    hidden: true
                     x: 14
                     y: 124
                     width: 122
@@ -2089,6 +2176,7 @@ lvgl:
                           id: header_status_label
                           text: "Rooms"
                 - button:
+                    hidden: true
                     x: 14
                     y: 124
                     width: 122
@@ -2116,6 +2204,7 @@ lvgl:
                           id: header_status_label
                           text: "Manifold health"
                 - button:
+                    hidden: true
                     x: 14
                     y: 176
                     width: 122
@@ -2150,7 +2239,7 @@ lvgl:
                     bg_color: 0x161B21
                     border_width: 0
                     radius: 5
-                    text: "System"
+                    text: "Controls"
                     text_color: 0xAAB4BF
                     text_font: montserrat_16
                     on_click:
@@ -2168,8 +2257,9 @@ lvgl:
                           y: 230
                       - lvgl.label.update:
                           id: header_status_label
-                          text: "System"
+                          text: "Quick controls"
                 - button:
+                    hidden: true
                     x: 14
                     y: 280
                     width: 122

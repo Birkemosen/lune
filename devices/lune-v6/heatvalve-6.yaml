@@ -14,7 +14,9 @@
 # =============================================================================
 substitutions:
   # Device identity (overridden per variant in entrypoint)
-  device_name: heatvalve-6
+  # Runtime identity. `name_add_mac_suffix` below produces
+  # lune-v6-<six-hex-MAC> for the ESPHome/API hostname.
+  device_name: lune-v6
   friendly_name: "Lune V6 Controller"
 
   # GPIO pins — change to match your PCB revision
@@ -24,7 +26,16 @@ substitutions:
   pin_nsleep: "6"
   pin_nfault: "4"
   pin_rgb_status_led: GPIO48
-  pin_adc_current: GPIO7
+  pin_adc_current: "7"
+  motor_hardware_backend: drv8215_i2c
+  pin_adc_bemf: "5"
+  pin_motor_addr0: "10"
+  pin_motor_addr1: "11"
+  pin_motor_addr2: "12"
+  pin_motor_direction: "14"
+  pin_latch_arm: "16"
+  bemf_threshold_raw: "40"
+  motor_auto_start_calibration: "true"
 
   # Network — fallback AP name when WiFi is unreachable
   fallback_ap_ssid: "Lune V6 Setup"
@@ -92,7 +103,6 @@ packages:
   wifi:         !include packages/network/wifi.yaml
   api:          !include packages/network/api.yaml
   ota:          !include packages/network/ota.yaml
-  asgard:       !include packages/network/asgard.yaml
   # Hardware
   i2c:          !include packages/hardware/i2c.yaml
   onewire:      !include packages/hardware/onewire.yaml
@@ -118,7 +128,6 @@ external_components:
       - hv6_zone_controller
       - hv6_config_store
       - hv6_dashboard
-      - hv6_asgard_bridge
 
 # =============================================================================
 # Logger
@@ -214,7 +223,7 @@ interval:
     then:
       - lambda: |-
           static const char *const task_names[] = {
-            "hv6_valve", "hv6_ripple", "hv6_zone", "hv6_asgard", "hv6_nvs", "loopTask"
+            "hv6_valve", "hv6_ripple", "hv6_zone", "hv6_nvs", "loopTask"
           };
           for (const char *name : task_names) {
             TaskHandle_t handle = xTaskGetHandle(name);
@@ -319,8 +328,18 @@ hv6_valve_controller:
   i2c_id: i2c_bus
   nsleep_pin: ${pin_nsleep}
   nfault_pin: ${pin_nfault}
-  ipropi_pin: 7
+  ipropi_pin: ${pin_adc_current}
+  current_sense: motor_current_adc
   motor_addresses: [0x30, 0x31, 0x32, 0x33, 0x34, 0x35]
+  hardware_backend: ${motor_hardware_backend}
+  adc_bemf_pin: ${pin_adc_bemf}
+  address0_pin: ${pin_motor_addr0}
+  address1_pin: ${pin_motor_addr1}
+  address2_pin: ${pin_motor_addr2}
+  direction_pin: ${pin_motor_direction}
+  latch_arm_pin: ${pin_latch_arm}
+  bemf_threshold_raw: ${bemf_threshold_raw}
+  auto_start_calibration: ${motor_auto_start_calibration}
 
 # Zone controller
 hv6_zone_controller:

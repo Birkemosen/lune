@@ -2,6 +2,11 @@
 
 This document defines the dedicated dashboard API contract for Lune V6.
 
+The cross-product v1 envelope, compatibility rules, and fixtures are in
+[`shared/contracts/lune_api_v1.md`](../../../shared/contracts/lune_api_v1.md).
+
+Hydraulic commissioning is documented in [hydraulic_commissioning.md](hydraulic_commissioning.md).
+
 `/api/hv6/v1` is intentionally retained as an internal compatibility namespace during
 the public rename from HeatValve-6 to Lune V6.
 
@@ -18,10 +23,14 @@ the public rename from HeatValve-6 to Lune V6.
 All endpoints are served by the `hv6_dashboard` component as an `AsyncWebHandler` on the
 device web server (port 80). The legacy `/dashboard/set`, `/dashboard/state`,
 `/dashboard/history` and `/dashboard/ble-scan` routes have been removed; the dashboard app
-itself is still served at `/dashboard` + `/dashboard.js`.
+itself is served at `/` + `/dashboard.js`; `/dashboard` and `/dashboard/` are
+legacy bookmarks that redirect to `/`.
 
 - Read endpoints (raw JSON, no envelope yet — see "Planned"):
   - `GET /api/hv6/v1/state` — full dashboard snapshot (entity-id → value map consumed by the frontend store)
+  - `GET /api/hv6/v1/revision` — lightweight revision-polling resource. The dashboard polls
+    this every three seconds and fetches the full state only when `data_revision` changes;
+    this intentionally replaces the unsafe one-shot pseudo-SSE route.
   - `GET /api/hv6/v1/history` — 24 h ring buffer (288 slots @ 5 min). Each entry is
     `[uptime_s, z0, z1, z2, z3, z4, z5, absorbing, flow_c, return_c, demand_pct]` where
     `z0..z5` are `ZoneDisplayState` codes (`0xFF` = unknown), `absorbing` is `1` when preheat
@@ -37,9 +46,14 @@ itself is still served at `/dashboard` + `/dashboard.js`.
     is the ESPHome log level (1=ERROR … 7=VERY_VERBOSE). Pass the previous `next_seq` (or the
     highest seen `seq`) back as `?since=` to append only new lines. RAM-only; reset on reboot.
   - `GET /api/hv6/v1/ble-scan` — discovered BTHome sensors
-  - `GET /api/hv6/v1/peer` — compact board-to-board zone snapshot
-    (`{"ok":true,"zones":[{"t":21.4,"sp":21.0,"area":18.5,"en":true},…]}`) consumed by the peer
-    board's Asgard bridge; see [ecodan_integration.md](ecodan_integration.md)
+  - `POST /api/hv6/v1/authority/lease` — V6-A-only authenticated Touch lease acquisition
+    and renewal. The JSON body contains `installation_id`, `coordinator_id`, `lease_id`,
+    `sequence`, `issued_ms`, and a 30–120 second `duration_ms`; the request must supply the
+    provisioned `X-Lune-Authority-Key`. V6 never restores an active lease after reboot and
+    rejects missing authentication, mismatched identity, replayed sequence, and conflicting
+    lease ID. Authority state, remaining lease time, generation, and transition reason are
+    included in `GET /diagnostics`. Touch includes a `degraded` coverage-health flag in each
+    renewal. V6 does not aggregate zones or write to a heat source.
 - Write endpoints (JSON request bodies or backwards-compatible query parameters; return the v1 response envelope):
   - `POST /api/hv6/v1/zones/{zone}/setpoint?setpoint_c=<float>`
   - `POST /api/hv6/v1/zones/{zone}/enabled?enabled=true|false`
@@ -53,12 +67,19 @@ itself is still served at `/dashboard` + `/dashboard.js`.
   - `POST /api/hv6/v1/settings/select?key=<name>&value=<value>[&zone=1..6]`
   - `POST /api/hv6/v1/settings/number?key=<name>&value=<value>[&zone=1..6]`
   - `POST /api/hv6/v1/settings/text?key=<name>&value=<value>[&zone=1..6]`
-  - `POST /api/hv6/v1/manual_mode?enabled=true|false`
+- `POST /api/hv6/v1/manual_mode?enabled=true|false`
+
+Local dashboard writes remain available while a V6 is standalone and no
+`authority.shared_key` has been provisioned. After Touch provisioning, the
+same writes require `X-Lune-Local-Key` and a matching `X-Lune-CSRF` header;
+coordinator commands always require the separate authority authentication
+described below.
 - Migration reads:
   - `GET /api/hv6/v1/overview`, `GET /api/hv6/v1/zones`,
     `GET /api/hv6/v1/zones/{zone}`, `GET /api/hv6/v1/settings`,
     `GET /api/hv6/v1/diagnostics`
-  - `GET /api/hv6/v1/events` (SSE hello/poll stream placeholder)
+  - `GET /api/hv6/v1/events` is retained only as a compatibility placeholder; clients must
+    use documented revision polling until real SSE can be safely maintained on the target.
 
 Implemented command names:
 
@@ -68,10 +89,26 @@ Implemented command names:
 - `motor_reset_learned_factors` (requires `zone`)
 - `open_motor_timed` / `close_motor_timed` / `stop_motor` (requires `zone`; also exposed as motor routes)
 
-Implemented global settings keys (selection/number) relevant to local minimum flow:
+Implemented global settings keys (legacy names retained for dashboard compatibility) relevant
+to secondary-flow commissioning:
 
-- `min_zone_flow_pct` (number) — per-zone minimum opening used by the manual minimum-flow control
-- `minimum_flow_always` (select: `on` | `off`) — manually enforce that floor for a modulating heat source, independent of the heat-source bridge
+- `min_zone_flow_pct` (number) — minimum total valve opening across loops already accepting heat
+- `minimum_flow_always` (select: `on` | `off`) — explicit secondary-loop commissioning mode
+
+These controls cannot guarantee primary-side heat delivery and never open a satisfied room merely
+to protect the primary circuit.
+
+## Touch command authentication
+
+`POST /zones/{zone}/setpoint-command` is fail-closed. It requires the provisioned installation
+key in `X-Lune-Authority-Key`, a valid UTC `auth_timestamp_s` within 120 seconds, and a unique
+`auth_nonce`; V6 retains used nonces for five minutes. A missing/invalid clock or key leaves
+the device in read-only degraded behavior for Touch commands. A MAC-derived pairing fingerprint
+is identity evidence only and cannot authorize a command.
+
+Rotate the key by physically commissioning Touch and the designated V6-A with a newly generated
+installation key, confirm their clocks, then remove the old key from both. Do not rotate through
+an unauthenticated browser request. V6-B remains a non-writer regardless of this key.
 
 ## Response Envelope
 
@@ -234,7 +271,21 @@ panels and coordinator pairing checks:
 
 ### `GET /api/hv6/v1/diagnostics`
 
-Returns diagnostics summary and latest fault/calibration state.
+Returns diagnostics summary and latest fault/calibration state. On Rev 3.1 the
+`motor_safety` object exposes the live bring-up evidence used by the endpoint
+classifier: shared current, raw terminal A/B ADC samples, differential BEMF,
+A/B sample separation, validity/motion flags, invalid-sample count, motion
+evidence count, runtime and persistent latch state. These raw values are for
+qualification and diagnostics; clients must not infer or command an endpoint
+from them.
+
+### `GET /api/hv6/v1/motor-trace.csv`
+
+Downloads the most recently completed motor capture in chronological order.
+Rev 3.1 rows contain current, raw BEMF terminal A/B, differential BEMF,
+measured sample separation, validity/motion flags and consecutive invalid-sample
+count. The endpoint returns `409 motor_busy` while a motor is moving so a CSV
+can never mix an active, wrapping capture with older samples.
 
 ### `GET /api/hv6/v1/settings`
 
@@ -267,15 +318,10 @@ Returns dashboard-editable settings currently backed by config store and control
       "relearn_after_movements": 120,
       "relearn_after_hours": 720
     },
-    "asgard": {
-      "enabled": false,
-      "coordinator": false,
-      "host": "",
-      "port": 80,
-      "entity_name": "virtual_thermostat_input_z1",
-      "peer_host": "",
-      "peer_port": 80,
-      "peer_stale_after_s": 300
+    "authority": {
+      "installation_id": "house-1",
+      "coordinator_id": "lune-touch",
+      "authentication_configured": true
     },
     "zones": [
       {

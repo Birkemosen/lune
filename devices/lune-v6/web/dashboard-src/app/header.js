@@ -218,10 +218,6 @@ const template = () => `
           <span id="hdr-sync" class="meta-chip meta-chip-state synced">Synced</span>
           <span class="meta-chip"><span class="meta-chip-label" data-i18n="meta.uptime">Uptime</span><span class="meta-chip-value" id="hdr-up">---</span></span>
           <span class="meta-chip"><span class="meta-chip-label" data-i18n="meta.wifi">WiFi</span><span class="meta-chip-value" id="hdr-wifi">---</span></span>
-          <span class="meta-chip" id="hdr-asgard" hidden>
-            <span class="meta-chip-label" data-i18n="meta.heatSourceLastPush">Heat Src Last Push</span>
-            <span class="meta-chip-values"><span class="meta-chip-value" id="hdr-asgard-val">---</span><span class="meta-chip-value" id="hdr-asgard-time">--:--</span></span>
-          </span>
         </div>
       </div>
     </div>
@@ -239,9 +235,6 @@ export default component({
     const syncEl = el.querySelector('#hdr-sync');
     const upEl = el.querySelector('#hdr-up');
     const wifiEl = el.querySelector('#hdr-wifi');
-    const asgardEl = el.querySelector('#hdr-asgard');
-    const asgardValEl = el.querySelector('#hdr-asgard-val');
-    const asgardTimeEl = el.querySelector('#hdr-asgard-time');
     const fwEl = el.querySelector('#hdr-fw');
 
     function updateMeta() {
@@ -260,14 +253,6 @@ export default component({
       syncEl.className = 'meta-chip meta-chip-state ' + connState;
       upEl.textContent = fmtUp(ev(gkey.uptime));
       wifiEl.textContent = fmtWifi(ev(gkey.wifi));
-      const pushC = ev(gkey.asgardLastPushC);
-      const pushAge = ev(gkey.asgardLastPushAgeS);
-      const showAsgard = isEntityOn(gkey.asgardEnabled) && pushC != null && Number.isFinite(pushC);
-      asgardEl.hidden = !showAsgard;
-      if (showAsgard) {
-        asgardValEl.textContent = pushC.toFixed(2) + '°C';
-        asgardTimeEl.textContent = fmtTimeFromAge(pushAge);
-      }
       const fw = getDashboardValue('firmwareVersion') || es(gkey.firmware);
       fwEl.textContent = fw ? 'FW ' + fw : '';
     }
@@ -277,9 +262,6 @@ export default component({
     subscribeDashboard('firmwareVersion', updateMeta);
     subscribe(gkey.uptime, updateMeta);
     subscribe(gkey.wifi, updateMeta);
-    subscribe(gkey.asgardLastPushC, updateMeta);
-    subscribe(gkey.asgardLastPushAgeS, updateMeta);
-    subscribe(gkey.asgardEnabled, updateMeta);
     subscribe(gkey.firmware, updateMeta);
     localize(el);
     updateMeta();

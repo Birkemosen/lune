@@ -1,6 +1,7 @@
 #pragma once
 
 #include "coordinator_model.h"
+#include "odin_plan.h"
 #include "esphome/components/time/real_time_clock.h"
 #include "esphome/core/component.h"
 #include <freertos/FreeRTOS.h>
@@ -14,6 +15,7 @@ namespace esphome {
 namespace lune_touch_coordinator {
 
 struct ForecastHourState {
+  int64_t timestamp_s{0};
   float temp_c{0.0f};
   float wind_speed_ms{0.0f};
   float wind_dir_deg{0.0f};
@@ -73,13 +75,40 @@ struct HeatSourceState {
   bool enabled{false};
   char host[64]{};
   uint16_t port{80};
-  char weighted_temperature_variable[48]{"virtual_thermostat_input_z1"};
+  char weighted_temperature_variable[48]{"house_temperature"};
   uint16_t push_interval_s{30};
-  bool last_push_ok{false};
   bool has_last_push{false};
-  float last_value_c{0.0f};
-  uint32_t last_push_ms{0};
+  char last_status[12]{"unreachable"};
+  float last_requested_value_c{NAN};
+  float last_confirmed_value_c{NAN};
+  int last_http_status{0};
+  uint32_t last_write_ms{0};
+  uint32_t last_confirmed_ms{0};
+  uint32_t last_healthy_physical_ms{0};
   uint32_t failure_count{0};
+  uint32_t failure_streak{0};
+  char last_error[96]{};
+};
+
+struct OdinPlanState {
+  // Explicit project-approved Asgard ODIN JSON endpoint. This data is read-only and does
+  // not participate in safety-critical room control or physical aggregation.
+  bool enabled{true};
+  char host[64]{"192.168.20.54"};
+  uint16_t port{80};
+  uint16_t refresh_interval_s{300};
+  bool available{false};
+  uint8_t current_hour{0};
+  uint8_t current_index{0};
+  float current_target_c{NAN};
+  float current_min_c{NAN};
+  float current_max_c{NAN};
+  float current_price{NAN};
+  float current_planned_heat_kw{NAN};
+  int current_operation_mode_raw{-1};
+  uint32_t last_fetch_ms{0};
+  int last_http_status{0};
+  char status[16]{"unavailable"};
   char last_error[96]{};
 };
 
@@ -111,9 +140,15 @@ class LuneTouchCoordinator : public esphome::Component {
   std::string forecast_summary_text() const;
   std::string forecast_decision_text(uint8_t row) const;
   std::string command_summary_text() const;
+  std::string heating_summary_text() const;
+  std::string alarm_summary_text() const;
+  bool display_adjust_primary_target(float delta_c);
+  bool display_boost_primary_room();
+  bool display_away_primary_room();
 
   bool add_node(const char *node_id, const char *hostname, const char *fallback_ip,
                 const char *pairing_fingerprint, char *response, size_t capacity);
+  bool scan_registered_nodes(char *response, size_t capacity);
   bool scan_node_candidate(const char *hostname, const char *fallback_ip,
                            char *response, size_t capacity);
   bool set_node_trust(const char *node_id, ::lune_touch::NodeTrust trust,
@@ -132,6 +167,8 @@ class LuneTouchCoordinator : public esphome::Component {
                                  float wind_exposure, float solar_gain,
                                  uint8_t thermal_lead_h, float max_offset_c,
                                  char *response, size_t capacity);
+  bool update_room_atomically(const char *room_id, const ::lune_touch::RoomUpdate &update,
+                              char *response, size_t capacity);
   bool queue_setpoint_command(const char *room_id, float requested_offset_c, uint32_t ttl_s,
                               const char *reason, char *response, size_t capacity);
   bool request_motor_action(const char *room_id, const char *action, const char *confirmation,
@@ -147,7 +184,8 @@ class LuneTouchCoordinator : public esphome::Component {
   bool set_settings(const char *coordinator_name, const char *install_id,
                     const char *site_label, const char *install_mode,
                     bool has_asgard_enabled, bool asgard_enabled,
-                    const char *asgard_mode,
+                    const char *asgard_mode, const char *authority_leader_node_id,
+                    const char *authority_coordinator_id, const char *authority_shared_key,
                     char *response, size_t capacity);
 
  protected:
@@ -175,13 +213,15 @@ class LuneTouchCoordinator : public esphome::Component {
   void note_node_poll_success_(size_t node_index, const char *host);
   void note_node_poll_failure_(size_t node_index, const char *reason);
   bool fetch_json_(const char *url, char *body, size_t body_capacity, int *status_code);
-  bool post_json_(const char *url, const char *payload, char *body, size_t body_capacity, int *status_code);
+  bool post_json_(const char *url, const char *payload, char *body, size_t body_capacity,
+                  int *status_code, const char *authority_key = nullptr);
   bool ingest_v6_zones_(size_t node_index, const char *body, uint32_t now_ms);
   bool ingest_v6_legacy_state_(size_t node_index, const ::lune_touch::PairedNode &node,
                                const char *body, uint32_t now_ms);
   bool fetch_open_meteo_(float latitude, float longitude, char *error, size_t error_len,
                          uint8_t *hours_count, float *min_temp_c, float *max_wind_ms,
                          float *peak_wind_dir_deg, float *max_solar_wm2,
+                         char *provider_timezone, size_t provider_timezone_capacity,
                          ForecastHourState *hours_out, size_t hours_capacity);
   void recompute_forecast_decisions_();
   ForecastDispatchSummary dispatch_forecast_commands_();
@@ -193,7 +233,11 @@ class LuneTouchCoordinator : public esphome::Component {
                               float setpoint_c);
   bool send_v6_zone_setting_(const ::lune_touch::PairedNode &node, uint8_t zone_index,
                              const char *kind, const char *key, const char *value);
+  bool read_asgard_number_(const HeatSourceState &source, float *value, char *error,
+                           size_t error_capacity);
+  bool fetch_odin_plan_();
   bool push_weighted_temperature_();
+  bool renew_authority_lease_();
   void url_encode_(const char *src, char *out, size_t out_len) const;
   void log_event_(const char *level, const char *source, const char *message);
 
@@ -207,6 +251,8 @@ class LuneTouchCoordinator : public esphome::Component {
   static constexpr uint32_t FORECAST_COMMAND_TTL_S = 4500;
   static constexpr uint32_t FORECAST_COMMAND_DEDUPE_MS = 30UL * 60UL * 1000UL;
   static constexpr uint32_t FORECAST_AUTO_FETCH_INTERVAL_MS = 60UL * 60UL * 1000UL;
+  static constexpr uint32_t ODIN_PLAN_STALE_MS = 20UL * 60UL * 1000UL;
+  static constexpr uint32_t FORECAST_CACHE_MAX_AGE_S = 2UL * 60UL * 60UL;
   static constexpr float FORECAST_COMMAND_EPSILON_C = 0.05f;
   static constexpr size_t EVENT_CAPACITY = 32;
 
@@ -214,9 +260,15 @@ class LuneTouchCoordinator : public esphome::Component {
   esphome::time::RealTimeClock *time_{nullptr};
   mutable SemaphoreHandle_t state_lock_{nullptr};
   TaskHandle_t poll_task_handle_{nullptr};
+  bool node_refresh_requested_{false};
   uint32_t last_ledger_expire_ms_{0};
+  uint32_t boot_id_{0};
   uint32_t last_learning_save_ms_{0};
   uint32_t last_poll_ms_{0};
+  // Monotonically increases after each coordinator poll pass.  The dashboard
+  // uses this to wait for the asynchronous scan-triggered poll to complete
+  // instead of guessing with a fixed sleep.
+  uint32_t poll_generation_{0};
   uint32_t poll_success_count_{0};
   uint32_t poll_fail_count_{0};
   bool learning_dirty_{false};
@@ -236,6 +288,22 @@ class LuneTouchCoordinator : public esphome::Component {
   char install_id_[32]{"unassigned"};
   char site_label_[48]{"House"};
   char install_mode_[16]{"commissioning"};
+  char authority_leader_node_id_[32]{};
+  char authority_coordinator_id_[32]{"lune-touch"};
+  char authority_shared_key_[64]{};
+  char authority_lease_id_[32]{};
+  char authority_state_[24]{"no_publisher"};
+  char authority_reason_[48]{"boot"};
+  uint32_t authority_sequence_{0};
+  uint32_t authority_last_renew_ms_{0};
+  uint32_t authority_expires_at_ms_{0};
+  uint32_t authority_generation_{0};
+  float authority_last_fallback_value_c_{NAN};
+  float authority_last_asgard_value_c_{NAN};
+  uint8_t authority_v6_local_zones_{0};
+  uint8_t authority_v6_peer_zones_{0};
+  char authority_v6_peer_status_[16]{"unknown"};
+  bool authority_smooth_first_write_{false};
   bool asgard_enabled_{true};
   char asgard_mode_[16]{"advisory"};
   HeatSourceState heat_source_{};
@@ -244,6 +312,8 @@ class LuneTouchCoordinator : public esphome::Component {
   bool weather_max_boost_configured_{false};
   bool weather_max_boost_seeded_from_v6_{false};
   uint32_t forecast_last_fetch_ms_{0};
+  int64_t forecast_fetch_epoch_s_{0};
+  char forecast_provider_timezone_[48]{};
   char forecast_status_[16]{"stale"};
   char forecast_last_error_[96]{};
   mutable char diagnostics_blockers_[768]{};
@@ -259,6 +329,7 @@ class LuneTouchCoordinator : public esphome::Component {
   ForecastDecisionState forecast_decisions_[::lune_touch::MAX_HOUSE_ZONES]{};
   size_t forecast_decision_count_{0};
   ForecastDispatchSummary last_forecast_dispatch_{};
+  OdinPlanState odin_plan_{};
 };
 
 }  // namespace lune_touch_coordinator

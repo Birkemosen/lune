@@ -1,8 +1,10 @@
 import gzip
+from pathlib import Path
 
 import esphome.codegen as cg
 import esphome.config_validation as cv
 from esphome.components import web_server_base
+from esphome.components.esp32 import add_extra_script
 from esphome.const import CONF_ID
 from esphome.core import CORE
 
@@ -41,6 +43,17 @@ def _embed_gzip_as_progmem(symbol: str, file_path: str) -> None:
 
 
 async def to_code(config):
+    # Probing and commanding a V6 node perform a bounded outbound HTTP request
+    # from the dashboard request handler.  ESP-IDF's default httpd task stack is
+    # too small for that path (the request parser, HTTP client and JSON response
+    # handling can be active at once), which otherwise manifests as a reboot
+    # exactly when commissioning or calling a manifold.  Keep the sizing fix
+    # coupled to the dashboard component so every Touch build gets it.
+    add_extra_script(
+        "pre",
+        "lune_touch_patch_httpd_stack.py",
+        Path(__file__).parent / "lune_touch_patch_httpd_stack.py",
+    )
     var = cg.new_Pvariable(config[CONF_ID])
     await cg.register_component(var, config)
 

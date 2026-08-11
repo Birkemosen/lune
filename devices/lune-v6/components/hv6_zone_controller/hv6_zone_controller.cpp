@@ -9,6 +9,7 @@
 // =============================================================================
 
 #include "hv6_zone_controller.h"
+#include "preheat_policy.h"
 #include "esphome/core/log.h"
 #include "esp_timer.h"
 #include <algorithm>
@@ -92,6 +93,11 @@ void Hv6ZoneController::setup() {
   }
 
   recalculate_balance_factors_();
+  // The initial balance was calculated synchronously above.  Do not repeat it
+  // from the newly-created task before setup() has yielded; that second pass
+  // races the remaining ESPHome component setup and can leave the snapshot
+  // mutex contended during the watchdog's boot window.
+  balance_dirty_ = false;
 
   // Start zone control task
   BaseType_t ok = xTaskCreatePinnedToCore(
@@ -140,6 +146,12 @@ bool Hv6ZoneController::try_get_system_snapshot(SystemSnapshot *out, uint32_t ti
   if (out == nullptr || snapshot_mutex_ == nullptr)
     return false;
 
+  // Take the configuration snapshot before the zone snapshot lock.  The
+  // config store has its own mutex; acquiring it while holding
+  // snapshot_mutex_ creates a lock-order inversion with command/config paths
+  // that already hold the config mutex and then publish a zone snapshot.
+  const auto cfg = config_store_ ? config_store_->get_config() : DeviceConfig{};
+
   if (xSemaphoreTake(snapshot_mutex_, pdMS_TO_TICKS(timeout_ms)) != pdTRUE)
     return false;
 
@@ -148,11 +160,8 @@ bool Hv6ZoneController::try_get_system_snapshot(SystemSnapshot *out, uint32_t ti
   for (uint8_t i = 0; i < NUM_ZONES; i++) {
     sys.zones[i] = snapshots_[i];
     sum_valve += snapshots_[i].valve_position_pct;
-    if (config_store_) {
-      auto cfg = config_store_->get_config();
-      if (cfg.zones[i].enabled && snapshots_[i].state != ZoneState::UNKNOWN)
-        sys.active_zones++;
-    }
+    if (cfg.zones[i].enabled && snapshots_[i].state != ZoneState::UNKNOWN)
+      sys.active_zones++;
   }
   xSemaphoreGive(snapshot_mutex_);
 
@@ -162,7 +171,7 @@ bool Hv6ZoneController::try_get_system_snapshot(SystemSnapshot *out, uint32_t ti
   // Flow temperature modulation requests (only relevant with modulating heat source)
   if (config_store_) {
     auto cfg = config_store_->get_config();
-    if (cfg.balancing.modulating_heat_source) {
+    if (cfg.balancing.secondary_flow_commissioning_enabled) {
       sys.flow_temp_increase_requested = (sys.avg_valve_pct >= cfg.balancing.flow_increase_threshold_pct);
       sys.flow_temp_decrease_requested = (sys.avg_valve_pct <= cfg.balancing.flow_decrease_threshold_pct);
     }
@@ -745,37 +754,37 @@ BalanceMode Hv6ZoneController::get_balance_mode() const {
   return effective_balance_mode(config_store_->get_config().balancing);
 }
 
-void Hv6ZoneController::set_modulating_heat_source(bool enabled) {
+void Hv6ZoneController::set_secondary_flow_commissioning(bool enabled) {
   if (!config_store_)
     return;
   auto cfg = config_store_->get_config();
-  if (cfg.balancing.modulating_heat_source == enabled)
+  if (cfg.balancing.secondary_flow_commissioning_enabled == enabled)
     return;
-  cfg.balancing.modulating_heat_source = enabled;
+  cfg.balancing.secondary_flow_commissioning_enabled = enabled;
   config_store_->update_balancing(cfg.balancing);
-  ESP_LOGI(TAG, "Modulating heat source: %s", enabled ? "YES" : "NO");
+  ESP_LOGI(TAG, "Secondary-flow commissioning: %s", enabled ? "YES" : "NO");
 }
 
-bool Hv6ZoneController::has_modulating_heat_source() const {
+bool Hv6ZoneController::secondary_flow_commissioning_enabled() const {
   if (!config_store_)
     return false;
-  return config_store_->get_config().balancing.modulating_heat_source;
+  return config_store_->get_config().balancing.secondary_flow_commissioning_enabled;
 }
 
-void Hv6ZoneController::set_minimum_flow_pct(float pct) {
+void Hv6ZoneController::set_secondary_min_total_opening_pct(float pct) {
   if (!config_store_)
     return;
   pct = std::clamp(pct, 0.0f, 50.0f);
   auto cfg = config_store_->get_config();
-  cfg.balancing.minimum_flow_pct = pct;
+  cfg.balancing.secondary_min_total_opening_pct = pct;
   config_store_->update_balancing(cfg.balancing);
-  ESP_LOGI(TAG, "Minimum flow: %.0f%%", pct);
+  ESP_LOGI(TAG, "Secondary minimum total opening: %.0f%%", pct);
 }
 
-float Hv6ZoneController::get_minimum_flow_pct() const {
+float Hv6ZoneController::get_secondary_min_total_opening_pct() const {
   if (!config_store_)
     return 15.0f;
-  return config_store_->get_config().balancing.minimum_flow_pct;
+  return config_store_->get_config().balancing.secondary_min_total_opening_pct;
 }
 
 void Hv6ZoneController::set_flow_increase_threshold(float pct) {
@@ -986,7 +995,8 @@ void Hv6ZoneController::run_cycle_() {
 
     algorithms_[i].set_algorithm(cfg.zones[i].algorithm);
 
-    float preheat_advance = preheat_advance_c_[i];
+    const bool allow_v6_preheat = preheat_policy::allow_v6_preheat(touch_authority_active_.load());
+    float preheat_advance = allow_v6_preheat ? preheat_advance_c_[i] : 0.0f;
     float absorb_band = preheat_absorb_active_.load()
         ? cfg.control.preheat_absorb_band_c * floor_absorb_factor(cfg.zones[i].floor_type)
         : 0.0f;
@@ -1027,7 +1037,10 @@ void Hv6ZoneController::run_cycle_() {
     snapshots_[i].was_overheated = was_overheated;
     xSemaphoreGive(snapshot_mutex_);
 
-    update_simple_preheat_(i, temp, setpoint, cfg.control.comfort_band_c, state);
+    if (allow_v6_preheat)
+      update_simple_preheat_(i, temp, setpoint, cfg.control.comfort_band_c, state);
+    else
+      preheat_episode_active_[i] = false;
   }
 
   // Merge: a zone merged into another (sync_to_zone) shares the room, so after its
@@ -1056,11 +1069,11 @@ void Hv6ZoneController::run_cycle_() {
   for (uint8_t i = 0; i < NUM_ZONES; i++)
     if (cfg.zones[i].enabled)
       pre_floor_total += pre_floor_positions[i];
-  const bool min_total_triggered = (pre_floor_total < cfg.control.min_valve_opening_pct);
-  const bool min_flow_active = cfg.balancing.modulating_heat_source;
+  const bool min_total_triggered = cfg.balancing.secondary_flow_commissioning_enabled &&
+      cfg.balancing.secondary_min_total_opening_pct > 0.0f &&
+      pre_floor_total < cfg.balancing.secondary_min_total_opening_pct;
 
   enforce_minimum_total_opening_(target_positions);
-  apply_minimum_flow_(target_positions);
 
   // The snapshot represents the final commanded target, including safety-flow
   // floors.  Keeping the pre-floor value here made the dashboard claim that a
@@ -1102,8 +1115,6 @@ void Hv6ZoneController::run_cycle_() {
         continue;
       // Minimum-flow overrides force openings unrelated to demand.
       if (min_total_triggered)
-        continue;
-      if (min_flow_active && pre_floor_positions[i] < cfg.balancing.minimum_flow_pct)
         continue;
       // Eligible — fold the relative control error into the long-window EMA.
       accumulate_balance_error_(i, zone_setpoints[i] - temp, cfg.balancing.adapt_error_window_s);
@@ -1259,14 +1270,14 @@ static float floor_absorb_factor(FloorType type) {
   return 0.6f;
 }
 
-// Detect external pre-buffering (Odin via Asgard): hot water arrives at the
+// Detect external pre-buffering (coordinated by Lune Touch): hot water arrives at the
 // manifold while no zone demands heat. While active, the overheat cutoff is
 // raised so satisfied zones keep their maintenance opening and the slab can
 // absorb the buffer instead of the valves closing and fighting the optimizer.
 void Hv6ZoneController::update_preheat_absorb_(const DeviceConfig &cfg,
                                                const std::array<float, NUM_ZONES> &temps,
                                                const std::array<float, NUM_ZONES> &setpoints) {
-  if (!cfg.control.preheat_absorb_enabled) {
+  if (!cfg.control.preheat_absorb_enabled || touch_authority_active_.load()) {
     preheat_absorb_active_ = false;
     preheat_absorb_detect_cycles_ = 0;
     return;
@@ -1672,52 +1683,19 @@ void Hv6ZoneController::reset_balancing() {
   ESP_LOGI(TAG, "Adaptive balancing reset (all balance_adapt = 1.0)");
 }
 
-/// Enforce per-zone minimum flow when the manual modulating-heat-source floor is enabled.
-/// This keeps minimum-flow protection independent from the bridge that publishes weighted
-/// room temperature to an external heat-source controller.
-void Hv6ZoneController::apply_minimum_flow_(std::array<float, NUM_ZONES> &positions) {
-  if (!config_store_)
-    return;
-  const auto cfg = config_store_->get_config();
-
-  if (!cfg.balancing.modulating_heat_source)
-    return;
-
-  float min_pct = cfg.balancing.minimum_flow_pct;
-  for (uint8_t i = 0; i < NUM_ZONES; i++) {
-    if (!cfg.zones[i].enabled)
-      continue;
-    if (positions[i] < min_pct)
-      positions[i] = min_pct;
-  }
-}
-
 void Hv6ZoneController::enforce_minimum_total_opening_(std::array<float, NUM_ZONES> &positions) {
   if (!config_store_)
     return;
   const auto cfg = config_store_->get_config();
-  float min_total = cfg.control.min_valve_opening_pct;
-
-  uint8_t enabled_count = 0;
-  float total = 0.0f;
-  for (uint8_t i = 0; i < NUM_ZONES; i++) {
-    if (cfg.zones[i].enabled) {
-      total += positions[i];
-      enabled_count++;
-    }
-  }
-  if (enabled_count == 0)
-    return;
-
-  if (total < min_total) {
-    float deficit = min_total - total;
-    float per_zone = deficit / static_cast<float>(enabled_count);
-    for (uint8_t i = 0; i < NUM_ZONES; i++) {
-      if (cfg.zones[i].enabled)
-        positions[i] += per_zone;
-    }
-    ESP_LOGD(TAG, "Min opening enforced: +%.1f%% per zone", per_zone);
-  }
+  bool enabled[NUM_ZONES]{};
+  for (uint8_t i = 0; i < NUM_ZONES; i++) enabled[i] = cfg.zones[i].enabled;
+  const hydraulic_policy::SecondaryFlowPolicy policy{
+      cfg.balancing.secondary_flow_commissioning_enabled,
+      cfg.balancing.secondary_min_total_opening_pct};
+  const auto result = hydraulic_policy::preserve_secondary_flow<NUM_ZONES>(policy, enabled, positions.data());
+  if (result.applied)
+    ESP_LOGD(TAG, "Secondary commissioning opening: +%.1f%% across %u accepting loops",
+             result.added_opening_pct, result.accepting_loops);
 }
 
 // =============================================================================

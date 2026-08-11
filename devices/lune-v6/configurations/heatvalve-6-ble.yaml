@@ -10,7 +10,7 @@
 # =============================================================================
 
 substitutions:
-  device_name: heatvalve-6
+  device_name: lune-v6
   friendly_name: "Lune V6 Controller"
 
 packages:

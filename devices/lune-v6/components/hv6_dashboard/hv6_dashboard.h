@@ -5,6 +5,9 @@
 #include "esphome/components/sensor/sensor.h"
 #include "esphome/components/text_sensor/text_sensor.h"
 #include "esphome/components/web_server_base/web_server_base.h"
+#include "request_guard.h"
+#include "touch_auth.h"
+#include "authority_lease.h"
 #include "esphome/core/component.h"
 #include "esphome/core/progmem.h"
 #include <freertos/FreeRTOS.h>
@@ -57,6 +60,7 @@ struct DashboardSnapshot {
 
   // --- full config copies (POD structs, safe to memcpy) ---
   hv6::ZoneConfig   zones[hv6::NUM_ZONES];
+  hv6::SystemConfig system;
   hv6::TempSource   zone_temp_source[hv6::NUM_ZONES];
   char              zone_ble_mac[hv6::NUM_ZONES][hv6::BLE_MAC_LEN];
   hv6::ProbeConfig  probes;
@@ -68,21 +72,17 @@ struct DashboardSnapshot {
   float             preheat_detect_delta_c;
   bool              preheat_absorbing;
 
-  // --- Asgard bridge (Ecodan) ---
-  hv6::AsgardConfig asgard;               // current asgard config
-  char              asgard_role[8];       // "master" | "slave"
-  char              asgard_peer_status[16];
-  char              asgard_last_error[SNAPSHOT_TEXT_LEN];
-  float             asgard_last_push_c{0.0f};
-  float             asgard_setpoint_c{NAN};   // recommended fixed Asgard setpoint
-  uint32_t          asgard_last_push_age_s{0};
-  uint32_t          asgard_push_fail_streak{0};
-  uint8_t           asgard_local_zones{0};
-  uint8_t           asgard_peer_zones{0};
-  float             min_zone_flow_pct{15.0f};  // per-zone floor while bridge or always-enforce is active
-  bool              minimum_flow_always{false}; // enforce independently of bridge state
+  // --- Touch coordination authority (heat-source integration is external) ---
+  hv6::AuthorityConfig authority;
+  char              authority_state[32]{"no_publisher"};
+  char              authority_reason[32]{"boot"};
+  uint32_t          authority_lease_remaining_s{0};
+  uint32_t          authority_generation{0};
+  bool              authority_v6_write_allowed{false};
+  float             min_zone_flow_pct{0.0f};   // legacy entity: secondary total-opening floor
+  bool              minimum_flow_always{false}; // legacy entity: explicit commissioning only
 
-  hv6::BalancingConfig balancing;       // retained for local minimum-flow settings
+  hv6::BalancingConfig balancing;       // retained for local secondary-flow commissioning settings
 
 };
 
@@ -145,7 +145,6 @@ class HV6Dashboard : public Component, public AsyncWebHandler {
   void set_zone_controller(hv6::Hv6ZoneController *controller) { this->zone_controller_ = controller; }
   void set_valve_controller(hv6::Hv6ValveController *ctrl) { this->valve_controller_ = ctrl; }
   void set_config_store(hv6::Hv6ConfigStore *store) { this->config_store_ = store; }
-  void set_asgard_bridge(esphome::Component *bridge) { this->asgard_bridge_ = bridge; }
   void set_wifi_signal_sensor(sensor::Sensor *sensor) { this->wifi_signal_sensor_ = sensor; }
   void set_manifold_flow_sensor(sensor::Sensor *s) { this->manifold_flow_sensor_ = s; }
   void set_manifold_return_sensor(sensor::Sensor *s) { this->manifold_return_sensor_ = s; }
@@ -196,17 +195,19 @@ class HV6Dashboard : public Component, public AsyncWebHandler {
   void send_gzip_chunked_(AsyncWebServerRequest *request, const char *content_type,
                           const uint8_t *data, size_t length, const char *cache_control);
   void handle_state_(AsyncWebServerRequest *request);
+  void handle_revision_(AsyncWebServerRequest *request);
   void handle_overview_(AsyncWebServerRequest *request);
   void handle_zones_(AsyncWebServerRequest *request);
   void handle_zone_(AsyncWebServerRequest *request, uint8_t zone);
   void handle_settings_(AsyncWebServerRequest *request);
   void handle_diagnostics_(AsyncWebServerRequest *request);
+  void handle_motor_trace_(AsyncWebServerRequest *request);
   void handle_events_(AsyncWebServerRequest *request);
   void handle_history_(AsyncWebServerRequest *request);
   void handle_logs_(AsyncWebServerRequest *request);
   void handle_v1_(AsyncWebServerRequest *request, const char *path);
   void handle_ble_scan_(AsyncWebServerRequest *request);
-  void handle_peer_(AsyncWebServerRequest *request);
+  void handle_authority_lease_(AsyncWebServerRequest *request, const char *body);
   void send_v1_(AsyncWebServerRequest *request, int code, const char *err_code = nullptr,
                 const char *err_message = nullptr);
   bool enqueue_action_(const DashboardAction &act);
@@ -218,7 +219,7 @@ class HV6Dashboard : public Component, public AsyncWebHandler {
   hv6::Hv6ZoneController *zone_controller_{nullptr};
   hv6::Hv6ValveController *valve_controller_{nullptr};
   hv6::Hv6ConfigStore *config_store_{nullptr};
-  esphome::Component *asgard_bridge_{nullptr};
+  hv6_authority::Lease authority_{};
   sensor::Sensor *wifi_signal_sensor_{nullptr};
   sensor::Sensor *manifold_flow_sensor_{nullptr};
   sensor::Sensor *manifold_return_sensor_{nullptr};
@@ -239,12 +240,22 @@ class HV6Dashboard : public Component, public AsyncWebHandler {
 
   SemaphoreHandle_t action_lock_{nullptr};
   std::vector<DashboardAction> action_queue_;
+  request_guard::Guard<24> request_guard_{};
+  uint32_t data_revision_{1};  // runtime-only; resets on boot alongside boot identity
+  uint32_t write_rate_window_ms_{0};
+  uint8_t write_rate_count_{0};
   uint32_t coordinator_command_expires_at_ms_[hv6::NUM_ZONES]{};
 
   SemaphoreHandle_t snapshot_lock_{nullptr};
   DashboardSnapshot snapshot_{};
+  // LoopTask-only assembly buffer. Keep it separate from state_snap_buf_,
+  // which HTTP handlers use while holding snapshot_lock_.
+  DashboardSnapshot update_snap_buf_{};
   DashboardSnapshot state_snap_buf_;
-  char json_buf_[2048];
+  // The v1 zones response contains two names plus forecast metadata for all
+  // six valves.  Keep enough room for the complete document; truncation here
+  // makes Touch reject the response and fall back to generated legacy names.
+  char json_buf_[8192];
   uint32_t snapshot_last_ms_{0};
   bool snapshot_ready_{false};
   static constexpr uint32_t SNAPSHOT_INTERVAL_MS = 1000;

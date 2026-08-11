@@ -70,7 +70,7 @@ export default component({
 
     const form = cardForm(el);
 
-    // --- preheat absorption (external pre-buffering, e.g. Odin via Asgard) ---
+    // --- preheat absorption (external pre-buffering coordinated by Lune Touch) ---
     const gate = (on) => { if (absorbBody) absorbBody.classList.toggle('is-disabled', !on); };
     form.toggle(absorbToggle, {
       read: () => isEntityOn(gkey.preheatAbsorbEnabled),

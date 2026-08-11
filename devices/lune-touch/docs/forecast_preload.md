@@ -11,8 +11,13 @@ Lune V6 keeps validating and clamping the resulting commands locally.
 
 1. **Fetch.** A coordinator task pulls a
    48 h Open-Meteo forecast over HTTPS every `fetch_interval_s` (default 1 h): hourly
-   temperature, wind speed, wind direction and shortwave radiation. The parsed forecast is
-   cached in coordinator-owned storage so a reboot does not lose it.
+   temperature, wind speed, wind direction, shortwave radiation, and the provider's hourly
+   Unix timestamps. The parsed forecast, fetch epoch, and provider timezone are cached in
+   coordinator-owned storage so a reboot does not lose a fresh, clock-alignable forecast.
+   Decisioning starts at the first provider hour at or after the current wall-clock time;
+   this keeps `peak_in_h = 0` anchored to the current/next hour across midday fetches,
+   date rollovers, and DST changes rather than to the midnight array entry. An expired or
+   unalignable cache is discarded safely after reboot.
 
 2. **Per-zone weather load.** Each forecast hour is reduced to a dimensionless load per zone
    ([forecast_model.h](../components/hv6_forecast/forecast_model.h)):

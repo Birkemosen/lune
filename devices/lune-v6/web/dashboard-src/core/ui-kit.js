@@ -63,9 +63,12 @@ const css = `
 .help-badge .help-tip {
   position: absolute;
   top: calc(100% + 8px);
-  left: 0;
+  /* Keep explanations inside the card instead of letting a badge near the
+     right edge spill underneath the next settings column. */
+  right: 0;
+  left: auto;
   width: max-content;
-  max-width: 240px;
+  max-width: min(280px, calc(100vw - 32px));
   background: var(--overlay-bg);
   border: 1px solid var(--panel-border);
   border-radius: 8px;
@@ -78,6 +81,7 @@ const css = `
   letter-spacing: .2px;
   text-align: left;
   white-space: normal;
+  overflow-wrap: anywhere;
   box-shadow: var(--panel-shadow);
   opacity: 0;
   pointer-events: none;
@@ -105,6 +109,7 @@ const css = `
   padding: 11px 0;
   border-bottom: 1px solid var(--divider);
 }
+.ui-row[hidden] { display: none; }
 .ui-row:last-child { border-bottom: none; }
 
 .ui-label {

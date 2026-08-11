@@ -34,12 +34,25 @@ function postV1(path, params, mockBody) {
     }
   }
 
+  let localKey = sessionStorage.getItem('hv6_local_access_key') || '';
   const body = JSON.stringify(params || {});
-  return fetch(BASE + path, {
+  const send = (accessKey) => fetch(BASE + path, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', 'X-Lune-Local-Key': accessKey, 'X-Lune-CSRF': accessKey,
+      'Idempotency-Key': crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) },
     body,
-  }).then(resp => {
+  });
+  return send(localKey).then(async resp => {
+    // Reads stay prompt-free. Ask only after an explicit write is rejected
+    // because the local access key is not provisioned in this browser.
+    if (resp.status === 403 && !localKey) {
+      const entered = window.prompt('Enter the Lune commissioning key to change local settings') || '';
+      if (entered) {
+        sessionStorage.setItem('hv6_local_access_key', entered);
+        localKey = entered;
+        resp = await send(localKey);
+      }
+    }
     if (!resp.ok && [400, 404, 415].includes(resp.status)) {
       return fetch(queryUrl(path, params), { method: 'POST' });
     }

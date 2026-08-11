@@ -1,5 +1,6 @@
 #include "coordinator_model.h"
 
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -22,6 +23,8 @@ static CommandRecord command(const char *id, uint32_t now_ms, uint32_t ttl_ms) {
   std::strncpy(record.request_id, id, sizeof(record.request_id) - 1);
   std::strncpy(record.source, "forecast", sizeof(record.source) - 1);
   std::strncpy(record.reason, "wind preload", sizeof(record.reason) - 1);
+  std::strncpy(record.node_id, "v6-a", sizeof(record.node_id) - 1);
+  std::strncpy(record.loop_id, "loop-v6-a-03", sizeof(record.loop_id) - 1);
   record.node_index = 0;
   record.zone_index = 2;
   record.requested_offset_c = 1.25f;
@@ -139,13 +142,14 @@ static void test_zone_registry() {
              HouseModel::effective_comfort_setpoint_c(*living.binding) > 21.4f &&
              HouseModel::effective_comfort_setpoint_c(*living.binding) < 21.6f,
          "registry: comfort bias affects effective comfort");
-  expect(model.update_zone_comfort_from_v6_by_binding(0, 1, 20.5f),
-         "registry: V6 comfort target sync");
+  expect(model.update_zone_live_by_binding(0, 1, 20.5f, true, 20.5f, true, "idle", true, 1000),
+         "registry: V6 applied setpoint is reported as live state");
   living = model.resolve_room("living");
-  expect(living.binding != nullptr && living.binding->comfort_setpoint_c == 20.5f &&
-             living.binding->comfort_bias_c == -0.5f && living.binding->priority == 3,
-         "registry: V6 sync preserves Touch coordination metadata");
-  model.update_zone_comfort("living", 22.0f, 3, -0.5f);
+  const auto *living_live = model.zone_live(0);
+  expect(living.binding != nullptr && living.binding->comfort_setpoint_c == 22.0f &&
+             living.binding->comfort_bias_c == -0.5f && living.binding->priority == 3 &&
+             living_live != nullptr && living_live->has_setpoint && living_live->setpoint_c == 20.5f,
+         "registry: V6 report does not overwrite Touch coordination intent");
   expect(model.update_zone_schedule("living", true, 0x1F, 390, 1290, 20.5f),
          "registry: update schedule");
   living = model.resolve_room("living");
@@ -155,6 +159,44 @@ static void test_zone_registry() {
              living.binding->schedule_end_min == 1290 &&
              living.binding->schedule_setpoint_c > 20.4f,
          "registry: schedule stored");
+  RoomUpdate atomic{};
+  atomic.expected_revision = model.room_revision("living");
+  atomic.total_area_m2 = 30.0f;
+  atomic.physical_weight = 30.0f;
+  atomic.include_in_house_temperature = true;
+  atomic.comfort_setpoint_c = 22.0f;
+  atomic.comfort_bias_c = -0.5f;
+  atomic.priority = 3;
+  atomic.schedule_enabled = true;
+  atomic.schedule_day_mask = 0x1F;
+  atomic.schedule_start_min = 390;
+  atomic.schedule_end_min = 1290;
+  atomic.schedule_setpoint_c = 20.5f;
+  atomic.exterior_walls = 1;
+  atomic.wind_exposure = 0.8f;
+  atomic.solar_gain = 0.2f;
+  atomic.thermal_lead_h = 6;
+  atomic.max_offset_c = 1.2f;
+  uint32_t updated_revision = 0;
+  expect(model.apply_room_update("living", atomic, &updated_revision) == RoomUpdateResult::STORED &&
+             updated_revision == atomic.expected_revision + 1,
+         "registry: atomic room update stores all room fields with a new revision");
+  living = model.resolve_room("living");
+  expect(living.binding != nullptr && living.binding->comfort_setpoint_c == 22.0f &&
+             living.binding->schedule_setpoint_c == 20.5f && living.binding->wind_exposure == 0.8f,
+         "registry: atomic room update propagates to every loop");
+  const float before_failed_update = living.binding->comfort_setpoint_c;
+  atomic.expected_revision = updated_revision;
+  atomic.schedule_start_min = 1320;
+  atomic.schedule_end_min = 360;
+  expect(model.apply_room_update("living", atomic) == RoomUpdateResult::INVALID &&
+             model.resolve_room("living").binding->comfort_setpoint_c == before_failed_update,
+         "registry: invalid atomic field leaves the room unchanged");
+  atomic.schedule_start_min = 390;
+  atomic.schedule_end_min = 1290;
+  atomic.expected_revision = updated_revision - 1;
+  expect(model.apply_room_update("living", atomic) == RoomUpdateResult::STALE_REVISION,
+         "registry: stale atomic room edit is rejected");
   float scheduled = 0.0f;
   expect(living.binding != nullptr &&
              HouseModel::scheduled_comfort_setpoint_c(*living.binding, 0, 390, &scheduled) &&
@@ -174,10 +216,13 @@ static void test_zone_registry() {
   expect(!model.update_zone_schedule("living", true, 0x7F, 1290, 390, 20.5f),
          "registry: reject invalid schedule window");
 
-  expect(model.bind_zone("living", "Living Room North", 1, 2), "registry: rebind existing room");
+  expect(model.bind_zone("living", "Living Room North", 1, 2), "registry: add second loop to room");
   living = model.resolve_room("living");
-  expect(living.binding && living.binding->node_index == 1 && living.binding->zone_index == 2,
-         "registry: rebind updates target");
+  ResolvedRoomLoop living_loops[2]{};
+  expect(model.room_count() == 2 && model.resolve_room_loops("living", living_loops, 2) == 2 &&
+             living_loops[0].binding && living_loops[1].binding &&
+             living_loops[1].binding->node_index == 1 && living_loops[1].binding->zone_index == 2,
+         "registry: room retains both loop targets");
 }
 
 static void test_zone_name_sources() {
@@ -191,6 +236,10 @@ static void test_zone_name_sources() {
   expect(living.binding != nullptr && std::strcmp(living.binding->room_name, "Living") == 0 &&
              living.binding->name_source == ZoneNameSource::V6,
          "names: V6 source stored");
+  const LogicalRoom *logical_room = model.room_by_id("v61-z1");
+  expect(logical_room != nullptr && std::strcmp(logical_room->room_name, "Living") == 0 &&
+             logical_room->name_source == ZoneNameSource::V6,
+         "names: logical room follows V6 name");
   expect(model.bind_zone("v61-z1", "Local Living", 0, 0),
          "names: Touch rename succeeds");
   expect(!model.update_zone_name_from_v6_by_binding(0, 0, "Kitchen"),
@@ -216,6 +265,32 @@ static void test_remove_node_remaps_zones() {
   ResolvedZone bed = model.resolve_room("bed");
   expect(bed.binding != nullptr && bed.binding->node_index == 1, "registry: later zones remap down");
   expect(!model.remove_node("missing"), "registry: reject missing node remove");
+}
+
+static void test_logical_room_multiple_loops() {
+  HouseModel model;
+  model.upsert_node("v6-a", "a.local", "", "lune-v6", "1.0", NodeTrust::TRUSTED);
+  model.upsert_node("v6-b", "b.local", "", "lune-v6", "1.0", NodeTrust::TRUSTED);
+  expect(model.bind_zone("living", "Living", 0, 0), "multi-loop: first loop binds room");
+  expect(model.bind_zone("living", "Living", 0, 1), "multi-loop: second local loop binds room");
+  expect(model.bind_zone("living", "Living", 1, 2), "multi-loop: second-node loop binds room");
+  expect(model.room_count() == 1 && model.zone_count() == 3,
+         "multi-loop: 48m2 room appears once while retaining three loops");
+  expect(!model.bind_zone("kitchen", "Kitchen", 0, 1),
+         "multi-loop: duplicate physical loop assignment rejected");
+  expect(model.set_room_geometry("living", 48.0f, 48.0f, true),
+         "multi-loop: room area and physical aggregation settings stored");
+  expect(model.set_loop_served_area("loop-v6-a-01", 16.0f) &&
+             model.set_loop_served_area("loop-v6-a-02", 16.0f) &&
+             model.set_loop_served_area("loop-v6-b-03", 16.0f),
+         "multi-loop: served area is stored per physical loop");
+  ResolvedRoomLoop loops[3]{};
+  expect(model.resolve_room_loops("living", loops, 3) == 3 && loops[2].node != nullptr &&
+             std::strcmp(loops[2].node->node_id, "v6-b") == 0,
+         "multi-loop: room resolves all loops across V6 nodes");
+  expect(model.remove_loop("loop-v6-a-01"), "multi-loop: remove one loop");
+  expect(model.room_count() == 1 && model.resolve_room_loops("living", loops, 3) == 2,
+         "multi-loop: removing a loop preserves the logical room");
 }
 
 static void test_persisted_state_roundtrip() {
@@ -246,6 +321,8 @@ static void test_persisted_state_roundtrip() {
          "persist: node identity restored");
   expect(living.binding != nullptr && living.binding->zone_index == 4,
          "persist: zone binding restored");
+  expect(living.binding != nullptr && std::strcmp(living.binding->loop_id, "loop-v6-a-05") == 0,
+         "persist: stable loop identity restored");
   expect(living.binding != nullptr && living.binding->name_source == ZoneNameSource::TOUCH,
          "persist: zone name source restored");
   expect(living.binding != nullptr && living.binding->comfort_setpoint_c > 21.7f &&
@@ -262,10 +339,9 @@ static void test_persisted_state_roundtrip() {
   expect(living.live != nullptr && !living.live->fresh && std::strcmp(living.live->status, "unknown") == 0,
          "persist: live state is runtime-only");
   const ZoneHistory *living_history = restored.zone_history(0);
-  expect(living_history != nullptr && living_history->has_temperature &&
-             living_history->samples == 2 && living_history->calling_samples == 2 &&
-             living_history->average_temperature_c > 21.3f,
-         "persist: learning history restored");
+  expect(living_history != nullptr && !living_history->has_temperature &&
+             living_history->samples == 0 && living_history->calling_samples == 0,
+         "persist: runtime learning history resets on reboot");
 
   state.magic = 0;
   expect(!restored.import_state(state), "persist: reject invalid magic");
@@ -446,31 +522,109 @@ static void test_strategy_snapshot() {
   model.upsert_node("v6-a", "a.local", "", "lune-v6", "1.0", NodeTrust::TRUSTED);
   model.bind_zone("living", "Living", 0, 0);
   model.bind_zone("bath", "Bath", 0, 1);
-  model.bind_zone("bed", "Bedroom", 0, 2);
-  model.update_zone_comfort("living", 21.0f, 1);
-  model.update_zone_comfort("bath", 22.5f, 3, 0.5f);
-  model.update_zone_comfort("bed", 19.0f, 0);
-  model.update_zone_live("living", 20.0f, true, 20.5f, true, "heat", true, 1000);
-  model.update_zone_live("bath", 21.0f, true, 22.0f, true, "call", true, 1000);
-  model.update_zone_live("bed", 19.5f, true, 19.0f, true, "idle", true, 1000);
+  model.set_room_geometry("living", 20.0f, 0.0f, true);
+  model.set_room_geometry("bath", 20.0f, 0.0f, true);
+  model.update_zone_live("living", 20.0f, true, 21.0f, true, "heat", true, 1000);
+  model.update_zone_live("bath", 22.0f, true, 21.0f, true, "idle", true, 1000);
 
   StrategySnapshot strategy = model.strategy_snapshot();
   expect(strategy.has_physical_temperature, "strategy: has physical temperature");
-  expect(strategy.contributing_zones == 3, "strategy: counts contributing zones");
-  expect(strategy.demand_zones == 2, "strategy: counts demand zones");
-  expect(strategy.physical_temperature_c > 20.4f && strategy.physical_temperature_c < 20.8f,
-         "strategy: priority-weighted physical temperature");
-  expect(strategy.comfort_demand_c > 1.3f && strategy.comfort_demand_c < 1.6f,
-         "strategy: separates comfort demand");
-  expect(std::strcmp(strategy.driver_room_id, "bath") == 0 && strategy.driver_priority == 3,
-         "strategy: selects strongest demand driver");
-
-  model.update_zone_schedule("living", true, 0x01, 0, 1440, 25.0f);
+  expect(strategy.contributing_rooms == 2 && strategy.contributing_area_m2 == 40.0f,
+         "strategy: equal-area rooms contribute once each");
+  expect(strategy.coverage_healthy && strategy.coverage_ratio > 0.99f,
+         "strategy: complete area coverage is healthy");
+  expect(strategy.physical_temperature_c > 20.9f && strategy.physical_temperature_c < 21.1f,
+         "strategy: equal-area physical average");
+  expect(strategy.has_temperature_preview && strategy.preview_zones == 2 &&
+             strategy.temperature_preview_c > 20.9f && strategy.temperature_preview_c < 21.1f,
+         "strategy: fresh sensor preview follows primary zones");
+  expect(strategy.has_setpoint_preview && strategy.setpoint_preview_zones == 2 &&
+             strategy.setpoint_preview_c > 20.9f && strategy.setpoint_preview_c < 21.1f,
+         "strategy: live V6 setpoint preview follows primary zones");
+  model.set_room_geometry("bath", 48.0f, 0.0f, true);
+  strategy = model.strategy_snapshot();
+  expect(strategy.physical_temperature_c > 21.3f && strategy.physical_temperature_c < 21.5f,
+         "strategy: 20m2 plus 48m2 area weighting");
+  const float full_coverage_temperature_c = strategy.physical_temperature_c;
+  model.update_zone_comfort("living", 21.0f, 3);
+  model.update_zone_comfort("bath", 21.0f, 0);
+  const float before_priority = strategy.physical_temperature_c;
+  strategy = model.strategy_snapshot();
+  expect(std::fabs(strategy.physical_temperature_c - before_priority) < 0.001f,
+         "strategy: comfort priority cannot affect physical temperature");
+  model.bind_zone("bath", "Bath", 0, 2);
+  model.update_zone_live_by_binding(0, 2, 10.0f, true, 21.0f, true, "idle", true, 1000);
+  strategy = model.strategy_snapshot();
+  expect(strategy.contributing_rooms == 2 && strategy.physical_temperature_c > 21.3f &&
+             strategy.physical_temperature_c < 21.5f,
+         "strategy: multi-loop room is counted once through its primary sensor");
+  const float physical_before_schedule = strategy.physical_temperature_c;
+  expect(model.update_zone_schedule("living", true, 0x01, 0, 1440, 24.0f),
+         "strategy: schedule target update succeeds");
   strategy = model.strategy_snapshot(true, 0, 720);
-  expect(strategy.comfort_average_c > 22.2f && strategy.comfort_average_c < 22.5f,
-         "strategy: schedule affects comfort average");
-  expect(std::strcmp(strategy.driver_room_id, "living") == 0,
-         "strategy: active schedule can drive demand");
+  expect(strategy.has_house_target && strategy.house_target_c > 21.8f &&
+             strategy.house_target_c < 22.1f && std::strcmp(strategy.house_target_source, "mixed") == 0,
+         "strategy: area-weighted house target includes schedule intent");
+  expect(std::fabs(strategy.physical_temperature_c - physical_before_schedule) < 0.001f,
+         "strategy: schedule changes target without changing physical temperature");
+  model.set_room_geometry("bath", 48.0f, 0.0f, false);
+  strategy = model.strategy_snapshot();
+  expect(strategy.contributing_rooms == 1 && strategy.physical_temperature_c > 19.9f &&
+             strategy.physical_temperature_c < 20.1f,
+         "strategy: excluded room is omitted");
+  model.set_room_geometry("bath", 48.0f, 0.0f, true);
+  model.update_zone_live("bath", 22.0f, true, 21.0f, true, "stale", false, 2000);
+  strategy = model.strategy_snapshot();
+  expect(strategy.missing_rooms == 1 && strategy.missing_area_m2 == 48.0f,
+         "strategy: stale room reports missing area");
+  expect(!strategy.coverage_healthy && !strategy.has_physical_temperature &&
+             strategy.coverage_ratio < 0.75f,
+         "strategy: below-threshold half-house average is degraded");
+  model.update_zone_live("bath", 22.0f, true, 21.0f, true, "idle", true, 3000);
+  strategy = model.strategy_snapshot();
+  expect(strategy.coverage_healthy && strategy.has_physical_temperature &&
+             std::fabs(strategy.physical_temperature_c - full_coverage_temperature_c) < 0.001f,
+         "strategy: recovery returns healthy data without a temperature step");
+
+  HouseModel coverage_boundary;
+  coverage_boundary.upsert_node("v6-a", "a", "", "v6", "1", NodeTrust::TRUSTED);
+  coverage_boundary.bind_zone("large", "Large", 0, 0);
+  coverage_boundary.bind_zone("small", "Small", 0, 1);
+  coverage_boundary.set_room_geometry("large", 74.0f, 0.0f, true);
+  coverage_boundary.set_room_geometry("small", 26.0f, 0.0f, true);
+  coverage_boundary.update_zone_live("large", 20.0f, true, 21.0f, true, "heat", true, 1000);
+  coverage_boundary.update_zone_live("small", 20.0f, true, 21.0f, true, "stale", false, 1000);
+  strategy = coverage_boundary.strategy_snapshot();
+  expect(strategy.coverage_ratio > 0.739f && strategy.coverage_ratio < 0.741f &&
+             !strategy.coverage_healthy,
+         "strategy: 74 percent coverage is below the configured threshold");
+  coverage_boundary.update_zone_live("small", 20.0f, true, 21.0f, true, "idle", true, 2000);
+  strategy = coverage_boundary.strategy_snapshot();
+  expect(strategy.coverage_ratio > 0.99f && strategy.coverage_healthy,
+         "strategy: full coverage is above the configured threshold");
+
+  HouseModel two_manifolds;
+  two_manifolds.upsert_node("v6-a", "a", "", "v6", "1", NodeTrust::TRUSTED);
+  two_manifolds.upsert_node("v6-b", "b", "", "v6", "1", NodeTrust::TRUSTED);
+  two_manifolds.bind_zone("a-room", "A", 0, 0);
+  two_manifolds.bind_zone("b-room", "B", 1, 0);
+  two_manifolds.set_room_geometry("a-room", 50.0f, 0.0f, true);
+  two_manifolds.set_room_geometry("b-room", 50.0f, 0.0f, true);
+  two_manifolds.update_zone_live("a-room", 20.0f, true, 21.0f, true, "heat", true, 1000);
+  two_manifolds.update_zone_live("b-room", 20.0f, true, 21.0f, true, "stale", false, 1000);
+  strategy = two_manifolds.strategy_snapshot();
+  expect(!strategy.manifolds_healthy && !strategy.has_physical_temperature,
+         "strategy: two-manifold installation rejects a single-manifold average");
+  two_manifolds.set_minimum_area_coverage(0.5f);
+  two_manifolds.set_allow_degraded_manifolds(true);
+  strategy = two_manifolds.strategy_snapshot();
+  expect(strategy.manifolds_healthy && strategy.has_physical_temperature,
+         "strategy: explicit degraded-manifold mode permits configured single-manifold coverage");
+  model.update_zone_live("bath", 22.0f, true, 21.0f, true, "stale", false, 2000);
+  model.update_zone_live("living", 20.0f, true, 21.0f, true, "stale", false, 2000);
+  strategy = model.strategy_snapshot();
+  expect(!strategy.has_physical_temperature && strategy.contributing_rooms == 0,
+         "strategy: no valid rooms has no physical temperature");
 }
 
 static void test_zone_forecast_profile() {
@@ -550,6 +704,8 @@ static void test_command_ledger() {
   std::strncpy(forecast.source, "forecast", sizeof(forecast.source) - 1);
   forecast.node_index = 1;
   forecast.zone_index = 3;
+  std::strncpy(forecast.node_id, "v6-b", sizeof(forecast.node_id) - 1);
+  std::strncpy(forecast.loop_id, "loop-v6-b-04", sizeof(forecast.loop_id) - 1);
   forecast.requested_offset_c = 0.5f;
   forecast.accepted_offset_c = 0.5f;
   forecast.result = CommandResult::ACCEPTED;
@@ -557,13 +713,15 @@ static void test_command_ledger() {
   const CommandRecord *active_latest = ledger.latest_active(110000);
   expect(active_latest != nullptr && std::strcmp(active_latest->request_id, "cmd-4") == 0,
          "ledger: latest active command skips inactive failures");
-  expect(ledger.has_recent_similar("forecast", 1, 3, 0.52f, 110000, 1800000, 0.05f),
+  expect(ledger.has_recent_similar("forecast", "v6-b", "loop-v6-b-04", 0.52f, 110000, 1800000, 0.05f),
          "ledger: detects recent similar forecast command");
-  expect(!ledger.has_recent_similar("forecast", 1, 3, 0.7f, 110000, 1800000, 0.05f),
+  expect(!ledger.has_recent_similar("forecast", "v6-c", "loop-v6-c-04", 0.52f, 110000, 1800000, 0.05f),
+         "ledger: reordered index cannot suppress a different physical loop");
+  expect(!ledger.has_recent_similar("forecast", "v6-b", "loop-v6-b-04", 0.7f, 110000, 1800000, 0.05f),
          "ledger: allows materially different forecast offset");
-  expect(!ledger.has_recent_similar("dashboard", 1, 3, 0.52f, 110000, 1800000, 0.05f),
+  expect(!ledger.has_recent_similar("dashboard", "v6-b", "loop-v6-b-04", 0.52f, 110000, 1800000, 0.05f),
          "ledger: source separates forecast from dashboard");
-  expect(!ledger.has_recent_similar("forecast", 1, 3, 0.52f, 2000000, 1800000, 0.05f),
+  expect(!ledger.has_recent_similar("forecast", "v6-b", "loop-v6-b-04", 0.52f, 2000000, 1800000, 0.05f),
          "ledger: old similar command no longer blocks");
 
   float active_offset = 0.0f;
@@ -602,6 +760,43 @@ static void test_command_ledger() {
              resolved.command_offset_c == 0.0f &&
              std::strcmp(resolved.command_source, "none") == 0,
          "resolver: expired offsets resolve to none");
+  expect(room_command_outcome(2, 2) == RoomCommandOutcome::ACCEPTED &&
+             std::strcmp(room_command_outcome_name(room_command_outcome(2, 2)), "accepted") == 0,
+         "room command: every required loop must accept for room success");
+  expect(room_command_outcome(1, 2) == RoomCommandOutcome::PARTIAL &&
+             room_command_outcome(0, 2) == RoomCommandOutcome::FAILED,
+         "room command: one-node failure is deterministic partial application");
+
+  TargetResolverInput target_input{};
+  target_input.fallback_base_target_c = 18.0f;
+  target_input.touch_target_c = 21.0f;
+  target_input.touch_available = true;
+  target_input.command = resolved;
+  target_input.command.has_manual_offset = true;
+  target_input.command.manual_offset_c = 1.0f;
+  target_input.command.has_forecast_offset = true;
+  target_input.command.forecast_offset_c = 0.6f;
+  target_input.learned_modifier_c = 0.3f;
+  target_input.learned_confident = true;
+  TargetResolution target = HouseModel::resolve_target(target_input);
+  expect(target.manual_modifier_c == 1.0f && target.distribution_modifier_c == 0.0f &&
+             target.learned_modifier_c == 0.3f && target.dispatch_target_c > 22.29f &&
+             target.dispatch_target_c < 22.31f,
+         "resolver: manual wins without stacking forecast and learned remains bounded");
+  target_input.touch_available = false;
+  target_input.command = {};
+  target_input.learned_modifier_c = 0.0f;
+  target = HouseModel::resolve_target(target_input);
+  expect(std::strcmp(target.base_source, "fallback") == 0 && target.dispatch_target_c == 18.0f,
+         "resolver: stale Touch uses persistent fallback base");
+  target_input.touch_available = true;
+  target_input.touch_target_c = 24.0f;
+  target_input.dispatch_max_c = 25.0f;
+  target_input.command.has_manual_offset = true;
+  target_input.command.manual_offset_c = 10.0f;
+  target = HouseModel::resolve_target(target_input);
+  expect(target.pre_v6_target_c >= 33.9f && target.dispatch_target_c == 25.0f,
+         "resolver: dispatch envelope clamps before V6 safety clamp");
 
   CommandRecord blocked = command("cmd-blocked", 5000000, 1000);
   blocked.result = CommandResult::BLOCKED_UNTRUSTED;
@@ -625,6 +820,7 @@ static void test_ledger_ring_capacity() {
 
 static void test_ledger_persisted_state_roundtrip() {
   CommandLedger ledger;
+  ledger.set_boot_id(0x101U);
   CommandRecord first = command("cmd-a", 1000, 5000);
   first.result = CommandResult::ACCEPTED;
   ledger.append(first);
@@ -634,9 +830,10 @@ static void test_ledger_persisted_state_roundtrip() {
   expect(ledger.export_state(&state), "ledger persist: export succeeds");
   expect(state.magic == PERSISTED_LEDGER_MAGIC && state.version == PERSISTED_LEDGER_VERSION,
          "ledger persist: magic and version set");
+  expect(state.boot_id == 0x101U, "ledger persist: current boot id set");
 
   CommandLedger restored;
-  expect(restored.import_state(state), "ledger persist: import succeeds");
+  expect(restored.import_state(state, 0x101U), "ledger persist: same-boot import succeeds");
   expect(restored.count() == 2, "ledger persist: count restored");
   expect(restored.count_result(CommandResult::ACCEPTED) == 1, "ledger persist: result restored");
   const CommandRecord *latest = restored.latest();
@@ -644,7 +841,80 @@ static void test_ledger_persisted_state_roundtrip() {
          "ledger persist: latest restored");
 
   state.version = 99;
-  expect(!restored.import_state(state), "ledger persist: reject invalid version");
+  expect(!restored.import_state(state, 0x101U), "ledger persist: reject invalid version");
+}
+
+static void test_ledger_reboot_safe_expiry() {
+  CommandLedger ledger;
+  ledger.set_boot_id(0xA11CEU);
+  CommandRecord active = command("cmd-active", 1000, 60000);
+  active.result = CommandResult::ACCEPTED;
+  active.created_at_epoch_s = 1735689600;
+  active.expires_at_epoch_s = 1735689660;
+  ledger.append(active);
+  expect(ledger.latest_active(2000) != nullptr, "ledger expiry: command active within one boot");
+
+  PersistedLedger state{};
+  expect(ledger.export_state(&state), "ledger expiry: export before reboot succeeds");
+  CommandLedger rebooted;
+  expect(rebooted.import_state(state, 0xB007U, 1735689610),
+         "ledger expiry: reboot imports historical records");
+  expect(rebooted.count_result(CommandResult::EXPIRED) == 1 && rebooted.latest_active(2000) == nullptr,
+         "ledger expiry: reboot before deadline expires prior-boot command");
+
+  CommandLedger invalid_clock_reboot;
+  expect(invalid_clock_reboot.import_state(state, 0xC10CU, 0),
+         "ledger expiry: invalid-clock reboot imports historical records");
+  expect(invalid_clock_reboot.latest_active(1) == nullptr,
+         "ledger expiry: invalid-clock reboot still expires prior-boot command");
+
+  CommandLedger wrapping;
+  wrapping.set_boot_id(0xD00DU);
+  wrapping.append(command("cmd-wrap", UINT32_MAX - 100U, 200U));
+  expect(wrapping.expire_pending(50U) == 0, "ledger expiry: millisecond wrap does not expire early");
+  expect(wrapping.expire_pending(100U) == 1, "ledger expiry: millisecond wrap expires at deadline");
+
+  state.version = 1;
+  expect(!rebooted.import_state(state, 0xB007U),
+         "ledger expiry: old persisted ledger version is safely invalidated");
+}
+
+static void test_command_stable_target_identity() {
+  CommandLedger ledger;
+  ledger.set_boot_id(0x515U);
+  CommandRecord record = command("cmd-stable", 1000, 60000);
+  std::strncpy(record.room_id, "room-living", sizeof(record.room_id) - 1);
+  std::strncpy(record.node_id, "v6-a", sizeof(record.node_id) - 1);
+  std::strncpy(record.loop_id, "loop-v6-a-03", sizeof(record.loop_id) - 1);
+  record.node_index = 0;
+  record.zone_index = 2;
+  ledger.append(record);
+
+  HouseModel model;
+  model.upsert_node("v6-a", "a", "", "v6", "test", NodeTrust::TRUSTED);
+  model.upsert_node("v6-b", "b", "", "v6", "test", NodeTrust::TRUSTED);
+  model.bind_zone("room-living", "Living", 0, 2);
+  expect(model.remove_node("v6-a"), "command identity: remove first node");
+  const CommandRecord *stored = ledger.latest();
+  expect(stored != nullptr && std::strcmp(stored->node_id, "v6-a") == 0 &&
+             std::strcmp(stored->loop_id, "loop-v6-a-03") == 0,
+         "command identity: remove does not retarget history");
+  expect(model.bind_zone("room-living", "Living", 0, 1), "command identity: rebind room");
+  const ResolvedZone rebound = model.resolve_room("room-living");
+  expect(rebound.binding != nullptr && std::strcmp(rebound.binding->loop_id, "loop-v6-b-02") == 0,
+         "command identity: rebind assigns the new physical loop identity");
+  expect(std::strcmp(stored->room_id, "room-living") == 0 && stored->zone_index == 2,
+         "command identity: rebind does not rewrite target");
+  expect(model.remove_node("v6-b"), "command identity: remove original loop host");
+  expect(std::strcmp(stored->loop_id, "loop-v6-a-03") == 0,
+         "command identity: removed loop remains historical target");
+
+  PersistedLedger state{};
+  ledger.export_state(&state);
+  state.version = 2;
+  CommandLedger incompatible;
+  expect(!incompatible.import_state(state, 0x515U),
+         "command identity: index-targeted ledger v2 is safely invalidated");
 }
 
 int main() {
@@ -654,6 +924,7 @@ int main() {
   test_zone_registry();
   test_zone_name_sources();
   test_remove_node_remaps_zones();
+  test_logical_room_multiple_loops();
   test_persisted_state_roundtrip();
   test_zone_live_state();
   test_effective_comfort_resolver();
@@ -662,6 +933,8 @@ int main() {
   test_command_ledger();
   test_ledger_ring_capacity();
   test_ledger_persisted_state_roundtrip();
+  test_ledger_reboot_safe_expiry();
+  test_command_stable_target_identity();
 
   if (g_failures > 0) {
     std::printf("%d test(s) FAILED.\n", g_failures);

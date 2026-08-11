@@ -15,6 +15,7 @@
 #include "../hv6_valve_controller/hv6_valve_controller.h"
 #include "control_algorithms.h"
 #include "adaptive_balance.h"
+#include "hydraulic_policy.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/semphr.h"
@@ -155,10 +156,10 @@ class Hv6ZoneController : public esphome::Component {
   /// keeps the legacy dynamic_balancing_enabled flag consistent with the mode.
   void set_balance_mode(BalanceMode mode);
   BalanceMode get_balance_mode() const;
-  void set_modulating_heat_source(bool enabled);
-  bool has_modulating_heat_source() const;
-  void set_minimum_flow_pct(float pct);
-  float get_minimum_flow_pct() const;
+  void set_secondary_flow_commissioning(bool enabled);
+  bool secondary_flow_commissioning_enabled() const;
+  void set_secondary_min_total_opening_pct(float pct);
+  float get_secondary_min_total_opening_pct() const;
   void set_flow_increase_threshold(float pct);
   float get_flow_increase_threshold() const;
   void set_flow_decrease_threshold(float pct);
@@ -174,6 +175,8 @@ class Hv6ZoneController : public esphome::Component {
   void set_simple_preheat_enabled(bool enabled);
   bool is_simple_preheat_enabled() const;
   bool is_preheat_absorbing() const { return preheat_absorb_active_.load(); }
+  void set_touch_authority_active(bool active) { touch_authority_active_.store(active, std::memory_order_release); }
+  bool is_touch_authority_active() const { return touch_authority_active_.load(std::memory_order_acquire); }
   float get_zone_preheat_advance(uint8_t zone) const;
 
   bool is_connected() const { return true; }  // WiFi managed by ESPHome
@@ -183,7 +186,10 @@ class Hv6ZoneController : public esphome::Component {
  protected:
   static constexpr uint32_t STACK_SIZE = 8192;
   static constexpr UBaseType_t PRIORITY = 6;
-  static constexpr BaseType_t CORE = 0;
+  // Core 0 hosts ESPHome's main loop and the ESP-IDF WiFi/lwIP work.  Keep the
+  // long-running control cycle on Core 1 so a sensor/display or I2C stall
+  // cannot starve the main task and trip the CPU0 interrupt watchdog.
+  static constexpr BaseType_t CORE = 1;
   static constexpr uint8_t ADJ_QUEUE_LEN = 12;
 
   static constexpr uint32_t TEMP_FAILSAFE_MS = 60 * 60 * 1000;
@@ -235,6 +241,8 @@ class Hv6ZoneController : public esphome::Component {
 
   // Preheat absorption (external pre-buffering; runtime only)
   std::atomic<bool> preheat_absorb_active_{false};
+  // Runtime lease state only; no authority survives reboot.
+  std::atomic<bool> touch_authority_active_{false};
   uint8_t preheat_absorb_detect_cycles_ = 0;
 
   // Simple response-based preheat (runtime only; not persisted)
@@ -296,7 +304,6 @@ class Hv6ZoneController : public esphome::Component {
   void recalculate_balance_factors_();
   void recalculate_dynamic_balance_factors_();
   float apply_hydraulic_balance_(uint8_t zone, float raw_position);
-  void apply_minimum_flow_(std::array<float, NUM_ZONES> &positions);
   void enforce_minimum_total_opening_(std::array<float, NUM_ZONES> &positions);
   void calculate_hydraulic_outputs_();
 

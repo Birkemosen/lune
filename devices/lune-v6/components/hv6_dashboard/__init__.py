@@ -1,8 +1,10 @@
 import esphome.codegen as cg
 import esphome.config_validation as cv
+from esphome.components.esp32 import add_extra_script
 from esphome.components import web_server_base, sensor, text_sensor
 from esphome.const import CONF_ID
 import gzip
+from pathlib import Path
 from esphome.core import CORE
 
 DEPENDENCIES = ["web_server_base", "network", "logger"]
@@ -30,7 +32,6 @@ CONF_MOTOR_CLOSE_FACTOR_IDS = "motor_close_factor_ids"
 CONF_PROBE_TEMP_IDS = "probe_temp_ids"
 CONF_ZONE_STATE_IDS = "zone_state_ids"
 CONF_MOTOR_FAULT_IDS = "motor_fault_ids"
-CONF_ASGARD_BRIDGE_ID = "asgard_bridge_id"
 
 hv6_dashboard_ns = cg.esphome_ns.namespace("hv6_dashboard")
 hv6_ns = cg.esphome_ns.namespace("hv6")
@@ -38,7 +39,6 @@ HV6Dashboard = hv6_dashboard_ns.class_("HV6Dashboard", cg.Component)
 Hv6ZoneController = hv6_ns.class_("Hv6ZoneController", cg.Component)
 Hv6ValveController = hv6_ns.class_("Hv6ValveController", cg.Component)
 Hv6ConfigStore = hv6_ns.class_("Hv6ConfigStore", cg.Component)
-Hv6AsgardBridge = cg.esphome_ns.namespace("hv6_asgard_bridge").class_("Hv6AsgardBridge", cg.Component)
 
 CONFIG_SCHEMA = cv.Schema(
     {
@@ -85,7 +85,6 @@ CONFIG_SCHEMA = cv.Schema(
             cv.ensure_list(cv.use_id(text_sensor.TextSensor)), cv.Length(max=6)
         ),
         cv.Optional(CONF_DASHBOARD_JS): cv.file_,
-        cv.Optional(CONF_ASGARD_BRIDGE_ID): cv.use_id(Hv6AsgardBridge),
     }
 ).extend(cv.COMPONENT_SCHEMA)
 
@@ -103,6 +102,15 @@ def _embed_gzip_as_progmem(symbol: str, file_path: str) -> None:
     ))
 
 async def to_code(config):
+    # ESP-IDF's default HTTP server task is too small for the dashboard's
+    # response path (notably /api/hv6/v1/revision). Keep this fix coupled to
+    # the dashboard component so every generated build gets the same safety
+    # margin without a fragile path in platformio_options.
+    add_extra_script(
+        "pre",
+        "hv6_patch_httpd_stack.py",
+        Path(__file__).parent / "hv6_patch_httpd_stack.py",
+    )
     var = cg.new_Pvariable(config[CONF_ID])
     await cg.register_component(var, config)
 
@@ -197,11 +205,6 @@ async def to_code(config):
         for i, ts_id in enumerate(config[CONF_MOTOR_FAULT_IDS]):
             ts = await cg.get_variable(ts_id)
             cg.add(var.set_motor_fault_sensor(i, ts))
-
-    if CONF_ASGARD_BRIDGE_ID in config:
-        asgard = await cg.get_variable(config[CONF_ASGARD_BRIDGE_ID])
-        cg.add(var.set_asgard_bridge(asgard))
-        cg.add_define("USE_HV6_ASGARD_BRIDGE")
 
     if CONF_DASHBOARD_JS in config:
         path = CORE.relative_config_path(config[CONF_DASHBOARD_JS])

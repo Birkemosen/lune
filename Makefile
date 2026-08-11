@@ -8,7 +8,7 @@ LUNE_TOUCH_DIR ?= devices/lune-touch
         config build build-verify deploy ota logs discover monitor erase erase-nvs clean \
         dashboard dashboard-tooling dashboard-build dashboard-watch \
         help-v6 config-v6 build-v6 build-verify-v6 deploy-v6 ota-v6 logs-v6 discover-v6 monitor-v6 erase-v6 erase-nvs-v6 clean-v6 dashboard-v6 dashboard-tooling-v6 dashboard-build-v6 dashboard-watch-v6 test-v6 \
-        help-touch config-touch build-touch build-verify-touch deploy-touch ota-touch monitor-touch dashboard-touch dashboard-tooling-touch dashboard-build-touch dashboard-watch-touch test-touch test-forecast test-coordinator \
+        help-touch config-touch build-touch build-verify-touch deploy-touch ota-touch install-registry-partition-touch monitor-touch dashboard-touch dashboard-tooling-touch dashboard-build-touch dashboard-watch-touch test-touch test-forecast test-coordinator \
         config-mini build-mini build-verify-mini deploy-mini ota-mini monitor-mini dashboard-build-mini \
         test test-ripple test-balance
 
@@ -38,6 +38,7 @@ help:
 	@echo "  make build-touch         Build Touch firmware"
 	@echo "  make deploy-touch        Build + upload Touch (USB or HOST OTA)"
 	@echo "  make ota-touch HOST=192.168.x.x"
+	@echo "  make install-registry-partition-touch PORT=/dev/cu.usbmodemXXXX"
 	@echo "  make monitor-touch       Open Touch serial monitor"
 	@echo "  make dashboard-build-touch"
 	@echo "  make test-touch          Run Touch host tests"
@@ -83,7 +84,7 @@ test-v6:
 help-touch:
 	$(MAKE) -C $(LUNE_TOUCH_DIR) help
 
-config-touch build-touch build-verify-touch deploy-touch ota-touch monitor-touch dashboard-touch dashboard-tooling-touch dashboard-build-touch dashboard-watch-touch:
+config-touch build-touch build-verify-touch deploy-touch ota-touch install-registry-partition-touch monitor-touch dashboard-touch dashboard-tooling-touch dashboard-build-touch dashboard-watch-touch:
 	$(MAKE) -C $(LUNE_TOUCH_DIR) $(patsubst %-touch,%,$@)
 
 test-touch:
