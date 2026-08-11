@@ -1,0 +1,420 @@
+{
+  "hardware_revision": "lune-v6-rev3.2",
+  "eco": "rev3.2-B",
+  "eco_summary": "Commutation-tacho correction (hysteresis to the comparator non-inverting input, band-pass matched to the measured 20-40 Hz commutation, 8x gain), runtime cutoff referenced to armed time instead of decoder inhibit, C0G timing capacitor, unfiltered rail-overcurrent sense, protected 1-wire supply branch, native DNP attributes, and removal of the ADC clamp, USB series resistors and motor-rail electrolytic.",
+  "fabrication_status": "SCHEMATIC_ECO_PENDING_PCB_PLACEMENT_ROUTING_AND_PHYSICAL_VALIDATION",
+  "layers": 2,
+  "target_outline_mm": {
+    "width": 90,
+    "height": 75
+  },
+  "maximum_outline_mm": {
+    "width": 100,
+    "height": 100
+  },
+  "module": "ESP32-S3-WROOM-1-N8R8",
+  "flash_mb": 8,
+  "psram_mb": 8,
+  "motor_channels": 6,
+  "firmware": {
+    "rev32_entrypoint": "PENDING_REV3.2_BACKEND",
+    "rev31_reference_entrypoint": "devices/lune-v6/configurations/lune-v6-rev31.yaml",
+    "backend": "rev31_gpio",
+    "rev31_backend_compiles": true,
+    "rev32_backend_complete": false,
+    "flash_mode_verified": "8MB",
+    "psram_mode_verified": "octal",
+    "automatic_startup_calibration": false,
+    "physical_endpoint_validation_complete": false,
+    "commutation_counter_firmware_complete": false,
+    "adc_current_attenuation": "6dB",
+    "required_rev3.2_changes": [
+      "REMOVE_REV31_BEMF_COAST_SAMPLING_ADC_BEMF_IS_NOW_ADC_TACHO_ON_GPIO5",
+      "ADD_PCNT_OR_RMT_CAPTURE_ON_COMM_TACHO_N_GPIO15",
+      "LATCH_STATE_GPIO17_IS_ACTIVE_HIGH_FAULT_NOT_ACTIVE_LOW_NFAULT",
+      "ARM_THE_FAULT_LATCH_PER_MOVE_THE_HARDWARE_CUTOFF_BOUNDS_ARMED_TIME",
+      "BLANK_TACHO_EDGES_FOR_AT_LEAST_250_MS_AFTER_DRIVE_START"
+    ],
+    "rev31_entrypoint_is_unsafe_on_rev32_hardware": "GPIO5_WAS_A_NO_CONNECT_IN_REV3.2A_AND_IS_NOW_AN_AMPLIFIED_ANALOG_INPUT"
+  },
+  "populated_placement_projection": 111,
+  "populated_placement_schematic_count": 111,
+  "second_source_dnp_placements": 6,
+  "copper_only_pads": 14,
+  "mechanical_items": 4,
+  "open_sourcing_items": [
+    "C25"
+  ],
+  "current_sense_v_per_a": 10.0,
+  "mechanical_placement": {
+    "candidate": "PENDING_REV3.2_PCB",
+    "status": "REV3.1_PLACEMENT_DOES_NOT_COVER_REV3.2_ANALOG_ECO",
+    "mounting_holes": {
+      "type": "M3_NPTH_3.2MM",
+      "centres_mm": [
+        [
+          4,
+          4
+        ],
+        [
+          86,
+          4
+        ],
+        [
+          4,
+          71
+        ],
+        [
+          86,
+          71
+        ]
+      ],
+      "rectangular_spacing_mm": {
+        "width": 82,
+        "height": 67
+      },
+      "minimum_pair_spacing_mm": 67
+    },
+    "connector_projection_mm": {
+      "usb_c": 1.0,
+      "rj9": 1.0,
+      "one_wire": 1.75,
+      "allowed_min": 0.0,
+      "allowed_max": 2.0
+    },
+    "rj9_pitch_mm": 12.25,
+    "rj9_body_row_centered": true,
+    "tallest_passive_mm": 1.45,
+    "electrolytic_capacitors": 0
+  },
+  "pcb": {
+    "routing_candidate": "PENDING_REV3.2_PCB",
+    "routing_status": "REV3.1_ROUTING_DOES_NOT_COVER_REV3.2_ANALOG_ECO",
+    "footprints_total_including_dnp_and_mechanical": null,
+    "tracks": null,
+    "vias": null,
+    "minimum_track_width_mm": null,
+    "minimum_via_diameter_mm": null,
+    "minimum_via_drill_mm": null,
+    "front_ground_zone": null,
+    "bottom_ground_zone": null,
+    "ground_stitching_vias": null,
+    "drc_violations": null,
+    "unconnected_items": null,
+    "layout_integrity": null,
+    "physical_validation_complete": false
+  },
+  "driver": {
+    "primary_part": "DRV8411PWPR",
+    "primary_lcsc_part": "C18212622",
+    "second_source_part": "DRV8833PWPR",
+    "second_source_lcsc_part": "C50506",
+    "population": "DRV8411_ONLY",
+    "population_rationale": "DRV8411 specifies xISEN V_TRIP as 180/200/230 mV and is characterized from VM=1.65 V. The DRV8833 electrical-characteristics table specifies no xISEN trip limits and its datasheet states RDS(on) increases and output current is reduced below VM=5 V, so on a 3.2 V motor rail it is both slower and unspecified in the current-ceiling role. Six 0603 DNP pads keep it available as a drop-in shortage substitute only.",
+    "primary_unit_price_usd": 1.18,
+    "primary_stock_units": 726,
+    "second_source_unit_price_usd": 2.37,
+    "second_source_stock_units": 256,
+    "driver_cost_per_board_usd": 3.54,
+    "second_source_cost_penalty_per_board_usd": 3.57,
+    "stock_headroom_boards": 242,
+    "selection_constraint": "VM must be specified at the ~3.18 V seen at the driver pin (3.3 V rail less the 0.116 V shunt drop). That alone excludes most of the H-bridge market, which starts at 5 V or 8 V. Adding shunt-programmable current regulation with a specified trip voltage, an open-drain nFAULT and internal input pulldowns narrows the field to one family.",
+    "alternatives_evaluated": {
+      "DRV8410": "Functional drop-in: same PWP pinout including NC pins 11/14, same VM 1.65-11 V, same xISEN V_TRIP 180/200/230 mV, same nFAULT, nSLEEP 500k and 100k input pulldowns, same t_OFF/t_BLANK/t_DEG. Only RDS(on) differs (800 vs 400 mOhm total), which costs 40 mV instead of 20 mV at 50 mA - immaterial on this rail. Not stocked at LCSC and priced above DRV8411 elsewhere, so it is not a cost-down. It is the best functional second source if it ever appears at LCSC.",
+      "DRV8411A": "Same physical pin positions but pins 3/6 are IPROPI current-mirror outputs, not xISEN shunt returns, and TI lists no direct pin-to-pin replacement for it. A 1 ohm resistor there would set a mirror scale, not a trip point, so the shunt-programmable ceiling disappears. Not a drop-in for this topology.",
+      "DRV8833_DRV8833C": "The only LCSC-stocked fallback, which is why the six DNP pads are retained. Worse on all four axes: 2.0x the unit price, 0.35x the stock, six extra capacitors, and no specified xISEN trip limits with RDS(on) explicitly derated below VM=5 V.",
+      "DRV8841_DRV8842_DRV8844": "Cheaper at LCSC (0.54-0.62 USD) but VM floors of 8.0-8.2 V. Cannot run on a 3.3 V motor rail at all.",
+      "DRV8835_DRV8836": "VM from 0 V and 220 mOhm on-resistance, but no current regulation and no fault output. Trades two nested protection layers for well under 1 USD per board.",
+      "TC78H660FNG": "Toshiba dual bridge, VM 2.5-16 V, 0.48 ohm, TSSOP16, with an error-flag output. Uses sense-resistor-less internal current detection, so the ceiling is a fixed ~2 A overcurrent protection with no programmable trip and no specified threshold - it removes the 1.5 ohm retune path and the specified-ceiling argument. VM floor is also 2.5 V against DRV8411's 1.65 V."
+    },
+    "selection_conclusion": "DRV8411 retained. It is simultaneously the cheapest, best-stocked and most capable part that meets the constraint set, so the original cost-down framing was inverted. Driver cost is 3.54 USD of a roughly 43 USD per-board budget, so chasing a cheaper bridge is not where prototype cost lives.",
+    "drv8411_populated_placements": 111,
+    "drv8833_populated_placements": 117,
+    "drv8833_required_capacitors": {
+      "vint": "3x 2.2uF 6.3V X5R to GND",
+      "vcp": "3x 10nF 50V X7R to VM"
+    },
+    "devices": 3,
+    "bridges_per_device": 2,
+    "bridge_current_limit_ohm": 1.0,
+    "bridge_current_limit_role": "BOARD_PROTECTION_BACKSTOP_NOT_A_TORQUE_CEILING",
+    "sense_resistor_tolerance_percent": 1.0,
+    "sense_resistor_is_production_tuning_parameter": true,
+    "trip_voltage_min_mv": 180,
+    "trip_voltage_nominal_mv": 200,
+    "trip_voltage_max_mv": 230,
+    "current_limit_min_ma": 178.2,
+    "current_limit_nominal_ma": 200.0,
+    "current_limit_max_ma": 232.3,
+    "measured_actuator_running_ma": [
+      14,
+      19
+    ],
+    "measured_actuator_stall_ma": [
+      23,
+      50
+    ],
+    "firmware_hard_cap_ma": 100,
+    "production_retune_option_ohm": 1.5,
+    "production_retune_window_ma": [
+      118.8,
+      154.9
+    ]
+  },
+  "decoder": {
+    "part": "XL74HC4514D",
+    "lcsc_part": "C50202050",
+    "active_high_outputs": true,
+    "active_high_inhibit": true,
+    "latch_enable_tied_high": false,
+    "latch_enable_net": "DECODER_INHIBIT",
+    "address_locked_while_driving": true,
+    "connected_forward_outputs": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5
+    ],
+    "connected_reverse_outputs": [
+      8,
+      9,
+      10,
+      11,
+      12,
+      13
+    ]
+  },
+  "rail_overcurrent": {
+    "shunt_ohm": 0.5,
+    "shunt_tolerance_percent": 1.0,
+    "amplifier": "INA180A1IDBVR",
+    "amplifier_gain": 20,
+    "sense_node": "CURRENT_RAW",
+    "sense_node_rationale": "An output-to-GND short bypasses the xISEN resistor entirely and the DRV8411 OCP is 4 A, so this comparator is the only fast protection for that fault. Sensing the unfiltered amplifier output removes the 100 us delay the 1k/100n ADC filter was adding.",
+    "threshold_volts": 2.8,
+    "nominal_trip_ma": 280,
+    "estimated_worst_case_trip_min_ma": 267,
+    "estimated_worst_case_trip_max_ma": 293,
+    "comparator": "LMV393IDR",
+    "comparator_supply": "VBUS_PROTECTED",
+    "comparator_output_type": "OPEN_COLLECTOR",
+    "adc_series_ohm": 1000,
+    "adc_filter_capacitance_nf": 100,
+    "adc_clamp": "REMOVED_INA180_RAIL_BOUNDS_THE_NODE"
+  },
+  "removed_bemf_frontend": {
+    "reason": "POSITION_AND_ROTATION_EVIDENCE_MOVE_TO_CONTINUOUS_COMMUTATION_TACHO",
+    "removed_mounted_parts": 10,
+    "removed_gpio": 1,
+    "removed_gpio_name": "ADC_BEMF",
+    "safety_statement": "HARDWARE_OVERCURRENT_LATCH_TIMEOUT_AND_ONE_HOT_INHIBIT_REMAIN"
+  },
+  "commutation_tacho": {
+    "purpose": "CONTINUOUS_POSITION_LEARNING_AND_ROTATION_STALL_EVIDENCE",
+    "source": "INA180_CURRENT_RAW_AC_RIPPLE_BEFORE_ADC_LOW_PASS",
+    "selected_motor_attribution": "HARDWARE_ONE_HOT_DECODER",
+    "topology": "AC_COUPLED_NONINVERTING_BAND_PASS_THEN_LMV393_SCHMITT",
+    "amplifier": "TLV9001IDBVR",
+    "comparator": "SPARE_CHANNEL_OF_U34_LMV393IDR_POWERED_FROM_VBUS_PROTECTED",
+    "reference": "1k/1k MID-RAIL BYPASSED BY 22uF, SHARED BY THE BIAS, GAIN RETURN AND THRESHOLD",
+    "added_mounted_parts": 14,
+    "reused_functions": [
+      "EXISTING_INA180_CURRENT_SENSE",
+      "SPARE_U34_LMV393_CHANNEL"
+    ],
+    "measured_actuator_commutation_counts": {
+      "close": 659,
+      "open": 1048
+    },
+    "commutation_band_hz": [
+      20,
+      40
+    ],
+    "expected_ripple_ma": [
+      0.7,
+      3.0
+    ],
+    "input_coupling_f": 1e-06,
+    "input_bias_ohm": 100000,
+    "high_pass_hz": 1.5915,
+    "feedback_ohm": 100000,
+    "gain_return_ohm": 1000,
+    "asymptotic_gain": 101,
+    "in_band_gain": [
+      84,
+      90
+    ],
+    "feedback_f": 4.7e-09,
+    "low_pass_hz": 338.6,
+    "chop_frequency_hz": 50000,
+    "chop_rejection_db": -43,
+    "hysteresis_series_ohm": 4700,
+    "hysteresis_feedback_ohm": 100000,
+    "hysteresis_mv": 148.1,
+    "hysteresis_referred_to_ripple_ma": 0.17,
+    "hysteresis_input": "COMPARATOR_NONINVERTING_PIN_5",
+    "required_blanking_ms": 250,
+    "output": "COMM_TACHO_N",
+    "output_type": "OPEN_COLLECTOR_PULLUP_TO_3V3_LOGIC",
+    "gpio": 15,
+    "analog_monitor_net": "TACHO_AMP",
+    "analog_monitor_gpio": 5,
+    "analog_monitor_series_ohm": 1000,
+    "analog_monitor_purpose": "QUALIFICATION_WAVEFORM_CAPTURE_AND_DIGITAL_CROSS_CHECK_ON_COMM_TACHO_N",
+    "test_points": [
+      "TP5",
+      "TP6",
+      "TP7"
+    ],
+    "qualification_required": [
+      "commutation_spectrum_and_amplitude_per_supported_actuator",
+      "in_band_gain_and_hysteresis_confirmation_against_measured_ripple",
+      "minimum_and_maximum_pulse_width_rejection",
+      "full_stroke_count_repeatability",
+      "false_edge_immunity_during_current_regulation_chop_and_cable_transients",
+      "missed_and_false_edge_rate_of_COMM_TACHO_N_versus_ADC_TACHO"
+    ]
+  },
+  "hardware_runtime_cutoff": {
+    "part": "74HC4060D,653",
+    "lcsc_part": "C5649",
+    "normal_firmware_limit_hmip_s": 40,
+    "normal_firmware_limit_generic_s": 45,
+    "reset_net": "LATCH_STATE",
+    "reset_semantics": "BOUNDS_TOTAL_ARMED_TIME",
+    "reset_rationale": "DECODER_INHIBIT is the only signal firmware can chop for duty-cycle control, and any brief coast reset the counter. Referencing the latch /Q makes the cutoff immune to both and turns it into a watchdog on the whole armed window. Firmware must arm per move; an idle armed latch self-disarms.",
+    "target_nominal_cutoff_s": 71.4,
+    "alternate_formula_cutoff_s": 81.1,
+    "required_characterized_minimum_s": 50,
+    "required_characterized_maximum_s": 90,
+    "oscillator_rt_ohm": 180000,
+    "oscillator_r2_ohm": 360000,
+    "oscillator_ct_f": 2.2e-08,
+    "oscillator_ct_dielectric": "C0G_NP0_MANDATORY",
+    "oscillator_ct_tolerance_percent": 5,
+    "oscillator_rt_tolerance_percent": 1,
+    "oscillator_device_spread_percent": 15,
+    "oscillator_tolerance_stack_percent": 21,
+    "oscillator_tolerance_note": "Formula factor and initial RC tolerance are trimmable with Rt after the first measurement; part-to-part and over-temperature spread is not. A 10uF class-2 Ct stacks to roughly +/-56% and cannot be trimmed into the 50-90 s window at all.",
+    "oscillator_ct_rationale": "A 10uF class-2 part stacked tolerance, tempco, DC bias and aging to roughly -40%, putting the cutoff near 43 s - under both the 45 s firmware limit and the 50 s floor. Initial tolerance is trimmable with Rt; temperature coefficient is not.",
+    "oscillator_formula_factors_checked": [
+      2.2,
+      2.5
+    ],
+    "timeout_output_pin": 3,
+    "timeout_output_divider": 16384,
+    "timeout_first_high_cycles": 8192,
+    "persistent_fault_latched": true
+  },
+  "fault_latch": {
+    "part": "74LVC1G74DP,125",
+    "lcsc_part": "C458768",
+    "schmitt_trigger_inputs": true,
+    "drive_permit_output": "Q",
+    "latched_fault_output": "Q_BAR",
+    "raw_fault_async_reset_active_level": 0,
+    "arm_clock_clamped_while_motor_enable_high": true,
+    "arm_clock_edge_coupled": true,
+    "arm_series_ohm": 10000,
+    "arm_coupling_nf": 10,
+    "arm_clock_pulldown_ohm": 100000,
+    "power_on_state": "DISARMED",
+    "firmware_cannot_clear_a_fault": true,
+    "raw_fault_has_no_gpio": "LATCH_STATE_ONLY_DISTINGUISHES_ARMED_FROM_NOT_ARMED"
+  },
+  "usb_input": {
+    "part": "TPS2553DBVR-1",
+    "enable_polarity": "ACTIVE_HIGH",
+    "fault_response": "LATCH_OFF",
+    "latch_off_consequence": "AN_INPUT_FAULT_REMOVES_POWER_FROM_THE_ESP32_TOO_SO_THE_FAILURE_IS_SILENT_AND_NEEDS_A_PHYSICAL_REPLUG",
+    "ilim_ohm": 23700,
+    "current_limit_window_a": [
+      1.0,
+      1.172
+    ],
+    "downstream_capacitance_uf": 84,
+    "data_series_resistors": "REMOVED_ESP32S3_NATIVE_USB_DRIVES_D_LINES_DIRECTLY"
+  },
+  "display": {
+    "default_population": false,
+    "interface": "unpopulated I2C pads",
+    "signals": [
+      "GND",
+      "3V3_LOGIC",
+      "I2C_SCL",
+      "I2C_SDA"
+    ],
+    "populated_placement_delta": 0,
+    "on_board_bus_pullups": false
+  },
+  "one_wire": {
+    "connector": "J20",
+    "connector_signals": [
+      "+3V3_EXT",
+      "ONEWIRE_BUS",
+      "GND"
+    ],
+    "intended_measurements": [
+      "manifold_supply_temperature",
+      "manifold_return_temperature"
+    ],
+    "series_resistor_ohm": 33,
+    "pullup_ohm": 4700,
+    "esd_protection": "PESD3V3U1UA,115",
+    "supply_branch": "+3V3_EXT",
+    "supply_series_ohm": 33,
+    "supply_esd_protection": "PESD3V3U1UA,115",
+    "supply_drop_mv_at_two_probes": 100,
+    "supply_short_current_ma": 100,
+    "supply_protection_note": "At 0.33 W the 0603 series resistor is a one-shot fusible link; evaluate a resettable PTC for production.",
+    "sensor_addresses_must_be_bound": true,
+    "freshness_timeout_required": true,
+    "temperature_data_may_bypass_motor_safety": false
+  },
+  "gpio": {
+    "ADC_CURRENT": 4,
+    "ADC_TACHO": 5,
+    "I2C_SDA": 8,
+    "I2C_SCL": 9,
+    "MOTOR_ADDR0": 10,
+    "MOTOR_ADDR1": 11,
+    "MOTOR_ADDR2": 12,
+    "MOTOR_ENABLE": 13,
+    "MOTOR_TERM_DIR": 14,
+    "COMM_TACHO_N": 15,
+    "LATCH_ARM": 16,
+    "LATCH_STATE": 17,
+    "USB_DM": 19,
+    "USB_DP": 20,
+    "ONEWIRE_MCU": 42,
+    "UART_TX_DBG": 43,
+    "UART_RX_DBG": 44,
+    "STATUS_LED_N": 48
+  },
+  "forbidden_motor_control_gpio": [
+    0,
+    3,
+    19,
+    20,
+    45,
+    46
+  ],
+  "logic": {
+    "safe_motor_enable": 0,
+    "fault_latch_faulted_level": 1,
+    "decoder_inhibit_equation": "NOT (MOTOR_ENABLE AND DRIVE_PERMIT)",
+    "fault_net_active_level": 0,
+    "status_led_active_level": 0
+  },
+  "prototype_budget": {
+    "assembled_boards": 5,
+    "landed_eu_dkk_max": 1500.0,
+    "engineering_estimate_min_dkk": 1100.0,
+    "engineering_estimate_max_dkk": 1300.0,
+    "includes_freight": true,
+    "includes_vat_and_import_fees": true,
+    "live_jlcpcb_quote_required_before_release": true
+  }
+}

@@ -1,9 +1,15 @@
 # Lune V6 Rev 2.1 hardware review
 
-Review date: 2026-08-07. The reviewed source is the generated Rev 2.1
+Review date: 2026-08-07. The reviewed source was the generated Rev 2.1
 schematic, PCB generator, design review, and measurement model in
 `../heatvalve-6-rev2.1/`. This is an electrical design review; it is not a
 physical test report.
+
+> That folder has since been removed — Rev 2.1 was dispositioned "do not
+> fabricate" below and is two revisions superseded. This review is the surviving
+> record of it. To read the reviewed source again:
+> `git restore --source=refs/snapshots/pre-hardware-cleanup -- devices/lune-v6/hardware/heatvalve-6-rev2.1`
+> (it is also in branch history at commit `6214211`).
 
 ## Disposition
 

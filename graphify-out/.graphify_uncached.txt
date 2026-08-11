@@ -1,4 +1,0 @@
-/Users/birkemose/workspace/github.com/birkemosen/heatvalve-6/devices/lune-v6/hardware/lune-v6-rev3.1-lean/README.md
-/Users/birkemose/workspace/github.com/birkemosen/heatvalve-6/devices/lune-v6/hardware/lune-v6-rev3.1-lean/architecture.md
-/Users/birkemose/workspace/github.com/birkemosen/heatvalve-6/devices/lune-v6/hardware/lune-v6-rev3.1-lean/rev2-review-addendum.md
-/Users/birkemose/workspace/github.com/birkemosen/heatvalve-6/devices/lune-v6/hardware/lune-v6-rev3.1-lean/validation-plan.md
