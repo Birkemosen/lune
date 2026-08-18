@@ -3,9 +3,9 @@
 # -----------------------------------------------------------------------------
 CONFIG ?= configurations/lune-ble.yaml
 BUILD_NAME ?= lune-v6
-ROOT_DIR ?= ../..
+ROOT_DIR ?= ..
 ROOT_ABS := $(abspath $(ROOT_DIR))
-DEVICE_DIR ?= devices/lune-v6
+DEVICE_DIR ?= lune-v6
 CONFIG_PATH ?= $(ROOT_ABS)/$(DEVICE_DIR)/$(CONFIG)
 # Prefer the venv's Python modules over generated console launchers. Those
 # launchers embed an absolute interpreter path and can become stale after the
@@ -27,7 +27,7 @@ DASHBOARD_SRC_DIR ?= $(ROOT_ABS)/$(DEVICE_DIR)/web/dashboard-src
 DASHBOARD_OUT_FILE ?= $(ROOT_ABS)/$(DEVICE_DIR)/web/dashboard.js
 DASHBOARD_TOOL ?= $(ROOT_ABS)/.tools/esbuild
 SECRETS_LINK ?= configurations/secrets.yaml
-SECRETS_TARGET ?= ../../../secrets.yaml
+SECRETS_TARGET ?= ../../secrets.yaml
 LANG ?= en
 DASHBOARD_COMPILED_LANG := $(if $(filter en da,$(LANG)),$(LANG),en)
 

@@ -1,13 +1,12 @@
 # -----------------------------------------------------------------------------
 # Birkemosen product workspace
 # -----------------------------------------------------------------------------
-LUNE_V6_DIR ?= devices/lune-v6
+LUNE_V6_DIR ?= lune-v6
 
 .PHONY: help \
         config build build-verify deploy ota logs discover monitor erase erase-nvs clean \
         dashboard dashboard-tooling dashboard-build dashboard-watch \
 		help-v6 config-v6 build-v6 build-verify-v6 deploy-v6 ota-v6 logs-v6 discover-v6 monitor-v6 erase-v6 erase-nvs-v6 clean-v6 dashboard-v6 dashboard-tooling-v6 dashboard-build-v6 dashboard-watch-v6 test-v6 \
-        config-mini build-mini build-verify-mini deploy-mini ota-mini monitor-mini dashboard-build-mini \
         test test-ripple test-balance
 
 help:

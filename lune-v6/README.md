@@ -116,8 +116,8 @@ esphome config devices/lune-v6/configurations/lune-ble.yaml
 
 ## Documentation
 
-- [../../docs/lune_brand_architecture.md](../../docs/lune_brand_architecture.md)
-- [../../docs/lune_touch_build_plan.md](../../docs/lune_touch_build_plan.md)
+- [../docs/lune_brand_architecture.md](../docs/lune_brand_architecture.md)
+- [../docs/lune_touch_build_plan.md](../docs/lune_touch_build_plan.md)
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 - [docs/esp32-s3_ufh_pcb_solution.md](docs/esp32-s3_ufh_pcb_solution.md)
 
