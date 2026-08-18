@@ -26,7 +26,7 @@ Lune covers hydronic heating, indoor comfort, sensing, and whole-house heat coor
 | Lune Flow | Future flow / return / supply monitoring module |
 
 The former public product name **HeatValve-6** is replaced by **Lune V6**. The repository,
-firmware namespaces, build names, and API paths may keep `heatvalve-6` / `hv6` temporarily
+firmware namespaces, build names, and API paths may keep `lune` / `hv6` temporarily
 to avoid risky churn. New user-facing text, docs, dashboard labels, and product decisions
 should use Lune V6.
 

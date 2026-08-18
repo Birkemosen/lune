@@ -12,7 +12,7 @@ most of the pin map — but **it must not be flashed onto Rev 3.2 hardware**:
   as the fault latch's `/Q`: **high means faulted or not armed**;
 - nothing in it references `GPIO15`, `COMM_TACHO_N`, PCNT or RMT.
 
-The legacy `heatvalve-6-ble.yaml` entrypoint keeps the `drv8215_i2c` backend.
+The legacy `lune-ble.yaml` entrypoint keeps the `drv8215_i2c` backend.
 
 Build the reference configuration from `devices/lune-v6` with:
 

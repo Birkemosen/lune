@@ -7,14 +7,14 @@ components run as FreeRTOS tasks alongside the ESPHome main loop and separate ha
 control (motor FSM, endstop detection) from heating logic (zone state machine, control
 algorithms, hydraulic balance).
 
-The current repository and code still use the historical `heatvalve-6` and `hv6` names.
+The current repository and code still use the historical `lune` and `hv6` names.
 Treat those as internal implementation names until a deliberate migration is planned.
 Public product references should use Lune V6.
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
 │                     Config Composition                       │
-│  configurations/heatvalve-6-ble.yaml → heatvalve-6.yaml      │
+│  configurations/lune-ble.yaml → lune.yaml      │
 │  (substitutions + packages: board / hardware / network /     │
 │   zones)                                                     │
 └────────────────────────────┬─────────────────────────────────┘
@@ -40,10 +40,10 @@ Public product references should use Lune V6.
 ## Repository Structure
 
 ```
-heatvalve-6/
-├── heatvalve-6.yaml          Shared base config (substitutions + packages)
+lune/
+├── lune.yaml          Shared base config (substitutions + packages)
 ├── configurations/
-│   └── heatvalve-6-ble.yaml  Active build entrypoint (adds BLE package)
+│   └── lune-ble.yaml  Active build entrypoint (adds BLE package)
 ├── packages/
 │   ├── board/                ESP32-S3 board definition
 │   ├── hardware/             BLE, display, I2C, motors, LED, 1-Wire, sensors

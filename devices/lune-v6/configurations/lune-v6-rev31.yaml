@@ -24,7 +24,7 @@ substitutions:
   motor_auto_start_calibration: "false"
 
 packages:
-  base: !include ../heatvalve-6.yaml
+  base: !include ../lune.yaml
   ble: !include ../packages/hardware/ble.yaml
 
 # The production-intent module is ESP32-S3-WROOM-1-N8R8, not the 4 MB module

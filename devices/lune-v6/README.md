@@ -4,9 +4,10 @@ ESPHome firmware for **Lune V6**, the Birkemosen 6-zone hydronic
 underfloor-heating manifold controller, built on ESP32-S3 with 6 DRV8215 I2C
 motor drivers.
 
-The repository and firmware internals still use the historical `heatvalve-6`
-and `hv6` names while the public product structure migrates to Lune. Avoid
-large renames unless they are part of a planned migration.
+The repository is now hosted as [`Birkemosen/lune`](https://github.com/Birkemosen/lune).
+Some firmware entrypoint filenames, including `lune.yaml`, remain for
+configuration compatibility; the Lune V6 component directories and internal
+names use the `lv6` prefix.
 
 Lune V6 is the local manifold node in the Lune product line. It owns valve
 motion, endstop detection, local temperature inputs, minimum-flow protection,
@@ -20,7 +21,7 @@ been removed.
 
 ```text
 devices/lune-v6/
-├── heatvalve-6.yaml   # Main ESPHome firmware config for Lune V6
+├── lune.yaml   # Main ESPHome firmware config for Lune V6
 ├── components/        # Custom ESPHome external components
 │   ├── lv6_config_store/
 │   ├── lv6_valve_controller/
@@ -70,7 +71,7 @@ Only one motor should run at a time because current sensing is shared.
 1. Edit the repo-root `secrets.yaml` with your WiFi, API, OTA, and optional MQTT values.
    The V6 Makefile creates an ignored `configurations/secrets.yaml` symlink automatically
    when the root secrets file exists.
-2. Replace the placeholder DS18B20 addresses in `heatvalve-6.yaml` after first discovery.
+2. Replace the placeholder DS18B20 addresses in `lune.yaml` after first discovery.
 3. Build or deploy from the repo root.
 
 Preferred workflow:
@@ -99,13 +100,13 @@ root when present.
 Direct ESPHome commands still work:
 
 ```bash
-esphome run devices/lune-v6/configurations/heatvalve-6-ble.yaml
+esphome run devices/lune-v6/configurations/lune-ble.yaml
 ```
 
 For config validation only:
 
 ```bash
-esphome config devices/lune-v6/configurations/heatvalve-6-ble.yaml
+esphome config devices/lune-v6/configurations/lune-ble.yaml
 ```
 
 ## Notes

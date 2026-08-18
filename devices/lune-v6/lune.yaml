@@ -2,7 +2,7 @@
 # Lune V6 — Shared Base Configuration
 # =============================================================================
 # This file is the shared base configuration. The device entrypoint lives in
-# configurations/heatvalve-6-ble.yaml and `!include`s this file plus the
+# configurations/lune-ble.yaml and `!include`s this file plus the
 # BLE-specific packages.
 #
 # Build/deploy via the Makefile (`make build`). Do NOT add

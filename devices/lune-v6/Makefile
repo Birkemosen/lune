@@ -1,7 +1,7 @@
 # -----------------------------------------------------------------------------
 # Lune V6 firmware build (BLE BTHome sensors, ESPHome native API)
 # -----------------------------------------------------------------------------
-CONFIG ?= configurations/heatvalve-6-ble.yaml
+CONFIG ?= configurations/lune-ble.yaml
 BUILD_NAME ?= lune-v6
 ROOT_DIR ?= ../..
 ROOT_ABS := $(abspath $(ROOT_DIR))

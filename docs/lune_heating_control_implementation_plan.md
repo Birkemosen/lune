@@ -1581,7 +1581,7 @@ YYYY-MM-DD — TASK-ID — STATUS
 You are implementing the Lune heating control plan in this repository.
 
 Repository root:
-/Users/birkemose/workspace/github.com/birkemosen/heatvalve-6
+/Users/birkemose/workspace/github.com/birkemosen/lune
 
 Primary plan:
 docs/lune_heating_control_implementation_plan.md

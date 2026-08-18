@@ -483,7 +483,7 @@ struct SystemSnapshot {
 };
 
 struct SystemConfig {
-  char controller_id[33] = "heatvalve-6";
+  char controller_id[33] = "lune";
   HeatingProfile heating_profile = HeatingProfile::HEAT_PUMP;
   float supply_temp_c = 35.0f;
 };

@@ -14,5 +14,5 @@ substitutions:
   friendly_name: "Lune V6 Controller"
 
 packages:
-  base: !include ../heatvalve-6.yaml
+  base: !include ../lune.yaml
   ble:  !include ../packages/hardware/ble.yaml
