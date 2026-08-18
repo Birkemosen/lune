@@ -4,6 +4,11 @@
 # Waveshare ESP32-S3-Touch-LCD-7B local interface. The local display is one
 # glanceable appliance dashboard. Browser views own setup and diagnostics.
 
+globals:
+  - id: problem_dismissed
+    type: bool
+    initial_value: 'false'
+
 i2c:
   - id: waveshare_panel_i2c
     sda: GPIO8
@@ -448,9 +453,9 @@ lvgl:
               y: 4
               width: 44
               height: 44
-              bg_color: 0x1C1C1E
+              bg_color: 0x1C1C1C
               bg_opa: 100%
-              border_color: 0x38383A
+              border_color: 0x383838
               border_width: 1
               radius: 10
               pad_all: 0
@@ -473,7 +478,7 @@ lvgl:
               width: 96
               height: 24
               text: "1 / 2"
-              text_color: 0x8E8E93
+              text_color: 0x8E8E8E
               text_font: montserrat_16
               text_align: center
           - button:
@@ -483,9 +488,9 @@ lvgl:
               y: 4
               width: 44
               height: 44
-              bg_color: 0x1C1C1E
+              bg_color: 0x1C1C1C
               bg_opa: 100%
-              border_color: 0x38383A
+              border_color: 0x383838
               border_width: 1
               radius: 10
               pad_all: 0
@@ -506,7 +511,7 @@ lvgl:
               y: 51
               width: 1024
               height: 1
-              bg_color: 0x2C2C2E
+              bg_color: 0x2C2C2C
               bg_opa: 100%
               border_width: 0
               radius: 0
@@ -523,8 +528,8 @@ lvgl:
               pad_all: 0
               scrollable: false
               widgets:
-                - label: {x: 16, y: 2, width: 120, height: 20, text: "Manifold", text_color: 0x8E8E93, text_font: montserrat_14}
-                - label: {x: 156, y: 2, width: 808, height: 20, text: "Zones (Z1-Z6)", text_color: 0x8E8E93, text_font: montserrat_14}
+                - label: {x: 16, y: 2, width: 120, height: 20, text: "Manifold", text_color: 0x8E8E8E, text_font: montserrat_14}
+                - label: {x: 156, y: 2, width: 808, height: 20, text: "Zones (Z1-Z6)", text_color: 0x8E8E8E, text_font: montserrat_14}
 
           - !include
               file: lvgl/manifold_card.yaml
@@ -545,9 +550,9 @@ lvgl:
               y: 542
               width: 984
               height: 50
-              bg_color: 0x1C1C1E
+              bg_color: 0x1C1C1C
               bg_opa: 100%
-              border_color: 0x38383A
+              border_color: 0x383838
               border_width: 1
               radius: 14
               pad_all: 0
@@ -571,14 +576,14 @@ lvgl:
                     text_color: 0x8E867C
                     text_font: montserrat_16
                     long_mode: clip
-                    bg_color: 0x1C1C1E
+                    bg_color: 0x1C1C1C
                     bg_opa: 100%
                 - obj:
                     x: 472
                     y: 10
                     width: 1
                     height: 30
-                    bg_color: 0x38383A
+                    bg_color: 0x383838
                     bg_opa: 100%
                     border_width: 0
                     radius: 0
@@ -589,7 +594,7 @@ lvgl:
                     width: 72
                     height: 20
                     text: "Forecast"
-                    text_color: 0xBF5AF2
+                    text_color: 0x8E8E8E
                     text_font: montserrat_14
                 - label:
                     id: dashboard_weather_status_label
@@ -601,7 +606,7 @@ lvgl:
                     text_color: 0xFFFFFF
                     text_font: montserrat_16
                     long_mode: clip
-                    bg_color: 0x1C1C1E
+                    bg_color: 0x1C1C1C
                     bg_opa: 100%
 
           - obj:
@@ -611,13 +616,17 @@ lvgl:
               y: 542
               width: 984
               height: 50
-              bg_color: 0x241A18
+              bg_color: 0x2C2C2C
               bg_opa: 100%
               border_color: 0xFF9F0A
               border_width: 1
               radius: 14
               pad_all: 0
               scrollable: false
+              on_click:
+                - lambda: |-
+                    id(problem_dismissed) = true;
+                    id(touch_display_refresh_token).update();
               widgets:
                 - obj:
                     x: 0
@@ -636,10 +645,10 @@ lvgl:
                     width: 944
                     height: 24
                     text: ""
-                    text_color: 0xFFD60A
+                    text_color: 0xFFFFFF
                     text_font: montserrat_16
                     long_mode: wrap
-                    bg_color: 0x241A18
+                    bg_color: 0x2C2C2C
                     bg_opa: 100%
 
           - obj:
@@ -661,9 +670,9 @@ lvgl:
                     y: 102
                     width: 716
                     height: 396
-                    bg_color: 0x1C1C1E
+                    bg_color: 0x1C1C1C
                     bg_opa: 100%
-                    border_color: 0x38383A
+                    border_color: 0x383838
                     border_width: 1
                     radius: 16
                     pad_all: 0
@@ -682,7 +691,7 @@ lvgl:
                           y: 16
                           width: 60
                           height: 52
-                          bg_color: 0x2C2C2E
+                          bg_color: 0x2C2C2C
                           border_width: 0
                           radius: 12
                           text: "Close"
@@ -700,7 +709,7 @@ lvgl:
                           text_color: 0xFFFFFF
                           text_font: montserrat_18
                           long_mode: wrap
-                          bg_color: 0x1C1C1E
+                          bg_color: 0x1C1C1C
                           bg_opa: 100%
                       - label:
                           x: 28
@@ -708,14 +717,14 @@ lvgl:
                           width: 300
                           height: 22
                           text: "Comfort target"
-                          text_color: 0x8E8E93
+                          text_color: 0x8E8E8E
                           text_font: montserrat_14
                       - button:
                           x: 28
                           y: 188
                           width: 84
                           height: 64
-                          bg_color: 0x2C2C2E
+                          bg_color: 0x2C2C2C
                           border_width: 0
                           radius: 12
                           text: "- 0.5"
@@ -735,7 +744,7 @@ lvgl:
                           y: 188
                           width: 84
                           height: 64
-                          bg_color: 0x2C2C2E
+                          bg_color: 0x2C2C2C
                           border_width: 0
                           radius: 12
                           text: "+ 0.5"
@@ -771,7 +780,7 @@ lvgl:
                           y: 188
                           width: 236
                           height: 64
-                          bg_color: 0x2C2C2E
+                          bg_color: 0x2C2C2C
                           border_width: 0
                           radius: 12
                           text: "Away 6 hours"
@@ -789,9 +798,9 @@ lvgl:
                           width: 660
                           height: 42
                           text: "Changes save automatically. V6 validates every command."
-                          text_color: 0x8E8E93
+                          text_color: 0x8E8E8E
                           text_font: montserrat_14
-                          bg_color: 0x1C1C1E
+                          bg_color: 0x1C1C1C
                           bg_opa: 100%
                       - label:
                           x: 28
@@ -799,7 +808,7 @@ lvgl:
                           width: 660
                           height: 24
                           text: "Tap Close to return to the heating overview."
-                          text_color: 0x8E8E93
+                          text_color: 0x8E8E8E
                           text_font: montserrat_14
 
           # Startup remains visible until the first complete coordinator model
@@ -811,7 +820,7 @@ lvgl:
               y: 0
               width: 1024
               height: 600
-              bg_color: 0x1C1C1E
+              bg_color: 0x1C1C1C
               bg_opa: 100%
               border_width: 0
               radius: 0
@@ -854,7 +863,7 @@ lvgl:
                     width: 1024
                     height: 28
                     text: "Starting local heating control"
-                    text_color: 0x8E8E93
+                    text_color: 0x8E8E8E
                     text_font: montserrat_18
                     text_align: center
                 - spinner:
@@ -876,6 +885,6 @@ lvgl:
                     width: 560
                     height: 26
                     text: "Display     |     Network     |     Heating model"
-                    text_color: 0x64D2FF
+                    text_color: 0xFFFFFF
                     text_font: montserrat_16
                     text_align: center
