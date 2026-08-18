@@ -7,9 +7,13 @@ ROOT_DIR ?= ../..
 ROOT_ABS := $(abspath $(ROOT_DIR))
 DEVICE_DIR ?= devices/lune-touch
 CONFIG_PATH ?= $(ROOT_ABS)/$(DEVICE_DIR)/$(CONFIG)
-ESPHOME ?= $(if $(wildcard $(ROOT_ABS)/.venv313/bin/esphome),$(ROOT_ABS)/.venv313/bin/esphome,$(if $(wildcard $(ROOT_ABS)/.venv/bin/esphome),$(ROOT_ABS)/.venv/bin/esphome,esphome))
-PIO ?= $(if $(wildcard $(ROOT_ABS)/.venv313/bin/platformio),$(ROOT_ABS)/.venv313/bin/platformio,$(if $(wildcard $(ROOT_ABS)/.venv/bin/platformio),$(ROOT_ABS)/.venv/bin/platformio,platformio))
-ESPTOOL ?= $(if $(wildcard $(ROOT_ABS)/.venv313/bin/esptool),$(ROOT_ABS)/.venv313/bin/esptool,$(if $(wildcard $(ROOT_ABS)/.venv/bin/esptool),$(ROOT_ABS)/.venv/bin/esptool,esptool))
+# Prefer the venv's Python modules over generated console launchers. Those
+# launchers embed an absolute interpreter path and can become stale after the
+# workspace is moved or cloned elsewhere.
+PYTHON ?= $(if $(wildcard $(ROOT_ABS)/.venv313/bin/python),$(ROOT_ABS)/.venv313/bin/python,$(if $(wildcard $(ROOT_ABS)/.venv/bin/python),$(ROOT_ABS)/.venv/bin/python,python3))
+ESPHOME ?= $(PYTHON) -m esphome
+PIO ?= $(PYTHON) -m platformio
+ESPTOOL ?= $(PYTHON) -m esptool
 PLATFORMIO_CORE_DIR ?= $(ROOT_ABS)/.cache/platformio
 CXX ?= clang++
 BUILD_ROOT ?= $(ROOT_ABS)/$(DEVICE_DIR)/configurations/.esphome/build/$(BUILD_NAME)
@@ -77,12 +81,12 @@ ensure-secrets-link:
 	fi
 
 check: ensure-secrets-link
-	@command -v $(ESPHOME) >/dev/null 2>&1 || { \
+	@$(ESPHOME) version >/dev/null 2>&1 || { \
 		echo "ESPHome CLI not found."; \
 		echo "Create root .venv and install: python3 -m venv .venv && ./.venv/bin/pip install esphome"; \
 		exit 1; \
 	}
-	@command -v $(PIO) >/dev/null 2>&1 || { \
+	@$(PIO) --version >/dev/null 2>&1 || { \
 		echo "PlatformIO CLI not found."; \
 		echo "Install in venv: ./.venv313/bin/pip install platformio"; \
 		exit 1; \

@@ -48,14 +48,12 @@ const css = `
 .logs-view .actions { display: flex; gap: 6px; }
 .logs-view .btn {
   border: 1px solid var(--control-border);
-  background: linear-gradient(145deg, rgba(255,255,255,.13), rgba(255,255,255,.055));
+  background:var(--control-bg);
   color: var(--text-secondary);
   border-radius: 8px;
   padding: 4px 10px;
   font-size: .68rem;
   font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: .6px;
   cursor: pointer;
 }
 .logs-view .btn:hover { color: var(--text-strong); background: var(--control-bg-hover); }
@@ -66,7 +64,7 @@ const css = `
   height: 420px;
   overflow-y: auto;
   border-radius: 8px;
-  background: linear-gradient(145deg, rgba(0,0,0,.18), rgba(255,255,255,.035));
+  background:rgba(0,0,0,.14);
   border: 1px solid var(--control-border);
   padding: 6px 0;
   font-family: var(--mono);

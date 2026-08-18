@@ -1,0 +1,4 @@
+# Reproducible firmware build environment for Lune V6 and Lune Touch.
+# ESPHome 2026.7 supplies LVGL 9.5.0 for configurations using `lvgl:`.
+esphome==2026.7.3
+platformio==6.1.19

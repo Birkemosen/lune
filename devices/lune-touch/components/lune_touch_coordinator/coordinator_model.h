@@ -93,8 +93,11 @@ struct LogicalRoom {
   char room_id[32]{};
   char room_name[48]{};
   char primary_loop_id[48]{};
-  float total_area_m2{0.0f};
-  float physical_weight{0.0f};
+  // Imported V6 loops begin as equally weighted logical rooms. Touch can
+  // refine these values later, but normal target/schedule edits must not
+  // depend on commissioning hidden geometry first.
+  float total_area_m2{1.0f};
+  float physical_weight{1.0f};
   float comfort_setpoint_c{21.0f};
   float comfort_bias_c{0.0f};
   float schedule_setpoint_c{21.0f};
@@ -344,7 +347,8 @@ class HouseModel {
   bool update_zone_forecast_profile_by_binding(size_t node_index, size_t zone_index,
                                                uint8_t exterior_walls, float wind_exposure,
                                                float solar_gain, uint8_t thermal_lead_h,
-                                               float max_offset_c);
+                                               float max_offset_c,
+                                               bool import_exterior_walls = true);
   bool update_zone_forecast_profile(const char *room_id, uint8_t exterior_walls,
                                     float wind_exposure, float solar_gain,
                                     uint8_t thermal_lead_h, float max_offset_c);

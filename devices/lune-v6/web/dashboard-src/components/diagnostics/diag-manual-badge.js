@@ -13,7 +13,6 @@ const css = `
   background: var(--danger-bg);
   border-radius: 8px;
   padding: 10px 12px;
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.05);
 }
 
 .diag-manual-badge.on {
@@ -25,15 +24,12 @@ const css = `
   height: 9px;
   border-radius: 999px;
   background: var(--state-danger);
-  box-shadow: 0 0 10px var(--danger-border);
 }
 
 .diag-manual-text {
   color: var(--danger-text);
   font-size: .8rem;
-  font-weight: 700;
-  letter-spacing: .35px;
-  text-transform: uppercase;
+  font-weight:650;
 }
 `;
 

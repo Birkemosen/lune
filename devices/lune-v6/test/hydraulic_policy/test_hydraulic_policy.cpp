@@ -3,7 +3,7 @@
 #include <cassert>
 #include <cstdio>
 
-using namespace hv6::hydraulic_policy;
+using namespace lv6::hydraulic_policy;
 
 int main() {
   const bool enabled[3]{true, true, true};

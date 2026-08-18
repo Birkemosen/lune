@@ -1,686 +1,107 @@
-import { component, mountComponent } from '../core/component.js';
+import { component, mountComponent, subscribe } from '../core/component.js';
 import { injectStyle } from '../core/style.js';
-import { getDashboardValue, subscribeDashboard } from '../core/store.js';
+import { ev, es, getDashboardValue, isEntityOn, subscribeDashboard, setSection, setSelectedZone, zoneLabel } from '../core/store.js';
 import { localize, subscribeLanguage } from '../core/i18n.js';
+import { gkey, key } from '../utils/keys.js';
+import { fmtT } from '../utils/format.js';
+import { applyTheme } from '../core/theme.js';
 
-// =====================
-// CSS
-// =====================
+applyTheme();
+
 const css = `
-@import url("https://fonts.googleapis.com/css2?family=Montserrat:wght@500;600;700;800&family=Source+Sans+3:wght@400;500;600;700&display=swap");
-
-:root {
-  /* ===========================================================
-     Palette (thermal utility):
-       #00131d #002f45 #2c4875 #7aa7ce #9dbc78
-       #ff6361 #ff8531 #ffa600 #ffd380
-     Dark cool tones → surfaces/borders; orange → primary accent,
-     muted steel blue → secondary/cool return/weather data; warm members
-     → data series + states. Greens for "OK" status are kept for status
-     legibility.
-     =========================================================== */
-  --accent: #ff8a3d;          /* orange — primary accent */
-  --blue: #7eb6d8;            /* muted cool blue — secondary / return / wind accent */
-  /* Chart data series — orange (warm) + muted blue (cool). */
-  --series-warm: #ff8a3d;
-  --series-cool: #7eb6d8;
-  --series-cool-fill: rgba(126,182,216,.14);
-  --series-solar: #ffd36a;    /* gold — solar irradiance / current-hour highlight */
-  /* Axis/tick label color — warm-neutral, legible on the dark panel. */
-  --chart-axis: rgba(238,230,218,.82);
-  --bg: #091217;
-  --surface: rgba(18,30,36,.58);
-  --card: rgba(18,30,36,.74);
-  --border: rgba(229,240,244,.20);
-  --text: #f8f2e9;
-  --text-strong: #fff8ea;
-  --text-secondary: rgba(232,226,216,.78);
-  --muted: rgba(232,226,216,.72);
-  --text-faint: rgba(216,226,232,.50);
-  --text-on-accent: #071015;
-  --overlay-bg: rgba(7,16,21,.90);
-  --overlay-bg-soft: rgba(7,16,21,.66);
-  --soft: rgba(255,255,255,.08);
-  --panel-border: rgba(229,240,244,.20);
-  --panel-border-soft: rgba(229,240,244,.12);
-  --divider: rgba(255,255,255,.08);
-  --divider-dashed: rgba(229,240,244,.18);
-  --panel-bg: rgba(255,255,255,.075);
-  --panel-bg-vibrant: linear-gradient(145deg, rgba(255,255,255,.11), rgba(255,255,255,.04));
-  --panel-bg-flat: linear-gradient(145deg, rgba(255,255,255,.085), rgba(255,255,255,.035));
-  --panel-shadow: 16px 18px 38px rgba(0,0,0,.34), -10px -10px 28px rgba(255,255,255,.035), inset 0 1px 0 rgba(255,255,255,.16);
-  --panel-shadow-soft: var(--panel-shadow);
-  --state-ok: #8fe08e;
-  --state-warn: #ffbd4a;
-  --state-danger: #ff7572;
-  --state-disabled: #7e8b95;
-  --control-bg: rgba(255,255,255,.085);
-  --control-bg-hover: rgba(255,255,255,.14);
-  --control-border: rgba(235,245,248,.22);
-  --control-border-strong: rgba(235,245,248,.36);
-  --control-border-hover: rgba(235,245,248,.48);
-  --control-knob: #efe6dd;
-  --focus-ring: rgba(124,155,208,.72);
-  --focus-ring-soft: rgba(124,155,208,.60);
-  --focus-border: rgba(124,155,208,.55);
-  --accent-bg-soft: rgba(255,138,61,.14);
-  --accent-border: rgba(255,138,61,.38);
-  --accent-border-hover: rgba(255,138,61,.54);
-  --accent-text-soft: #ffe8ba;
-  --success-bg: rgba(45,110,45,.28);
-  --success-bg-soft: rgba(121,209,126,.25);
-  --success-border: rgba(121,209,126,.50);
-  --success-border-soft: rgba(121,209,126,.25);
-  --success-text-soft: #CBFFD0;
-  --warn-bg-soft: rgba(255,166,0,.12);
-  --warn-border: rgba(255,166,0,.42);
-  --danger-bg: rgba(255,118,118,.20);
-  --danger-bg-strong: rgba(255,100,100,.30);
-  --danger-bg-soft: rgba(255,100,100,.15);
-  --danger-border: rgba(255,118,118,.50);
-  --danger-border-soft: rgba(255,118,118,.40);
-  --danger-border-strong: rgba(255,100,100,.60);
-  --danger-text: #FFD9D9;
-  --status-muted-bg: rgba(70,70,70,.28);
-  --status-muted-border: rgba(150,150,150,.25);
-  --status-muted-text: #ADADAD;
-  --viz-flow-low: #7aa7ce;
-  --viz-flow-mid: #9dbc78;
-  --viz-flow-high: #ff8531;
-  --viz-flow-hot: #ffa600;
-  --viz-delta-low: #7aa7ce;
-  --viz-delta-ok: #66BB6A;
-  --viz-delta-high: #ff6361;
-  --green: #8fe08e;
-  --red: #ff7572;
-  --font-ui: "Source Sans 3", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --font-display: "Montserrat", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --mono: "Montserrat", sans-serif;
-  --side-w: 260px;
-  --side-collapsed: 76px;
+:root { --bg:#0b0e14; --surface:#131620; --surface-raised:rgba(255,255,255,.035); --text-main:#f2f5f8; --text-strong:#f8fafc; --text-muted:rgba(226,231,240,.62); --text-faint:rgba(207,215,228,.45); --separator:rgba(199,211,232,.105); --separator-soft:rgba(199,211,232,.06); --control-border:rgba(199,211,232,.15); --control-bg:rgba(255,255,255,.045); --accent:#F59E0B; --accent-rgb:245,158,11; --state-ok:#34D399; --state-warn:#F59E0B; --state-danger:#EF4444; --state-disabled:#8b94a3; --focus-ring:rgba(245,158,11,.92); --font-ui:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",sans-serif; --font-display:-apple-system,BlinkMacSystemFont,"SF Pro Display","Segoe UI",sans-serif; --mono:ui-monospace,SFMono-Regular,Menlo,monospace;
+  /* Legacy components inherit the same neutral system. Themes replace only accent and focus. */
+  --text:var(--text-main); --text-secondary:var(--text-muted); --muted:var(--text-muted); --border:var(--separator); --panel-border:var(--separator); --divider:var(--separator-soft); --card:var(--surface); --panel-bg-flat:var(--surface-raised); --panel-bg-vibrant:var(--surface-raised); --panel-shadow:none; --overlay-bg:rgba(11,14,20,.96); --text-on-accent:var(--bg); --control-bg-hover:rgba(255,255,255,.075); --control-border-strong:rgba(199,211,232,.24); --control-border-hover:rgba(var(--accent-rgb),.5); --control-knob:var(--text-strong); --focus-ring-soft:var(--focus-ring); --focus-border:var(--accent); --accent-bg-soft:rgba(var(--accent-rgb),.12); --accent-border:rgba(var(--accent-rgb),.36); --accent-border-hover:rgba(var(--accent-rgb),.52); --accent-text-soft:var(--accent); --success-bg:rgba(52,211,153,.16); --success-bg-soft:rgba(52,211,153,.10); --success-border:rgba(52,211,153,.38); --danger-bg:rgba(239,68,68,.16); --danger-bg-soft:rgba(239,68,68,.10); --danger-bg-strong:rgba(239,68,68,.22); --danger-border:rgba(239,68,68,.42); --danger-border-soft:rgba(239,68,68,.30); --danger-border-strong:rgba(239,68,68,.56); --danger-text:var(--state-danger); --warn-bg-soft:rgba(245,158,11,.10); --warn-border:rgba(245,158,11,.38); --blue:#7aa7ce; --red:var(--state-danger); --series-warm:var(--accent); --series-cool:#7cc5f3; --series-cool-fill:rgba(124,197,243,.14); --series-solar:#fcd34d; --chart-axis:rgba(226,231,240,.72); --flow-track:#596779; --flow-disabled:#7c8797; --flow-unknown:#9aa6b6; --flow-return:var(--series-cool); --flow-label:#d8e1ec; --flow-source-bg:#202630;
 }
-
-*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
-html { font-size: 100%; scroll-behavior: smooth; }
-body {
-  font-family: var(--font-ui);
-  background: linear-gradient(135deg, #071015 0%, #0c2026 38%, #171612 70%, #081015 100%);
-  color: var(--text);
-  min-height: 100vh;
-  line-height: 1.45;
-  -webkit-font-smoothing: antialiased;
+.theme-refined-ember { --accent:#F59E0B; --accent-rgb:245,158,11; --focus-ring:rgba(245,158,11,.92); }
+.theme-deep-forest { --accent:#10B981; --accent-rgb:16,185,129; --focus-ring:rgba(52,211,153,.92); }
+:root[data-color-scheme="light"] {
+  --bg:#f5f6f8; --surface:#ffffff; --surface-raised:rgba(255,255,255,.82); --text-main:#262a31; --text-strong:#111318; --text-muted:rgba(35,40,49,.68); --text-faint:rgba(45,51,61,.50); --separator:rgba(31,41,55,.14); --separator-soft:rgba(31,41,55,.08); --control-border:rgba(31,41,55,.19); --control-bg:rgba(255,255,255,.90); --state-ok:#147a52; --state-warn:#9a5b00; --state-danger:#c73535; --state-disabled:#6b7280;
+  --overlay-bg:rgba(245,246,248,.96); --text-on-accent:#ffffff; --control-bg-hover:rgba(17,24,39,.07); --control-border-strong:rgba(31,41,55,.29); --success-bg:rgba(20,122,82,.12); --success-bg-soft:rgba(20,122,82,.08); --success-border:rgba(20,122,82,.30); --danger-bg:rgba(199,53,53,.12); --danger-bg-soft:rgba(199,53,53,.08); --danger-bg-strong:rgba(199,53,53,.16); --danger-border:rgba(199,53,53,.34); --danger-border-soft:rgba(199,53,53,.24); --danger-border-strong:rgba(199,53,53,.45); --warn-bg-soft:rgba(154,91,0,.09); --warn-border:rgba(154,91,0,.30); --blue:#276b99; --series-cool:#1f78a8; --series-cool-fill:rgba(31,120,168,.12); --series-solar:#8a6500; --chart-axis:rgba(35,40,49,.70); --flow-track:#738096; --flow-disabled:#8a94a3; --flow-unknown:#667386; --flow-label:#2d3948; --flow-source-bg:#edf0f4;
 }
-
-body::before {
-  content: '';
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  z-index: -1;
-  background:
-    linear-gradient(115deg, rgba(255,255,255,.08), transparent 28%, rgba(126,182,216,.07) 50%, transparent 72%, rgba(255,138,61,.08)),
-    repeating-linear-gradient(90deg, rgba(255,255,255,.028) 0 1px, transparent 1px 84px),
-    repeating-linear-gradient(0deg, rgba(255,255,255,.018) 0 1px, transparent 1px 84px);
-  mask-image: linear-gradient(180deg, rgba(0,0,0,.92), rgba(0,0,0,.36));
-}
-
-.app {
-  display: block;
-  min-height: 100vh;
-}
-
-.shell {
-  padding: 18px;
-  width: min(1320px, 100%);
-  margin: 0 auto;
-  display: grid;
-  grid-template-columns: 210px minmax(0, 1fr);
-  gap: 0 18px;
-  align-items: start;
-}
-
-.hdr {
-  grid-column: 1 / -1;
-}
-
-.side-panel {
-  position: sticky;
-  top: 14px;
-  min-width: 0;
-  min-height: calc(100vh - 112px);
-  padding: 12px 14px 12px 0;
-  border-right: 1px solid var(--panel-border-soft);
-}
-
-.view-panel {
-  min-width: 0;
-}
-
-.sec {
-  display: none;
-  margin-bottom: 22px;
-}
-
-.sec.active {
-  display: block;
-}
-
-.dashboard-grid {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 14px;
-  margin-top: 14px;
-  align-items: stretch;
-}
-
-.overview-flow-return {
-  display: flex;
-  flex-direction: column;
-}
-
-.overview-flow-return > * {
-  flex: 1;
-}
-
-.zone-layout,
-.logs-layout {
-  display: grid;
-  gap: 14px;
-}
-
-/* Logs: main log stream (2/3) + stacked diagnostics column (1/3). */
-.logs-layout {
-  grid-template-columns: 2fr 1fr;
-  align-items: start;
-}
-
-.logs-main-col,
-.logs-side-col {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-.zone-layout {
-  grid-template-columns: 1fr 1fr 1fr;
-  align-items: stretch;
-}
-
-.zone-detail-slot,
-.zone-sensor-slot,
-.zone-room-slot,
-.zone-recovery-slot {
-  display: flex;
-}
-
-.zone-detail-slot > *,
-.zone-sensor-slot > *,
-.zone-room-slot > *,
-.zone-recovery-slot > * {
-  flex: 1;
-}
-
-/* Middle column stacks the sensor (connectivity) and fault/relearn cards,
-   stretching to match the Zone and Zone Settings columns' height. */
-.zone-mid-col {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-/* Slots grow to share the column's full height so the stack matches the Zone
-   and Zone Settings columns (no gap left below the last card). */
-.zone-mid-col > * { width: 100%; flex: 1 1 auto; }
-
-.zone-layout .ui-card,
-.zone-layout .zone-detail,
-.zone-layout .diag-zone-recovery {
-  background: var(--panel-bg-flat);
-  box-shadow: var(--panel-shadow-soft);
-}
-
-.settings-layout,
-.diagnostics-layout {
-  display: grid;
-  gap: 18px;
-}
-
-.settings-layout {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  align-items: stretch;
-}
-
-.settings-group {
-  display: grid;
-  grid-template-rows: auto 1fr;
-  gap: 12px;
-  padding: 18px 20px;
-  border: 1px solid var(--panel-border);
-  border-radius: 8px;
-  background: var(--panel-bg-flat);
-  box-shadow: var(--panel-shadow-soft);
-  backdrop-filter: blur(16px) saturate(1.18);
-}
-
-.diagnostics-group {
-  display: grid;
-  grid-template-rows: auto 1fr;
-  gap: 12px;
-  padding: 18px 20px;
-  border: 1px solid var(--panel-border);
-  border-radius: 8px;
-  background: var(--panel-bg-flat);
-  box-shadow: var(--panel-shadow-soft);
-  backdrop-filter: blur(16px) saturate(1.18);
-}
-
-.diagnostics-group {
-  padding-top: 14px;
-}
-
-.settings-group-head,
-.diagnostics-group-head {
-  display: flex;
-  align-items: center;
-  min-height: 30px;
-  padding-bottom: 10px;
-  border-bottom: 1px solid var(--panel-border);
-}
-
-.settings-group-title,
-.diagnostics-group-title {
-  font-family: var(--font-display);
-  color: var(--accent);
-  font-size: .875rem;
-  font-weight: 800;
-  letter-spacing: 1px;
-  text-transform: uppercase;
-}
-
-.settings-group-grid,
-.diagnostics-group-grid {
-  display: grid;
-  gap: 12px;
-  align-items: start;
-  align-content: start;
-}
-
-.settings-installation-grid {
-  grid-template-columns: 1fr;
-}
-
-.settings-hydraulic-grid {
-  grid-template-columns: 1fr;
-}
-
-.settings-motor-grid {
-  grid-template-columns: 1fr;
-}
-
-.settings-hydraulic-stack,
-.manual-control-col {
-  display: grid;
-  gap: 12px;
-}
-
-.settings-group .ui-card,
-.settings-group .settings-card {
-  background: transparent !important;
-  border: 0 !important;
-  border-radius: 0 !important;
-  box-shadow: none !important;
-  backdrop-filter: none !important;
-  -webkit-backdrop-filter: none !important;
-  padding: 0 !important;
-}
-
-.settings-group-grid > * + *,
-.settings-group .ui-card + .ui-card,
-.settings-group .settings-card + .settings-card,
-.settings-hydraulic-stack > * + * {
-  padding-top: 12px;
-  border-top: 1px dashed var(--divider-dashed);
-}
-
-.settings-group .ui-card-title,
-.settings-group .settings-card .card-title {
-  color: var(--muted);
-  font-size: .74rem;
-  letter-spacing: .78px;
-  margin-bottom: 2px;
-  padding-bottom: 4px;
-  border-bottom: 0;
-}
-
-.settings-group .settings-card .toggle-row {
-  padding: 8px 0 10px !important;
-  border: 0 !important;
-  border-bottom: 1px solid var(--panel-border-soft) !important;
-  border-radius: 0 !important;
-  background: transparent !important;
-  box-shadow: none !important;
-}
-
-.settings-group .gated-body,
-.settings-group .settings-motor-cal-card .mc-advanced-body {
-  background: transparent !important;
-  box-shadow: none !important;
-}
-
-.settings-group .settings-motor-cal-card .runtime-note {
-  box-shadow: none !important;
-}
-
-.diagnostics-layout {
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  align-items: start;
-}
-
-.diagnostics-logs-group,
-.diagnostics-health-group {
-  grid-column: span 2;
-}
-
-.logs-main-col,
-.manual-control-col {
-  min-width: 0;
-}
-
-.diag-health-grid,
-.diag-actions-grid {
-  grid-template-columns: 1fr;
-}
-
-.diagnostics-group .ui-card,
-.diagnostics-group .settings-card,
-.diagnostics-group .logs-view,
-.diagnostics-group .diag-zone-motor,
-.diagnostics-group .connectivity-card,
-.diagnostics-group .diag-i2c {
-  background: transparent;
-  border: 0;
-  border-radius: 0;
-  box-shadow: none;
-  padding: 0;
-}
-
-.diagnostics-group-grid > * + *,
-.manual-control-col > * + *,
-.logs-main-col > * + * {
-  padding-top: 12px;
-  border-top: 1px dashed var(--divider-dashed);
-}
-
-.diagnostics-group .ui-card-title,
-.diagnostics-group .settings-card .card-title,
-.diagnostics-group .logs-view .card-title,
-.diagnostics-group .diag-zone-motor .card-title,
-.diagnostics-group .connectivity-card .card-title,
-.diagnostics-group .diag-i2c .card-title {
-  color: var(--text-secondary);
-  font-size: .76rem;
-  letter-spacing: .9px;
-  margin-bottom: 4px;
-  padding-bottom: 8px;
-  border-bottom-color: var(--panel-border-soft);
-}
-
-.diagnostics-group .authority-card .setpoint-box {
-  padding: 10px 0 12px;
-  border: 0;
-  border-top: 1px solid var(--panel-border-soft);
-  border-bottom: 1px solid var(--panel-border-soft);
-  border-radius: 0;
-  background: transparent;
-  box-shadow: none;
-}
-
-.diagnostics-group .logs-stream,
-.diagnostics-group .diag-i2c pre {
-  background: rgba(0,0,0,.10);
-  border-color: var(--panel-border-soft);
-  box-shadow: none;
-}
-
-.ftr {
-  text-align: center;
-  color: var(--text-faint);
-  padding: 20px;
-  font-size: .78rem;
-  letter-spacing: .8px;
-}
-
-.placeholder-card {
-  background: var(--panel-bg);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 20px;
-  box-shadow: var(--panel-shadow);
-  backdrop-filter: blur(16px) saturate(1.18);
-}
-
-.placeholder-card h3 {
-  font-size: .875rem;
-  font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: 1.1px;
-  color: var(--accent);
-  margin-bottom: 12px;
-}
-
-.placeholder-card p {
-  color: var(--muted);
-  font-size: .86rem;
-}
-
-@media (max-width: 1200px) {
-  .diagnostics-layout {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-@media (max-width: 860px) {
-  .shell {
-    display: block;
-    padding: 12px 12px 78px;
-  }
-
-  .side-panel {
-    position: fixed;
-    left: 10px;
-    right: 10px;
-    bottom: 10px;
-    top: auto;
-    z-index: 40;
-    min-height: 0;
-    padding: 8px;
-    border: 1px solid var(--panel-border);
-    border-radius: 8px;
-    background: rgba(9,18,23,.82);
-    box-shadow: var(--panel-shadow);
-    backdrop-filter: blur(18px) saturate(1.25);
-  }
-
-  .zone-layout,
-  .dashboard-grid,
-  .settings-layout,
-  .logs-layout,
-  .diagnostics-layout { grid-template-columns: 1fr; }
-
-  .diagnostics-logs-group,
-  .diagnostics-health-group {
-    grid-column: auto;
-  }
-
-  .zone-detail-slot {
-    grid-column: 1;
-  }
-}
-
-/* ============================
-   GLOBAL INTERACTIVE STATES
-   ============================ */
-
-/* Consistent focus ring for all interactive elements */
-button:focus-visible,
-select:focus-visible,
-input:focus-visible,
-a:focus-visible {
-  outline: 2px solid var(--focus-ring);
-  outline-offset: 2px;
-}
-
-/* Disabled state for all buttons/inputs */
-button:disabled,
-input:disabled,
-select:disabled {
-  opacity: .40;
-  cursor: not-allowed;
-  pointer-events: none;
-}
-
-/* Gated card body: faded + non-interactive when its feature is disabled.
-   The enable toggle stays outside this wrapper so it remains clickable. */
-.gated-body {
-  transition: opacity .2s ease;
-}
-.gated-body.is-disabled {
-  opacity: .42;
-  pointer-events: none;
-  user-select: none;
-}
+:root[data-color-scheme="light"].theme-refined-ember { --accent:#b45309; --accent-rgb:180,83,9; --focus-ring:rgba(180,83,9,.78); }
+:root[data-color-scheme="light"].theme-deep-forest { --accent:#047857; --accent-rgb:4,120,87; --focus-ring:rgba(4,120,87,.78); }
+*,*::before,*::after{box-sizing:border-box} html{font-size:100%;scroll-behavior:smooth} body{margin:0;background:var(--bg);color:var(--text-main);font-family:var(--font-ui);line-height:1.45;-webkit-font-smoothing:antialiased} button,input,select{font:inherit} button,a,select,input{ -webkit-tap-highlight-color:transparent }
+app-root{display:block}.app{min-height:100vh}.shell{display:grid;grid-template-columns:224px minmax(0,1fr);min-height:100vh}.side-panel{grid-column:1;position:sticky;top:0;height:100vh;display:flex;flex-direction:column;padding:18px 12px 14px;border-right:1px solid var(--separator);background:rgba(255,255,255,.022);overflow-y:auto}.side-brand{min-height:0;padding:7px 10px 0;color:var(--accent);font-size:1rem;font-weight:750;letter-spacing:.12em}.side-subtitle{margin:2px 10px 30px;color:var(--text-faint);font-size:.72rem}.side-nav-slot{display:flex;flex:1;min-height:0}.main-panel{grid-column:2;min-width:0}.hdr{position:sticky;top:0;z-index:20;padding:12px 28px;border-bottom:1px solid var(--separator);background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(20px) saturate(1.25)}.view-panel{min-width:0;width:min(1120px,100%);margin:0 auto;padding:28px 34px 64px}.ftr{margin-top:48px;color:var(--text-faint);font-size:.75rem}.sec{display:none}.sec.active{display:block}
+.view-lead{max-width:720px;margin:0 0 28px;padding-bottom:24px;border-bottom:1px solid var(--separator)}.view-lead h2{margin:0;color:var(--text-strong);font-size:1.1rem;font-weight:650}.view-lead p{margin:6px 0 0;color:var(--text-muted);font-size:.92rem}
+.status-summary{display:grid;grid-template-columns:minmax(0,1.5fr) repeat(3,minmax(120px,1fr));gap:0;margin:0 0 24px;padding:20px 0;border-top:1px solid var(--separator);border-bottom:1px solid var(--separator)}.settings-readiness,.diagnostics-readiness{grid-template-columns:minmax(0,1.5fr) repeat(3,minmax(120px,1fr))}.status-summary-main{padding-right:24px}.eyebrow{display:block;color:var(--text-faint);font-size:.72rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase}.status-summary h2{margin:5px 0 4px;color:var(--text-strong);font-size:1.65rem;letter-spacing:-.025em}.status-summary p{margin:0;color:var(--text-muted);font-size:.9rem}.status-fact{padding:0 16px;border-left:1px solid var(--separator)}.status-fact strong{display:block;margin-top:5px;color:var(--text-strong);font-size:1.15rem;font-variant-numeric:tabular-nums}.status-fact small{display:block;margin-top:3px;color:var(--text-muted);font-size:.78rem}.status-ok{color:var(--state-ok)!important}.status-summary h2.status-ok{color:var(--text-strong)!important}.status-warn{color:var(--state-warn)!important}.status-danger{color:var(--state-danger)!important}
+.attention{margin:0 0 24px;border-left:3px solid var(--state-warn);padding:13px 16px;background:rgba(245,158,11,.055)}.attention[hidden]{display:none}.attention strong{display:block;color:var(--text-strong);font-size:.9rem}.attention span{display:block;margin-top:3px;color:var(--text-muted);font-size:.85rem}
+.content-group{border:1px solid var(--separator);border-radius:12px;background:var(--surface-raised);overflow:hidden}.content-group + .content-group{margin-top:24px}.group-title{display:flex;justify-content:space-between;align-items:center;gap:18px;min-height:58px;padding:10px 12px 10px 18px;border-bottom:1px solid var(--separator)}.group-title-main{min-width:0}.group-title h3{margin:0;color:var(--text-strong);font-size:1rem;font-weight:650}.group-title span{display:block;margin-top:2px;color:var(--text-muted);font-size:.78rem}.group-navigation{min-height:44px;padding:0 10px;border:0;border-radius:8px;background:transparent;color:var(--accent);font-weight:650;cursor:pointer}.group-navigation:hover{background:rgba(var(--accent-rgb),.10)}.zone-grid{display:grid;grid-template-columns:1fr;gap:0;margin:0}
+.zones-index-head{display:flex;align-items:baseline;justify-content:space-between;gap:20px;margin:0 0 22px;padding:0 0 16px;border-bottom:1px solid var(--separator)}.zones-index-head h2{margin:0;color:var(--text-strong);font-size:1.55rem;font-weight:700;letter-spacing:-.025em}.zones-index-head p{margin:0;color:var(--text-muted);font-size:.86rem}.zones-summary{max-width:720px;margin:0 0 28px;padding:0 0 24px;border-bottom:1px solid var(--separator)}.zones-summary h2{margin:5px 0 6px;color:var(--text-strong);font-size:clamp(1.45rem,2.5vw,1.9rem);font-weight:680;letter-spacing:-.03em}.zones-summary p{margin:0;color:var(--text-muted);font-size:.92rem}.zones-index .content-group{margin:0}.zones-index .zone-card{min-height:86px;padding:14px 18px}.zone-detail-toolbar{display:flex;align-items:center;justify-content:space-between;gap:18px;margin:0 0 22px;padding:0 0 16px;border-bottom:1px solid var(--separator)}.zone-back{min-height:44px;padding:0 10px;border:0;border-radius:8px;background:transparent;color:var(--accent);font-weight:650;cursor:pointer}.zone-back:hover{background:rgba(var(--accent-rgb),.10)}.zone-picker-field{display:flex;align-items:center;gap:9px;color:var(--text-muted);font-size:.78rem;font-weight:600}.zone-picker{min-width:180px;min-height:44px;padding:0 34px 0 12px;border:1px solid var(--control-border);border-radius:8px;background:var(--control-bg);color:var(--text-strong);font-weight:650;cursor:pointer}.zones-detail-pane{min-width:0}.zone-detail-heading{margin:0 0 14px;padding:2px 0 16px;border-bottom:1px solid var(--separator)}.zone-detail-heading h2{margin:3px 0 0;color:var(--text-strong);font-size:1.35rem;font-weight:700;letter-spacing:-.02em}.zone-detail-heading p{margin:4px 0 0;color:var(--text-muted);font-size:.84rem}.zone-detail-layout{display:grid;grid-template-columns:1fr;gap:10px}.zone-detail-layout>*{min-width:0}.zone-detail-secondary{display:grid;grid-template-columns:1fr 1fr;gap:10px}.zone-detail-layout .ui-card,.zone-detail-layout .zone-detail,.zone-detail-layout .diag-zone-recovery{border:1px solid var(--separator)!important;border-radius:10px!important;background:var(--surface-raised)!important;box-shadow:none!important}.zone-recovery-disclosure .disclosure-body{padding:0}.zone-recovery-disclosure .diag-zone-recovery{border:0!important;border-radius:0!important;background:transparent!important}
+.disclosure{border:1px solid var(--separator);border-radius:12px;background:var(--surface-raised);overflow:hidden}.disclosure + .disclosure{margin-top:8px}.disclosure summary{display:flex;align-items:center;justify-content:space-between;min-height:58px;padding:0 18px;color:var(--text-strong);cursor:pointer;list-style:none;font-size:.92rem;font-weight:650}.disclosure summary::-webkit-details-marker{display:none}.disclosure summary::after{content:'›';color:var(--text-muted);font-size:1.35rem;transition:transform .16s ease}.disclosure[open] summary::after{transform:rotate(90deg)}.disclosure summary:focus-visible{outline:3px solid var(--focus-ring);outline-offset:-3px}.disclosure summary small{margin-left:auto;margin-right:18px;color:var(--text-muted);font-size:.78rem;font-weight:400}.disclosure-body{padding:18px;border-top:1px solid var(--separator)}
+.overview-details,.settings-layout,.diagnostics-layout{display:grid;gap:8px}.overview-attention,.diagnostics-attention{width:100%;border:0;border-left:3px solid var(--state-warn);border-radius:0;text-align:left;color:inherit;cursor:pointer}.overview-attention:hover,.diagnostics-attention:hover{background:rgba(var(--accent-rgb),.09)}.settings-disclosure>.disclosure-body,.diagnostics-disclosure>.disclosure-body{padding:0 18px 18px}.settings-disclosure .ui-card,.diagnostics-disclosure .ui-card,.diagnostics-disclosure .settings-card,.diagnostics-disclosure .logs-view,.diagnostics-disclosure .diag-zone-motor,.diagnostics-disclosure .connectivity-card,.diagnostics-disclosure .diag-i2c{margin:0!important;padding:0!important;border:0!important;border-radius:0!important;background:transparent!important;box-shadow:none!important;backdrop-filter:none!important}.settings-disclosure .ui-card-title{display:none}.settings-disclosure .ui-row{min-height:58px}.settings-disclosure .ui-input,.settings-disclosure .ui-select,.settings-disclosure .ui-btn,.settings-disclosure button,.diagnostics-disclosure button,.diagnostics-disclosure select,.diagnostics-disclosure input{min-height:44px}.settings-disclosure .touch-approve{border-color:var(--accent)!important;background:var(--accent)!important;color:var(--text-on-accent)!important}.settings-disclosure .touch-disconnect{background:transparent!important}.diagnostics-disclosure .card-title,.diagnostics-disclosure .ui-card-title{color:var(--text-strong)!important;font-size:.92rem!important;font-weight:650!important;letter-spacing:0!important;text-transform:none!important}.diagnostics-disclosure .logs-stream{height:min(420px,50vh);background:rgba(0,0,0,.14);box-shadow:none}.diagnostics-disclosure.danger-zone{margin-top:20px;border-color:var(--danger-border-soft)}.diagnostics-disclosure.danger-zone>summary{color:var(--danger-text)}
+.help-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.help-item{display:block;padding:18px;border:1px solid var(--separator);border-radius:10px;background:var(--surface-raised);color:var(--text-main);text-decoration:none}.help-item:hover{border-color:rgba(var(--accent-rgb),.45)}.help-item strong{display:block;color:var(--text-strong);font-size:.95rem}.help-item p{margin:5px 0 0;color:var(--text-muted);font-size:.83rem}
+button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,.zone-card:focus-visible{outline:3px solid var(--focus-ring);outline-offset:2px}@media (prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;transition:none!important;animation:none!important}}@media (prefers-contrast:more){:root{--separator:rgba(230,238,250,.28);--text-muted:rgba(239,244,252,.82);--text-faint:rgba(231,239,250,.68)}}
+:root[data-color-scheme="light"] .side-panel{background:rgba(17,24,39,.018)}
+:root[data-color-scheme="light"] .attention{background:rgba(154,91,0,.07)}
+:root[data-color-scheme="light"] .diagnostics-disclosure .logs-stream,
+:root[data-color-scheme="light"] .diag-i2c,
+:root[data-color-scheme="light"] .logs-stream{background:rgba(17,24,39,.045)}
+:root[data-color-scheme="light"] .zone-card:hover{background:rgba(17,24,39,.035)}
+@media (prefers-contrast:more){:root[data-color-scheme="light"]{--separator:rgba(31,41,55,.32);--text-muted:rgba(24,30,39,.86);--text-faint:rgba(35,42,52,.72)}}
+.overview-dashboard{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(280px,.7fr);column-gap:28px;border-top:1px solid var(--separator)}.dashboard-section{min-width:0;padding:24px 0;border-bottom:1px solid var(--separator)}.dashboard-hydraulic{grid-column:1/-1}.dashboard-activity{grid-column:1}.dashboard-connection{grid-column:2;padding-left:28px;border-left:1px solid var(--separator)}.dashboard-section-head{display:flex;align-items:flex-start;justify-content:space-between;gap:20px;margin:0 0 18px}.dashboard-section-head h3{margin:0;color:var(--text-strong);font-size:1rem;font-weight:650}.dashboard-section-head p{margin:3px 0 0;color:var(--text-muted);font-size:.82rem}.hydraulic-summary{color:var(--text-muted);font-size:.84rem;font-variant-numeric:tabular-nums}.overview-dashboard .flow-wrap,.overview-dashboard .graph-card,.overview-dashboard .timeline-card,.overview-dashboard .connectivity-card{margin:0!important;border:0!important;border-radius:0!important;background:transparent!important;box-shadow:none!important;backdrop-filter:none!important}.overview-dashboard .connectivity-card{padding:0!important}.overview-dashboard .connectivity-card .card-title{display:none}.overview-dashboard .graph-card{margin-top:18px!important;padding-top:18px!important;border-top:1px solid var(--separator)!important}
+.zone-detail-toolbar{display:grid;gap:12px;align-items:initial;justify-content:initial}.zone-back{justify-self:start}.zone-picker-field{display:none}.zone-tabstrip{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:3px;padding:3px;border:1px solid var(--control-border);border-radius:11px;background:var(--control-bg);overflow-x:auto}.zone-tab{min-width:0;min-height:44px;padding:0 10px;border:0;border-radius:8px;background:transparent;color:var(--text-muted);font-size:.84rem;font-weight:620;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;cursor:pointer}.zone-tab:hover{color:var(--text-strong);background:var(--control-bg-hover)}.zone-tab[aria-selected="true"]{background:rgba(var(--accent-rgb),.15);color:var(--accent)}
+.zone-configuration-group{overflow:hidden;border:1px solid var(--separator);border-radius:10px;background:var(--surface-raised)}.zone-configuration-group .zone-room-slot{border-bottom:1px solid var(--separator)}.zone-configuration-group .ui-card{height:auto!important;padding:18px 20px!important;border:0!important;border-radius:0!important;background:transparent!important}.zone-configuration-group .ui-card-title{min-height:34px;margin:0;padding:0 0 12px;font-size:.95rem}.zone-configuration-group .ui-section{margin-top:20px;color:var(--text-muted);font-size:.78rem;letter-spacing:0;text-transform:none}.zone-configuration-group .ui-divider{border-top:1px solid var(--separator)}.zone-recovery-disclosure{margin-top:10px}.zone-recovery-disclosure>summary{color:var(--text-muted)}
+@media(max-width:900px){.shell{display:block;padding-bottom:78px}.main-panel{min-width:0}.side-panel{position:fixed;z-index:40;left:10px;right:10px;bottom:10px;top:auto;width:auto;height:auto;padding:7px;border:1px solid var(--separator);border-radius:14px;background:color-mix(in srgb,var(--bg) 92%,transparent);box-shadow:0 10px 32px rgba(0,0,0,.32);backdrop-filter:blur(22px) saturate(1.3);overflow:visible}.side-brand,.side-subtitle{display:none}.hdr{padding:9px 14px}.view-panel{width:100%;padding:24px 16px 48px}.status-summary{grid-template-columns:1fr 1fr;gap:16px}.status-summary-main{grid-column:1/-1;padding:0 0 12px;border-bottom:1px solid var(--separator)}.status-fact{padding:0;border:0}.zone-card{grid-template-columns:minmax(120px,1fr) 90px 90px 28px;gap:10px}.zone-card .zc-valve{display:none}.zone-card .zc-reading{grid-column:2}.zone-card .zc-state-row{grid-column:3}.zone-card::after{grid-column:4}.zone-detail-secondary,.help-list{grid-template-columns:1fr}}
+@media(max-width:900px){.overview-dashboard{grid-template-columns:1fr}.dashboard-hydraulic,.dashboard-activity,.dashboard-connection{grid-column:1}.dashboard-connection{padding-left:0;border-left:0}.zone-tabstrip{grid-template-columns:repeat(6,minmax(112px,1fr));scroll-snap-type:x proximity}.zone-tab{scroll-snap-align:start}}
+@media(max-width:520px){.v6-toolbar h1{font-size:1.15rem}.v6-toolbar p{font-size:.78rem}.v6-toolbar-icon{display:none}.v6-live{font-size:0}.v6-live::before{width:8px;height:8px}.status-summary h2{font-size:1.35rem}.group-title{align-items:center}.group-title span{margin-top:4px}.zone-card{min-height:88px;grid-template-columns:minmax(0,1fr) 82px 28px}.zone-card .zc-reading{grid-column:2}.zone-card .zc-state-row{grid-column:1;margin-top:51px}.zone-card::after{grid-column:3}.zones-index-head{display:block}.zones-index-head p{margin-top:4px}.zone-detail-toolbar{align-items:stretch;flex-direction:column}.zone-back{align-self:flex-start}.zone-picker-field{justify-content:space-between}.zone-picker{min-width:0;flex:1}}
 `;
+injectStyle('hv6-app-root', css);
 
-injectStyle('app-root', css);
+const template = () => `
+<div class="app"><div class="shell"><aside class="side-panel"><div class="side-brand">Lune V6</div><p class="side-subtitle">Local manifold controller</p><div class="side-nav-slot"></div></aside><div class="main-panel"><div class="hdr"></div><main class="view-panel">
+<section class="sec active" data-section="overview"><div class="overview-status status-summary"></div><button type="button" class="overview-attention attention" data-open-zones hidden></button><div class="overview-dashboard"><section class="dashboard-section dashboard-hydraulic" aria-labelledby="hydraulic-heading"><div class="dashboard-section-head"><div><h3 id="hydraulic-heading">Hydraulic overview</h3><p>Current temperatures, valve demand and active loops.</p></div><span class="hydraulic-summary"></span></div><div class="flow-diagram-slot"></div><div class="hydraulic-history-slot"></div></section><section class="dashboard-section dashboard-activity" aria-labelledby="activity-heading"><div class="dashboard-section-head"><div><h3 id="activity-heading">24-hour activity</h3><p>Heating and valve state by zone.</p></div></div><div class="timeline-slot"></div></section><section class="dashboard-section dashboard-connection" aria-labelledby="connection-heading"><div class="dashboard-section-head"><div><h3 id="connection-heading">Connection</h3><p>Touch, network and firmware.</p></div></div><div class="connectivity-slot"></div></section></div></section>
+<section class="sec" data-section="zones"><div class="zones-index"><div class="zones-index-head"><h2>Zones</h2><p class="zones-count">6 physical loops</p></div><section class="zones-summary" role="status" aria-live="polite"></section><div class="content-group"><div class="group-title"><div class="group-title-main"><h3>Local zones</h3><span>Temperature, applied target, valve and state</span></div></div><div class="zones-list"></div></div></div><section class="zone-detail-view zones-detail-pane" aria-labelledby="selected-zone-title" hidden><div class="zone-detail-toolbar"><button type="button" class="zone-back" data-zone-back>‹ All zones</button><div class="zone-tabstrip" role="tablist" aria-label="Select zone"></div></div><div class="zone-detail-heading" id="selected-zone-panel" role="tabpanel" aria-labelledby="selected-zone-tab"><span class="eyebrow">Zone details</span><h2 class="selected-zone-title" id="selected-zone-title">Zone details</h2><p>Applied target, sensor coverage and local safety.</p></div><div class="zone-detail-layout"><div class="zone-detail-slot"></div><section class="zone-configuration-group" aria-label="Zone configuration"><div class="zone-room-slot"></div><div class="zone-sensor-slot"></div></section><details class="disclosure zone-recovery-disclosure"><summary>Service and recovery<small>Only when this zone needs attention</small></summary><div class="disclosure-body zone-recovery-slot"></div></details></div></section></section>
+<section class="sec" data-section="settings"><div class="settings-readiness status-summary"></div><div class="settings-layout"><details class="disclosure settings-disclosure touch-settings" open><summary>Touch connection<small>Approval and coordinator identity</small></summary><div class="disclosure-body touch-slot"></div></details><details class="disclosure settings-disclosure"><summary>Manifold and probes<small>Valve type and temperature inputs</small></summary><div class="disclosure-body manifold-slot"></div></details><details class="disclosure settings-disclosure"><summary>Hydraulic safety<small>Minimum active-loop opening</small></summary><div class="disclosure-body minimum-flow-slot"></div></details><details class="disclosure settings-disclosure"><summary>Preheat absorption<small>Local handling of external preload</small></summary><div class="disclosure-body preheat-slot"></div></details><details class="disclosure settings-disclosure"><summary>Motor configuration<small>Drivers, profile and learning limits</small></summary><div class="disclosure-body motor-slot"></div></details></div></section>
+<section class="sec" data-section="diagnostics"><div class="diagnostics-readiness status-summary"></div><button type="button" class="diagnostics-attention attention" data-open-zones hidden></button><div class="diagnostics-layout"><details class="disclosure diagnostics-disclosure"><summary>Runtime health<small>Processor and memory</small></summary><div class="disclosure-body system-health-slot"></div></details><details class="disclosure diagnostics-disclosure"><summary>Hardware and connectivity<small>Network, firmware and I²C</small></summary><div class="disclosure-body diag-health-slot"></div></details><details class="disclosure diagnostics-disclosure"><summary>Device logs<small>Live firmware events</small></summary><div class="disclosure-body logs-main-col"></div></details><details class="disclosure diagnostics-disclosure"><summary>Manual motor control<small>Temporary service operation</small></summary><div class="disclosure-body manual-control-col"></div></details><details class="disclosure diagnostics-disclosure danger-zone"><summary>Recovery and restart<small>Actions that interrupt normal operation</small></summary><div class="disclosure-body diag-actions-slot"></div></details></div></section>
+<section class="sec" data-section="help"><div class="help-list"><a class="help-item" href="#zones" data-help-section="zones"><strong>Manifolds and zones</strong><p>How physical loops map to rooms and targets.</p></a><a class="help-item" href="#zones"><strong>Sensors</strong><p>Temperature freshness, BLE coverage and fallback behavior.</p></a><a class="help-item" href="#settings"><strong>Touch coordination</strong><p>What Touch controls and what V6 enforces locally.</p></a><a class="help-item" href="#settings"><strong>Hydraulic safety</strong><p>Minimum flow, valve protection and safe local operation.</p></a><a class="help-item" href="#diagnostics"><strong>Diagnostics and recovery</strong><p>Read health evidence before using recovery actions.</p></a></div></section>
+<div class="ftr">Lune V6 · Local manifold controller</div></main></div></div></div>`;
 
-// =====================
-// TEMPLATE
-// =====================
-const template = (ctx) => `
-  <div class="app">
-    <main class="shell">
-      <div class="hdr"></div>
-      <aside class="side-panel"></aside>
-      <div class="view-panel">
-        <section class="sec active" data-section="overview">
-          <div class="overview-flow"></div>
-          <div class="overview-timeline" style="margin-top:14px"></div>
-          <div class="dashboard-grid">
-            <div class="overview-flow-return"></div>
-          </div>
-        </section>
-        <section class="sec" data-section="zones">
-          <div class="zone-selector"></div>
-          <div class="zone-layout">
-            <div class="zone-detail-slot"></div>
-            <div class="zone-mid-col">
-              <div class="zone-sensor-slot"></div>
-              <div class="zone-recovery-slot"></div>
-            </div>
-            <div class="zone-room-slot"></div>
-          </div>
-        </section>
-        <section class="sec" data-section="settings">
-          <div class="settings-layout">
-            <div class="settings-group settings-installation-group">
-              <div class="settings-group-head"><span class="settings-group-title" data-i18n="settings.group.installation">Installation</span></div>
-              <div class="settings-group-grid settings-installation-grid">
-                <div class="settings-manifold-slot"></div>
-              </div>
-            </div>
-            <div class="settings-group settings-hydraulic-group">
-              <div class="settings-group-head"><span class="settings-group-title" data-i18n="settings.group.hydraulic">Hydraulic Safety</span></div>
-              <div class="settings-group-grid settings-hydraulic-grid">
-                <div class="settings-hydraulic-stack">
-                  <div class="settings-min-flow-slot"></div>
-                  <div class="settings-preheat-slot"></div>
-                </div>
-              </div>
-            </div>
-            <div class="settings-group settings-motor-group">
-              <div class="settings-group-head"><span class="settings-group-title" data-i18n="settings.group.motorAdvanced">Motor Advanced</span></div>
-              <div class="settings-group-grid settings-motor-grid">
-                <div class="settings-motor-cal-slot"></div>
-              </div>
-            </div>
-          </div>
-        </section>
-        <section class="sec" data-section="diagnostics">
-          <div class="diagnostics-layout">
-            <div class="diagnostics-group diagnostics-logs-group">
-              <div class="diagnostics-group-head"><span class="diagnostics-group-title" data-i18n="diagnostics.group.logs">Logs</span></div>
-              <div class="logs-main-col"></div>
-            </div>
-            <div class="diagnostics-group diagnostics-manual-group">
-              <div class="diagnostics-group-head"><span class="diagnostics-group-title" data-i18n="diagnostics.group.manual">Manual Motor Control</span></div>
-              <div class="manual-control-col"></div>
-            </div>
-            <div class="diagnostics-group diagnostics-actions-group">
-              <div class="diagnostics-group-head"><span class="diagnostics-group-title" data-i18n="diagnostics.group.actions">Service Actions</span></div>
-              <div class="diagnostics-group-grid diag-actions-grid"></div>
-            </div>
-            <div class="diagnostics-group diagnostics-health-group">
-              <div class="diagnostics-group-head"><span class="diagnostics-group-title" data-i18n="diagnostics.group.health">Device Health</span></div>
-              <div class="diagnostics-group-grid diag-health-grid"></div>
-            </div>
-          </div>
-        </section>
-        <div class="ftr" data-i18n="footer.product">LUNE V6 · LOCAL MANIFOLD CONTROLLER</div>
-      </div>
-    </main>
-  </div>
-`;
-
-// =====================
-// COMPONENT
-// =====================
-component({
-  tag: 'app-root',
-
-  render: template,
-
-  onMount(ctx, el) {
-    el.querySelector('.hdr').appendChild(mountComponent('hv6-header'));
-    el.querySelector('.side-panel').appendChild(mountComponent('hv6-sidebar'));
-    el.querySelector('.overview-flow').appendChild(mountComponent('flow-diagram'));
-    el.querySelector('.overview-timeline').appendChild(mountComponent('zone-state-timeline'));
-    el.querySelector('.overview-flow-return').appendChild(mountComponent('graph-widgets', { variant: 'flow-return' }));
-
-    el.querySelector('.zone-selector').appendChild(mountComponent('zone-grid'));
-    el.querySelector('.zone-detail-slot').appendChild(mountComponent('zone-detail', { zone: getDashboardValue('selectedZone') }));
-    // Middle column: sensor (connectivity) + fault/relearn, both following the selected zone.
-    el.querySelector('.zone-sensor-slot').appendChild(mountComponent('zone-sensor-card'));
-    el.querySelector('.zone-recovery-slot').appendChild(mountComponent('diag-zone-recovery-card'));
-    el.querySelector('.zone-room-slot').appendChild(mountComponent('zone-room-card'));
-
-    el.querySelector('.settings-manifold-slot').appendChild(mountComponent('settings-manifold-card'));
-    el.querySelector('.settings-min-flow-slot').appendChild(mountComponent('settings-minimum-flow-card'));
-    el.querySelector('.settings-preheat-slot').appendChild(mountComponent('smart-preheat-card'));
-    el.querySelector('.settings-motor-cal-slot').appendChild(mountComponent('settings-motor-calibration-card'));
-
-    const logsMain = el.querySelector('.logs-main-col');
-    logsMain.appendChild(mountComponent('logs-view'));
-    const manualCol = el.querySelector('.manual-control-col');
-    manualCol.appendChild(mountComponent('diag-manual-badge'));
-    manualCol.appendChild(mountComponent('diag-zone-motor-card', { zone: getDashboardValue('selectedZone') || 1 }));
-    const healthGrid = el.querySelector('.diag-health-grid');
-    healthGrid.appendChild(mountComponent('connectivity-card'));
-    healthGrid.appendChild(mountComponent('diag-system-card'));
-    healthGrid.appendChild(mountComponent('diag-i2c'));
-    const actionsGrid = el.querySelector('.diag-actions-grid');
-    actionsGrid.appendChild(mountComponent('settings-control-card'));
-
-    const sectionNodes = el.querySelectorAll('.sec');
-
-    function updateSection() {
-      const section = getDashboardValue('section');
-      sectionNodes.forEach((node) => {
-        node.classList.toggle('active', node.getAttribute('data-section') === section);
-      });
-    }
-
-    subscribeDashboard('section', updateSection);
-    subscribeLanguage(() => localize(el));
-    localize(el);
-    updateSection();
+component({ tag:'app-root', render:template, onMount(ctx, el) {
+  el.querySelector('.hdr').appendChild(mountComponent('hv6-header'));
+  el.querySelector('.side-nav-slot').appendChild(mountComponent('hv6-sidebar'));
+  el.querySelector('.zones-list').appendChild(mountComponent('zone-grid',{selection:true,navigate:true}));
+  el.querySelector('.flow-diagram-slot').appendChild(mountComponent('flow-diagram'));
+  el.querySelector('.hydraulic-history-slot').appendChild(mountComponent('graph-widgets',{variant:'flow-return'}));
+  el.querySelector('.timeline-slot').appendChild(mountComponent('zone-state-timeline'));
+  el.querySelector('.connectivity-slot').appendChild(mountComponent('connectivity-card'));
+  el.querySelector('.zone-detail-slot').appendChild(mountComponent('zone-detail',{zone:getDashboardValue('selectedZone')}));
+  el.querySelector('.zone-sensor-slot').appendChild(mountComponent('zone-sensor-card'));
+  el.querySelector('.zone-recovery-slot').appendChild(mountComponent('diag-zone-recovery-card'));
+  el.querySelector('.zone-room-slot').appendChild(mountComponent('zone-room-card'));
+  el.querySelector('.touch-slot').appendChild(mountComponent('settings-touch-card'));
+  el.querySelector('.manifold-slot').appendChild(mountComponent('settings-manifold-card'));
+  el.querySelector('.minimum-flow-slot').appendChild(mountComponent('settings-minimum-flow-card'));
+  el.querySelector('.preheat-slot').appendChild(mountComponent('smart-preheat-card'));
+  el.querySelector('.motor-slot').appendChild(mountComponent('settings-motor-calibration-card'));
+  el.querySelector('.diag-actions-slot').appendChild(mountComponent('settings-control-card'));
+  el.querySelector('.manual-control-col').appendChild(mountComponent('diag-manual-badge'));
+  el.querySelector('.manual-control-col').appendChild(mountComponent('diag-zone-motor-card',{zone:getDashboardValue('selectedZone')||1}));
+  el.querySelector('.logs-main-col').appendChild(mountComponent('logs-view'));
+  el.querySelector('.system-health-slot').appendChild(mountComponent('diag-system-card'));
+  el.querySelector('.diag-health-slot').appendChild(mountComponent('connectivity-card'));
+  el.querySelector('.diag-health-slot').appendChild(mountComponent('diag-i2c'));
+  const sections=el.querySelectorAll('.sec'); const zonesIndex=el.querySelector('.zones-index'); const detail=el.querySelector('.zone-detail-view'); const selectedTitle=el.querySelector('.selected-zone-title'); const zoneTabstrip=el.querySelector('.zone-tabstrip');
+  let zoneDetailOpen=false;
+  function rebuildZoneTabs(){ const zone=getDashboardValue('selectedZone')||1; zoneTabstrip.innerHTML=Array.from({length:6},(_,i)=>{ const value=i+1; const selected=value===zone; return `<button type="button" class="zone-tab" id="${selected?'selected-zone-tab':'zone-tab-'+value}" role="tab" aria-controls="selected-zone-panel" aria-selected="${selected}" tabindex="${selected?'0':'-1'}" data-zone-select="${value}">${zoneLabel(value)}</button>`; }).join(''); }
+  function updateSection(){ const section=getDashboardValue('section')||'overview'; sections.forEach((node)=>node.classList.toggle('active',node.dataset.section===section)); updateZoneDetail(); }
+  function updateSummary(){
+    const enabled=[]; let active=0; let faults=0; for(let z=1;z<=6;z++){ const on=String(es(key.enabled(z))).toLowerCase()==='on'; const state=String(es(key.state(z))).toLowerCase(); const fault=String(es(key.motorLastFault(z))).toLowerCase(); if(on) enabled.push(z); if(on&&['heating','calling'].includes(state)) active++; if(state==='fault'||(fault!==''&&fault!=='none'&&fault!=='ok')) faults++; }
+    const flow=ev(gkey.flow), ret=ev(gkey.ret), touch=String(es(gkey.authorityState)||'').replace(/_/g,' '); const healthy=faults===0&&getDashboardValue('live');
+    const html=`<div class="status-summary-main"><span class="eyebrow">System status</span><h2 class="${healthy?'status-ok':getDashboardValue('live')?'status-warn':'status-danger'}">${healthy?'Operating normally':getDashboardValue('live')?'Needs attention':'Device offline'}</h2><p>${faults?faults+' zone fault'+(faults===1?'':'s')+' require attention.':getDashboardValue('live')?'V6 is running local control safely.':'Unable to read current manifold state.'}</p></div><div class="status-fact"><span class="eyebrow">Heating</span><strong>${active} zones</strong><small>${enabled.length} enabled</small></div><div class="status-fact"><span class="eyebrow">Flow</span><strong>${fmtT(flow)}</strong><small>Return ${fmtT(ret)}</small></div><div class="status-fact"><span class="eyebrow">Touch</span><strong>${touch||'not connected'}</strong><small>${ev(gkey.authorityLeaseRemainingS)?Math.round(ev(gkey.authorityLeaseRemainingS))+' s lease':'local control'}</small></div>`;
+    const touchApproved=isEntityOn(gkey.authorityConfigured); const drivers=String(es(gkey.drivers)||'off');
+    el.querySelector('.overview-status').innerHTML=html; el.querySelector('.hydraulic-summary').textContent=`${active} heating · Flow ${fmtT(flow)} · Return ${fmtT(ret)}`; el.querySelector('.settings-readiness').innerHTML=`<div class="status-summary-main"><span class="eyebrow">Configuration</span><h2 class="${getDashboardValue('live')?'status-ok':'status-danger'}">${getDashboardValue('live')?'Ready':'Waiting for device'}</h2><p>V6 validates and saves changes locally.</p></div><div class="status-fact"><span class="eyebrow">Device</span><strong>${getDashboardValue('live')?'Live':'Offline'}</strong><small>local controller</small></div><div class="status-fact"><span class="eyebrow">Touch</span><strong>${touchApproved?'Approved':'Not approved'}</strong><small>${touchApproved?'authenticated control':'local control only'}</small></div><div class="status-fact"><span class="eyebrow">Drivers</span><strong>${drivers}</strong><small>motor outputs</small></div>`; el.querySelector('.diagnostics-readiness').innerHTML=`<div class="status-summary-main"><span class="eyebrow">Overall health</span><h2 class="${faults?'status-danger':healthy?'status-ok':'status-warn'}">${faults?faults+' issue'+(faults===1?'':'s'):healthy?'Healthy':'Awaiting data'}</h2><p>${faults?'Resolve current exceptions before using service controls.':'No active motor faults reported.'}</p></div><div class="status-fact"><span class="eyebrow">Zone faults</span><strong>${faults}</strong><small>${faults?'requires review':'none reported'}</small></div><div class="status-fact"><span class="eyebrow">Drivers</span><strong>${drivers}</strong><small>motor outputs</small></div><div class="status-fact"><span class="eyebrow">Touch</span><strong>${touch||'not connected'}</strong><small>${touchApproved?'approved':'local control'}</small></div>`;
+    el.querySelector('.zones-count').textContent=`6 physical loops · ${enabled.length} enabled · ${active} heating`;
+    el.querySelector('.zones-summary').innerHTML=`<span class="eyebrow">Zone status</span><h2>${faults?faults+' zone'+(faults===1?'':'s')+' need attention':enabled.length?active?active+' zone'+(active===1?' is':'s are')+' heating':'All enabled zones are idle':'No zones enabled'}</h2><p>${faults?'Open an affected zone to review its valve, sensor and recovery state.':enabled.length?'Select a zone to review its applied target, sensor coverage and local fallback.':'Enable zones after their valve and temperature source are configured.'}</p>`;
+    [el.querySelector('.overview-attention'),el.querySelector('.diagnostics-attention')].forEach((attention)=>{ attention.hidden=!faults; attention.innerHTML=faults?`<strong>Review ${faults} zone fault${faults===1?'':'s'}</strong><span>Open Zones to inspect the affected valve and sensor state.</span>`:''; });
   }
-});
+  function updateZoneDetail(){ const zone=getDashboardValue('selectedZone')||1; const inZones=getDashboardValue('section')==='zones'; selectedTitle.textContent=zoneLabel(zone); rebuildZoneTabs(); zonesIndex.hidden=!inZones||zoneDetailOpen; detail.hidden=!inZones||!zoneDetailOpen; }
+  el.addEventListener('zone-open',()=>{ zoneDetailOpen=true; updateZoneDetail(); });
+  el.querySelector('[data-zone-back]').addEventListener('click',()=>{ zoneDetailOpen=false; updateZoneDetail(); const selected=el.querySelector(`.zones-list .zone-card[data-zone="${getDashboardValue('selectedZone')||1}"]`); if(selected) selected.focus(); });
+  zoneTabstrip.addEventListener('click',(event)=>{ const tab=event.target.closest('[data-zone-select]'); if(tab) setSelectedZone(Number(tab.dataset.zoneSelect)); });
+  zoneTabstrip.addEventListener('keydown',(event)=>{ if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key)) return; event.preventDefault(); const current=getDashboardValue('selectedZone')||1; const next=event.key==='Home'?1:event.key==='End'?6:event.key==='ArrowLeft'?(current===1?6:current-1):(current===6?1:current+1); setSelectedZone(next); requestAnimationFrame(()=>zoneTabstrip.querySelector(`[data-zone-select="${next}"]`)?.focus()); });
+  el.querySelectorAll('[data-open-zones]').forEach((button)=>button.addEventListener('click',()=>{ zoneDetailOpen=false; setSection('zones'); }));
+  el.querySelectorAll('[data-help-section]').forEach((node)=>node.addEventListener('click',(event)=>{event.preventDefault();setSection(node.dataset.helpSection)}));
+  subscribeDashboard('section',updateSection); subscribeDashboard('selectedZone',updateZoneDetail); subscribeDashboard('live',updateSummary); subscribeDashboard('zoneNames',()=>{ rebuildZoneTabs(); updateSummary(); }); subscribeLanguage(()=>localize(el));
+  for(let z=1;z<=6;z++){ [key.temp(z),key.setpoint(z),key.valve(z),key.state(z),key.enabled(z),key.motorLastFault(z)].forEach((id)=>subscribe(id,updateSummary)); } [gkey.flow,gkey.ret,gkey.authorityConfigured,gkey.authorityState,gkey.authorityLeaseRemainingS,gkey.drivers].forEach((id)=>subscribe(id,updateSummary)); localize(el); updateSection(); updateZoneDetail(); updateSummary();
+ }});

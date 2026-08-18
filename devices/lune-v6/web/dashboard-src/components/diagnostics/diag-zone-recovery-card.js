@@ -17,11 +17,9 @@ const css = `
   backdrop-filter: blur(16px) saturate(1.18);
 }
 .diag-zone-recovery .card-title {
-  font-size: .84rem;
-  font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: 1.1px;
-  color: var(--accent);
+  font-size: .95rem;
+  font-weight: 650;
+  color: var(--text-strong);
   margin-bottom: 12px;
   padding-bottom: 10px;
   border-bottom: 1px solid var(--panel-border);
@@ -43,11 +41,7 @@ const css = `
 .diag-zone-recovery .recovery-status.show { opacity: 1; }
 .diag-zone-recovery .recovery-status.ok { color: var(--state-ok); }
 .diag-zone-recovery .recovery-status.err { color: var(--state-danger); }
-.diag-zone-recovery .btn-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
+.diag-zone-recovery .recovery-actions{border-top:1px solid var(--separator)}.diag-zone-recovery .recovery-action{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:20px;min-height:66px;padding:10px 0;border-bottom:1px solid var(--separator)}.diag-zone-recovery .recovery-action:last-child{border-bottom:0}.diag-zone-recovery .recovery-copy strong{display:block;color:var(--text-strong);font-size:.88rem;font-weight:600}.diag-zone-recovery .recovery-copy span{display:block;margin-top:3px;color:var(--text-muted);font-size:.76rem}
 .diag-zone-recovery .cfg-row {
   display: flex;
   gap: 10px;
@@ -76,9 +70,9 @@ const css = `
   border-color: var(--focus-border);
 }
 .diag-zone-recovery .btn {
-  flex: 1;
-  min-width: 140px;
-  padding: 10px 14px;
+  min-width: 150px;
+  min-height:44px;
+  padding: 8px 14px;
   border: none;
   border-radius: 8px;
   font-weight: 600;
@@ -89,6 +83,7 @@ const css = `
   color: var(--text-strong);
   transition: all 0.2s;
 }
+@media(max-width:620px){.diag-zone-recovery .recovery-action{grid-template-columns:1fr}.diag-zone-recovery .btn{width:100%}}
 .diag-zone-recovery .btn:hover {
   background: var(--control-bg-hover);
   border-color: var(--accent-border-hover);
@@ -112,13 +107,9 @@ injectStyle('diag-zone-recovery', css);
 // ========================================
 const template = () => `
     <div class="diag-zone-recovery">
-      <div class="card-title" data-i18n="diagnostics.recovery.title">Faults &amp; Relearn</div>
+      <div class="card-title" data-i18n="diagnostics.recovery.title">Motor recovery</div>
       <div class="recovery-note" data-i18n="diagnostics.recovery.note">Recover the selected zone's motor after a fault or bad calibration.</div>
-      <div class="btn-row">
-        <button class="btn recovery-fault-btn" data-i18n="diagnostics.recovery.resetFault">Reset Fault</button>
-        <button class="btn warn recovery-factors-btn" data-i18n="diagnostics.recovery.resetFactors">Reset Factors</button>
-        <button class="btn accent recovery-relearn-btn" data-i18n="diagnostics.recovery.resetRelearn">Reset + Relearn</button>
-      </div>
+      <div class="recovery-actions"><div class="recovery-action"><div class="recovery-copy"><strong data-i18n="diagnostics.recovery.clearFaultTitle">Clear current fault</strong><span data-i18n="diagnostics.recovery.clearFaultHelp">Acknowledge the current motor fault without changing learned values.</span></div><button class="btn recovery-fault-btn" data-i18n="diagnostics.recovery.resetFault">Clear fault</button></div><div class="recovery-action"><div class="recovery-copy"><strong data-i18n="diagnostics.recovery.resetFactorsTitle">Reset learned factors</strong><span data-i18n="diagnostics.recovery.resetFactorsHelp">Remove calibration values while leaving the valve stopped.</span></div><button class="btn warn recovery-factors-btn" data-i18n="diagnostics.recovery.resetFactors">Reset factors…</button></div><div class="recovery-action"><div class="recovery-copy"><strong data-i18n="diagnostics.recovery.relearnTitle">Reset and relearn</strong><span data-i18n="diagnostics.recovery.relearnHelp">Reset calibration and start a complete motor learning cycle.</span></div><button class="btn warn recovery-relearn-btn" data-i18n="diagnostics.recovery.resetRelearn">Reset and relearn…</button></div></div>
       <div class="recovery-status" role="status"></div>
     </div>
   `;

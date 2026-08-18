@@ -24,15 +24,14 @@ const css = `
   font-family: var(--mono); font-size: 1.5rem; font-weight: 800;
   color: var(--text-strong); line-height: 1;
 }
-.diag-system-card .sys-value.warn { color: #FFB4B4; }
+.diag-system-card .sys-value.warn { color:var(--state-danger); }
 .diag-system-card .sys-bar {
   height: 4px; border-radius: 3px; margin-top: 6px;
   background: var(--control-bg-hover); overflow: hidden;
 }
 .diag-system-card .sys-bar > i {
   display: block; height: 100%; width: 0%;
-  background: linear-gradient(90deg, #6FCF97, #F2C94C, #EB5757);
-  background-size: 300% 100%; background-position: 0% 0;
+  background:var(--accent);
   transition: width .4s ease;
 }
 .diag-system-card .sys-dump { width: 100%; margin-top: 14px; }
@@ -96,8 +95,6 @@ export default component({
       valEl.textContent = pct.toFixed(0) + '%';
       valEl.classList.toggle('warn', pct >= 90);
       barEl.style.width = pct + '%';
-      // Shift the gradient so the bar reddens as load climbs.
-      barEl.style.backgroundPosition = pct + '% 0';
     };
     const setKb = (valEl, v, warnBelow) => {
       if (v == null || !Number.isFinite(Number(v))) { valEl.textContent = '—'; return; }

@@ -7,9 +7,9 @@ let refreshGeneration = 0;
 function mockData(path) {
   if (path === '/overview') return { summary: { zones: 18, nodes: 3, calling: 5, stale_nodes: 1, comfort_avg_c: 21.1, forecast_status: 'stale', latest_command: 'accepted' } };
   if (path === '/nodes') return { nodes: [
-    { id: 'v6-a', name: 'Ground floor manifold', hostname: 'lune-v6-a.local', ip: '192.168.1.51', firmware: 'mock', pairing_fingerprint: 'hv6-mock-a', reachable: true, trust: 2, trust_label: 'trusted', last_success_host: 'lune-v6-a.local', last_failure: '', health: { mapped_zones: 6, fresh_zones: 6, stale_zones: 0, calling_zones: 2, avg_temp_c: 20.9, avg_setpoint_c: 21.0 }, runtime: { active_zones: 6, avg_valve_pct: 28.5, flow_c: 33.8, return_c: 30.6, drivers_enabled: true, motor_fault: false, motor_current_ma: 18.2 } },
-    { id: 'v6-b', name: 'Workshop manifold', hostname: 'lune-v6-b.local', ip: '192.168.1.52', firmware: 'mock', pairing_fingerprint: 'hv6-mock-b', reachable: true, trust: 2, trust_label: 'trusted', last_success_host: '192.168.1.52', last_failure: '', health: { mapped_zones: 6, fresh_zones: 6, stale_zones: 0, calling_zones: 2, avg_temp_c: 18.9, avg_setpoint_c: 18.9 }, runtime: { active_zones: 4, avg_valve_pct: 19.7, flow_c: 31.2, return_c: 28.9, drivers_enabled: true, motor_fault: true, motor_current_ma: 12.4 } },
-    { id: 'v6-c', name: 'Unverified manifold', hostname: 'lune-v6-c.local', ip: '192.168.1.53', firmware: 'mock', pairing_fingerprint: 'hv6-mock-c', reachable: false, trust: 1, trust_label: 'paired', last_success_host: '', last_failure: 'overview failed status=0', health: { mapped_zones: 6, fresh_zones: 5, stale_zones: 1, calling_zones: 1, avg_temp_c: 19.3, avg_setpoint_c: 18.6 }, runtime: { active_zones: 0, avg_valve_pct: null, flow_c: null, return_c: null, drivers_enabled: false, motor_fault: false, motor_current_ma: null } },
+    { id: 'v6-a', name: 'Ground floor manifold', hostname: 'lune-v6-a.local', ip: '192.168.1.51', firmware: 'mock', pairing_fingerprint: 'hv6-mock-a', reachable: true, trust: 2, trust_label: 'trusted', last_success_host: 'lune-v6-a.local', last_failure: '', health: { imported_zones: 6, mapped_zones: 6, fresh_zones: 6, stale_zones: 0, calling_zones: 2, avg_temp_c: 20.9, avg_setpoint_c: 21.0 }, runtime: { active_zones: 6, avg_valve_pct: 28.5, flow_c: 33.8, return_c: 30.6, drivers_enabled: true, motor_fault: false, motor_current_ma: 18.2 } },
+    { id: 'v6-b', name: 'Workshop manifold', hostname: 'lune-v6-b.local', ip: '192.168.1.52', firmware: 'mock', pairing_fingerprint: 'hv6-mock-b', reachable: true, trust: 2, trust_label: 'trusted', last_success_host: '192.168.1.52', last_failure: '', health: { imported_zones: 6, mapped_zones: 6, fresh_zones: 6, stale_zones: 0, calling_zones: 2, avg_temp_c: 18.9, avg_setpoint_c: 18.9 }, runtime: { active_zones: 4, avg_valve_pct: 19.7, flow_c: 31.2, return_c: 28.9, drivers_enabled: true, motor_fault: true, motor_current_ma: 12.4 } },
+    { id: 'v6-c', name: 'Unverified manifold', hostname: 'lune-v6-c.local', ip: '192.168.1.53', firmware: 'mock', pairing_fingerprint: 'hv6-mock-c', reachable: false, trust: 1, trust_label: 'paired', last_success_host: '', last_failure: 'overview failed status=0', health: { imported_zones: 6, mapped_zones: 6, fresh_zones: 5, stale_zones: 1, calling_zones: 1, avg_temp_c: 19.3, avg_setpoint_c: 18.6 }, runtime: { active_zones: 0, avg_valve_pct: null, flow_c: null, return_c: null, drivers_enabled: false, motor_fault: false, motor_current_ma: null } },
   ] };
   if (path === '/zones') {
     const names = ['Living','Kitchen','Bath','Hall','Office','Bedroom','Guest','Utility','Laundry','Workshop','Pantry','Landing','Kids west','Kids east','Ensuite','Basement','Garage','Spare'];
@@ -221,7 +221,7 @@ export async function refreshAll(options = {}) {
 }
 
 export async function refreshSection(section) {
-  if (section === 'setup') return refreshPaths(['/overview', '/nodes', '/zones', '/forecast', '/diagnostics', '/settings', '/heat-source']);
+  if (section === 'help' || section === 'setup') return refreshPaths(['/overview', '/nodes', '/zones', '/forecast', '/diagnostics', '/settings', '/heat-source']);
   if (section === 'dashboard' || section === 'house' || section === 'overview') return refreshPaths(['/overview', '/zones', '/forecast', '/diagnostics', '/heat-source']);
   if (section === 'rooms' || section === 'zones') return refreshPaths(['/nodes', '/zones']);
   if (section === 'manifolds') return refreshPaths(['/overview', '/nodes', '/zones']);
@@ -247,10 +247,14 @@ async function post(path, body = {}) {
     if (path === '/recovery/reset-registry') return { result: 'reset', registry: 'cleared', ledger: 'cleared', forecast_location: 'kept' };
     return { result: 'mock' };
   }
+  const form = new URLSearchParams();
+  for (const [name, value] of Object.entries(body || {})) {
+    if (value !== undefined && value !== null) form.append(name, String(value));
+  }
   let response = await fetch(BASE + path, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body || {}),
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
+    body: form.toString(),
   });
   if (!response.ok && [400, 404, 415].includes(response.status)) {
     response = await fetch(queryUrl(path, body), { method: 'POST', body: '' });
@@ -270,6 +274,10 @@ async function post(path, body = {}) {
             ? 'The V6 manifold name is too long; use a shorter hostname or IP'
           : code === 'node_id_invalid'
             ? 'The V6 manifold identity contains unsupported characters'
+          : code === 'invalid_room_update'
+            ? 'One or more zone values were outside their allowed range. Refresh the zone and try again.'
+          : code === 'stale_revision'
+            ? 'The zone changed on another screen. Refresh it before saving again.'
           : errorJson?.error?.message || code || message;
     } catch {
       // Keep the HTTP status fallback.
@@ -289,7 +297,6 @@ export const api = {
   trustNode: (id, trust, confirm) => post(`/nodes/${encodeURIComponent(id)}/trust`, { trust, confirm }),
   removeNode: (id) => post(`/nodes/${encodeURIComponent(id)}/remove`, { confirm: id }),
   resetRegistry: () => post('/recovery/reset-registry', { confirm: 'reset-registry' }),
-  saveZone: (roomId, data) => post(`/zones/${encodeURIComponent(roomId)}`, data),
   saveRoomAtomic: (roomId, data) => post(`/zones/${encodeURIComponent(roomId)}/room`, data),
   saveComfort: (roomId, data) => post(`/zones/${encodeURIComponent(roomId)}/comfort`, data),
   saveSchedule: (roomId, data) => post(`/zones/${encodeURIComponent(roomId)}/schedule`, data),

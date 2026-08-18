@@ -77,6 +77,13 @@ LogicalRoom *HouseModel::ensure_room_(const char *room_id, const char *room_name
       copy_text_(existing->room_name, sizeof(existing->room_name), room_name);
     existing->name_source = source;
     existing->enabled = true;
+    // Older registries can contain zero geometry because this information was
+    // once required during commissioning. Use a neutral equal-weight model so
+    // ordinary comfort and schedule changes remain valid after an upgrade.
+    if (!std::isfinite(existing->total_area_m2) || existing->total_area_m2 <= 0.0f)
+      existing->total_area_m2 = 1.0f;
+    if (!std::isfinite(existing->physical_weight) || existing->physical_weight <= 0.0f)
+      existing->physical_weight = existing->total_area_m2;
     return existing;
   }
   if (room_count_ >= MAX_HOUSE_ROOMS)
@@ -86,6 +93,8 @@ LogicalRoom *HouseModel::ensure_room_(const char *room_id, const char *room_name
   copy_text_(room.room_name, sizeof(room.room_name), room_name);
   room.name_source = source;
   room.enabled = true;
+  room.total_area_m2 = 1.0f;
+  room.physical_weight = 1.0f;
   room_revisions_[room_count_ - 1] = 1;
   return &room;
 }
@@ -248,9 +257,41 @@ bool HouseModel::bind_zone_with_source(const char *room_id, const char *room_nam
   for (size_t i = 0; i < zone_count_; i++) {
     if (zones_[i].node_index != node_index || zones_[i].zone_index != zone_index)
       continue;
+    if (!zones_[i].enabled) {
+      // A removed and subsequently rediscovered V6 keeps its historical zone
+      // records in the registry. Reuse that physical loop instead of letting
+      // the disabled record permanently block live telemetry ingestion.
+      // Preserve the stable room id so schedules/history remain attached.
+      ZoneBinding &zone = zones_[i];
+      if (zone.room_id[0] == '\0')
+        copy_text_(zone.room_id, sizeof(zone.room_id), room_id);
+      if (zone.room_name[0] == '\0')
+        copy_text_(zone.room_name, sizeof(zone.room_name), room_name);
+
+      if (source == ZoneNameSource::TOUCH || zone.name_source != ZoneNameSource::TOUCH) {
+        if (room_name != nullptr && room_name[0] != '\0')
+          copy_text_(zone.room_name, sizeof(zone.room_name), room_name);
+        zone.name_source = source;
+      }
+
+      LogicalRoom *room = ensure_room_(zone.room_id, zone.room_name, zone.name_source);
+      if (room == nullptr)
+        return false;
+      copy_text_(zone.room_name, sizeof(zone.room_name), room->room_name);
+      if (zone.loop_id[0] == '\0')
+        make_loop_id_(zone.loop_id, sizeof(zone.loop_id), nodes_[node_index].node_id, zone_index);
+      copy_text_(zone.node_id, sizeof(zone.node_id), nodes_[node_index].node_id);
+      zone.enabled = true;
+      zone.commissioned = true;
+      if (room->primary_loop_id[0] == '\0')
+        copy_text_(room->primary_loop_id, sizeof(room->primary_loop_id), zone.loop_id);
+      live_[i] = {};
+      copy_text_(live_[i].room_id, sizeof(live_[i].room_id), zone.room_id);
+      return true;
+    }
     // Polling may rediscover the same binding, but another logical room may
     // never claim this physical valve loop.
-    if (!same_text_(zones_[i].room_id, room_id) || !zones_[i].enabled)
+    if (!same_text_(zones_[i].room_id, room_id))
       return false;
     if (source == ZoneNameSource::TOUCH || zones_[i].name_source != ZoneNameSource::TOUCH) {
       copy_text_(zones_[i].room_name, sizeof(zones_[i].room_name), room_name);
@@ -372,13 +413,15 @@ bool HouseModel::update_zone_name_from_v6_by_binding(size_t node_index, size_t z
 bool HouseModel::update_zone_forecast_profile_by_binding(size_t node_index, size_t zone_index,
                                                          uint8_t exterior_walls, float wind_exposure,
                                                          float solar_gain, uint8_t thermal_lead_h,
-                                                         float max_offset_c) {
+                                                         float max_offset_c,
+                                                         bool import_exterior_walls) {
   if (node_index >= node_count_ || zone_index >= ZONES_PER_NODE)
     return false;
   for (size_t i = 0; i < zone_count_; i++) {
     if (!zones_[i].enabled || zones_[i].node_index != node_index || zones_[i].zone_index != zone_index)
       continue;
-    zones_[i].exterior_walls = exterior_walls & 0x0F;
+    if (import_exterior_walls)
+      zones_[i].exterior_walls = exterior_walls & 0x0F;
     zones_[i].wind_exposure = clamp_float_(wind_exposure, 0.0f, 1.0f, zones_[i].wind_exposure);
     zones_[i].solar_gain = clamp_float_(solar_gain, 0.0f, 1.0f, zones_[i].solar_gain);
     zones_[i].thermal_lead_h = thermal_lead_h > 0 ? thermal_lead_h : zones_[i].thermal_lead_h;
@@ -1036,6 +1079,10 @@ bool HouseModel::import_state(const PersistedState &state) {
   }
   for (size_t i = 0; i < room_count_; i++) {
     rooms_[i] = state.rooms[i];
+    if (!std::isfinite(rooms_[i].total_area_m2) || rooms_[i].total_area_m2 <= 0.0f)
+      rooms_[i].total_area_m2 = 1.0f;
+    if (!std::isfinite(rooms_[i].physical_weight) || rooms_[i].physical_weight <= 0.0f)
+      rooms_[i].physical_weight = rooms_[i].total_area_m2;
     room_revisions_[i] = 1;
   }
   for (size_t i = 0; i < zone_count_; i++) {

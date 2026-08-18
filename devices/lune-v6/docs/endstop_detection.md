@@ -9,7 +9,7 @@ a time (firmware invariant), so the active motor's current appears cleanly on th
 
 ### Signal Characteristics
 
-| Signal  | HV6 Hardware                        |
+| Signal  | LV6 Hardware                        |
 |---------|-------------------------------------|
 | Tacho   | Derived from IPROPI current modulation via ADC zero-crossing detection |
 | Current | Same IPROPI signal, EMA-filtered (α = 0.05) at 10 ms FSM tick rate |
@@ -21,7 +21,7 @@ Key implications of the single-signal design:
 - **Ripple SNR**: Current ripple from commutator switching has lower amplitude than
   voltage back-EMF ripple. The hysteresis-based zero-crossing detector (12% band,
   5-tick PWM debounce) works, but is noisy.
-- **No independent stall signal**: HV6 cannot cleanly separate high current and ripple
+- **No independent stall signal**: LV6 cannot cleanly separate high current and ripple
   cessation, since both come from IPROPI.
 
 ## Detection Overview
@@ -200,7 +200,7 @@ arming:     after the inrush guard AND "connected" — either ripple_count ≥
 | Stall window | 750 ms | `RIPPLE_STALL_MS` (compile-time) |
 | Min rotation to arm | 20 ripples | `RIPPLE_STALL_MIN_COUNT` (compile-time) |
 
-This is HV6's analogue of the BEMF stall sensing used by current-less ESPHome valve
+This is LV6's analogue of the BEMF stall sensing used by current-less ESPHome valve
 controllers (e.g. nliaudat's 8-ch shield, where a BEMF binary sensor *is* the endstop):
 commutation-ripple frequency tracks RPM, so a ripple plateau means the rotor stopped.
 

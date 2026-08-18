@@ -334,7 +334,7 @@ text_sensor:
     entity_category: diagnostic
     update_interval: 10s
     lambda: |-
-      return {hv6::fault_code_to_string(id(hv6_valves).get_telemetry(0).last_fault_code)};
+      return {lv6::fault_code_to_string(id(hv6_valves).get_telemetry(0).last_fault_code)};
 
   - platform: template
     name: "Motor 2 Last Fault"
@@ -342,7 +342,7 @@ text_sensor:
     entity_category: diagnostic
     update_interval: 10s
     lambda: |-
-      return {hv6::fault_code_to_string(id(hv6_valves).get_telemetry(1).last_fault_code)};
+      return {lv6::fault_code_to_string(id(hv6_valves).get_telemetry(1).last_fault_code)};
 
   - platform: template
     name: "Motor 3 Last Fault"
@@ -350,7 +350,7 @@ text_sensor:
     entity_category: diagnostic
     update_interval: 10s
     lambda: |-
-      return {hv6::fault_code_to_string(id(hv6_valves).get_telemetry(2).last_fault_code)};
+      return {lv6::fault_code_to_string(id(hv6_valves).get_telemetry(2).last_fault_code)};
 
   - platform: template
     name: "Motor 4 Last Fault"
@@ -358,7 +358,7 @@ text_sensor:
     entity_category: diagnostic
     update_interval: 10s
     lambda: |-
-      return {hv6::fault_code_to_string(id(hv6_valves).get_telemetry(3).last_fault_code)};
+      return {lv6::fault_code_to_string(id(hv6_valves).get_telemetry(3).last_fault_code)};
 
   - platform: template
     name: "Motor 5 Last Fault"
@@ -366,7 +366,7 @@ text_sensor:
     entity_category: diagnostic
     update_interval: 10s
     lambda: |-
-      return {hv6::fault_code_to_string(id(hv6_valves).get_telemetry(4).last_fault_code)};
+      return {lv6::fault_code_to_string(id(hv6_valves).get_telemetry(4).last_fault_code)};
 
   - platform: template
     name: "Motor 6 Last Fault"
@@ -374,4 +374,4 @@ text_sensor:
     entity_category: diagnostic
     update_interval: 10s
     lambda: |-
-      return {hv6::fault_code_to_string(id(hv6_valves).get_telemetry(5).last_fault_code)};
+      return {lv6::fault_code_to_string(id(hv6_valves).get_telemetry(5).last_fault_code)};

@@ -36,6 +36,6 @@ api:
 # connection plus per-entity JSON state for all ~60 entities in *internal* heap,
 # which on this BLE+WiFi+dashboard board drove free internal heap critically low
 # (~15 KB). Nothing uses it — the custom dashboard and /api/hv6/v1 are served on
-# `web_server_base` (auto-loaded by hv6_dashboard + captive_portal, port 80) and
+# `web_server_base` (auto-loaded by lv6_dashboard + captive_portal, port 80) and
 # Home Assistant uses the native API. The custom dashboard lives at /; the
 # former /dashboard bookmark redirects there.

@@ -18,7 +18,7 @@ namespace hv6fc {
 
 static constexpr size_t FORECAST_HOURS = 48;
 
-// Matches hv6::ExteriorWall bitmask values (hv6_types.h).
+// Touch-owned N/E/S/W bitmask values. V6 does not store this room geometry.
 static constexpr uint8_t WALL_NORTH = 1 << 0;
 static constexpr uint8_t WALL_EAST = 1 << 1;
 static constexpr uint8_t WALL_SOUTH = 1 << 2;
@@ -32,7 +32,7 @@ struct ForecastHour {
 };
 
 struct ZoneExposure {
-  uint8_t exterior_walls = 0;  ///< N|E|S|W bitmask (reuses ZoneConfig.exterior_walls)
+  uint8_t exterior_walls = 0;  ///< Touch-owned N|E|S|W bitmask
   float wind_exposure = 0.5f;  ///< 0..1 — how exposed the facade is (shelter, terrain)
   float solar_gain = 0.3f;     ///< 0..1 — passive solar relief through glazing
   uint8_t thermal_lead_h = 4;  ///< How long before a load peak charging must start

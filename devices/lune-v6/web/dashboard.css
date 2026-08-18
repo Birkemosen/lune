@@ -1,9 +1,9 @@
 @import url("https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700;800&display=swap");
 
 :root {
-  --accent: #EEA111;
+  --accent: #F59E0B;
   --bg: #161616;
-  --surface: #1C1C1C;
+  --surface: #1A1C1E;
   --card: #141A27;
   --border: #2D2D2D;
   --text: #FFFFFF;
@@ -16,11 +16,39 @@
   --side-collapsed: 76px;
 }
 
+/* Theme contract shared with the component dashboard. The document root gets
+   one of these classes at boot, with Refined Ember as the default. */
+.theme-refined-ember {
+  --accent: #F59E0B;
+  --surface: #1A1C1E;
+  --bg: #161616;
+  --text-main: #ffffff;
+  --text-muted: rgba(255,255,255,.6);
+  --green: #22c55e;
+  --red: #f43f5e;
+  --success: rgba(34,197,94,.20);
+  --warning: rgba(244,63,94,.20);
+  --vbar-gradient: linear-gradient(90deg, #fcd34d, #F59E0B);
+}
+
+.theme-deep-forest {
+  --accent: #10B981;
+  --surface: #14141E;
+  --bg: #111218;
+  --text-main: #f4fff9;
+  --text-muted: rgba(226,255,241,.64);
+  --green: #34d399;
+  --red: #ef4444;
+  --success: rgba(52,211,153,.20);
+  --warning: rgba(239,68,68,.20);
+  --vbar-gradient: linear-gradient(90deg, #34d399, #10B981);
+}
+
 *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
 html { font-size: 16px; scroll-behavior: smooth; }
 body {
   font-family: "Montserrat", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  background: radial-gradient(1400px 800px at 85% -12%, rgba(238,161,17,.1), transparent 58%), var(--bg);
+  background: radial-gradient(1400px 800px at 85% -12%, color-mix(in srgb, var(--accent) 14%, transparent), transparent 58%), var(--bg);
   color: var(--text);
   min-height: 100vh;
   line-height: 1.45;
@@ -745,7 +773,7 @@ body {
 .vbar .fill {
   height: 100%;
   width: 0;
-  background: linear-gradient(90deg, #f4be58, var(--accent));
+  background: var(--vbar-gradient, linear-gradient(90deg, #f4be58, var(--accent)));
   border-radius: 999px;
   transition: width .6s ease;
 }

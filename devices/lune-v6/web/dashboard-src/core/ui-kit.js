@@ -10,12 +10,11 @@ import { localize, subscribeLanguage, t } from './i18n.js';
 const css = `
 /* ---- Card panel ---- */
 .ui-card {
-  background: var(--panel-bg-vibrant);
+  background: var(--surface-raised);
   border: 1px solid var(--panel-border);
   border-radius: 8px;
   padding: 18px 20px;
-  box-shadow: var(--panel-shadow);
-  backdrop-filter: blur(16px) saturate(1.18);
+  box-shadow: none;
   box-sizing: border-box;
 }
 
@@ -23,10 +22,10 @@ const css = `
 .ui-card-title {
   font-family: var(--font-display);
   font-size: .875rem;
-  font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: 1.1px;
-  color: var(--accent);
+  font-weight: 650;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--text-strong);
   margin: 0 0 6px;
   padding-bottom: 10px;
   border-bottom: 1px solid var(--panel-border);
@@ -43,10 +42,10 @@ const css = `
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 16px;
-  height: 16px;
+  width: 28px;
+  height: 28px;
   margin-left: 7px;
-  border-radius: 8px;
+  border-radius: 999px;
   border: 1.5px solid var(--control-border-strong);
   color: var(--text-secondary);
   font-size: .7rem;
@@ -141,13 +140,14 @@ const css = `
   box-sizing: border-box;
   text-align: right;
   border: 1px solid var(--control-border);
-  background: linear-gradient(145deg, rgba(0,0,0,.16), rgba(255,255,255,.05));
+  background: var(--control-bg);
   color: var(--text);
   border-radius: 8px;
+  min-height:44px;
   padding: 8px 10px;
   font-size: .92rem;
   font-family: var(--mono);
-  box-shadow: inset 0 2px 8px rgba(0,0,0,.20), inset 0 1px 0 rgba(255,255,255,.08);
+  box-shadow:none;
   transition: border-color .15s ease;
 }
 .ui-input.wide { width: 180px; text-align: left; font-family: inherit; }
@@ -157,12 +157,13 @@ const css = `
   max-width: 240px;
   box-sizing: border-box;
   border: 1px solid var(--control-border);
-  background: linear-gradient(145deg, rgba(0,0,0,.16), rgba(255,255,255,.05));
+  background:var(--control-bg);
   color: var(--text);
   border-radius: 8px;
+  min-height:44px;
   padding: 8px 10px;
   font-size: .92rem;
-  box-shadow: inset 0 2px 8px rgba(0,0,0,.20), inset 0 1px 0 rgba(255,255,255,.08);
+  box-shadow:none;
   transition: border-color .15s ease;
 }
 
@@ -176,31 +177,24 @@ const css = `
 .ui-unit { color: var(--text-faint); font-size: .84rem; font-weight: 600; }
 
 /* ---- Numeric stepper (− value +) ----
-   The value reads as plain text (flat, no input chrome) between the buttons;
-   double-clicking it reveals the editable input. */
+   The adjacent field remains directly editable; no hidden double-click mode. */
 .ui-stepper { display: inline-flex; align-items: center; gap: 6px; }
 .ui-stepper .ui-input {
   width: 54px;
   text-align: center;
-  border-color: transparent;
-  background: transparent;
-  color: var(--accent);
-  font-size: 1.04rem;
-  font-weight: 700;
-  cursor: default;
-  -moz-appearance: textfield;
-}
-.ui-stepper .ui-input.editing {
   border-color: var(--control-border);
   background: var(--control-bg);
   color: var(--text);
+  font-size: 1.04rem;
+  font-weight: 700;
   cursor: text;
+  -moz-appearance: textfield;
 }
 .ui-stepper .ui-input::-webkit-outer-spin-button,
 .ui-stepper .ui-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 .ui-step-btn {
-  width: 32px;
-  height: 34px;
+  width: 44px;
+  height: 44px;
   flex-shrink: 0;
   border: 1px solid var(--control-border);
   background: linear-gradient(145deg, rgba(255,255,255,.13), rgba(255,255,255,.055));
@@ -250,29 +244,37 @@ const css = `
 
 /* ---- Green pill toggle (canonical) ---- */
 .ui-toggle {
-  width: 48px;
-  height: 26px;
-  border-radius: 8px;
-  background: var(--control-bg-hover);
+  width: 52px;
+  height: 44px;
+  border-radius: 999px;
+  background: transparent;
   position: relative;
   cursor: pointer;
-  border: 1px solid var(--control-border);
-  transition: background .2s ease, border-color .2s ease;
+  border: 0;
   flex-shrink: 0;
+}
+.ui-toggle::before {
+  content:'';
+  position:absolute;
+  inset:7px 2px;
+  border:1px solid var(--control-border);
+  border-radius:999px;
+  background:var(--control-bg-hover);
+  transition:background .2s ease,border-color .2s ease;
 }
 .ui-toggle::after {
   content: '';
   position: absolute;
-  top: 3px;
-  left: 3px;
-  width: 18px;
-  height: 18px;
+  top: 11px;
+  left: 6px;
+  width: 22px;
+  height: 22px;
   background: var(--control-knob);
-  border-radius: 6px;
+  border-radius: 999px;
   transition: transform .2s ease;
 }
-.ui-toggle.on { background: var(--success-bg-soft); border-color: var(--success-border); }
-.ui-toggle.on::after { transform: translateX(22px); background: var(--text-on-accent); }
+.ui-toggle.on::before { background:var(--accent);border-color:var(--accent); }
+.ui-toggle.on::after { transform:translateX(18px);background:var(--text-on-accent); }
 
 /* ---- Notes & dividers ---- */
 .ui-note {
@@ -395,11 +397,10 @@ export function cardForm(el, opts = {}) {
       stepper.className = 'ui-stepper';
       input.parentNode.insertBefore(stepper, input);
       const dec = document.createElement('button');
-      dec.type = 'button'; dec.className = 'ui-step-btn'; dec.textContent = '−'; dec.tabIndex = -1; dec.setAttribute('aria-label', t('common.decrease'));
+      dec.type = 'button'; dec.className = 'ui-step-btn'; dec.textContent = '−'; dec.setAttribute('aria-label', t('common.decrease'));
       const inc = document.createElement('button');
-      inc.type = 'button'; inc.className = 'ui-step-btn'; inc.textContent = '+'; inc.tabIndex = -1; inc.setAttribute('aria-label', t('common.increase'));
+      inc.type = 'button'; inc.className = 'ui-step-btn'; inc.textContent = '+'; inc.setAttribute('aria-label', t('common.increase'));
       stepper.appendChild(dec); stepper.appendChild(input); stepper.appendChild(inc);
-      input.readOnly = true;
 
       const nudge = (dir) => {
         if (input.disabled) return;
@@ -412,11 +413,6 @@ export function cardForm(el, opts = {}) {
       };
       dec.addEventListener('click', () => nudge(-1));
       inc.addEventListener('click', () => nudge(1));
-      input.addEventListener('dblclick', () => {
-        if (input.disabled) return;
-        input.readOnly = false; input.classList.add('editing'); input.focus(); input.select();
-      });
-      input.addEventListener('blur', () => { input.readOnly = true; input.classList.remove('editing'); });
       input.addEventListener('keydown', (e) => { if (e.key === 'Enter') input.blur(); });
     }
     input.addEventListener('input', () => mark(field, true));

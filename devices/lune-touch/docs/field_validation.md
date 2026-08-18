@@ -63,8 +63,9 @@ must not manufacture a room command or alter physical temperature aggregation.
 3. Add or scan a V6 candidate with hostname and optional fallback IP.
 4. Confirm the candidate exposes a stable `pairing_fingerprint`.
 5. Promote the node to `trusted` using the exact displayed confirmation token.
-6. Map at least one room to a V6 zone.
-7. Wait for fresh zone telemetry.
+6. Confirm at least one configured V6 zone is imported automatically.
+7. Wait for fresh zone telemetry. If no zone appears, inspect configuration on
+   the respective V6 manifold; there is no separate Touch mapping step.
 8. Confirm `ready_for_commands` becomes true before sending any command.
 
 Expected blockers:
@@ -73,14 +74,14 @@ Expected blockers:
 - `fix_node_poll` when the V6 cannot be reached.
 - `verify_node_identity` when a node lacks a stored fingerprint.
 - `trust_node` when a node is only paired.
-- `map_zones` when no room is bound.
+- `review_v6_zones` when no configured V6 zone has been imported.
 - `wait_for_fresh_zone_poll` when telemetry is stale.
 - `set_forecast_location` when forecast location is missing.
 - `ready` when commands and forecast are ready.
 
 ## Command Safety Flow
 
-1. Send a small dashboard offset to a fresh, trusted mapped room.
+1. Send a small dashboard offset to a fresh, trusted V6 zone imported by Touch.
 2. Confirm `GET /commands` records source, reason, requested offset, accepted
    offset, expiry, result, and clamp state.
 3. Disconnect or block the V6 and confirm a new command is recorded as

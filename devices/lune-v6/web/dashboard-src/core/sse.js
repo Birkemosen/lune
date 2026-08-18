@@ -103,7 +103,7 @@ async function pollRevision() {
 }
 
 export function connect() {
-  const cfg = window.HV6_DASHBOARD_CONFIG;
+  const cfg = window.LV6_DASHBOARD_CONFIG;
 
   if (cfg && cfg.mock) {
     startMock();

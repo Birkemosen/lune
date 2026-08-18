@@ -1,6 +1,6 @@
 // core/mock.js
 
-import { setEntity, ev, setLive, sampleHistory, setI2cResult, addActivity, setDashboardValue, setZoneStateHistory, getDashboardValue, appendDeviceLog } from './store.js';
+import { setEntity, es, ev, setLive, sampleHistory, setI2cResult, addActivity, setDashboardValue, setZoneStateHistory, getDashboardValue, appendDeviceLog } from './store.js';
 import { key, gkey } from '../utils/keys.js';
 
 const ZONES = 6;
@@ -40,18 +40,18 @@ function seed() {
     const zone = index + 1;
     setEntity(key.temp(zone), { value: state.temp[index] });
     setEntity(key.setpoint(zone), { value: state.setpoint[index] });
+    setEntity(key.baseSetpoint(zone), { value: state.setpoint[index] });
+    setEntity(key.effectiveSetpoint(zone), { value: state.setpoint[index] });
+    setEntity(key.coordinatorOffset(zone), { value: 0 });
+    setEntity(key.coordinatorRemaining(zone), { value: 0 });
     setEntity(key.valve(zone), { value: state.valve[index] });
     setEntity(key.state(zone), { state: state.valve[index] > 5 ? 'heating' : 'idle' });
     setEntity(key.enabled(zone), { value: !!state.enabled[index], state: state.enabled[index] ? 'on' : 'off' });
     setEntity(key.probe(zone), { state: 'Probe ' + zone });
     setEntity(key.tempSource(zone), { state: zone % 2 ? 'Local Probe' : 'BLE' });
     setEntity(key.syncTo(zone), { state: 'None' });
-    setEntity(key.pipeType(zone), { state: 'PEX 16mm' });
-    setEntity(key.area(zone), { value: 8 + zone * 3.5 });
-    setEntity(key.spacing(zone), { value: [150, 200, 150, 100, 200, 150][index] });
     setEntity(key.ble(zone), { state: 'AA:BB:CC:DD:EE:0' + zone });
     setEntity(key.name(zone), { state: ['Living Room', 'Kitchen', 'Bedroom', 'Bathroom', 'Office', 'Hallway'][index] || '' });
-    setEntity(key.exteriorWalls(zone), { state: ['N', 'E', 'S', 'W', 'N,E', 'S,W'][index] });
     setEntity(key.preheatAdvance(zone), { value: 0.08 + (index * 0.03) });
   }
 
@@ -91,6 +91,13 @@ function seed() {
   setEntity(gkey.simplePreheatEnabled, { state: 'on' });
   setEntity(gkey.minZoneFlowPct, { value: 15 });
   setEntity(gkey.minimumFlowAlways, { state: 'off' });
+  setEntity(gkey.authorityInstallationId, { state: 'house-main' });
+  setEntity(gkey.authorityCoordinatorId, { state: 'lune-touch' });
+  setEntity(gkey.authorityConfigured, { state: 'on', value: true });
+  setEntity(gkey.authorityProposalPending, { state: 'off', value: false });
+  setEntity(gkey.authorityState, { state: 'touch_normal' });
+  setEntity(gkey.authorityReason, { state: 'lease_renewed' });
+  setEntity(gkey.authorityLeaseRemainingS, { value: 72 });
   setEntity(gkey.cpuLoadCore0, { value: 18.5 });
   setEntity(gkey.cpuLoadCore1, { value: 7.2 });
   setEntity(gkey.freeInternalKb, { value: 142 });
@@ -227,6 +234,8 @@ export function handleMockPost(body) {
     if (!Number.isNaN(value)) {
       state.setpoint[zone - 1] = value;
       setEntity(key.setpoint(zone), { value });
+      setEntity(key.baseSetpoint(zone), { value });
+      setEntity(key.effectiveSetpoint(zone), { value });
       addActivity('Zone ' + zone + ' setpoint set to ' + value.toFixed(1) + '°C', zone);
     }
     return;
@@ -311,7 +320,6 @@ export function handleMockPost(body) {
   if (k === 'zone_probe' && zone >= 1) { setEntity(key.probe(zone), { state: String(v) }); addActivity('Setting updated: ' + k + ' = ' + v, zone); return; }
   if (k === 'zone_temp_source' && zone >= 1) { setEntity(key.tempSource(zone), { state: String(v) }); addActivity('Setting updated: ' + k + ' = ' + v, zone); return; }
   if (k === 'zone_sync_to' && zone >= 1) { setEntity(key.syncTo(zone), { state: String(v) }); addActivity('Setting updated: ' + k + ' = ' + v, zone); return; }
-  if (k === 'zone_pipe_type' && zone >= 1) { setEntity(key.pipeType(zone), { state: String(v) }); addActivity('Setting updated: ' + k + ' = ' + v, zone); return; }
 
   // Select settings (global)
   if (k === 'manifold_type') { setEntity(gkey.manifoldType, { state: String(v) }); addActivity('Setting updated: ' + k + ' = ' + v); return; }
@@ -323,16 +331,23 @@ export function handleMockPost(body) {
   // Text settings
   if (k === 'zone_name' && zone >= 1) { setEntity(key.name(zone), { state: String(v) }); addActivity('Setting updated: ' + k + ' = ' + v, zone); return; }
   if (k === 'zone_ble_mac' && zone >= 1) { setEntity(key.ble(zone), { state: String(v) }); addActivity('Setting updated: ' + k + ' = ' + v, zone); return; }
-  if (k === 'zone_exterior_walls' && zone >= 1) {
-    const walls = String(v) || 'None';
-    setEntity(key.exteriorWalls(zone), { state: walls });
-    addActivity('Setting updated: ' + k + ' = ' + v, zone);
+  if (k === 'authority_approve_proposal') {
+    setEntity(gkey.authorityInstallationId, { state: es(gkey.authorityProposalInstallationId) || 'lune-mock' });
+    setEntity(gkey.authorityCoordinatorId, { state: es(gkey.authorityProposalCoordinatorId) || 'touch-mock' });
+    setEntity(gkey.authorityConfigured, { state: 'on', value: true });
+    setEntity(gkey.authorityProposalPending, { state: 'off', value: false });
+    addActivity('Discovered Lune Touch approved');
+    return;
+  }
+  if (k === 'authority_revoke') {
+    setEntity(gkey.authorityInstallationId, { state: '' });
+    setEntity(gkey.authorityCoordinatorId, { state: '' });
+    setEntity(gkey.authorityConfigured, { state: 'off', value: false });
+    setEntity(gkey.authorityState, { state: 'unconfigured' });
+    addActivity('Lune Touch disconnected');
     return;
   }
 
-  // Number settings (zone)
-  if (k === 'zone_area_m2' && zone >= 1) { setEntity(key.area(zone), { value: Number(v) }); addActivity('Setting updated: ' + k + ' = ' + v, zone); return; }
-  if (k === 'zone_pipe_spacing_mm' && zone >= 1) { setEntity(key.spacing(zone), { value: Number(v) }); addActivity('Setting updated: ' + k + ' = ' + v, zone); return; }
   // Number settings (global motor calibration)
   const numMap = {
     close_threshold_multiplier: gkey.closeThresholdMultiplier,

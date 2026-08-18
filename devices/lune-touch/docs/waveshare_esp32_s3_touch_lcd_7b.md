@@ -48,7 +48,8 @@ Panel profile:
 - RGB data width: 16 bit
 - Pixel format: RGB565
 - Waveshare demo pixel clock: 30 MHz
-- Active ESPHome stability pixel clock: 30 MHz
+- Active ESPHome stability pixel clock: 20 MHz. This leaves bandwidth headroom
+  for WiFi and flash access on the shared 80 MHz Octal PSRAM bus.
 - PCLK active edge: falling edge
 - 7B demo timing:
   - HSYNC pulse/back/front: 162 / 152 / 48
@@ -80,18 +81,9 @@ the IO-extension output shadow and EXIO2 (`DISP`) is the display `enable_pin`.
 EXIO5 is kept low in the output shadow so USB mode remains selected instead of
 CAN mode.
 
-For the native ESP-IDF display/coordinator stack, prefer these managed
-components:
-
-```yaml
-dependencies:
-  lvgl/lvgl: ">=9.5.0"
-  espressif/esp_lcd_touch_gt911: ">=1.1.3"
-  espressif/esp_websocket_client: ">=1.1.0"
-```
-
-The current ESPHome bringup still uses ESPHome's built-in `lvgl:` integration,
-which generates a PlatformIO `lvgl/lvgl@8.4.0` dependency. Do not force
-`lvgl/lvgl >=9.5.0` into this ESPHome profile without migrating the UI layer
-away from ESPHome's LVGL bindings, because LVGL 8 and LVGL 9 APIs are not
-compatible.
+The active firmware baseline is ESPHome 2026.7.3 on its recommended ESP-IDF
+release. ESPHome's built-in `lvgl:` integration owns the LVGL dependency and
+selects LVGL 9.5.0; do not add a second manually pinned LVGL package. The
+repository explicitly retains ESPHome's supported PlatformIO toolchain until
+the build, partition and deployment pipeline is deliberately migrated to the
+native ESP-IDF builder.

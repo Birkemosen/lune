@@ -181,9 +181,9 @@ script:
           condition:
             lambda: |-
               auto fault = id(hv6_valves).get_last_fault();
-              return fault == hv6::FaultCode::OVERCURRENT ||
-                     fault == hv6::FaultCode::STALL ||
-                     fault == hv6::FaultCode::THERMAL;
+              return fault == lv6::FaultCode::OVERCURRENT ||
+                     fault == lv6::FaultCode::STALL ||
+                     fault == lv6::FaultCode::THERMAL;
           then:
             - script.execute: led_status_critical
           else:

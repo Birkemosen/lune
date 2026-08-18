@@ -7,10 +7,13 @@ ROOT_DIR ?= ../..
 ROOT_ABS := $(abspath $(ROOT_DIR))
 DEVICE_DIR ?= devices/lune-v6
 CONFIG_PATH ?= $(ROOT_ABS)/$(DEVICE_DIR)/$(CONFIG)
-ESPHOME ?= $(if $(wildcard $(ROOT_ABS)/.venv313/bin/esphome),$(ROOT_ABS)/.venv313/bin/esphome,$(if $(wildcard $(ROOT_ABS)/.venv/bin/esphome),$(ROOT_ABS)/.venv/bin/esphome,esphome))
-PIO ?= $(if $(wildcard $(ROOT_ABS)/.venv313/bin/platformio),$(ROOT_ABS)/.venv313/bin/platformio,$(if $(wildcard $(ROOT_ABS)/.venv/bin/platformio),$(ROOT_ABS)/.venv/bin/platformio,platformio))
+# Prefer the venv's Python modules over generated console launchers. Those
+# launchers embed an absolute interpreter path and can become stale after the
+# workspace is moved or cloned elsewhere.
+PYTHON ?= $(if $(wildcard $(ROOT_ABS)/.venv313/bin/python),$(ROOT_ABS)/.venv313/bin/python,$(if $(wildcard $(ROOT_ABS)/.venv/bin/python),$(ROOT_ABS)/.venv/bin/python,python3))
+ESPHOME ?= $(PYTHON) -m esphome
+PIO ?= $(PYTHON) -m platformio
 PLATFORMIO_CORE_DIR ?= $(ROOT_ABS)/.cache/platformio
-PYTHON ?= $(if $(wildcard $(ROOT_ABS)/.venv313/bin/python3),$(ROOT_ABS)/.venv313/bin/python3,$(if $(wildcard $(ROOT_ABS)/.venv/bin/python3),$(ROOT_ABS)/.venv/bin/python3,python3))
 # ESPHome materialises generated sources next to the config file, so the
 # build root for the configurations/ entrypoints lives under that directory.
 BUILD_ROOT ?= $(ROOT_ABS)/$(DEVICE_DIR)/configurations/.esphome/build/$(BUILD_NAME)
@@ -28,7 +31,7 @@ SECRETS_TARGET ?= ../../../secrets.yaml
 LANG ?= en
 DASHBOARD_COMPILED_LANG := $(if $(filter en da,$(LANG)),$(LANG),en)
 
-.PHONY: help check ensure-secrets-link config build build-verify deploy ota logs discover monitor erase erase-nvs clean dashboard dashboard-tooling dashboard-build dashboard-watch test test-ripple test-rev31-logic test-rev31-trace test-balance test-authority-lease test-preheat-policy test-hydraulic-policy test-hydraulic-diagnostics test-commissioning-schema test-request-guard
+.PHONY: help check ensure-secrets-link config build build-verify deploy ota logs discover monitor erase erase-nvs clean dashboard dashboard-tooling dashboard-build dashboard-watch test test-dashboard test-ripple test-rev31-logic test-rev31-trace test-balance test-authority-lease test-preheat-policy test-hydraulic-policy test-hydraulic-diagnostics test-commissioning-schema test-request-guard
 
 help:
 	@echo "Lune V6 ESPHome tasks"
@@ -67,12 +70,12 @@ ensure-secrets-link:
 	fi
 
 check: ensure-secrets-link
-	@command -v $(ESPHOME) >/dev/null 2>&1 || { \
+	@$(ESPHOME) version >/dev/null 2>&1 || { \
 		echo "ESPHome CLI not found."; \
 		echo "Create root .venv and install: python3 -m venv .venv && ./.venv/bin/pip install esphome"; \
 		exit 1; \
 	}
-	@command -v $(PIO) >/dev/null 2>&1 || { \
+	@$(PIO) --version >/dev/null 2>&1 || { \
 		echo "PlatformIO CLI not found."; \
 		echo "Install in venv: ./.venv313/bin/pip install platformio"; \
 		exit 1; \
@@ -118,8 +121,8 @@ deploy: check
 # =============================================================================
 RIPPLE_CXX      ?= clang++
 RIPPLE_CXXFLAGS  = -std=c++17 -O2 -Wall -Wextra -Wno-unused-parameter \
-                   -I components/hv6_valve_controller
-RIPPLE_SRCS      = components/hv6_valve_controller/ripple_counter.cpp \
+                   -I components/lv6_valve_controller
+RIPPLE_SRCS      = components/lv6_valve_controller/ripple_counter.cpp \
                    test/ripple_counter/test_ripple_counter.cpp
 RIPPLE_OUT       = /tmp/test_ripple_counter
 REV31_LOGIC_SRCS = test/rev31_logic/test_rev31_logic.cpp
@@ -150,33 +153,36 @@ REQUEST_GUARD_SRCS = test/request_guard/test_request_guard.cpp
 REQUEST_GUARD_OUT  = /tmp/test_hv6_request_guard
 
 test-balance:
-	$(RIPPLE_CXX) -std=c++17 -O2 -Wall -Wextra -I components/hv6_zone_controller $(BALANCE_SRCS) -o $(BALANCE_OUT) -lm
+	$(RIPPLE_CXX) -std=c++17 -O2 -Wall -Wextra -I components/lv6_zone_controller $(BALANCE_SRCS) -o $(BALANCE_OUT) -lm
 	$(BALANCE_OUT)
 
 test-authority-lease:
-	$(RIPPLE_CXX) -std=c++17 -O2 -Wall -Wextra -I components/hv6_dashboard $(AUTHORITY_LEASE_SRCS) -o $(AUTHORITY_LEASE_OUT)
+	$(RIPPLE_CXX) -std=c++17 -O2 -Wall -Wextra -I components/lv6_dashboard $(AUTHORITY_LEASE_SRCS) -o $(AUTHORITY_LEASE_OUT)
 	$(AUTHORITY_LEASE_OUT)
 
 test-preheat-policy:
-	$(RIPPLE_CXX) -std=c++17 -O2 -Wall -Wextra -I components/hv6_zone_controller $(PREHEAT_POLICY_SRCS) -o $(PREHEAT_POLICY_OUT)
+	$(RIPPLE_CXX) -std=c++17 -O2 -Wall -Wextra -I components/lv6_zone_controller $(PREHEAT_POLICY_SRCS) -o $(PREHEAT_POLICY_OUT)
 	$(PREHEAT_POLICY_OUT)
 
 test-hydraulic-policy:
-	$(RIPPLE_CXX) -std=c++17 -O2 -Wall -Wextra -I components/hv6_zone_controller $(HYDRAULIC_POLICY_SRCS) -o $(HYDRAULIC_POLICY_OUT)
+	$(RIPPLE_CXX) -std=c++17 -O2 -Wall -Wextra -I components/lv6_zone_controller $(HYDRAULIC_POLICY_SRCS) -o $(HYDRAULIC_POLICY_OUT)
 	$(HYDRAULIC_POLICY_OUT)
 
 test-hydraulic-diagnostics:
-	$(RIPPLE_CXX) -std=c++17 -O2 -Wall -Wextra -I components/hv6_zone_controller $(HYDRAULIC_DIAGNOSTICS_SRCS) -o $(HYDRAULIC_DIAGNOSTICS_OUT)
+	$(RIPPLE_CXX) -std=c++17 -O2 -Wall -Wextra -I components/lv6_zone_controller $(HYDRAULIC_DIAGNOSTICS_SRCS) -o $(HYDRAULIC_DIAGNOSTICS_OUT)
 	$(HYDRAULIC_DIAGNOSTICS_OUT)
 
 test-commissioning-schema:
 	sh test/commissioning/test_persistence_schema.sh
 
 test-request-guard:
-	$(RIPPLE_CXX) -std=c++17 -O2 -Wall -Wextra -I components/hv6_dashboard $(REQUEST_GUARD_SRCS) -o $(REQUEST_GUARD_OUT)
+	$(RIPPLE_CXX) -std=c++17 -O2 -Wall -Wextra -I components/lv6_dashboard $(REQUEST_GUARD_SRCS) -o $(REQUEST_GUARD_OUT)
 	$(REQUEST_GUARD_OUT)
 
-test: test-ripple test-rev31-logic test-rev31-trace test-balance test-authority-lease test-preheat-policy test-hydraulic-policy test-hydraulic-diagnostics test-commissioning-schema test-request-guard
+test-dashboard:
+	sh test/dashboard/test_dashboard.sh
+
+test: test-dashboard test-ripple test-rev31-logic test-rev31-trace test-balance test-authority-lease test-preheat-policy test-hydraulic-policy test-hydraulic-diagnostics test-commissioning-schema test-request-guard
 
 ota: check
 	$(MAKE) build
@@ -266,7 +272,7 @@ dashboard-build:
 	--target=es2018 \
 	--platform=browser \
 	--define:DEBUG=false \
-	--define:HV6_DASHBOARD_LANG=\"$(DASHBOARD_COMPILED_LANG)\" \
+	--define:LV6_DASHBOARD_LANG=\"$(DASHBOARD_COMPILED_LANG)\" \
 	--outfile=$(DASHBOARD_OUT_FILE)
 
 dashboard-watch:

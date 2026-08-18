@@ -18,7 +18,7 @@ only signals the board already has reliably:
 
 This is the way the Homematic IP **Falmot-C12** balances: continuous (0–100 %) motorized
 valves modulated so that loops reach setpoint together, with per-channel openings adapted
-from observed room behaviour — **no flow meters, no return-temperature sensors**. HV6
+from observed room behaviour — **no flow meters, no return-temperature sensors**. LV6
 already has the continuous valves and the room sensors; this change adds the adaptive outer
 loop.
 
@@ -37,7 +37,7 @@ marginal ΔT.
 
 ## Current code (what this builds on)
 
-Per control cycle (`Hv6ZoneController::control_cycle_`, ~10 s) the inner loop computes, per
+Per control cycle (`Lv6ZoneController::control_cycle_`, ~10 s) the inner loop computes, per
 zone *i*:
 
 ```
@@ -46,14 +46,14 @@ target_i   = apply_hydraulic_balance_(i, raw_i)             // raw_i * balance_f
 ```
 
 `balance_factors_[i]` is produced by `recalculate_balance_factors_()`
-([hv6_zone_controller.cpp](../components/hv6_zone_controller/hv6_zone_controller.cpp)):
+([lv6_zone_controller.cpp](../components/lv6_zone_controller/lv6_zone_controller.cpp)):
 
 - **Static path** — `calculate_hydraulic_outputs_()` derives a design flow
   `V_i = (area_i · heat_loss_i) / (ΔT · 1.163)` and the normalized factor
   `balance_factors_[i] = V_i / max_j V_j` (≤ 1, the highest-flow loop is the reference).
   Note `pipe_correction_factor_()` / `floor_correction_factor_()` are defined
-  ([:1498](../components/hv6_zone_controller/hv6_zone_controller.cpp#L1498),
-  [:1505](../components/hv6_zone_controller/hv6_zone_controller.cpp#L1505)) but **not used**
+  ([:1498](../components/lv6_zone_controller/lv6_zone_controller.cpp#L1498),
+  [:1505](../components/lv6_zone_controller/lv6_zone_controller.cpp#L1505)) but **not used**
   in this path — pipe length only drives the over-length warning. §1a wires them in.
 - **Dynamic path** (`dynamic_balancing_enabled`) — overwrites the factor from measured
   flow−return ΔT. **This path is what we are replacing.**
@@ -92,7 +92,7 @@ defence.
 ### 1a. Static prior — resistance-aware, from the numbers a user can find
 
 Today's static factor is **demand-only**: `flow_i = area_i · heat_loss_i / (ΔT · 1.163)`,
-then `static_factor_i = flow_i / max_j flow_j` ([:1294](../components/hv6_zone_controller/hv6_zone_controller.cpp#L1294)).
+then `static_factor_i = flow_i / max_j flow_j` ([:1294](../components/lv6_zone_controller/lv6_zone_controller.cpp#L1294)).
 It gives each loop the flow its *heat demand* needs but ignores hydraulic *resistance* — a
 long, thin loop flows less than a short one at the same opening — even though
 `pipe_correction_factor_()` and `floor_correction_factor_()` are already implemented but
@@ -130,7 +130,7 @@ safe default, and let the adaptive loop cover the uncertainty.**
 | **Pipe type** (e.g. PEX 16 mm) | **Required** — printed on the pipe / install docs | n/a |
 | **Floor type** (tile / wood / carpet) | **Required** — visible | n/a |
 | Pipe spacing (mm) | **Optional** — hard to know without plans | default **200 mm** (standard); `length_term` still computed from area |
-| Heat loss (W/m²) | Optional | sensible default (or derive from `exterior_walls`) |
+| Heat loss (W/m²) | Optional | sensible local default; exterior-wall geometry is Touch-owned |
 | Floor cover thickness | Optional | floor-type default |
 | Supply-pipe run to manifold | Optional | existing default (`supply_pipe_length_m = 2.0`) |
 
@@ -154,7 +154,7 @@ scales the modelled loop length and resistance:
 rooms past the over-length warning threshold (≈100 m for 16 mm PEX). 200 mm is the
 representative middle and matches the existing `ZoneConfig::pipe_spacing_mm = 200` default.
 **Note:** the current `calculate_pipe_length_m_()` fallback for an empty spacing is `0.15 m`
-([:1493](../components/hv6_zone_controller/hv6_zone_controller.cpp#L1493)) — inconsistent
+([:1493](../components/lv6_zone_controller/lv6_zone_controller.cpp#L1493)) — inconsistent
 with the 200 mm config default; change it to `0.20 m` as part of this work.
 
 ### 2. The adaptation signal — relative setpoint error
@@ -247,7 +247,7 @@ applied after balancing as today:
 ## Configuration
 
 Add to `BalancingConfig`
-([hv6_types.h](../components/hv6_config_store/hv6_types.h)):
+([hv6_types.h](../components/lv6_config_store/hv6_types.h)):
 
 ```cpp
 enum class BalanceMode : uint8_t { STATIC = 0, RETURN_TEMP = 1, ADAPTIVE = 2 };
@@ -278,7 +278,7 @@ return probes. `RETURN_TEMP` can be retired once `ADAPTIVE` is validated.
 ### Persistence / versioning
 
 - `BalancingConfig` gains fields → bump `BALANCING_CONFIG_VERSION`
-  ([hv6_types.h](../components/hv6_config_store/hv6_types.h)).
+  ([hv6_types.h](../components/lv6_config_store/hv6_types.h)).
 - `balance_adapt` lives in `ZoneConfig`, which is mirrored to the durable `zones` NVS blob —
   bump `ZONE_CONFIG_VERSION` so the learned correction survives a legacy main-config reset like
   the rest of the per-room setup (see CLAUDE.md → NVS Config Store).
@@ -294,7 +294,7 @@ return probes. `RETURN_TEMP` can be retired once `ADAPTIVE` is validated.
    `length_term(L_i) · pipe_correction_factor_(pipe_type)`. Each term defaults to 1.0 when its
    input is unset; `spacing` falls back to **200 mm** inside `calculate_pipe_length_m_()`
    (change the current `0.15 m` fallback at
-   [:1493](../components/hv6_zone_controller/hv6_zone_controller.cpp#L1493) to `0.20 m` to
+   [:1493](../components/lv6_zone_controller/lv6_zone_controller.cpp#L1493) to `0.20 m` to
    match `ZoneConfig`'s 200 mm default — see §1b). Clamp `length_term` like the existing
    pipe-correction clamp.
 3. `recalculate_balance_factors_()` — add a `BalanceMode::ADAPTIVE` branch:

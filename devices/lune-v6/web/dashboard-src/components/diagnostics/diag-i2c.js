@@ -28,7 +28,7 @@ const css = `
   border-bottom: 1px solid var(--panel-border);
 }
 .diag-i2c pre {
-  background: linear-gradient(145deg, rgba(0,0,0,.16), rgba(255,255,255,.05));
+  background:rgba(0,0,0,.14);
   border: 1px solid var(--control-border);
   color: var(--text-strong);
   border-radius: 8px;
@@ -37,9 +37,9 @@ const css = `
   overflow-x: auto;
   margin: 0;
 }
-.btn-row { margin-top: 12px; }
-.btn { padding: 7px 14px; border-radius: 8px; border: 1px solid var(--control-border); background: linear-gradient(145deg, rgba(255,255,255,.13), rgba(255,255,255,.055)); color: var(--text-strong); font-weight: 700; cursor: pointer; }
-.btn:hover { background: linear-gradient(135deg, rgba(255,138,61,.90), rgba(255,189,74,.84)); border-color: rgba(255,138,61,.5); color: var(--text-on-accent); }
+.diag-i2c .btn-row { margin-top: 12px; }
+.diag-i2c .btn { min-height:44px;padding:7px 14px;border-radius:8px;border:1px solid var(--control-border);background:var(--control-bg);color:var(--text-strong);font-weight:650;cursor:pointer; }
+.diag-i2c .btn:hover { background:var(--control-bg-hover);border-color:var(--control-border-hover); }
 .diag-i2c .fault {
     color: var(--red);
     font-weight: bold;

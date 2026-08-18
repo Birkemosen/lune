@@ -3,12 +3,12 @@
 #include <cassert>
 #include <cstdio>
 
-using hv6::Rev31DecoderSelection;
-using hv6::Rev31Direction;
-using hv6::Rev31EndpointDecision;
-using hv6::Rev31EndpointEvidence;
-using hv6::Rev31MotionTracker;
-using hv6::classify_rev31_endpoint;
+using lv6::Rev31DecoderSelection;
+using lv6::Rev31Direction;
+using lv6::Rev31EndpointDecision;
+using lv6::Rev31EndpointEvidence;
+using lv6::Rev31MotionTracker;
+using lv6::classify_rev31_endpoint;
 
 static void test_decoder_is_one_hot_and_fail_safe() {
   Rev31DecoderSelection selection;

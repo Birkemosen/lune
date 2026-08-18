@@ -11,12 +11,11 @@ const css = `
   color: var(--state-warn);
   font-size: .74rem;
   line-height: 1.4;
-  border: 1px solid rgba(255,133,49,.35);
-  background: rgba(255,133,49,.12);
+  border:1px solid var(--warn-border);
+  background:var(--warn-bg-soft);
   border-radius: 8px;
   padding: 8px 10px;
   margin: 10px 0 2px;
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.08);
 }
 
 .settings-motor-cal-card .mc-advanced {
@@ -35,9 +34,8 @@ const css = `
   color: var(--text-secondary);
   font-family: var(--font-display);
   font-size: .72rem;
-  font-weight: 800;
-  letter-spacing: 1px;
-  text-transform: uppercase;
+  font-weight:650;
+  letter-spacing:0;
 }
 
 .settings-motor-cal-card .mc-advanced > summary::-webkit-details-marker {

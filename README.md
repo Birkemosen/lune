@@ -17,6 +17,14 @@ shared/          Shared contracts and design notes, not shared runtime code
 The root `Makefile` keeps the common commands available from the repository root and
 delegates to the relevant hardware folder. By default, firmware commands target Lune V6:
 
+Create the repository tool environment from the pinned dependencies before
+building firmware:
+
+```bash
+python3.13 -m venv .venv313
+./.venv313/bin/python -m pip install -r requirements.txt
+```
+
 ```bash
 make config
 make dashboard-build

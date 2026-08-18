@@ -16,7 +16,7 @@ const STATE_PALETTE = {
   2:   { labelKey: 'state.calibrating', color: '#ffd380' },
   3:   { labelKey: 'state.waitCal',     color: '#4e6977' },
   4:   { labelKey: 'state.waitTemp',    color: '#4e6977' },
-  5:   { labelKey: 'state.heating',     color: '#ff8531' },
+  5:   { labelKey: 'state.heating',     color: 'var(--accent)' },
   6:   { labelKey: 'state.idle',        color: '#39354c' },
   7:   { labelKey: 'state.overheated',  color: '#ff6361' },
   255: { labelKey: '',                  color: 'transparent' },
@@ -57,15 +57,7 @@ const css = `
   gap: 9px;
   margin-bottom: 10px;
 }
-.timeline-head::before {
-  content: '';
-  width: 4px;
-  height: 13px;
-  border-radius: 4px;
-  background: linear-gradient(180deg, var(--accent), var(--state-warn));
-  box-shadow: 0 0 18px rgba(255,138,61,.34);
-  flex-shrink: 0;
-}
+.timeline-head::before { content:''; width:4px; height:13px; border-radius:4px; background:var(--accent); flex-shrink:0; }
 .timeline-head span {
   color: var(--accent);
   font-size: .74rem;

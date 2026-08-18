@@ -3,7 +3,7 @@
 // =============================================================================
 // Build + run (from repo root):
 //   clang++ -std=c++17 -O2 -Wall -Wextra \
-//     -I components/hv6_zone_controller \
+//     -I components/lv6_zone_controller \
 //     test/adaptive_balance/test_adaptive_balance.cpp -o /tmp/test_balance -lm \
 //   && /tmp/test_balance
 // (Also wired up as `make test-balance`.)
@@ -13,7 +13,7 @@
 #include <cmath>
 #include <cstdio>
 
-using namespace hv6ab;
+using namespace lv6ab;
 
 static int g_failures = 0;
 

@@ -1,7 +1,7 @@
 import { component, subscribe } from '../../core/component.js';
 import { injectStyle } from '../../core/style.js';
 import { cardForm } from '../../core/ui-kit.js';
-import { es, getDashboardValue, subscribeDashboard, zoneLabel } from '../../core/store.js';
+import { es, getDashboardValue, subscribeDashboard } from '../../core/store.js';
 import { key } from '../../utils/keys.js';
 import { setZoneSelect, setZoneText } from '../../core/api.js';
 import { localize, subscribeLanguage, t } from '../../core/i18n.js';
@@ -31,9 +31,9 @@ const css = `
   transition: border-color .15s ease;
 }
 .zone-sensor-card .ble-row .ble-input:focus {
-  outline: 2px solid rgba(124,155,208,.6);
-  outline-offset: 1px;
-  border-color: rgba(124,155,208,.55);
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+  border-color: var(--accent);
 }
 .zone-sensor-card .btn-scan {
   flex-shrink: 0;
@@ -94,87 +94,13 @@ const css = `
   white-space: nowrap;
 }
 .zone-sensor-card .btn-assign:hover {
-  background: rgba(124,155,208,.12);
+  background: rgba(var(--accent-rgb),.10);
 }
 .zone-sensor-card .scan-msg {
   padding: 8px 10px;
   font-size: .8rem;
   color: var(--text-secondary);
   font-style: italic;
-}
-.zone-sensor-card .merge-visual {
-  margin-top: 12px;
-  padding: 12px;
-  border: 1px solid rgba(255,133,49,.24);
-  border-radius: 8px;
-  background: linear-gradient(145deg, rgba(255,133,49,.12), rgba(255,255,255,.025));
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.08);
-}
-.zone-sensor-card .merge-visual.is-solo {
-  border-color: var(--panel-border);
-  background: rgba(124,155,208,.07);
-}
-.zone-sensor-card .merge-rail {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
-}
-.zone-sensor-card .merge-pill {
-  min-width: 0;
-  padding: 8px 10px;
-  border: 1px solid rgba(255,255,255,.14);
-  border-radius: 8px;
-  color: var(--text-strong);
-  font-size: .82rem;
-  font-weight: 800;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  background: rgba(0,19,29,.42);
-}
-.zone-sensor-card .merge-pill.secondary {
-  border-color: rgba(122,167,206,.42);
-}
-.zone-sensor-card .merge-pill.primary {
-  border-color: rgba(255,133,49,.52);
-  color: var(--accent);
-}
-.zone-sensor-card .merge-link {
-  width: 22px;
-  height: 2px;
-  flex: 0 0 22px;
-  background: var(--accent);
-  border-radius: 999px;
-  position: relative;
-  opacity: .9;
-}
-.zone-sensor-card .merge-link::before,
-.zone-sensor-card .merge-link::after {
-  content: '';
-  position: absolute;
-  top: -4px;
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background: var(--accent);
-  box-shadow: 0 0 12px rgba(255,133,49,.5);
-}
-.zone-sensor-card .merge-link::before { left: -1px; }
-.zone-sensor-card .merge-link::after { right: -1px; }
-.zone-sensor-card .merge-visual.is-solo .merge-link {
-  background: rgba(120,146,200,.36);
-}
-.zone-sensor-card .merge-visual.is-solo .merge-link::before,
-.zone-sensor-card .merge-visual.is-solo .merge-link::after {
-  background: rgba(120,146,200,.42);
-  box-shadow: none;
-}
-.zone-sensor-card .merge-caption {
-  margin-top: 8px;
-  color: var(--text-secondary);
-  font-size: .74rem;
-  line-height: 1.35;
 }
 `;
 
@@ -189,17 +115,17 @@ const template = () => {
 
   return `
     <div class="ui-card zone-sensor-card">
-      <div class="ui-card-title" data-i18n="zone.sensor.title">Temperature Sensors / Connectivity</div>
+      <div class="ui-card-title" data-i18n="zone.sensor.title">Temperature and coordination</div>
       <div class="ui-row">
-        <span class="ui-label" data-i18n="zone.sensor.returnSensor">Zone Return Temperature Sensor</span>
+        <span class="ui-label" data-i18n="zone.sensor.returnSensor">Return temperature sensor</span>
         <span class="ui-field"><select class="ui-select zs-probe">${probeOptions}</select></span>
       </div>
       <div class="ui-row">
-        <span class="ui-label" data-i18n="zone.sensor.tempSource">Temperature Source</span>
+        <span class="ui-label" data-i18n="zone.sensor.tempSource">Room temperature source</span>
         <span class="ui-field"><select class="ui-select zs-source"></select></span>
       </div>
       <div class="zs-row-ble">
-        <div class="ui-section" data-i18n="zone.sensor.bleSensor">BLE Sensor</div>
+        <div class="ui-section" data-i18n="zone.sensor.bleSensor">BLE sensor</div>
         <div class="ui-note" data-i18n="zone.sensor.bleNote">Pair a nearby BTHome sensor (Shelly BLU H&T) or enter MAC manually.</div>
         <div class="ble-row">
           <input class="ble-input zs-ble" maxlength="17" placeholder="AA:BB:CC:DD:EE:FF">
@@ -211,10 +137,6 @@ const template = () => {
       <div class="ui-row">
         <span class="ui-label"><span data-i18n="zone.sensor.mergeWith">Merge With Zone</span> <span class="ui-sublabel" data-i18n="zone.sensor.mergeHelp">merge into one room - mean temperature, valves open equally</span></span>
         <span class="ui-field"><select class="ui-select zs-sync"></select></span>
-      </div>
-      <div class="merge-visual is-solo" aria-live="polite">
-        <div class="merge-rail"></div>
-        <div class="merge-caption"></div>
       </div>
     </div>
   `;
@@ -251,11 +173,6 @@ function setSourceOptions(selectEl, value) {
   selectEl.value = value;
 }
 
-function zoneFromSyncValue(value) {
-  const match = String(value || '').match(/\d+/);
-  return match ? Number(match[0]) : 0;
-}
-
 // ========================================
 // COMPONENT
 // ========================================
@@ -270,9 +187,6 @@ export default component({
     const rowBle = el.querySelector('.zs-row-ble');
     const scanBtn = el.querySelector('.zs-scan');
     const scanList = el.querySelector('.zs-scan-list');
-    const mergeVisual = el.querySelector('.merge-visual');
-    const mergeRail = el.querySelector('.merge-rail');
-    const mergeCaption = el.querySelector('.merge-caption');
     let syncZone = 0;
 
     function selectedZone() {
@@ -285,45 +199,6 @@ export default component({
       rowBle.style.display = sourceEl.value === 'BLE Sensor' ? '' : 'none';
     }
 
-    function paintMergeVisual() {
-      const zone = selectedZone();
-      const target = zoneFromSyncValue(syncEl.value);
-      const incoming = [];
-      for (let z = 1; z <= 6; z++) {
-        if (z !== zone && zoneFromSyncValue(es(key.syncTo(z))) === zone) incoming.push(z);
-      }
-      const follows = target > 0 && target !== zone;
-      const grouped = follows || incoming.length > 0;
-      mergeVisual.classList.toggle('is-solo', !grouped);
-      if (!grouped) {
-        mergeRail.innerHTML =
-          '<span class="merge-pill primary">' + zoneLabel(zone) + '</span>' +
-          '<span class="merge-link"></span>' +
-          '<span class="merge-pill">' + t('zone.sensor.noMerge') + '</span>';
-        mergeCaption.textContent = t('zone.sensor.soloCaption');
-        return;
-      }
-
-      if (follows) {
-        mergeRail.innerHTML =
-          '<span class="merge-pill secondary">' + zoneLabel(zone) + '</span>' +
-          '<span class="merge-link"></span>' +
-          '<span class="merge-pill primary">' + zoneLabel(target) + '</span>';
-        mergeCaption.textContent = t('zone.sensor.followsCaption', { zone: zoneLabel(zone), target: zoneLabel(target) });
-        return;
-      }
-
-      let html = '<span class="merge-pill primary">' + zoneLabel(zone) + '</span>';
-      for (const z of incoming) {
-        html += '<span class="merge-link"></span><span class="merge-pill secondary">' + zoneLabel(z) + '</span>';
-      }
-      mergeRail.innerHTML = html;
-      mergeCaption.textContent = t('zone.sensor.primaryCaption', {
-        zone: zoneLabel(zone),
-        zones: incoming.map(zoneLabel).join(', ')
-      });
-    }
-
     const form = cardForm(el);
     setSourceOptions(sourceEl, 'Local Probe');
     form.select(probeEl, { read: () => es(key.probe(selectedZone())) || undefined, commit: (v) => setZoneSelect(selectedZone(), 'zone_probe', v) });
@@ -331,7 +206,6 @@ export default component({
     form.select(syncEl, { read: () => es(key.syncTo(selectedZone())) || 'None', commit: (v) => setZoneSelect(selectedZone(), 'zone_sync_to', v) });
     const bleField = form.text(bleEl, { read: () => es(key.ble(selectedZone())) || '', commit: (v) => setZoneText(selectedZone(), 'zone_ble_mac', v) });
     sourceEl.addEventListener('change', paintBleRow);
-    syncEl.addEventListener('change', paintMergeVisual);
 
     function update() {
       const zone = selectedZone();
@@ -344,7 +218,6 @@ export default component({
         form.refresh();
       }
       paintBleRow();
-      paintMergeVisual();
     }
 
     function updateIfSelectedZone(id) {
@@ -358,7 +231,6 @@ export default component({
       ) {
         form.refresh();
         paintBleRow();
-        paintMergeVisual();
       }
     }
 
@@ -452,7 +324,6 @@ export default component({
       scanBtn.textContent = scanBtn.disabled ? scanBtn.textContent : t('zone.sensor.scan');
       localize(el);
       paintBleRow();
-      paintMergeVisual();
     });
     localize(el);
     update();

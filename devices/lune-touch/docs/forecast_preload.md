@@ -30,8 +30,8 @@ Lune V6 keeps validating and clamping the resulting commands locally.
    ```
 
    A zone with no exterior walls (interior room) always scores 0. Wind from a sheltered
-   side scores 0. The per-zone `exterior_walls` bitmask (set in V6 zone settings and
-   eventually mirrored into the coordinator zone registry) is what makes this directional.
+   side scores 0. The per-zone `exterior_walls` bitmask is configured and persisted by
+   Lune Touch; it is not mirrored to the local V6 manifold.
 
 3. **Preload decision.** For each zone the model scans the next active lead window and
    takes the peak load. The active lead is the larger of the configured

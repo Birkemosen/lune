@@ -85,9 +85,9 @@ const fmtTrust = (node = {}) => node.trust_label || (Number(node.trust) === 2 ? 
 const fmtNextAction = (action) => ({
   add_node: 'Add manifold',
   fix_node_poll: 'Fix manifold connection',
-  verify_node_identity: 'Authorize manifold commands',
-  trust_node: 'Authorize manifold commands',
-  map_zones: 'Map zones',
+  verify_node_identity: 'Approve control on V6',
+  trust_node: 'Approve control on V6',
+  review_v6_zones: 'Check V6 zones',
   wait_for_fresh_zone_poll: 'Wait for zone data',
   set_forecast_location: 'Set weather location',
   ready: 'Ready',
@@ -97,7 +97,7 @@ const commissioningTarget = (action) => ({
   verify_node_identity: ['manifolds', 'Open manifolds'],
   trust_node: ['manifolds', 'Open manifolds'],
   fix_node_poll: ['manifolds', 'Open manifolds'],
-  map_zones: ['manifolds', 'Open manifolds'],
+  review_v6_zones: ['manifolds', 'Open manifolds'],
   wait_for_fresh_zone_poll: ['diagnostics', 'Open diagnostics'],
   set_forecast_location: ['weather', 'Open weather'],
 }[action] || ['diagnostics', 'Open diagnostics']);
@@ -106,7 +106,7 @@ const commissioningActionButton = (action) => {
   const [section, label] = commissioningTarget(action);
   return `<button class="btn slim" data-section="${section}">${label}</button>`;
 };
-const fmtEventSource = (source) => source === 'commissioning' ? 'setup' : (source || 'touch');
+const fmtEventSource = (source) => source === 'commissioning' ? 'installation' : (source || 'touch');
 const fmtClock = (minutes) => {
   const value = Math.max(0, Math.min(1440, Number(minutes || 0)));
   const hour = Math.floor(value / 60);
@@ -149,7 +149,7 @@ const roomsOutsideTarget = (zones = []) => {
   zones.forEach((zone) => {
     const roomId = zone.room_id || `${zone.node_index}:${zone.zone_index}`;
     const current = Number(zone.temperature_c);
-    const target = Number(zone.resolver?.target_setpoint_c ?? zone.setpoint_c ?? comfortDefault(zone));
+    const target = selectedRoomTarget(zone);
     const deficit = target - current;
     const existing = rooms.get(roomId);
     if (!existing || deficit > existing.deficit_c) {
@@ -267,7 +267,7 @@ function forecastChart(forecast = {}) {
   const plotH = h - top - bottom;
   const plotB = top + plotH;
   if (!hours.length) {
-    return `<div class="chart-card"><div class="chart-head"><span class="chart-title">Forecast / preload</span><span class="chart-sub">no cache</span></div><svg class="forecast-chart" viewBox="0 0 ${w} ${h}"><text x="${w / 2}" y="${h / 2}" text-anchor="middle" class="chart-empty">Fetch weather to populate forecast graph</text></svg></div>`;
+    return `<div class="chart-card"><div class="chart-head"><span class="chart-title">Forecast / preload</span><span class="chart-sub">no cache</span></div><svg class="forecast-chart" viewBox="0 0 ${w} ${h}" role="img" aria-label="No weather forecast is available"><text x="${w / 2}" y="${h / 2}" text-anchor="middle" class="chart-empty">Fetch weather to populate forecast graph</text></svg></div>`;
   }
   const x = (index) => left + (hours.length <= 1 ? 0 : index / (hours.length - 1)) * plotW;
   const decisionStartIndex = clamp(Number(forecast.cache?.decision_start_index), 0, Math.max(0, hours.length - 1));
@@ -324,12 +324,12 @@ function forecastChart(forecast = {}) {
       <span class="legend-item" style="color:var(--series-solar)"><span class="legend-dot"></span>Solar</span>
       ${activeDecisions.length ? '<span class="legend-item" style="color:var(--ok)"><span class="legend-dot"></span>Preload</span>' : ''}
     </div>
-    <svg class="forecast-chart" viewBox="0 0 ${w} ${h}" preserveAspectRatio="xMidYMid meet">
+    <svg class="forecast-chart" viewBox="0 0 ${w} ${h}" preserveAspectRatio="xMidYMid meet" role="img" aria-label="${hours.length}-hour forecast of temperature, wind, and solar gain${activeDecisions.length ? ` with ${activeDecisions.length} preload markers` : ''}">
       ${grid}<line x1="${left}" y1="${plotB}" x2="${left + plotW}" y2="${plotB}" class="chart-axis"></line>${hourTicks}
       ${solarArea ? `<path d="${solarArea}" fill="rgba(255,193,77,.10)" stroke="none"></path>` : ''}
-      <path d="${smoothPath(points.solar)}" fill="none" stroke="var(--series-solar)" stroke-width="1.8" stroke-linecap="round"></path>
+      <path d="${smoothPath(points.solar)}" fill="none" stroke="var(--series-solar)" stroke-width="1.8" stroke-linecap="round" stroke-dasharray="3 4"></path>
       <path d="${smoothPath(points.temp)}" fill="none" stroke="var(--series-cool)" stroke-width="2.4" stroke-linecap="round"></path>
-      <path d="${smoothPath(points.wind)}" fill="none" stroke="var(--series-warm)" stroke-width="2.2" stroke-linecap="round"></path>
+      <path d="${smoothPath(points.wind)}" fill="none" stroke="var(--series-warm)" stroke-width="2.2" stroke-linecap="round" stroke-dasharray="8 3"></path>
       ${preloadMarkers}
     </svg>
   </div>`;
@@ -416,12 +416,13 @@ const exposureOptions = (selected, type) => {
   return options.map(([value, label]) => `<option value="${value}" ${selected === value ? 'selected' : ''}>${label}</option>`).join('');
 };
 
-const nodeOptions = (selected) => {
-  const options = state.nodes.map((node, index) => `<option value="${index}" ${Number(selected || 0) === index ? 'selected' : ''}>${esc(node.name || node.id || v6Name(index))}</option>`).join('');
-  return options || `<option value="0" ${Number(selected || 0) === 0 ? 'selected' : ''}>V6-0</option>`;
+const comfortDefault = (z) => {
+  const candidates = [z.comfort?.setpoint_c, z.setpoint_c, 21];
+  const value = candidates.map(Number).find((candidate) => Number.isFinite(candidate) && candidate >= 5);
+  return value ?? 21;
 };
 
-const comfortDefault = (z) => {
+const selectedRoomTarget = (z) => {
   const candidates = [z.comfort?.setpoint_c, z.setpoint_c, 21];
   const value = candidates.map(Number).find((candidate) => Number.isFinite(candidate) && candidate >= 5);
   return value ?? 21;
@@ -447,29 +448,36 @@ function zoneDetailScreen(z, index) {
   const forecast = z.forecast || {};
   const comfortSetpoint = comfortDefault(z);
   const walls = Number(forecast.exterior_walls || 0);
+  const returnLabel = state.section === 'rooms' || state.section === 'zones' ? 'Back to zones' : 'Back to manifolds';
+  const seenRooms = new Set();
+  const zoneOptions = state.zones.filter((zone) => {
+    if (!zone.room_id || seenRooms.has(zone.room_id)) return false;
+    seenRooms.add(zone.room_id);
+    return true;
+  }).map((zone) => `<option value="${esc(zone.room_id)}" ${zone.room_id === z.room_id ? 'selected' : ''}>${esc(zone.name || zone.room_id)}</option>`).join('');
   return `<section class="view zone-subscreen" data-zone-index="${index}">
-    <div class="section-head"><div><button class="btn slim" data-cancel-zone-edit>Back to manifolds</button><h2>${esc(z.name || z.room_id)}</h2></div><span class="note">${esc(nodeLabel(z.node_index))} / Z${Number(z.zone_index) + 1}</span></div>
+    <div class="section-head zone-detail-navigation"><div><button class="btn slim" data-cancel-zone-edit>‹ ${returnLabel}</button><div><h2>${esc(z.name || z.room_id)}</h2><span class="note">${esc(nodeLabel(z.node_index))} / Z${Number(z.zone_index) + 1}</span></div></div><label class="zone-detail-picker"><span>Zone</span><select class="input" data-zone-picker aria-label="Select zone">${zoneOptions}</select></label></div>
     <section class="zone-target-card">
-      <div><span class="chart-title">Target temperature</span><div class="target-stepper"><button class="spb" data-zone-target="${(comfortSetpoint - 0.5).toFixed(1)}">−</button><strong>${fmtC(comfortSetpoint)}</strong><button class="spb" data-zone-target="${(comfortSetpoint + 0.5).toFixed(1)}">+</button></div><small>Touch owns room intent. Lune V6 reports its locally applied target and remains safe offline.</small></div>
+      <div><span class="chart-title">Target temperature</span><div class="target-stepper"><button class="spb" data-zone-target="${(comfortSetpoint - 0.5).toFixed(1)}">−</button><strong>${fmtC(comfortSetpoint)}</strong><button class="spb" data-zone-target="${(comfortSetpoint + 0.5).toFixed(1)}">+</button></div><small>Touch owns zone intent. Lune V6 reports its locally applied target and remains safe offline.</small></div>
       <div class="zone-live-facts"><div><span>Current</span><strong>${fmtC(z.temperature_c)}</strong></div><div><span>Valve</span><strong>${fmtValue(z.valve_pct, '%')}</strong></div><div><span>Status</span><strong class="${statusClass(z.status)}">${esc(z.status || 'unknown')}</strong></div></div>
     </section>
     <div class="zone-subgrid">
       <section class="settings-panel settings-section">
-        <div class="settings-section-head"><div><h3>Zone</h3><p class="note">Name and valve mapping.</p></div><button class="btn slim" data-save-zone-mapping="${index}">Save</button></div>
-        <div class="settings-form-grid">
-          <label>Zone name<input class="input" data-zone-field="name" value="${esc(z.name || '')}"></label>
-          <label>Manifold<select class="input" data-zone-field="node">${nodeOptions(z.node_index)}</select></label>
-          <label>Valve output<input class="input" data-zone-field="zone" type="number" min="1" max="6" value="${Number(z.zone_index || 0) + 1}"></label>
+        <div class="settings-section-head"><div><h3>Physical zone</h3><p class="note">Name and valve output are imported automatically from V6.</p></div></div>
+        <div class="settings-facts">
+          <div><span>Name</span><strong>${esc(z.name || z.room_id)}</strong><small>Managed on V6</small></div>
+          <div><span>Manifold</span><strong>${esc(nodeLabel(z.node_index))}</strong><small>Connected automatically</small></div>
+          <div><span>Output</span><strong>Z${Number(z.zone_index || 0) + 1}</strong><small>Managed on V6</small></div>
         </div>
       </section>
       <section class="settings-panel settings-section">
-        <div class="settings-section-head"><div><h3>Exterior walls</h3><p class="note">Saved atomically with the room schedule and comfort intent.</p></div><button class="btn slim" data-save-room="${index}">Save room</button></div>
+        <div class="settings-section-head"><div><h3>Exterior walls</h3><p class="note">Saved atomically with the zone schedule and comfort intent.</p></div><button class="btn slim" data-save-room="${index}">Save zone</button></div>
         <div class="field-grid four walls-grid zone-wall-grid">
           ${[['north', 1, 'North'], ['east', 2, 'East'], ['south', 4, 'South'], ['west', 8, 'West']].map(([key, bit, label]) => `<label class="check mini-check"><input data-zone-wall="${key}" type="checkbox" ${walls & bit ? 'checked' : ''}> ${label}</label>`).join('')}
         </div>
       </section>
       <section class="settings-panel settings-section wide">
-        <div class="settings-section-head"><div><h3>Touch schedule</h3><p class="note">Room intent is saved atomically with weather and inclusion settings.</p></div><button class="btn slim" data-save-room="${index}">Save room</button></div>
+        <div class="settings-section-head"><div><h3>Touch schedule</h3><p class="note">Zone intent is saved atomically with weather and inclusion settings.</p></div><button class="btn slim" data-save-room="${index}">Save zone</button></div>
         <div class="field-grid schedule zone-schedule-grid">
           <label class="check mini-check"><input data-zone-field="schedule-enabled" type="checkbox" ${scheduleValues.enabled ? 'checked' : ''}> Enabled</label>
           <label>Start<input class="input" data-zone-field="schedule-start" type="time" value="${fmtClock(scheduleValues.start)}"></label>
@@ -478,42 +486,31 @@ function zoneDetailScreen(z, index) {
         </div>
       </section>
       <details class="settings-panel settings-section wide zone-editor-advanced">
-        <summary>Advanced room model</summary>
+        <summary>Advanced zone model</summary>
         <p class="note">Use these physical inputs only when the commissioning record changes. Comfort priority never changes the physical house-temperature weighting.</p>
         <div class="settings-form-grid">
-          <label>Room area (m²)<input class="input" data-zone-field="total-area" type="number" min="1" max="500" step="0.1" value="${Number(z.room?.total_area_m2 || 1).toFixed(1)}"></label>
+          <label>Zone area (m²)<input class="input" data-zone-field="total-area" type="number" min="1" max="500" step="0.1" value="${Number(z.room?.total_area_m2 || 1).toFixed(1)}"></label>
           <label>Physical weight (m²)<input class="input" data-zone-field="physical-weight" type="number" min="1" max="500" step="0.1" value="${Number(z.room?.physical_weight || z.room?.total_area_m2 || 1).toFixed(1)}"></label>
           <label class="check"><input data-zone-field="include-physical" type="checkbox" ${z.room?.include_in_house_temperature === false ? '' : 'checked'}> Include in physical house temperature</label>
           <label>Wind exposure<select class="input" data-zone-field="forecast-wind-level">${exposureOptions(exposureLevel(z.forecast?.wind_exposure, 'wind'), 'wind')}</select></label>
           <label>Solar gain<select class="input" data-zone-field="forecast-solar-level">${exposureOptions(exposureLevel(z.forecast?.solar_gain, 'solar'), 'solar')}</select></label>
         </div>
-        <p class="note">Thermal estimate: ${esc(fmtThermal(z.thermal_model || {}))}. Wind/solar exposure is configured with the room’s exterior walls above; loop mapping is managed from the Manifolds section.</p>
-        <div class="action-row"><button class="btn slim" data-save-room="${index}">Save advanced room model</button><button class="btn slim" data-section="heat-source">Open heat-source diagnostics</button></div>
+        <p class="note">Thermal estimate: ${esc(fmtThermal(z.thermal_model || {}))}. Wind and solar exposure are configured with the zone’s exterior walls above. Physical names and outputs remain owned by V6.</p>
+        <div class="action-row"><button class="btn slim" data-save-room="${index}">Save advanced zone model</button><button class="btn slim" data-section="heat-source">Open heat-source diagnostics</button></div>
       </details>
     </div>
   </section>`;
 }
 
-function zoneListItem(z, index) {
+function manifoldZoneRow(z, index) {
   const source = `${nodeLabel(z.node_index)} / Z${Number(z.zone_index) + 1}`;
-  const nameSource = z.name_source === 'touch' ? 'Touch name' : z.name_source === 'v6' ? 'V6 name' : 'Generated name';
-  return `<article class="zone-row zone-row-compact ${statusClass(z.status)}">
-    <div class="zone-row-main zone-compact-main">
-      <div class="zone-room">
-        <strong>${esc(z.name || z.room_id)}</strong>
-        <span>${esc(nameSource)} · ${esc(z.room_id || '')} · ${esc(source)}</span>
-      </div>
-      <div class="zone-reading"><span>Current</span><strong>${fmtC(z.temperature_c)}</strong></div>
-      <div class="zone-pill ${statusClass(z.status)}"><span>Status</span><strong>${esc(z.status || 'unknown')}</strong></div>
-      <div class="zone-metrics">
-        <div><span>Target</span><strong>${fmtC(z.setpoint_c ?? comfortDefault(z))}</strong></div>
-        <div><span>Valve</span><strong>${fmtValue(z.valve_pct, '%')}</strong></div>
-      </div>
-      <div class="zone-row-actions">
-        <button class="btn slim" data-command-room="${esc(z.room_id)}">+0.5 C / 45m</button>
-        <button class="btn slim" data-edit-zone-row="${index}">Open</button>
-      </div>
-    </div>
+  const status = z.status || 'unknown';
+  return `<article class="manifold-zone-row ${statusClass(status)}" role="listitem">
+    <div class="manifold-zone-identity"><strong>${esc(z.name || z.room_id)}</strong><small>${esc(source)} · ${esc(z.room_id || '')}</small></div>
+    <div class="manifold-zone-reading"><small>Current</small><strong>${fmtC(z.temperature_c)}</strong><span class="${statusClass(status)}"><i aria-hidden="true"></i>${esc(status)}</span></div>
+    <div class="manifold-zone-measure"><small>Target</small><strong>${fmtC(z.setpoint_c ?? comfortDefault(z))}</strong></div>
+    <div class="manifold-zone-measure"><small>Valve</small><strong>${fmtValue(z.valve_pct, '%')}</strong></div>
+    <button class="manifold-zone-open" data-edit-zone-row="${index}" aria-label="Open ${esc(z.name || z.room_id)} settings"><span aria-hidden="true">›</span></button>
   </article>`;
 }
 
@@ -525,75 +522,99 @@ function logicalRoomCard(room) {
   const command = resolver.command_source && resolver.command_source !== 'none'
     ? `${resolver.command_source} ${Number(resolver.command_offset_c || 0) >= 0 ? '+' : ''}${fmtValue(resolver.command_offset_c, ' C')}`
     : 'no temporary override';
-  const source = `${nodeLabel(representative.node_index)} / Z${Number(representative.zone_index) + 1}`;
   const allFresh = room.loops.length > 0 && room.loops.every((loop) => loop.fresh && loop.status !== 'stale');
-  return `<article class="zone-row logical-room-card ${allFresh ? 'ok' : 'warn'}">
-    <div class="zone-row-main">
-      <div class="zone-room"><strong>${esc(room.name || room.room_id)}</strong><span>${esc(room.room_id)} · ${Number(room.area_m2 || representative.room?.total_area_m2 || 0).toFixed(0)} m² · ${room.loop_count} loop${room.loop_count === 1 ? '' : 's'}</span></div>
-      <div class="zone-live-facts">
-        <div><span>Temperature</span><strong>${fmtC(representative.temperature_c)}</strong><small>${roomTrend(room)}</small></div>
-        <div><span>Target</span><strong>${fmtC(resolver.target_setpoint_c ?? representative.setpoint_c ?? comfortDefault(representative))}</strong><small>${esc(fmtComfortIntent(representative.comfort, comfortDefault(representative)))}</small></div>
-        <div><span>Sensor</span><strong class="${allFresh ? 'ok' : 'warn'}">${sensorFreshness(room.loops)}</strong><small>${sensorBattery(room.loops)}</small></div>
+  const current = Number(representative.temperature_c);
+  // The row shows the logical-zone target selected by the user. Resolver output
+  // can contain temporary and learned modifiers and belongs in Zone details.
+  const target = selectedRoomTarget(representative);
+  const hasTemperature = Number.isFinite(current);
+  const difference = hasTemperature && Number.isFinite(target) ? target - current : null;
+  const status = !hasTemperature
+    ? { tone: 'warn', title: 'No temperature', detail: 'Sensor data is unavailable' }
+    : !allFresh
+      ? { tone: 'warn', title: 'Sensor coverage incomplete', detail: `${sensorFreshness(room.loops)} reporting` }
+      : difference >= 0.5
+        ? { tone: 'warn', title: `${difference.toFixed(1)} C below target`, detail: 'Heating may be required' }
+        : difference <= -0.5
+          ? { tone: 'neutral', title: `${Math.abs(difference).toFixed(1)} C above target`, detail: 'No heat required' }
+          : { tone: 'ok', title: 'On target', detail: 'Comfort is on track' };
+  const area = Number(room.area_m2 || representative.room?.total_area_m2 || 0);
+  const metadata = [room.room_id, area > 0 ? `${area.toFixed(0)} m²` : '', `${room.loop_count} loop${room.loop_count === 1 ? '' : 's'}`].filter(Boolean).join(' · ');
+  const roomName = room.name || room.room_id;
+  return `<article class="logical-room-card room-row ${status.tone}" role="listitem">
+    <div class="room-row-primary">
+      <div class="room-identity"><strong>${esc(roomName)}</strong><span>${esc(metadata)}</span></div>
+      <div class="room-comfort">
+        <span class="room-value ${hasTemperature ? '' : 'unavailable'}">${fmtC(representative.temperature_c)}</span>
+        <span class="room-state ${status.tone}"><i aria-hidden="true"></i>${esc(status.title)}</span>
+        <small>${esc(hasTemperature ? roomTrend(room) : status.detail)}</small>
       </div>
-      <div class="zone-metrics">
-        <div><span>Resolver layers</span><strong>${esc(fmtResolver(resolver))}</strong></div>
-        <div><span>Schedule / override</span><strong>${esc(fmtSchedule(schedule))}</strong><small>${esc(command)}</small></div>
-        <div><span>Recovery confidence</span><strong>${esc(fmtThermal(thermal))}</strong></div>
-      </div>
-      <details class="room-loops"><summary>${room.loop_count} bound loop${room.loop_count === 1 ? '' : 's'} · ${esc(source)}</summary>${room.loops.map((loop) => `<div class="room-loop"><span>${esc(nodeLabel(loop.node_index))} / Z${Number(loop.zone_index) + 1}</span><span>${fmtC(loop.temperature_c)} / ${fmtValue(loop.valve_pct, '%')}</span><span class="${loop.fresh && loop.status !== 'stale' ? 'ok' : 'warn'}">${esc(loop.status || 'unknown')}</span></div>`).join('')}</details>
-      <div class="zone-row-actions"><button class="btn slim" data-command-room="${esc(room.room_id)}">Boost +0.5 C / 45m</button><button class="btn slim" data-away-room="${esc(room.room_id)}">Away −2 C / 6h</button><button class="btn slim" data-open-room="${esc(room.room_id)}">Target & schedule</button></div>
+      <div class="room-target"><span>Target</span><strong>${fmtC(target)}</strong><small>${esc(fmtSchedule(schedule))}</small></div>
+      <button class="room-open-button" data-open-room="${esc(room.room_id)}" aria-label="Open target and schedule for ${esc(roomName)}"><span aria-hidden="true">›</span></button>
     </div>
+    <details class="room-details room-disclosure">
+      <summary><span>Zone details</span><small>Schedule, resolver and ${room.loop_count} manifold loop${room.loop_count === 1 ? '' : 's'}</small></summary>
+      <div class="room-detail-content">
+        <dl class="room-detail-facts">
+          <div><dt>Sensor</dt><dd class="${allFresh ? 'ok' : 'warn'}">${sensorFreshness(room.loops)}</dd><small>${sensorBattery(room.loops)}</small></div>
+          <div><dt>Resolver</dt><dd>${esc(fmtResolver(resolver))}</dd></div>
+          <div><dt>Schedule and override</dt><dd>${esc(fmtSchedule(schedule))}</dd><small>${esc(command)}</small></div>
+          <div><dt>Recovery</dt><dd>${esc(fmtThermal(thermal))}</dd></div>
+        </dl>
+        <div class="room-loop-group"><h3>Manifold loops</h3><div class="room-loops">${room.loops.map((loop) => `<div class="room-loop"><span>${esc(nodeLabel(loop.node_index))} / Z${Number(loop.zone_index) + 1}</span><span>${fmtC(loop.temperature_c)} · ${fmtValue(loop.valve_pct, '%')} valve</span><span class="${loop.fresh && loop.status !== 'stale' ? 'ok' : 'warn'}">${esc(loop.status || 'unknown')}</span></div>`).join('')}</div></div>
+        <div class="room-quick-actions" aria-label="Quick actions for ${esc(roomName)}"><button class="btn slim" data-command-room="${esc(room.room_id)}">Boost 0.5 C for 45 min</button><button class="btn slim" data-away-room="${esc(room.room_id)}">Set away for 6 hours</button></div>
+      </div>
+    </details>
   </article>`;
 }
 
 export function renderSetup() {
-  const settings = state.settings || {};
-  const coordinator = settings.coordinator || {};
-  const authority = settings.authority || {};
-  const authoritySync = authority.v6_sync || {};
   const commissioning = state.diagnostics?.commissioning || {};
-  const forecast = state.forecast || {};
-  const weather = settings.weather || forecast.weather || {};
   const ready = commissioning.next_action === 'ready';
-  const steps = [
-    ['Name this Touch', coordinator.name || coordinator.site_label, 'system', 'Open system'],
-    ['Add a V6 manifold', state.nodes.length ? `${state.nodes.length} manifold${state.nodes.length === 1 ? '' : 's'}` : '', 'manifolds', 'Open manifolds'],
-    ['Authorize manifold commands', commissioning.trusted_nodes ? `${commissioning.trusted_nodes} trusted` : 'optional for names', 'manifolds', 'Review'],
-    ['Name each manifold', state.nodes.some((node) => node.name && node.name !== node.id) ? 'named' : '', 'manifolds', 'Name manifolds'],
-    ['Import and confirm zones', commissioning.bound_zones ? `${commissioning.bound_zones} zones` : '', 'manifolds', 'Open manifolds'],
-    ['Set weather location', forecast.location?.latitude ? `${Number(forecast.location.latitude).toFixed(3)}, ${Number(forecast.location.longitude).toFixed(3)}` : '', 'weather', 'Open weather'],
-    ['Configure heat source', state.heatSource?.host || '', 'heat-source', 'Open heat source'],
+  const topics = [
+    ['Manifolds and zones', 'Connect V6 manifolds; their zones appear automatically.', 'manifolds'],
+    ['Zones and comfort', 'Set zone targets, schedules, temporary boosts, and away periods.', 'rooms'],
+    ['Weather preload', 'Review the forecast and see why Touch preheats a zone.', 'weather'],
+    ['Heat source publishing', 'Connect the whole-house temperature signal and verify delivery.', 'heat-source'],
+    ['Settings', 'Review Touch identity, installation, and recovery preferences.', 'system'],
+    ['Diagnostics', 'Inspect commands, polling, firmware, learning, and recovery evidence.', 'diagnostics'],
   ];
-  return `<section class="view">
-    <div class="section-head"><h2>Setup</h2><span class="note">${ready ? 'Ready for daily use' : `Next: ${esc(fmtNextAction(commissioning.next_action))}`}</span></div>
-    ${readinessStrip()}
-    <div class="setup-layout">
-      <div class="setup-steps">
-        ${steps.map(([title, value, section, label], index) => {
-          const done = !!value;
-          return `<article class="setup-step ${done ? 'ok' : 'warn'}">
-            <span>${index + 1}</span>
-            <div><strong>${esc(title)}</strong><small>${esc(value || 'Needs attention')}</small></div>
-            <button class="btn slim" data-section="${section}">${esc(label)}</button>
-          </article>`;
-        }).join('')}
-      </div>
-      <div class="stack">
-        <div class="ops-panel">
-          <h3>Current state</h3>
-          <p class="${commissioning.ready_for_commands ? 'ok' : 'warn'}">Commands ${commissioning.ready_for_commands ? 'ready' : 'blocked'}</p>
-          <p>${commissioning.reachable_trusted_nodes || 0} ready manifolds / ${commissioning.fresh_zones || 0} fresh zones</p>
-          <p>Weather boost cap ${fmtValue(weather.max_boost_c ?? 1.5, ' C')}</p>
-          ${commissioningActionButton(commissioning.next_action)}
-        </div>
-        <div class="ops-panel">
-          <h3>What Touch owns</h3>
-          <p>Zone comfort, schedules, weather preload, learned house behavior, and command history.</p>
-          <p>V6 still owns valve safety, local clamps, expiry, and fallback heating.</p>
-        </div>
-      </div>
-    </div>
+  return `<section class="view help-view">
+    <div class="section-head"><h2>Help</h2><span class="note">Guidance for daily use and installation</span></div>
+    <section class="help-intro"><span class="eyebrow">Lune Touch</span><h2>Comfort coordination without giving up local safety</h2><p>Touch coordinates logical zones, weather preload, and the whole-house signal. Each V6 manifold continues to protect valves and provide safe local heating if Touch is unavailable.</p></section>
+    ${ready ? '' : `<section class="help-next-action"><div><span class="eyebrow">Continue installation</span><h3>${esc(fmtNextAction(commissioning.next_action))}</h3><p>${commissioning.reachable_trusted_nodes || 0} manifolds ready · ${commissioning.fresh_zones || 0} fresh zones</p></div>${commissioningActionButton(commissioning.next_action)}</section>`}
+    <section class="help-topics" aria-labelledby="help-topics-title"><div class="subsection-head"><div><h2 id="help-topics-title">Topics</h2><p>Open the relevant view to inspect or change the system.</p></div></div><div class="help-topic-list" role="list">
+      ${topics.map(([title, description, section]) => `<button class="help-topic-row" role="listitem" data-section="${section}"><span><strong>${title}</strong><small>${description}</small></span><span class="help-topic-chevron" aria-hidden="true">›</span></button>`).join('')}
+    </div></section>
+    <details class="group-disclosure help-ownership"><summary><span>Who controls what?</span><small>Touch, V6, and Heat Source responsibilities</small></summary><div class="group-disclosure-content ownership-list"><div><strong>Touch</strong><p>Logical zones, schedules, weather preload, distribution, and publishing.</p></div><div><strong>V6 manifolds</strong><p>Valve safety, local clamps, command expiry, and fallback heating.</p></div><div><strong>Heat Source</strong><p>Heat-pump timing, compressor behavior, prices, optimization, and DHW.</p></div></div></details>
   </section>`;
+}
+
+function overviewZoneRow(room) {
+  const representative = roomRepresentative(room);
+  const current = Number(representative.temperature_c);
+  const target = selectedRoomTarget(representative);
+  const hasTemperature = Number.isFinite(current);
+  const fresh = room.loops.length > 0 && room.loops.some((loop) => loop.fresh && loop.status !== 'stale');
+  const heating = room.loops.some((loop) => ['heat', 'heating', 'call', 'calling'].includes(String(loop.status || '').toLowerCase()) || Number(loop.valve_pct || 0) > 0);
+  const difference = hasTemperature && Number.isFinite(target) ? target - current : null;
+  const stateInfo = !hasTemperature || !fresh
+    ? ['warn', 'Sensor unavailable']
+    : difference >= 0.5
+      ? ['warn', `${difference.toFixed(1)} C below target`]
+      : heating
+        ? ['active', 'Heating']
+        : difference <= -0.5
+          ? ['neutral', `${Math.abs(difference).toFixed(1)} C above target`]
+          : ['ok', 'On target'];
+  const roomName = room.name || room.room_id;
+  return `<button type="button" class="overview-zone-row ${stateInfo[0]}" data-section="zones" data-open-room="${esc(room.room_id)}" aria-label="Open ${esc(roomName)} zone details">
+    <span class="overview-zone-name"><strong>${esc(roomName)}</strong><small>${room.loop_count} manifold loop${room.loop_count === 1 ? '' : 's'}</small></span>
+    <span class="overview-zone-value"><small>Temperature</small><strong>${fmtC(representative.temperature_c)}</strong></span>
+    <span class="overview-zone-value"><small>Target</small><strong>${fmtC(target)}</strong></span>
+    <span class="overview-zone-state"><i aria-hidden="true"></i>${esc(stateInfo[1])}</span>
+    <span class="overview-zone-chevron" aria-hidden="true">›</span>
+  </button>`;
 }
 
 export function renderOverview() {
@@ -613,73 +634,83 @@ export function renderOverview() {
   const houseTarget = state.strategy?.house_target || {};
   const odin = forecast.odin_plan || {};
   const commissioning = diagnostics.commissioning || {};
+  const rooms = logicalRooms(state.rooms, state.zones);
   const roomsNeedingHeat = roomsOutsideTarget(state.zones);
   const heatSourceHealthy = heatSource.enabled && quality === 'healthy' && push.ok !== false;
-  return `<section class="view">
-    <div class="section-head"><h2>Dashboard</h2><button class="btn" data-action="refresh">Refresh</button></div>
-    <div class="stat-grid">
-      <div class="stat"><span>House physical</span><strong>${physical.has_temperature ? fmtC(physical.temperature_c) : 'Unavailable'}</strong><em>${fmtCoverage(physical)}</em></div>
-      <div class="stat"><span>House target</span><strong>${houseTarget.available ? fmtC(houseTarget.value_c) : 'Unavailable'}</strong><em>${esc(houseTarget.source || 'no target source')}</em></div>
-      <div class="stat"><span>Comfort</span><strong>${fmtC(summary.comfort_avg_c)}</strong><em>${summary.calling || 0} calling / ${roomsNeedingHeat.length} outside target</em></div>
-      <div class="stat"><span>V6 coverage</span><strong>${summary.nodes || 0} nodes</strong><em>${summary.stale_nodes || 0} stale / ${physical.quality || 'unknown'}</em></div>
-      <div class="stat"><span>Authority</span><strong>${fmtAuthority(authority.state)}</strong><em>${authority.lease_remaining_s || 0}s / ${esc(authority.reason || 'unconfigured')}</em></div>
-    </div>
-    ${readinessStrip()}
-    <div class="split-main">
-      <div>
-        <div class="section-head"><h2>Zones</h2><span class="note">Heat demand and source freshness</span></div>
-        <div class="zone-matrix">${state.zones.map(zoneCard).join('')}</div>
-        <section class="ops-panel overview-attention">
-          <h3>Rooms outside target</h3>
-          ${roomsNeedingHeat.map((room) => `<p class="warn">${esc(room.name)} is ${fmtValue(room.deficit_c, ' C')} below target</p>`).join('') || '<p class="ok">No fresh logical room is 0.5 C or more below its target.</p>'}
-          <p class="note">Next action: ${esc(fmtNextAction(commissioning.next_action))}</p>
-          ${commissioningActionButton(commissioning.next_action)}
-        </section>
-      </div>
-      <div class="stack">
+  const setupNeeded = commissioning.next_action && commissioning.next_action !== 'ready';
+  const comfortNeedsAttention = roomsNeedingHeat.length > 0;
+  const houseHealthy = !setupNeeded && !comfortNeedsAttention && !polling.fail && heatSourceHealthy;
+  const statusTitle = setupNeeded ? 'Setup needs attention' : comfortNeedsAttention ? 'Zones need heat' : houseHealthy ? 'House is on track' : 'System needs review';
+  const statusText = setupNeeded
+    ? `${fmtNextAction(commissioning.next_action)} before Touch can coordinate normally.`
+    : comfortNeedsAttention
+      ? `${roomsNeedingHeat.length} zone${roomsNeedingHeat.length === 1 ? '' : 's'} are below their comfort target.`
+      : houseHealthy ? 'Comfort, coverage and heat-source signal are healthy.' : 'Review the operational details before relying on automation.';
+  const attentionSection = setupNeeded ? commissioningTarget(commissioning.next_action)[0]
+    : comfortNeedsAttention ? 'zones'
+      : polling.fail ? 'diagnostics' : heatSourceHealthy ? '' : 'heat-source';
+  const attentionTitle = setupNeeded ? fmtNextAction(commissioning.next_action)
+    : comfortNeedsAttention ? `Review ${roomsNeedingHeat.length} zone${roomsNeedingHeat.length === 1 ? '' : 's'} below target`
+      : polling.fail ? 'Review manifold connectivity' : heatSourceHealthy ? '' : 'Review heat-source publishing';
+  const attentionText = setupNeeded ? 'Complete the next installation step before Touch coordinates the house.'
+    : comfortNeedsAttention ? 'Open Zones to inspect current temperature, target, and sensor coverage.'
+      : polling.fail ? esc(polling.last_error || 'One or more V6 manifolds did not respond.') : heatSourceHealthy ? '' : 'The whole-house physical signal is not ready to publish.';
+  const reportingRooms = rooms.filter((room) => Number.isFinite(Number(roomRepresentative(room).temperature_c))).length;
+  const systemHealth = polling.fail || Number(commandResults.failed || 0) > 0 ? 'Needs review' : 'Healthy';
+  return `<section class="view overview">
+    <section class="overview-status" role="status" aria-live="polite">
+      <div class="overview-status-main"><span class="eyebrow">House status</span><h2 class="${houseHealthy ? 'ok' : 'warn'}">${statusTitle}</h2><p>${esc(statusText)}</p></div>
+      <div class="overview-status-fact"><span class="eyebrow">Physical</span><strong>${physical.has_temperature ? fmtC(physical.temperature_c) : 'Unavailable'}</strong><small>${fmtCoverage(physical)}</small></div>
+      <div class="overview-status-fact"><span class="eyebrow">Comfort</span><strong>${summary.calling || 0} calling</strong><small>Target ${houseTarget.available ? fmtC(houseTarget.value_c) : 'unavailable'} · ${roomsNeedingHeat.length} outside</small></div>
+      <div class="overview-status-fact"><span class="eyebrow">Manifolds</span><strong>${summary.nodes || 0} connected</strong><small>${summary.stale_nodes || 0} stale · ${reportingRooms}/${rooms.length} zones reporting</small></div>
+    </section>
+    ${attentionSection ? `<button type="button" class="overview-attention-row" data-section="${attentionSection}"><span><strong>${esc(attentionTitle)}</strong><small>${attentionText}</small></span><span aria-hidden="true">›</span></button>` : ''}
+    <div class="overview-dashboard">
+      <section class="overview-dashboard-section overview-zones" aria-labelledby="overview-zones-title"><div class="overview-dashboard-head"><div><h2 id="overview-zones-title">Zones</h2><p>Current temperature, comfort target, and immediate state.</p></div><button class="text-action" data-section="zones">View all</button></div>
+        <div class="overview-zone-list" role="group" aria-label="Logical zones">${rooms.map(overviewZoneRow).join('') || '<p class="empty-state">No logical zones configured.</p>'}</div>
+      </section>
+      <section class="overview-dashboard-section overview-forecast" aria-labelledby="overview-forecast-title"><div class="overview-dashboard-head"><div><h2 id="overview-forecast-title">Forecast and preload</h2><p>${activeDecisions.length ? `${activeDecisions.length} active preload decision${activeDecisions.length === 1 ? '' : 's'}.` : 'No forecast-driven changes are active.'}</p></div><button class="text-action" data-section="weather">Weather</button></div>
         ${forecastChart(forecast)}
-        <div class="ops-panel">
-          <h3>Active preload</h3>
-          ${activeDecisions.map((decision) => `<p>${esc(decision.name || decision.room_id)}: +${fmtValue(decision.offset_c, ' C')} / P${decision.priority ?? 1} / peak in ${decision.peak_in_h}h${fmtDecisionLead(decision)}</p>`).join('') || '<p>No active preload decisions</p>'}
-        </div>
-        <div class="ops-panel">
-          <h3>Heat source physical signal</h3>
-          <p class="${heatSourceHealthy ? 'ok' : 'warn'}">${heatSource.enabled ? 'enabled' : 'not configured'} / ${quality}${weighted.available ? ` / ${fmtC(weighted.value_c)}` : ''}</p>
-          <p>${fmtCoverage(physical)} / ${weighted.contributing_rooms || 0} rooms / ${heatSource.host || 'no address'}${heatSource.host ? `:${heatSource.port || 80}` : ''}</p>
-          <button class="btn slim" data-section="heat-source">Manage heat source</button>
-        </div>
-        <div class="ops-panel">
-          <h3>ODIN / DHW</h3>
-          <p class="${odin.fresh ? 'ok' : 'warn'}">${odin.enabled ? (odin.fresh ? 'plan fresh' : 'plan unavailable or stale') : 'plan not configured'} / ${fmtOdinOperation(odin.operation_mode_raw)}</p>
-          <p>${odin.available ? `${fmtC(odin.target_c)} plan / ${fmtValue(odin.planned_heat_kw, ' kW')}` : 'DHW and heat-pump faults are not supplied by this integration.'}</p>
-          ${odin.last_error ? `<p class="warn">${esc(odin.last_error)}</p>` : '<p class="note">ODIN owns timing, compressor behavior, and DHW. Touch does not command them.</p>'}
-        </div>
-        <div class="ops-panel">
-          <h3>V6 nodes / sensor coverage</h3>
-          ${state.nodes.map((node) => {
-            const health = node.health || {};
-            return `<p class="${node.reachable && !health.stale_zones ? 'ok' : 'warn'}">${esc(node.name || node.id || 'V6')} · ${health.fresh_zones ?? 0}/${health.mapped_zones ?? 0} fresh · ${node.reachable ? 'reachable' : 'stale'}</p>`;
-          }).join('') || '<p class="warn">No V6 manifold is registered.</p>'}
-          <p class="${quality === 'healthy' ? 'ok' : 'warn'}">Physical quality: ${esc(quality)}</p>
-        </div>
-        <div class="ops-panel">
-          <h3>System health</h3>
-          <p class="${polling.fail ? 'warn' : 'ok'}">${polling.success || 0} polls ok / ${polling.fail || 0} failed</p>
-          <p class="${forecastStatus.status === 'ok' || forecastStatus.status === 'cached' ? 'ok' : 'warn'}">Forecast ${forecastStatus.status || summary.forecast_status || 'unknown'}${forecastStatus.fetch_pending ? ' / pending' : ''}</p>
-          <p class="${commandResults.failed || commandResults.blocked ? 'warn' : 'muted'}">${commandResults.accepted || 0} commands accepted / ${commandResults.blocked || 0} blocked / ${commandResults.failed || 0} failed</p>
-        </div>
-      </div>
+        ${activeDecisions.length ? `<ul class="overview-preload-list">${activeDecisions.slice(0, 4).map((decision) => `<li><strong>${esc(decision.name || decision.room_id)}</strong><span>+${fmtValue(decision.offset_c, ' C')} · peak in ${decision.peak_in_h}h</span></li>`).join('')}</ul>` : ''}
+      </section>
+      <section class="overview-dashboard-section overview-coordination" aria-labelledby="overview-coordination-title"><div class="overview-dashboard-head"><div><h2 id="overview-coordination-title">System coordination</h2><p>Publishing, authority, forecast, and command health.</p></div><button class="text-action" data-section="diagnostics">Diagnostics</button></div>
+        <dl class="overview-coordination-facts">
+          <div><dt>Touch authority</dt><dd>${fmtAuthority(authority.state)}</dd><small>${authority.lease_remaining_s || 0}s · ${esc(authority.reason || 'unconfigured')}</small></div>
+          <div><dt>Heat source signal</dt><dd class="${heatSourceHealthy ? 'ok' : 'warn'}">${heatSource.enabled ? 'Enabled' : 'Not configured'}</dd><small>${quality}${weighted.available ? ` · ${fmtC(weighted.value_c)}` : ''}</small></div>
+          <div><dt>Heat Source / DHW</dt><dd class="${odin.fresh ? 'ok' : 'warn'}">${odin.enabled ? (odin.fresh ? 'Plan fresh' : 'Plan stale') : 'Not configured'}</dd><small>${fmtOdinOperation(odin.operation_mode_raw)}</small></div>
+          <div><dt>System health</dt><dd class="${systemHealth === 'Healthy' ? 'ok' : 'warn'}">${systemHealth}</dd><small>${polling.success || 0} polls · forecast ${forecastStatus.status || summary.forecast_status || 'unknown'} · ${commandResults.failed || 0} failed</small></div>
+        </dl>
+      </section>
     </div>
   </section>`;
 }
 
 export function renderZones() {
+  const selectedZoneIndex = state.zones.findIndex((zone) => zone.room_id === state.zoneEditRoomId);
+  if (selectedZoneIndex >= 0) return zoneDetailScreen(state.zones[selectedZoneIndex], selectedZoneIndex);
   const rooms = logicalRooms(state.rooms, state.zones);
-  return `<section class="view">
-    <div class="section-head"><h2>Rooms</h2><span class="note">One logical room can distribute comfort across multiple manifold loops.</span></div>
-    <div class="zone-list">
-      ${rooms.map(logicalRoomCard).join('') || '<p class="note">No logical rooms are mapped yet.</p>'}
-    </div>
+  const reporting = rooms.filter((room) => {
+    const representative = roomRepresentative(room);
+    return Number.isFinite(Number(representative.temperature_c)) && room.loops.some((loop) => loop.fresh && loop.status !== 'stale');
+  }).length;
+  const missingSensors = rooms.length - reporting;
+  const belowTarget = rooms.filter((room) => {
+    const representative = roomRepresentative(room);
+    const current = Number(representative.temperature_c);
+    const target = selectedRoomTarget(representative);
+    return Number.isFinite(current) && Number.isFinite(target) && target - current >= 0.5;
+  }).length;
+  const loopCount = rooms.reduce((sum, room) => sum + Number(room.loop_count || 0), 0);
+  const summaryTitle = missingSensors
+    ? `${missingSensors} zone${missingSensors === 1 ? '' : 's'} need sensor data`
+    : belowTarget
+      ? `${belowTarget} zone${belowTarget === 1 ? '' : 's'} below target`
+      : rooms.length ? 'All reporting zones are on track' : 'No zones configured';
+  return `<section class="view rooms-view">
+    <div class="section-head"><h2>Zones</h2><span class="note">${rooms.length} zone${rooms.length === 1 ? '' : 's'} · ${reporting} reporting · ${loopCount} manifold loop${loopCount === 1 ? '' : 's'}</span></div>
+    ${rooms.length ? `<section class="rooms-summary ${missingSensors || belowTarget ? 'warn' : 'ok'}" role="status" aria-live="polite"><span class="eyebrow">Zone status</span><h2>${summaryTitle}</h2><p>${missingSensors ? 'Connect or restore zone sensors before relying on comfort decisions.' : belowTarget ? 'Review zones below target and adjust only when the current schedule is not appropriate.' : 'Temperatures and targets are available for every configured zone.'}</p></section>
+    <div class="room-list" role="list" aria-label="Configured zones">${rooms.map(logicalRoomCard).join('')}</div>`
+      : '<section class="rooms-empty"><h2>No zones received</h2><p>Configure and name zones on the V6 manifold. Touch imports them automatically.</p><button class="btn" data-section="manifolds">Open manifolds</button></section>'}
   </section>`;
 }
 
@@ -689,62 +720,71 @@ export function renderManifolds() {
     return zoneDetailScreen(state.zones[selectedZoneIndex], selectedZoneIndex);
   const scan = state.scanResult;
   const nodeActivity = state.nodeActivity;
-  return `<section class="view">
+  const reachable = state.nodes.filter((node) => node.reachable).length;
+  const trusted = state.nodes.filter((node) => fmtTrust(node) === 'trusted').length;
+  const faulted = state.nodes.filter((node) => node.runtime?.motor_fault).length;
+  const needsAttention = faulted || reachable < state.nodes.length || trusted < state.nodes.length;
+  const attentionCount = state.nodes.filter((node) => !node.reachable || fmtTrust(node) !== 'trusted' || node.runtime?.motor_fault).length;
+  const summaryTitle = !state.nodes.length ? 'No manifolds registered'
+    : needsAttention ? `${attentionCount} manifold${attentionCount === 1 ? '' : 's'} need attention`
+      : 'All manifolds are ready';
+  return `<section class="view manifolds-view">
     <div class="section-head"><h2>Manifolds</h2><div class="section-actions">${nodeActivity ? `<span class="operation-status" role="status" aria-live="polite"><span class="spinner" aria-hidden="true"></span>${esc(nodeActivity)}</span>` : ''}<button class="btn" data-action="scan"${nodeActivity ? ' disabled' : ''}>Scan</button></div></div>
-    <div class="manifold-register">
-      <div>
-        <h3>Register manifold</h3>
-        <p class="note">Scan probes registered V6 manifolds; use Probe for a new hostname or IP.</p>
+    <section class="manifold-summary ${needsAttention || !state.nodes.length ? 'warn' : 'ok'}" role="status" aria-live="polite">
+      <span class="eyebrow">Connection status</span><h2>${summaryTitle}</h2>
+      <p>${state.nodes.length ? `${reachable}/${state.nodes.length} reachable · ${trusted}/${state.nodes.length} approved by V6 · ${state.zones.length} imported zones` : 'Add a V6 manifold to import zone names and telemetry.'}</p>
+    </section>
+    <details class="group-disclosure manifold-add"${state.nodes.length ? '' : ' open'}>
+      <summary><span>Add a manifold</span><small>Scan the network or enter a hostname or IP</small></summary>
+      <div class="group-disclosure-content">
+        <label class="field-label" for="node-host">Hostname or IP address</label>
+        <div class="inline-form manifold-form">
+          <input class="input mini-input" id="node-host" placeholder="lune-v6-a.local or 192.168.20.120">
+          <button class="btn" data-action="probe-node"${nodeActivity ? ' disabled' : ''}>Probe</button>
+          <button class="btn" data-action="add-node"${nodeActivity ? ' disabled' : ''}>Add manually</button>
+        </div>
+        ${renderScanResults(scan)}
       </div>
-      <div class="inline-form manifold-form">
-        <input class="input mini-input" id="node-host" placeholder="lune-v6-a.local or 192.168.20.120">
-        <button class="btn" data-action="probe-node"${nodeActivity ? ' disabled' : ''}>Probe</button>
-        <button class="btn" data-action="add-node"${nodeActivity ? ' disabled' : ''}>Add manually</button>
-      </div>
-    </div>
-    ${renderScanResults(scan)}
-    <div class="node-list">${state.nodes.map((n) => {
+    </details>
+    <div class="manifold-list" role="list" aria-label="Registered manifolds">${state.nodes.map((n) => {
       const h = n.health || {};
       const r = n.runtime || {};
       const nodeIndex = state.nodes.findIndex((node) => node.id === n.id);
       const recoveryZone = state.zones.find((zone) => Number(zone.node_index) === nodeIndex && zone.room_id);
       const manifoldZones = state.zones.filter((zone) => Number(zone.node_index) === nodeIndex);
-      return `<article class="node-panel">
-      <div>
-        <h3>${esc(n.name || n.id)}</h3>
-        <label class="node-name-field">Friendly name<input class="input mini-input" data-node-name="${esc(n.id)}" value="${esc(n.name || n.id || '')}"></label>
-        <p>${n.hostname || n.ip || 'no address'}</p>
-        <p class="${n.reachable ? 'ok' : 'warn'}">${n.reachable ? 'reachable' : 'stale'} / ${fmtTrust(n)}</p>
-        <div class="node-actions">
-          <button class="btn slim" data-save-node-profile="${esc(n.id)}">Save name</button>
-          <button class="btn slim" data-action="refresh-node-names"${nodeActivity ? ' disabled' : ''}>Import names from V6</button>
-          ${r.motor_fault && recoveryZone ? `<button class="btn slim danger" data-motor-action="reset_fault" data-motor-room="${esc(recoveryZone.room_id)}">Reset fault</button>` : ''}
-          <button class="btn slim" data-trust-node="${esc(n.id)}" data-trust-value="trusted" data-trust-confirm="${esc(n.pairing_fingerprint || '')}"${nodeActivity ? ' disabled' : ''}>Authorize commands</button>
-          <button class="btn slim" data-trust-node="${esc(n.id)}" data-trust-value="paired" data-trust-confirm=""${nodeActivity ? ' disabled' : ''}>Pair only (names)</button>
-          <button class="btn slim danger" data-remove-node="${esc(n.id)}">Remove</button>
-        </div>
-      </div>
-      <div class="health-grid">
-        <div class="health-cell"><span>Zones</span><strong>${h.mapped_zones ?? 0}</strong></div>
-        <div class="health-cell"><span>Fresh</span><strong class="${h.stale_zones ? 'warn' : 'ok'}">${h.fresh_zones ?? 0}/${h.mapped_zones ?? 0}</strong></div>
-        <div class="health-cell"><span>Calling</span><strong>${h.calling_zones ?? 0}</strong></div>
-        <div class="health-cell"><span>Temp</span><strong>${fmtC(h.avg_temp_c)}</strong></div>
-        <div class="health-cell"><span>Setpoint</span><strong>${fmtC(h.avg_setpoint_c)}</strong></div>
-        <div class="health-cell"><span>Trust</span><strong class="${fmtTrust(n) === 'trusted' ? 'ok' : 'warn'}">${fmtTrust(n)}</strong></div>
-        <div class="health-cell"><span>Flow</span><strong>${fmtC(r.flow_c)}</strong></div>
-        <div class="health-cell"><span>Return</span><strong>${fmtC(r.return_c)}</strong></div>
-        <div class="health-cell"><span>Valve</span><strong>${fmtValue(r.avg_valve_pct, '%')}</strong></div>
-        <div class="health-cell"><span>Active</span><strong>${r.active_zones ?? 0}</strong></div>
-        <div class="health-cell"><span>Drivers</span><strong class="${r.drivers_enabled ? 'ok' : 'warn'}">${r.drivers_enabled ? 'on' : 'off'}</strong></div>
-        <div class="health-cell"><span>Fault</span><strong class="${r.motor_fault ? 'warn' : 'ok'}">${r.motor_fault ? 'yes' : 'none'}</strong></div>
-      </div>
-      <dl><dt>ID</dt><dd>${esc(n.id || '-')}</dd><dt>Firmware</dt><dd>${n.firmware || '-'}</dd><dt>Status</dt><dd class="${n.reachable ? 'ok' : 'warn'}">${n.reachable ? 'reachable' : 'stale'}</dd><dt>Identity</dt><dd>${esc(n.pairing_fingerprint || '-')}</dd><dt>Last host</dt><dd>${esc(n.last_success_host || '-')}</dd><dt>Last error</dt><dd class="${n.last_failure ? 'warn' : 'muted'}">${esc(n.last_failure || '-')}</dd></dl>
-      <section class="manifold-zones">
-        <div class="settings-section-head"><div><h3>Zones</h3><p class="note">Pairing is enough to read V6 names and telemetry. Authorization is only needed before Touch sends commands.</p></div></div>
-        <div class="zone-list">${manifoldZones.map((zone) => zoneListItem(zone, state.zones.indexOf(zone))).join('') || '<div class="empty-row">No zones imported yet</div>'}</div>
+      const ready = n.reachable && fmtTrust(n) === 'trusted' && !r.motor_fault;
+      return `<article class="manifold-row" role="listitem">
+      <details class="manifold-disclosure">
+        <summary>
+          <span class="manifold-identity"><strong>${esc(n.name || n.id)}</strong><small>${esc(n.hostname || n.ip || 'No address')}</small></span>
+          <span class="manifold-state ${ready ? 'ok' : 'warn'}"><i aria-hidden="true"></i><strong>${r.motor_fault ? 'Motor fault' : !n.reachable ? 'Unreachable' : fmtTrust(n) !== 'trusted' ? 'Approval needed on V6' : 'Ready'}</strong><small>${fmtTrust(n) === 'trusted' ? 'control approved' : 'telemetry only'}</small></span>
+          <span class="manifold-measure"><small>Fresh zones</small><strong>${h.fresh_zones ?? 0}/${h.imported_zones ?? h.mapped_zones ?? 0}</strong></span>
+          <span class="manifold-measure"><small>Calling</small><strong>${h.calling_zones ?? 0}</strong></span>
+          <span class="disclosure-chevron" aria-hidden="true">›</span>
+        </summary>
+        <div class="manifold-detail-content">
+          ${!ready ? `<div class="manifold-next-action"><div><strong>${r.motor_fault ? 'Reset the motor fault before normal operation.' : !n.reachable ? 'Check the address and network connection.' : 'Approve this connection on the V6 manifold.'}</strong><span>${esc(n.last_failure || 'Touch can read telemetry now. Open the local V6 Settings view to approve authenticated control.')}</span></div>${r.motor_fault && recoveryZone ? `<button class="btn danger" data-motor-action="reset_fault" data-motor-room="${esc(recoveryZone.room_id)}">Reset fault</button>` : ''}</div>` : ''}
+          <dl class="manifold-overview" aria-label="Manifold overview">
+            <div><dt>Sensor coverage</dt><dd class="${h.stale_zones ? 'warn' : 'ok'}">${h.fresh_zones ?? 0}/${h.imported_zones ?? h.mapped_zones ?? 0}</dd><small>${h.stale_zones ? `${h.stale_zones} stale` : 'All zones fresh'}</small></div>
+            <div><dt>Average temperature</dt><dd>${fmtC(h.avg_temp_c)}</dd><small>Target ${fmtC(h.avg_setpoint_c)}</small></div>
+            <div><dt>Heat demand</dt><dd>${h.calling_zones ?? 0} calling</dd><small>${fmtValue(r.avg_valve_pct, '%')} average valve</small></div>
+            <div><dt>Operation</dt><dd class="${r.motor_fault || !r.drivers_enabled ? 'warn' : 'ok'}">${r.motor_fault ? 'Motor fault' : r.drivers_enabled ? 'Normal' : 'Drivers off'}</dd><small>${r.active_zones ?? 0} active zones</small></div>
+          </dl>
+      <section class="manifold-zones"><div class="subsection-head"><div><h3>Zones</h3><p class="note">Names and valve outputs are imported from this V6 manifold.</p></div></div>
+        <div class="manifold-zone-list" role="list">${manifoldZones.map((zone) => manifoldZoneRow(zone, state.zones.indexOf(zone))).join('') || '<div class="empty-row">No zones imported yet</div>'}</div>
       </section>
+      <section class="device-details" aria-label="Device settings and telemetry">
+        <div class="device-details-header"><div><h3>Device settings and telemetry</h3><p>Live manifold status, identity, and local management.</p></div><span>${esc(n.firmware || 'Unknown firmware')} · ${fmtC(r.flow_c)} flow · ${fmtC(r.return_c)} return</span></div>
+        <div class="device-details-content">
+        <section><h3>Telemetry</h3><dl class="device-telemetry"><div><dt>Flow</dt><dd>${fmtC(r.flow_c)}</dd></div><div><dt>Return</dt><dd>${fmtC(r.return_c)}</dd></div><div><dt>Average valve</dt><dd>${fmtValue(r.avg_valve_pct, '%')}</dd></div><div><dt>Active zones</dt><dd>${r.active_zones ?? 0}</dd></div><div><dt>Drivers</dt><dd>${r.drivers_enabled ? 'On' : 'Off'}</dd></div><div><dt>Control</dt><dd>${fmtTrust(n) === 'trusted' ? 'Approved on V6' : 'Telemetry only'}</dd></div></dl></section>
+        <section><h3>Identity</h3><dl class="manifold-facts"><dt>ID</dt><dd>${esc(n.id || '-')}</dd><dt>Firmware</dt><dd>${esc(n.firmware || '-')}</dd><dt>Fingerprint</dt><dd>${esc(n.pairing_fingerprint || '-')}</dd><dt>Last host</dt><dd>${esc(n.last_success_host || '-')}</dd><dt>Last error</dt><dd class="${n.last_failure ? 'warn' : 'muted'}">${esc(n.last_failure || 'None')}</dd></dl></section>
+        <section><h3>Management</h3><label class="field-label">Friendly name<input class="input mini-input" data-node-name="${esc(n.id)}" value="${esc(n.name || n.id || '')}"></label><div class="manifold-management-actions"><button class="btn" data-save-node-profile="${esc(n.id)}">Save</button><button class="btn" data-action="refresh-node-names"${nodeActivity ? ' disabled' : ''}>Import names</button>${fmtTrust(n) !== 'paired' && fmtTrust(n) !== 'trusted' ? `<button class="btn" data-trust-node="${esc(n.id)}" data-trust-value="paired" data-trust-confirm=""${nodeActivity ? ' disabled' : ''}>Pair for reading</button>` : ''}</div><button class="text-action danger-text" data-remove-node="${esc(n.id)}">Remove manifold…</button></section>
+        </div>
+      </section>
+        </div>
+      </details>
     </article>`;
-    }).join('')}</div>
+    }).join('') || '<section class="manifold-empty"><p>No registered manifolds.</p></section>'}</div>
   </section>`;
 }
 
@@ -758,23 +798,25 @@ export function renderForecast() {
   const longitude = Number(location.longitude);
   const latitudeValue = Number.isFinite(latitude) ? String(latitude) : '';
   const longitudeValue = Number.isFinite(longitude) ? String(longitude) : '';
+  const locationSummary = Number.isFinite(latitude) && Number.isFinite(longitude)
+    ? `${location.mode || 'manual'} · ${latitude.toFixed(3)}, ${longitude.toFixed(3)}`
+    : 'Location not set';
   const commands = f.commands || {};
   const activeDecisions = (f.decisions || []).filter((d) => d.active);
   const forecastHealthy = f.status === 'ok' || f.status === 'cached';
   const statusLabel = `${f.status || 'unknown'}${f.fetch_pending ? ' / pending' : ''}`;
-  return `<section class="view">
+  const weatherHeadline = !forecastHealthy ? 'Forecast needs attention' : activeDecisions.length ? `Preload is active in ${activeDecisions.length} zone${activeDecisions.length === 1 ? '' : 's'}` : 'No preload is needed';
+  const weatherSummary = !forecastHealthy ? (f.last_error || 'Fetch a forecast or verify the configured location.') : `${cache.hours || 0} hours available · last fetch ${fmtAge(f.last_fetch_age_s)}`;
+  return `<section class="view weather-view">
     <div class="section-head"><h2>Weather</h2><button class="btn" data-action="forecast-fetch">Fetch now</button></div>
-    <div class="metric-strip">
-      <div class="metric"><span>Status</span><strong class="${forecastHealthy ? 'ok' : 'warn'}">${statusLabel}</strong></div>
-      <div class="metric"><span>Cache</span><strong>${cache.hours || 0} h / ${cache.restored ? 'restored' : 'live'}</strong></div>
-      <div class="metric"><span>Wind</span><strong>${fmtValue(cache.max_wind_ms, ' m/s')} / ${Math.round(cache.peak_wind_dir_deg || 0)} deg</strong></div>
-      <div class="metric"><span>Dispatch</span><strong class="${commands.failed ? 'warn' : 'ok'}">${commands.sent || 0} sent / ${commands.failed || 0} failed</strong></div>
-    </div>
-    <div class="split-main">
-      <div class="stack">
-        ${forecastChart(f)}
-        <div class="ops-panel">
-          <h3>Weather settings</h3><p>${location.mode || 'manual'} (${Number(latitude || 0).toFixed(5)}, ${Number(longitude || 0).toFixed(5)}) / boost cap ${fmtValue(maxBoost, ' C')}</p>
+    <section class="weather-summary ${forecastHealthy ? 'ok' : 'warn'}" role="status" aria-live="polite"><span class="eyebrow">Forecast status</span><h2>${weatherHeadline}</h2><p>${esc(weatherSummary)}</p></section>
+    <section class="weather-primary" aria-labelledby="weather-outlook-title"><div class="subsection-head"><div><h2 id="weather-outlook-title">72-hour outlook</h2><p>Temperature, wind, solar gain, and scheduled preload peaks.</p></div><span>${cache.restored ? 'Restored cache' : 'Live forecast'}</span></div>${forecastChart(f)}</section>
+    <section class="preload-section" aria-labelledby="preload-title"><div class="subsection-head"><div><h2 id="preload-title">Preload decisions</h2><p>${activeDecisions.length ? 'Zones are preheated ahead of forecast demand.' : 'Touch is not changing zone demand for the current forecast.'}</p></div></div>
+      <div class="preload-list">${activeDecisions.map((d) => `<div class="preload-row"><span><strong>${esc(d.name || d.room_id)}</strong><small>Peak in ${d.peak_in_h} h${fmtDecisionLead(d)}</small></span><span><small>Offset</small><strong>+${fmtValue(d.offset_c, ' C')}</strong></span><span><small>Comfort</small><strong>${fmtC(d.comfort_setpoint_c)}</strong></span></div>`).join('') || '<p class="empty-state">No active preload decisions.</p>'}</div>
+    </section>
+    <div class="weather-disclosures">
+      <details class="group-disclosure"><summary><span>Location and preload limit</span><small>${locationSummary} · max ${fmtValue(maxBoost, ' C')}</small></summary><div class="group-disclosure-content weather-settings-form">
+          <div class="field-pair"><label class="field-label" for="forecast-lat">Latitude</label><label class="field-label" for="forecast-lon">Longitude</label></div>
           <div class="inline-form forecast-location">
             <input class="input mini-input" id="forecast-lat" type="number" step="0.000001" placeholder="Latitude" value="${latitudeValue}">
             <input class="input mini-input" id="forecast-lon" type="number" step="0.000001" placeholder="Longitude" value="${longitudeValue}">
@@ -782,20 +824,12 @@ export function renderForecast() {
             <button class="btn" data-discard-section="forecast">Discard</button>
             <button class="btn" data-action="geo">Use browser</button>
           </div>
-          <div class="inline-form weather-cap-form">
+          <label class="field-label" for="weather-max-boost">Maximum weather boost</label><div class="inline-form weather-cap-form">
             <input class="input mini-input" id="weather-max-boost" type="number" step="0.1" min="0" max="5" value="${Number.isFinite(maxBoost) ? maxBoost.toFixed(1) : '1.5'}">
             <button class="btn" data-action="save-weather-settings">Save boost cap</button>
           </div>
-        </div>
-        <div class="diagnostics-layout">
-          <div class="ops-panel"><h3>Status</h3><p class="${forecastHealthy ? 'ok' : 'warn'}">${statusLabel} / last fetch ${fmtAge(f.last_fetch_age_s)}</p><p class="${f.fetch_pending ? 'warn' : 'muted'}">${f.fetch_pending ? 'fetch queued; waiting for poll task' : 'fetch queue idle'}</p><p class="${f.last_error ? 'warn' : 'muted'}">${f.last_error || 'no current forecast error'}</p></div>
-          <div class="ops-panel"><h3>Cache</h3><p>${cache.hours || 0} hours, min ${fmtValue(cache.min_temp_c, ' C')}</p><p>Wind ${fmtValue(cache.max_wind_ms, ' m/s')} from ${Math.round(cache.peak_wind_dir_deg || 0)} deg</p><p>Solar ${fmtValue(cache.max_solar_wm2, ' W/m2')}</p></div>
-          <div class="ops-panel"><h3>Commands</h3><p>${commands.active || 0} active / ${commands.sent || 0} sent / ${commands.skipped || 0} skipped</p><p class="${commands.blocked_stale || commands.blocked_unreachable || commands.blocked_untrusted ? 'warn' : 'muted'}">${commands.blocked_stale || 0} stale / ${commands.blocked_unreachable || 0} offline / ${commands.blocked_untrusted || 0} trust</p></div>
-        </div>
-      </div>
-      <div class="stack">
-        <div class="ops-panel"><h3>Active preload decisions</h3>${activeDecisions.map((d) => `<p>${esc(d.room_id)}: +${fmtValue(d.offset_c, ' C')}, P${d.priority ?? 1}, comfort ${fmtC(d.comfort_setpoint_c)}, peak ${fmtValue(d.peak_load)} in ${d.peak_in_h}h${fmtDecisionLead(d)}</p>`).join('') || '<p>No active decisions</p>'}</div>
-      </div>
+        </div></details>
+      <details class="group-disclosure"><summary><span>Forecast details</span><small>${statusLabel} · ${commands.sent || 0} sent · ${commands.failed || 0} failed</small></summary><div class="group-disclosure-content"><dl class="weather-facts"><div><dt>Fetch</dt><dd class="${forecastHealthy ? 'ok' : 'warn'}">${statusLabel}</dd><small>${f.fetch_pending ? 'Queued for polling' : `Last fetch ${fmtAge(f.last_fetch_age_s)}`}</small></div><div><dt>Forecast range</dt><dd>${cache.hours || 0} hours</dd><small>Minimum ${fmtValue(cache.min_temp_c, ' C')}</small></div><div><dt>Wind and solar</dt><dd>${fmtValue(cache.max_wind_ms, ' m/s')} · ${fmtValue(cache.max_solar_wm2, ' W/m2')}</dd><small>Peak wind ${Math.round(cache.peak_wind_dir_deg || 0)}°</small></div><div><dt>Commands</dt><dd class="${commands.failed ? 'warn' : 'ok'}">${commands.sent || 0} sent · ${commands.failed || 0} failed</dd><small>${commands.skipped || 0} skipped · ${commands.blocked_stale || 0} stale · ${commands.blocked_unreachable || 0} offline · ${commands.blocked_untrusted || 0} trust</small></div></dl>${f.last_error ? `<p class="inline-notice warn">${esc(f.last_error)}</p>` : ''}</div></details>
     </div>
   </section>`;
 }
@@ -820,55 +854,32 @@ export function renderHeatSource() {
   const compatibility = source.compatibility || {};
   const configured = !!source.host;
   const ready = source.enabled && configured && weighted.available && quality === 'healthy';
-  return `<section class="view settings-page">
-    <div class="section-head settings-head">
-      <h2>Heat Source</h2>
-      <span class="settings-badge ${ready ? 'ok' : 'warn'}">${ready ? 'Ready' : 'Needs setup'}</span>
-    </div>
-    <div class="split-main">
-      <div class="stack">
-        <section class="settings-panel settings-section">
-          <div class="settings-section-head">
-            <div><h3>Connection</h3><p class="note">Touch pushes the weighted temperature to this heat source.</p></div>
-            <div class="action-row">
-              <button class="btn" data-action="save-heat-source">Apply</button>
-              <button class="btn" data-discard-section="heat-source">Discard</button>
-            </div>
-          </div>
-          <div class="settings-form-grid integration-grid">
-            <label class="check"><input id="heat-source-enabled" type="checkbox" ${source.enabled ? 'checked' : ''}> Heat source enabled</label>
-            <label>Address<input class="input" id="heat-source-host" value="${esc(source.host || '')}" placeholder="heat-source.local or 192.168.20.120" maxlength="63"></label>
-            <label>Port<input class="input" id="heat-source-port" type="number" min="1" max="65535" value="${Number(source.port || 80)}"></label>
-            <label>Entity / variable<input class="input" id="heat-source-variable" value="${esc(source.weighted_temperature_variable || '')}" maxlength="47"></label>
-            <label>Push interval (s)<input class="input" id="heat-source-interval" type="number" min="5" max="3600" value="${Number(source.push_interval_s || 30)}"></label>
-          </div>
-          <div class="settings-facts">
-            <div><span>Value to send</span><strong>${sendPreview.available ? fmtC(sendPreview.value_c) : 'missing'}</strong><small class="${sendPreview.available ? 'ok' : 'warn'}">${source.enabled ? `${quality} / ${fmtCoverage(physical)}` : 'disabled — preview only'}</small></div>
-            <div><span>Heat source setpoint</span><strong>${sendPreview.target_available ? fmtC(sendPreview.target_setpoint_c) : 'missing'}</strong><small>${sendPreview.target_available ? 'target matching this temperature' : 'configure room setpoints'}</small></div>
-            <div><span>Write status</span><strong class="${push.status === 'confirmed' ? 'ok' : 'warn'}">${push.has_result ? esc(push.status || 'unreachable') : 'not sent'}</strong><small>${push.has_result ? `HTTP ${push.http_status || '—'} · ${fmtAge(push.write_age_s)} ago` : 'waiting for first write'}</small></div>
-            <div><span>Requested / confirmed</span><strong>${push.has_result ? `${fmtC(push.requested_value_c)} / ${fmtC(push.confirmed_value_c)}` : '-'}</strong><small>confirmed ${push.confirmation_age_s == null ? 'never' : `${fmtAge(push.confirmation_age_s)} ago`}</small></div>
-            <div><span>Failure history</span><strong>${push.failure_count || 0} total</strong><small>${push.failure_streak || 0} consecutive</small></div>
-          </div>
-          <div class="action-row"><button class="btn" data-action="push-heat-source">Send now</button></div>
-          <p class="${push.last_error ? 'warn' : 'muted'}">${esc(push.last_error || 'No current error')}</p>
-          <p class="${compatibility.target_sync === 'ready' ? 'ok' : 'warn'}">Target sync: ${esc(compatibility.target_sync || 'unsupported')}${compatibility.target_blocker ? ` — ${esc(compatibility.target_blocker)}` : ''}</p>
-        </section>
-      </div>
-      <div class="stack">
-        <div class="ops-panel">
-          <h3>What is pushed</h3>
-          <p>Physical temperature is area-weighted by logical room, never by comfort priority. It is sent only with healthy coverage; a confirmed value is held briefly during an outage, then sending stops. A write is confirmed only after the configured heat source reads back the same value.</p>
-          <p>Variable: <strong>${esc(source.weighted_temperature_variable || '-')}</strong></p>
-          <p class="note">Configuration example: an Asgard installation could use <code>asgard.local</code> and <code>Virtual Thermostat Input z1</code>. Other heat sources may expose a different address and entity name.</p>
-          <p>Compatibility: physical temperature <strong>${esc(compatibility.physical_temperature || 'unconfigured')}</strong>; operating state <strong>${esc(compatibility.operating_state || 'unsupported')}</strong>${compatibility.operating_state_blocker ? ` — ${esc(compatibility.operating_state_blocker)}` : ''}.</p>
-        </div>
-        <div class="ops-panel">
-          <h3>What Touch owns</h3>
-          <p>Logical rooms, physical-temperature calculation, schedules, zone distribution, and normal heat-source publishing. Weather preloads distribute room demand; they do not schedule the heat pump.</p>
-          <p>ODIN owns heat-pump timing, prices, whole-house weather/solar optimization, compressor behavior, and DHW. Prices remain read-only here.</p>
-          <p>V6 still validates, clamps, expires, and reports commands locally.</p>
-        </div>
-      </div>
+  const deliveryOk = push.status === 'confirmed';
+  const headline = !configured ? 'Connect a heat source'
+    : !source.enabled ? 'Publishing is turned off'
+      : !sendPreview.available ? 'Waiting for healthy zone coverage'
+        : push.has_result && !deliveryOk ? 'The last write needs attention'
+          : ready ? 'Whole-house temperature is ready to publish' : 'Publishing is not ready';
+  const summary = !configured ? 'Enter the address and variable exposed by the receiving heat source.'
+    : !source.enabled ? `Touch is calculating ${sendPreview.available ? fmtC(sendPreview.value_c) : 'a preview'}, but it will not send it.`
+      : !sendPreview.available ? `Publishing pauses until physical coverage is healthy. Current quality: ${quality}.`
+        : deliveryOk ? `${fmtC(push.confirmed_value_c)} confirmed ${fmtAge(push.confirmation_age_s)} ago.`
+          : esc(push.last_error || 'Send a test value to verify the connection.');
+  return `<section class="view heat-source-view">
+    <div class="section-head"><h2>Heat Source</h2>${ready ? '<button class="btn" data-action="push-heat-source">Send now</button>' : ''}</div>
+    <section class="heat-source-summary ${ready && (!push.has_result || deliveryOk) ? 'ok' : 'warn'}" role="status" aria-live="polite"><span class="eyebrow">Publishing status</span><h2>${headline}</h2><p>${summary}</p></section>
+    <dl class="heat-source-overview" aria-label="Heat source overview">
+      <div><dt>Value</dt><dd>${sendPreview.available ? fmtC(sendPreview.value_c) : 'Unavailable'}</dd><small>${source.enabled ? `${quality} · ${fmtCoverage(physical)}` : 'Preview only'}</small></div>
+      <div><dt>Destination</dt><dd>${esc(source.host || 'Not configured')}</dd><small>${esc(source.weighted_temperature_variable || 'No variable')}</small></div>
+      <div><dt>Delivery</dt><dd class="${deliveryOk ? 'ok' : push.has_result ? 'warn' : ''}">${push.has_result ? esc(push.status || 'Unreachable') : 'Not sent'}</dd><small>${push.has_result ? `HTTP ${push.http_status || '—'} · ${fmtAge(push.write_age_s)} ago` : 'No write history'}</small></div>
+    </dl>
+    <div class="heat-source-groups">
+      <details class="group-disclosure"${configured ? '' : ' open'}><summary><span>Connection</span><small>${configured ? `${esc(source.host)}:${Number(source.port || 80)} · every ${Number(source.push_interval_s || 30)} s` : 'Address, variable, and publishing interval'}</small></summary><div class="group-disclosure-content">
+        <div class="heat-source-form"><label class="check"><input id="heat-source-enabled" type="checkbox" ${source.enabled ? 'checked' : ''}> Enable publishing</label><label>Address<input class="input" id="heat-source-host" value="${esc(source.host || '')}" placeholder="heat-source.local or 192.168.20.120" maxlength="63"></label><label>Port<input class="input" id="heat-source-port" type="number" min="1" max="65535" value="${Number(source.port || 80)}"></label><label>Entity or variable<input class="input" id="heat-source-variable" value="${esc(source.weighted_temperature_variable || '')}" maxlength="47"></label><label>Publish interval (seconds)<input class="input" id="heat-source-interval" type="number" min="5" max="3600" value="${Number(source.push_interval_s || 30)}"></label></div>
+        <div class="form-actions"><button class="btn" data-action="save-heat-source">Save connection</button><button class="btn" data-discard-section="heat-source">Discard changes</button></div>
+      </div></details>
+      <details class="group-disclosure"><summary><span>Publishing details</span><small>${push.failure_streak || 0} consecutive failures · target sync ${esc(compatibility.target_sync || 'unsupported')}</small></summary><div class="group-disclosure-content"><dl class="heat-source-details"><div><dt>Requested</dt><dd>${push.has_result ? fmtC(push.requested_value_c) : '—'}</dd></div><div><dt>Confirmed</dt><dd>${push.has_result ? fmtC(push.confirmed_value_c) : '—'}</dd></div><div><dt>Heat source target</dt><dd>${sendPreview.target_available ? fmtC(sendPreview.target_setpoint_c) : 'Unavailable'}</dd></div><div><dt>Failures</dt><dd>${push.failure_count || 0} total · ${push.failure_streak || 0} consecutive</dd></div><div><dt>Physical temperature</dt><dd>${esc(compatibility.physical_temperature || 'Unconfigured')}</dd></div><div><dt>Operating state</dt><dd>${esc(compatibility.operating_state || 'Unsupported')}</dd></div></dl>${push.last_error ? `<p class="inline-notice warn">${esc(push.last_error)}</p>` : ''}${compatibility.target_blocker ? `<p class="inline-notice warn">${esc(compatibility.target_blocker)}</p>` : ''}</div></details>
+      <details class="group-disclosure"><summary><span>How publishing works</span><small>Calculation, confirmation, and safety ownership</small></summary><div class="group-disclosure-content publishing-explainer"><p>Touch sends the area-weighted physical temperature only while zone coverage is healthy. A write is confirmed after the heat source reads back the same value.</p><p>Touch owns zone coordination and publishing. Heat Source owns heat-pump timing and DHW. V6 retains local valve safety, clamps, and fallback heating.</p><button class="text-action" data-section="help">Open Help</button></div></details>
     </div>
   </section>`;
 }
@@ -881,47 +892,16 @@ export function renderSettings() {
   const diagnostics = state.diagnostics || {};
   const ota = diagnostics.ota || {};
   const polling = diagnostics.polling || {};
-  return `<section class="view settings-page">
-    <div class="section-head settings-head">
-      <h2>Service</h2>
-      <span class="note">Browser-first recovery and device diagnostics</span>
-    </div>
-    <div class="settings-grid">
-      <div class="settings-main">
-        <section class="settings-panel settings-section">
-          <div class="settings-section-head">
-            <div><h3>Touch identity</h3><p class="note">Names shown in the dashboard and local network tools.</p></div>
-            <div class="action-row">
-              <button class="btn" data-action="save-settings">Apply</button>
-              <button class="btn" data-discard-section="settings">Discard</button>
-            </div>
-          </div>
-          <div class="settings-form-grid">
-            <label>Name<input class="input" id="settings-name" value="${esc(coordinator.name || '')}" placeholder="Lune Touch"></label>
-            <label>Site<input class="input" id="settings-site-label" value="${esc(coordinator.site_label || '')}" placeholder="House"></label>
-            <label>Install ID<input class="input" id="settings-install-id" value="${esc(coordinator.install_id || '')}" placeholder="house-main"></label>
-            <label>V6-A ID<input class="input" id="settings-authority-leader" value="${esc(authority.leader_node_id || '')}" placeholder="v6-a"></label>
-            <label>Authority ID<input class="input" id="settings-authority-coordinator" value="${esc(authority.coordinator_id || '')}" placeholder="lune-touch"></label>
-            <label>Shared key<input class="input" id="settings-authority-key" type="password" value="" placeholder="leave blank to retain"></label>
-          </div>
-          <p class="${authority.state === 'touch_normal' || authority.state === 'v6_fallback_active' ? 'ok' : 'warn'}">Authority: ${fmtAuthority(authority.state)} / ${esc(authority.reason || 'unconfigured')} / ${authority.lease_remaining_s || 0}s</p>
-          <p class="note">V6 sync: ${authoritySync.local_zones || 0} local + ${authoritySync.peer_zones || 0} peer zones / ${esc(authoritySync.peer_status || 'unknown')}</p>
-        </section>
-      </div>
-
-      <aside class="settings-side">
-        <section class="settings-panel settings-section">
-          <div class="settings-section-head"><div><h3>Device health</h3><p class="note">Network polling, OTA, and local recovery.</p></div></div>
-          <p class="${polling.fail ? 'warn' : 'ok'}">${polling.success || 0} polls ok / ${polling.fail || 0} failed</p>
-          <p>${esc(ota.running_label || 'unknown')} / ${esc(ota.state || 'unknown')}</p>
-          <button class="btn" data-section="diagnostics">Open detailed diagnostics</button>
-        </section>
-        <section class="settings-panel settings-section recovery-section">
-          <div class="settings-section-head"><div><h3>Destructive service</h3><p class="note">${state.nodes.length} paired nodes, ${state.commands.length} command records. Every action asks for confirmation.</p></div></div>
-          <div class="action-row"><button class="btn" data-section="diagnostics">Motor and fault recovery</button><button class="btn danger" data-action="reset-registry">Reset registry</button></div>
-          <p class="note">Endstop calibration, driver reset, and firmware recovery are intentionally V6 service-browser actions until a documented V6 service API exists.</p>
-        </section>
-      </aside>
+  const authorityHealthy = authority.state === 'touch_normal' || authority.state === 'v6_fallback_active';
+  const serviceHealthy = authorityHealthy && !polling.fail && !ota.pending_verify;
+  return `<section class="view service-view">
+    <div class="section-head"><h2>Settings</h2></div>
+    <section class="service-summary ${serviceHealthy ? 'ok' : 'warn'}" role="status" aria-live="polite"><span class="eyebrow">Coordinator configuration</span><h2>${serviceHealthy ? 'Touch is configured' : 'Configuration needs attention'}</h2><p>${authorityHealthy ? `${fmtAuthority(authority.state)} · ${authority.lease_remaining_s || 0} s lease remaining` : `${fmtAuthority(authority.state)} · ${esc(authority.reason || 'Authority is not configured')}`}</p></section>
+    <dl class="service-overview" aria-label="Settings overview"><div><dt>Authority</dt><dd class="${authorityHealthy ? 'ok' : 'warn'}">${fmtAuthority(authority.state)}</dd><small>${esc(authority.reason || 'No current reason')}</small></div><div><dt>V6 polling</dt><dd class="${polling.fail ? 'warn' : 'ok'}">${polling.success || 0} successful</dd><small>${polling.fail || 0} failed</small></div><div><dt>Firmware</dt><dd class="${ota.pending_verify ? 'warn' : ''}">${esc(ota.running_label || 'Unknown')}</dd><small>${esc(ota.state || 'Unknown state')}</small></div></dl>
+    <div class="service-groups">
+      <details class="group-disclosure"><summary><span>Touch identity</span><small>${esc(coordinator.name || 'Lune Touch')} · generated automatically</small></summary><div class="group-disclosure-content"><p>Installation identity and authentication are created and stored by Lune Touch. They are sent as a local approval proposal when a V6 manifold is added.</p><dl class="service-details"><div><dt>Installation</dt><dd>${esc(coordinator.install_id || 'Generating…')}</dd></div><div><dt>Coordinator</dt><dd>${esc(authority.coordinator_id || 'Generating…')}</dd></div><div><dt>Authentication</dt><dd>${authority.authentication_configured ? 'Ready' : 'Generating…'}</dd></div><div><dt>Leader manifold</dt><dd>${esc(authority.leader_node_id || 'Selected automatically')}</dd></div></dl><div class="service-form"><label>Name<input class="input" id="settings-name" value="${esc(coordinator.name || '')}" placeholder="Lune Touch"></label><label>Site<input class="input" id="settings-site-label" value="${esc(coordinator.site_label || '')}" placeholder="House"></label></div><div class="form-actions"><button class="btn" data-action="save-settings">Save display names</button><button class="btn" data-discard-section="settings">Discard changes</button></div></div></details>
+      <details class="group-disclosure"><summary><span>Authority and V6 synchronization</span><small>${authoritySync.local_zones || 0} local · ${authoritySync.peer_zones || 0} peer · ${esc(authoritySync.peer_status || 'unknown')}</small></summary><div class="group-disclosure-content"><dl class="service-details"><div><dt>State</dt><dd class="${authorityHealthy ? 'ok' : 'warn'}">${fmtAuthority(authority.state)}</dd></div><div><dt>Reason</dt><dd>${esc(authority.reason || 'None')}</dd></div><div><dt>Lease</dt><dd>${authority.lease_remaining_s || 0} seconds</dd></div><div><dt>Local zones</dt><dd>${authoritySync.local_zones || 0}</dd></div><div><dt>Peer zones</dt><dd>${authoritySync.peer_zones || 0}</dd></div><div><dt>Peer status</dt><dd>${esc(authoritySync.peer_status || 'Unknown')}</dd></div></dl></div></details>
+      <details class="group-disclosure service-recovery"><summary><span>Recovery and reset</span><small>${state.nodes.length} manifolds · ${state.commands.length} command records</small></summary><div class="group-disclosure-content"><p>Motor recovery belongs in Diagnostics. Endstop calibration and firmware recovery remain in the V6 service browser.</p><div class="form-actions"><button class="btn" data-section="diagnostics">Open recovery tools</button><button class="btn danger" data-action="reset-registry">Reset registry…</button></div></div></details>
     </div>
   </section>`;
 }
@@ -949,110 +929,56 @@ export function renderDiagnostics() {
   const comfort = strategy.comfort || {};
   const driver = strategy.driver || {};
   const schedule = strategy.schedule || {};
-  return `<section class="view">
-    <div class="section-head"><h2>Diagnostics</h2><button class="btn" data-action="refresh">Refresh</button></div>
-    <div class="metric-strip">
-      <div class="metric"><span>API</span><strong>${d.api || '/api/lune-touch/v1'}</strong></div>
-      <div class="metric"><span>Coordinator</span><strong>${d.nodes || 0} nodes / ${d.zones || 0} zones</strong></div>
-      <div class="metric"><span>Ledger</span><strong>${d.ledger || 0} records</strong></div>
-      <div class="metric"><span>Heap</span><strong>${d.heap || 'watching'}</strong></div>
-    </div>
-    <div class="diagnostics-layout">
-      <div class="ops-panel wide">
-        <h3>Command attention</h3>
-        <div class="metric-strip compact">
-          <div class="metric"><span>Accepted</span><strong class="ok">${stats.accepted}</strong></div>
-          <div class="metric"><span>Pending</span><strong>${stats.pending}</strong></div>
-          <div class="metric"><span>Clamped</span><strong class="${stats.clamped ? 'warn' : 'ok'}">${stats.clamped}</strong></div>
-          <div class="metric"><span>Blocked</span><strong class="${stats.blocked ? 'warn' : 'ok'}">${stats.blocked}</strong></div>
-        </div>
-        <p class="${stats.failed || stats.rejected || stats.expired ? 'warn' : 'muted'}">${stats.failed || 0} failed / ${stats.rejected || 0} rejected / ${stats.expired || 0} expired</p>
-        <p class="${stats.blocked_stale || stats.blocked_unreachable || stats.blocked_untrusted ? 'warn' : 'muted'}">${stats.blocked_stale || 0} stale / ${stats.blocked_unreachable || 0} offline / ${stats.blocked_untrusted || 0} trust</p>
+  const commandIssues = Number(stats.failed || 0) + Number(stats.rejected || 0) + Number(stats.expired || 0) + Number(stats.blocked || 0);
+  const forecastHealthy = forecastStatus.status === 'ok' || forecastStatus.status === 'cached';
+  const installationReady = commissioning.next_action === 'ready';
+  const firmwareHealthy = !ota.pending_verify && (!ota.running_slot_size || !ota.configured_slot_size || ota.running_slot_size === ota.configured_slot_size);
+  const attentionItems = [
+    !installationReady ? [fmtNextAction(commissioning.next_action), 'Complete the next installation step before relying on automation.', commissioningTarget(commissioning.next_action)[0]] : null,
+    polling.fail ? ['V6 polling needs attention', `${polling.fail} failed poll${polling.fail === 1 ? '' : 's'}${polling.last_error ? ` · ${polling.last_error}` : ''}`, 'manifolds'] : null,
+    commandIssues ? ['Commands need review', `${commandIssues} failed, rejected, expired, or blocked · ${stats.clamped || 0} adjusted by safety limits`, 'commands'] : null,
+    !forecastHealthy ? ['Forecast is unavailable', forecastStatus.last_error || 'Fetch a forecast or verify the location.', 'weather'] : null,
+    !firmwareHealthy ? ['Firmware verification is pending', ota.state || 'Review the running firmware slot.', 'diagnostics'] : null,
+  ].filter(Boolean);
+  const diagnosticsHealthy = attentionItems.length === 0;
+  const statusSummary = diagnosticsHealthy
+    ? 'Polling, command delivery, installation state, forecast, and firmware show no current issues.'
+    : `${attentionItems.length} area${attentionItems.length === 1 ? '' : 's'} need review. Start with the first item below.`;
+  return `<section class="view diagnostics-view">
+    <div class="section-head"><h2>Diagnostics</h2><div class="section-actions"><button class="btn" data-action="refresh">Refresh</button></div></div>
+    <section class="diagnostics-summary ${diagnosticsHealthy ? 'ok' : 'warn'}" role="status" aria-live="polite"><span class="eyebrow">System diagnostics</span><h2>${diagnosticsHealthy ? 'No current issues' : `${attentionItems.length} area${attentionItems.length === 1 ? '' : 's'} need attention`}</h2><p>${esc(statusSummary)}</p></section>
+    <dl class="diagnostics-overview" aria-label="Diagnostics overview">
+      <div><dt>V6 polling</dt><dd class="${polling.fail ? 'warn' : 'ok'}">${polling.success || 0} successful</dd><small>${polling.fail || 0} failed · last at ${fmtUptime(polling.last_poll_ms)}</small></div>
+      <div><dt>Commands</dt><dd class="${commandIssues ? 'warn' : 'ok'}">${commandIssues ? `${commandIssues} need review` : 'Delivering normally'}</dd><small>${stats.accepted || 0} accepted · ${stats.pending || 0} pending</small></div>
+      <div><dt>Firmware</dt><dd class="${firmwareHealthy ? 'ok' : 'warn'}">${esc(ota.running_label || 'Unknown')}</dd><small>${esc(ota.state || 'Unknown state')}</small></div>
+    </dl>
+    ${attentionItems.length ? `<section class="diagnostics-attention" aria-labelledby="diagnostics-attention-title"><div class="subsection-head"><div><h2 id="diagnostics-attention-title">Needs attention</h2><p>Resolve items in this order.</p></div></div><div class="diagnostics-attention-list">${attentionItems.map(([title, detail, section]) => `<button class="diagnostics-attention-row" data-section="${section}"><span><strong>${esc(title)}</strong><small>${esc(detail)}</small></span><span aria-hidden="true">›</span></button>`).join('')}</div></section>` : ''}
+    <div class="diagnostics-groups">
+      <details class="group-disclosure"><summary><span>Commands and events</span><small>${stats.accepted || 0} accepted · ${commandIssues} need review · ${events.length} recent events</small></summary><div class="group-disclosure-content diagnostics-section-content">
+        <div class="subsection-head"><div><h3>Command activity</h3><p>Only failed, blocked, expired, rejected, or adjusted commands appear below.</p></div><button class="text-action" data-section="commands">Open full ledger</button></div>
+        <dl class="diagnostics-facts four"><div><dt>Accepted</dt><dd class="ok">${stats.accepted || 0}</dd></div><div><dt>Pending</dt><dd>${stats.pending || 0}</dd></div><div><dt>Adjusted</dt><dd class="${stats.clamped ? 'warn' : ''}">${stats.clamped || 0}</dd></div><div><dt>Blocked</dt><dd class="${stats.blocked ? 'warn' : ''}">${stats.blocked || 0}</dd></div></dl>
         <div class="data-table diagnostics-table">
           <div class="tr head diagnostics"><span>Source</span><span>Target</span><span>Request</span><span>Result</span><span>Reason</span></div>
-          ${attentionCommands.map((c) => `<div class="tr diagnostics"><span>${esc(c.source)}</span><span>${esc(fmtCommandTarget(c))}</span><span>${fmtValue(c.requested_offset_c, ' C')}</span><span class="${statusClass(c.result)}">${esc(c.result)}${c.clamp_applied ? ' / clamp' : ''}</span><span>${esc(c.reason || c.request_id || '-')}</span></div>`).join('') || '<div class="empty-row">No failed, blocked, or clamped commands</div>'}
+          ${attentionCommands.map((c) => `<div class="tr diagnostics"><span>${esc(c.source)}</span><span>${esc(fmtCommandTarget(c))}</span><span>${fmtValue(c.requested_offset_c, ' C')}</span><span class="${statusClass(c.result)}">${esc(c.result)}${c.clamp_applied ? ' / adjusted' : ''}</span><span>${esc(c.reason || c.request_id || '-')}</span></div>`).join('') || '<div class="empty-row">No commands need attention</div>'}
         </div>
-        <button class="btn slim" data-section="commands">Open ledger</button>
-      </div>
-      <div class="ops-panel wide">
-        <h3>Event log</h3>
-        <div class="data-table diagnostics-table">
-          <div class="tr head events"><span>Time</span><span>Level</span><span>Source</span><span>Message</span></div>
-          ${events.map((event) => `<div class="tr events"><span>${fmtUptime(event.ts_ms)}</span><span class="${event.level === 'warn' || event.level === 'error' ? 'warn' : 'ok'}">${esc(event.level || 'info')}</span><span>${esc(fmtEventSource(event.source))}</span><span>${esc(event.message || '-')}</span></div>`).join('') || '<div class="empty-row">No runtime events</div>'}
-        </div>
-      </div>
-      <div class="ops-panel">
-        <h3>Device health</h3>
-        <p><strong>http://&lt;touch-ip&gt;/</strong></p>
-        <p>${d.api || '/api/lune-touch/v1'}</p>
-        <p>${d.screen || 'overview-only'}</p>
-        <p>Heap ${d.heap || 'watching'} / ledger ${d.ledger || 0} records</p>
-      </div>
-      <div class="ops-panel">
-        <h3>V6 polling</h3>
-        <p>Last poll at ${fmtUptime(polling.last_poll_ms)} uptime</p>
-        <p><span class="ok">${polling.success || 0} ok</span> / <span class="${polling.fail ? 'warn' : 'ok'}">${polling.fail || 0} failed</span></p>
-        <p class="${polling.last_error ? 'warn' : 'muted'}">${esc(polling.last_error || 'no current error')}</p>
-      </div>
-      <div class="ops-panel">
-        <h3>Setup Readiness</h3>
-        <p class="${commissioning.next_action === 'ready' ? 'ok' : 'warn'}">${esc(fmtNextAction(commissioning.next_action))}</p>
-        <p>${commissioning.reachable_trusted_nodes || 0} ready trusted / ${commissioning.trusted_nodes || 0} trusted / ${commissioning.paired_nodes || 0} paired</p>
-        <p>${commissioning.reachable_nodes || 0} reachable / ${commissioning.stale_nodes || 0} stale nodes / ${commissioning.trusted_stale_nodes || 0} stale trusted</p>
-        <p class="${commissioning.identity_missing_nodes ? 'warn' : 'ok'}">${commissioning.identity_missing_nodes || 0} missing identities</p>
-        <p>${commissioning.fresh_zones || 0} fresh of ${commissioning.bound_zones || 0} bound zones</p>
-        <p class="${commissioning.ready_for_commands ? 'ok' : 'warn'}">Commands ${commissioning.ready_for_commands ? 'ready' : 'blocked'} / forecast ${commissioning.ready_for_forecast ? 'ready' : 'blocked'}</p>
-        ${blockers.map((blocker) => `<p class="warn">${esc(blocker.target || blocker.scope || 'system')}: ${esc(blocker.reason || 'blocked')} -> ${esc(fmtNextAction(blocker.action))}</p>`).join('') || '<p class="muted">No setup blockers</p>'}
-        ${commissioningActionButton(commissioning.next_action)}
-      </div>
-      <div class="ops-panel">
-        <h3>Forecast dispatch</h3>
-        <p class="${forecastStatus.status === 'ok' || forecastStatus.status === 'cached' ? 'ok' : 'warn'}">${forecastStatus.status || 'unknown'}${forecastStatus.fetch_pending ? ' / pending' : ''} / ${fmtAge(forecastStatus.last_fetch_age_s)}</p>
-        <p class="${forecastStatus.last_error ? 'warn' : 'muted'}">${forecastStatus.last_error || 'no current forecast error'}</p>
-        <p>${forecastCommands.active || 0} active / ${forecastCommands.sent || 0} sent / ${forecastCommands.skipped || 0} skipped</p>
-        <p class="${forecastCommands.failed ? 'warn' : 'ok'}">${forecastCommands.failed || 0} failed</p>
-        <p class="${forecastCommands.blocked_stale || forecastCommands.blocked_unreachable || forecastCommands.blocked_untrusted ? 'warn' : 'muted'}">${forecastCommands.blocked_stale || 0} stale / ${forecastCommands.blocked_unreachable || 0} offline / ${forecastCommands.blocked_untrusted || 0} trust</p>
-        <button class="btn slim" data-action="forecast-fetch">Fetch now</button>
-      </div>
-      <div class="ops-panel">
-        <h3>OTA</h3>
-        <p>${esc(ota.running_label || 'unknown')} / subtype ${ota.running_subtype ?? '-'}</p>
-        <p class="${ota.pending_verify ? 'warn' : 'ok'}">${esc(ota.state || 'undefined')}</p>
-        <p>${Math.round(Number(ota.running_slot_size || 0) / 1024)} KB slot</p>
-        <p class="${ota.running_slot_size && ota.configured_slot_size && ota.running_slot_size !== ota.configured_slot_size ? 'warn' : 'muted'}">Configured ${Math.round(Number(ota.configured_slot_size || 0) / 1024)} KB</p>
-      </div>
-      <div class="ops-panel">
-        <h3>Physical temperature</h3>
-        <p class="${quality === 'healthy' ? 'ok' : 'warn'}">${quality}${weighted.available ? ` / ${fmtC(weighted.value_c)}` : ''}</p>
-        <p>${fmtCoverage(physical)} / ${weighted.contributing_rooms || 0} rooms</p>
-        <p>Comfort demand ${fmtValue(comfort.demand_c, ' C')} across ${comfort.demand_zones || 0} zones</p>
-        <p>Driver ${esc(driver.name || driver.room_id || d.strategy?.driver_room || '-')} ${driver.priority != null ? `/ P${driver.priority}` : ''}</p>
-      </div>
-      <div class="ops-panel">
-        <h3>Schedule</h3>
-        <p class="${schedule.time_valid ? 'ok' : 'warn'}">${schedule.time_valid ? `${schedule.active_zones || 0} active` : 'time missing'}</p>
-        <p>${esc(schedule.driver_name || schedule.driver_room_id || '-')} ${schedule.driver_priority ? `/ P${schedule.driver_priority}` : ''}</p>
-        <p>${schedule.driver_setpoint_c ? fmtC(schedule.driver_setpoint_c) : '-'}</p>
-      </div>
-      <div class="ops-panel">
-        <h3>Learning</h3>
-        <p>${learning.zones_with_history || 0} zones, ${learning.total_samples || 0} samples</p>
-        <p>Calling ${Math.round(Number(learning.calling_ratio || 0) * 100)}%</p>
-        <p>${learning.warming_zones || 0} warming / ${learning.cooling_zones || 0} cooling, avg ${fmtValue(learning.average_delta_c_per_h, ' C/h')}</p>
-      </div>
-      <div class="ops-panel">
-        <h3>Recovery actions</h3>
-        <select class="input mini-input" id="recovery-room">${recoveryOptions || '<option value="">No mapped zones</option>'}</select>
-        <div class="action-row">
-          <button class="btn slim" data-motor-action="reset_fault">Reset fault</button>
-          <button class="btn slim" data-motor-action="reset_learned">Reset learned</button>
-          <button class="btn slim danger" data-motor-action="relearn">Relearn</button>
-        </div>
-      </div>
-      <div class="ops-panel">
-        <h3>Screen</h3>
-        <p>${d.screen || 'overview-only'}</p>
-      </div>
+        <div class="diagnostics-subsection"><div class="subsection-head"><div><h3>Recent events</h3><p>Newest runtime events from Touch.</p></div></div><div class="data-table diagnostics-table"><div class="tr head events"><span>Time</span><span>Level</span><span>Source</span><span>Message</span></div>${events.map((event) => `<div class="tr events"><span>${fmtUptime(event.ts_ms)}</span><span class="${event.level === 'warn' || event.level === 'error' ? 'warn' : 'ok'}">${esc(event.level || 'info')}</span><span>${esc(fmtEventSource(event.source))}</span><span>${esc(event.message || '-')}</span></div>`).join('') || '<div class="empty-row">No runtime events</div>'}</div></div>
+      </div></details>
+      <details class="group-disclosure"><summary><span>Connections and installation</span><small>${commissioning.reachable_trusted_nodes || 0} ready · ${commissioning.fresh_zones || 0}/${commissioning.bound_zones || 0} fresh zones</small></summary><div class="group-disclosure-content diagnostics-section-content">
+        <dl class="diagnostics-facts"><div><dt>Installation</dt><dd class="${installationReady ? 'ok' : 'warn'}">${esc(fmtNextAction(commissioning.next_action))}</dd><small>${commissioning.ready_for_commands ? 'Control ready' : 'Control not ready'}</small></div><div><dt>Manifolds</dt><dd>${commissioning.reachable_nodes || 0} reachable</dd><small>${commissioning.stale_nodes || 0} stale · ${commissioning.identity_missing_nodes || 0} missing identity</small></div><div><dt>V6 polling</dt><dd class="${polling.fail ? 'warn' : 'ok'}">${polling.success || 0} successful</dd><small>${esc(polling.last_error || 'No current error')}</small></div></dl>
+        ${blockers.length ? `<div class="diagnostic-blockers">${blockers.map((blocker) => `<div><strong>${esc(blocker.target || blocker.scope || 'System')}</strong><span>${esc(fmtNextAction(blocker.action))} · ${esc(blocker.reason || 'Blocked')}</span></div>`).join('')}</div>` : '<p class="empty-state">No installation blockers.</p>'}
+        ${installationReady ? '' : commissioningActionButton(commissioning.next_action)}
+        <p class="diagnostics-meta">API ${esc(d.api || '/api/lune-touch/v1')} · ${d.nodes || 0} manifolds · ${d.zones || 0} zones · heap ${esc(d.heap || 'watching')}</p>
+      </div></details>
+      <details class="group-disclosure"><summary><span>Coordination details</span><small>Forecast, physical temperature, schedules, and learning</small></summary><div class="group-disclosure-content diagnostics-section-content">
+        <dl class="diagnostics-facts"><div><dt>Forecast</dt><dd class="${forecastHealthy ? 'ok' : 'warn'}">${esc(forecastStatus.status || 'Unknown')}</dd><small>${forecastCommands.active || 0} active · ${forecastCommands.failed || 0} failed</small></div><div><dt>Physical temperature</dt><dd class="${quality === 'healthy' ? 'ok' : 'warn'}">${weighted.available ? fmtC(weighted.value_c) : 'Unavailable'}</dd><small>${fmtCoverage(physical)} · ${weighted.contributing_rooms || 0} zones</small></div><div><dt>Schedule</dt><dd class="${schedule.time_valid ? 'ok' : 'warn'}">${schedule.time_valid ? `${schedule.active_zones || 0} active` : 'Time missing'}</dd><small>${esc(schedule.driver_name || schedule.driver_room_id || 'No driver')}</small></div></dl>
+        <dl class="diagnostics-facts"><div><dt>Comfort demand</dt><dd>${fmtValue(comfort.demand_c, ' C')}</dd><small>${comfort.demand_zones || 0} zones</small></div><div><dt>Driver</dt><dd>${esc(driver.name || driver.room_id || d.strategy?.driver_room || 'None')}</dd><small>${driver.priority != null ? `Priority ${driver.priority}` : 'No priority'}</small></div><div><dt>Learning</dt><dd>${learning.total_samples || 0} samples</dd><small>${learning.warming_zones || 0} warming · ${learning.cooling_zones || 0} cooling</small></div></dl>
+        ${forecastStatus.last_error ? `<p class="inline-notice warn">${esc(forecastStatus.last_error)}</p>` : ''}
+        <button class="btn slim" data-action="forecast-fetch">Fetch forecast now</button>
+      </div></details>
+      <details class="group-disclosure"><summary><span>Firmware and recovery</span><small>${esc(ota.running_label || 'Unknown firmware')} · ${esc(d.screen || 'overview-only')}</small></summary><div class="group-disclosure-content diagnostics-section-content">
+        <dl class="diagnostics-facts"><div><dt>Firmware</dt><dd class="${firmwareHealthy ? 'ok' : 'warn'}">${esc(ota.state || 'Unknown')}</dd><small>Subtype ${ota.running_subtype ?? '—'}</small></div><div><dt>Running slot</dt><dd>${Math.round(Number(ota.running_slot_size || 0) / 1024)} KB</dd><small>Configured ${Math.round(Number(ota.configured_slot_size || 0) / 1024)} KB</small></div><div><dt>Display</dt><dd>${esc(d.screen || 'overview-only')}</dd><small>${d.ledger || 0} command records</small></div></dl>
+        <div class="recovery-actions"><label class="field-label" for="recovery-room">Manifold zone</label><select class="input mini-input" id="recovery-room">${recoveryOptions || '<option value="">No imported zones</option>'}</select><div class="form-actions"><button class="btn slim" data-motor-action="reset_fault">Reset fault</button><button class="btn slim" data-motor-action="reset_learned">Reset learning</button><button class="btn slim danger" data-motor-action="relearn">Relearn endstops…</button></div></div>
+      </div></details>
     </div>
   </section>`;
 }
@@ -1102,36 +1028,53 @@ export function bindActions(root) {
   root.querySelectorAll('[data-open-room]').forEach((btn) => {
     btn.addEventListener('click', () => {
       patch({ zoneEditRoomId: btn.dataset.openRoom || '' });
-      root.querySelector('[data-section="manifolds"]')?.click();
     });
   });
   root.querySelectorAll('[data-cancel-zone-edit]').forEach((btn) => {
     btn.addEventListener('click', () => patch({ zoneEditRoomId: '' }));
+  });
+  root.querySelectorAll('[data-zone-picker]').forEach((picker) => {
+    picker.addEventListener('change', () => patch({ zoneEditRoomId: picker.value || '' }));
   });
   const atomicRoomPayload = (zone, panel, comfortOverride) => {
     const field = (name) => panel?.querySelector(`[data-zone-field="${name}"]`);
     const room = zone.room || {};
     const forecast = zone.forecast || {};
     const schedule = zone.schedule || {};
+    const finiteOr = (value, fallback) => Number.isFinite(Number(value)) ? Number(value) : fallback;
+    const clamp = (value, min, max, fallback) => Math.min(max, Math.max(min, finiteOr(value, fallback)));
+    const positiveOr = (value, fallback = 1) => {
+      const number = finiteOr(value, fallback);
+      return number > 0 ? number : fallback;
+    };
     const exterior_walls = [['north', 1], ['east', 2], ['south', 4], ['west', 8]]
       .reduce((mask, [key, bit]) => mask + (panel?.querySelector(`[data-zone-wall="${key}"]`)?.checked ? bit : 0), 0);
-    const total_area_m2 = Number(field('total-area')?.value ?? room.total_area_m2 ?? 1);
-    const physical_weight = Number(field('physical-weight')?.value ?? room.physical_weight ?? total_area_m2);
+    const total_area_m2 = positiveOr(field('total-area')?.value ?? room.total_area_m2, 1);
+    const physical_weight = positiveOr(field('physical-weight')?.value ?? room.physical_weight, total_area_m2);
+    let schedule_start_min = parseClock(field('schedule-start')?.value, finiteOr(schedule.start_min, 360));
+    let schedule_end_min = parseClock(field('schedule-end')?.value, finiteOr(schedule.end_min, 1320));
+    if (schedule_start_min >= schedule_end_min) {
+      schedule_start_min = 360;
+      schedule_end_min = 1320;
+    }
+    const scheduleEnabledField = field('schedule-enabled');
     return {
       expected_revision: Number(room.revision || 1),
       total_area_m2, physical_weight,
       include_in_house_temperature: field('include-physical') ? (field('include-physical').checked ? 1 : 0) : (room.include_in_house_temperature === false ? 0 : 1),
-      comfort_setpoint_c: Number(comfortOverride ?? zone.comfort?.setpoint_c ?? comfortDefault(zone)),
-      comfort_bias_c: Number(zone.comfort?.bias_c || 0), priority: Number(zone.comfort?.priority ?? 1),
-      schedule_enabled: field('schedule-enabled')?.checked ? 1 : (schedule.enabled ? 1 : 0),
-      schedule_day_mask: Number(schedule.day_mask || 127),
-      schedule_start_min: parseClock(field('schedule-start')?.value, Number(schedule.start_min || 360)),
-      schedule_end_min: parseClock(field('schedule-end')?.value, Number(schedule.end_min || 1320)),
-      schedule_setpoint_c: Number(field('schedule-setpoint')?.value ?? schedule.setpoint_c ?? comfortDefault(zone)),
+      comfort_setpoint_c: clamp(comfortOverride ?? zone.comfort?.setpoint_c, 5, 35, comfortDefault(zone)),
+      comfort_bias_c: clamp(zone.comfort?.bias_c, -3, 3, 0),
+      priority: Math.round(clamp(zone.comfort?.priority, 0, 3, 1)),
+      schedule_enabled: scheduleEnabledField ? (scheduleEnabledField.checked ? 1 : 0) : (schedule.enabled ? 1 : 0),
+      schedule_day_mask: Math.round(clamp(schedule.day_mask, 0, 127, 127)),
+      schedule_start_min,
+      schedule_end_min,
+      schedule_setpoint_c: clamp(field('schedule-setpoint')?.value ?? schedule.setpoint_c, 5, 35, comfortDefault(zone)),
       exterior_walls,
-      wind_exposure: field('forecast-wind-level') ? levelValue(field('forecast-wind-level').value, 'wind') : Number(forecast.wind_exposure ?? 0.5),
-      solar_gain: field('forecast-solar-level') ? levelValue(field('forecast-solar-level').value, 'solar') : Number(forecast.solar_gain ?? 0.3),
-      thermal_lead_h: Number(forecast.thermal_lead_h ?? 4), max_offset_c: Number(forecast.max_offset_c ?? 1.5),
+      wind_exposure: field('forecast-wind-level') ? levelValue(field('forecast-wind-level').value, 'wind') : clamp(forecast.wind_exposure, 0, 1, 0.5),
+      solar_gain: field('forecast-solar-level') ? levelValue(field('forecast-solar-level').value, 'solar') : clamp(forecast.solar_gain, 0, 1, 0.3),
+      thermal_lead_h: Math.round(clamp(forecast.thermal_lead_h, 1, 24, 4)),
+      max_offset_c: clamp(forecast.max_offset_c, 0, 5, 1.5),
     };
   };
   root.querySelectorAll('[data-zone-target]').forEach((btn) => {
@@ -1140,22 +1083,11 @@ export function bindActions(root) {
       const zone = state.zones[Number(panel?.dataset.zoneIndex)];
       const setpoint = Number(btn.dataset.zoneTarget);
       if (!zone?.room_id || !Number.isFinite(setpoint)) return;
-      runAction(() => api.saveRoomAtomic(zone.room_id, atomicRoomPayload(zone, panel, setpoint))
-        .then(() => refreshSection('manifolds')));
-    });
-  });
-  root.querySelectorAll('[data-save-zone-mapping]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const index = Number(btn.dataset.saveZoneMapping);
-      const zone = state.zones[index];
-      const panel = btn.closest('[data-zone-index]');
-      const field = (name) => panel?.querySelector(`[data-zone-field="${name}"]`);
-      const name = field('name')?.value?.trim() || zone?.name || zone?.room_id;
-      const node_index = Number(field('node')?.value);
-      const zone_index = Math.max(0, Number(field('zone')?.value || 1) - 1);
-      if (!zone?.room_id || !name || !Number.isInteger(node_index) || !Number.isInteger(zone_index)) return;
-      runAction(() => api.saveZone(zone.room_id, { name, node_index, zone_index })
-        .then(() => refreshSection('manifolds')));
+      runAction(() => api.saveComfort(zone.room_id, {
+        comfort_setpoint_c: setpoint,
+        comfort_bias_c: Number(zone.comfort?.bias_c || 0),
+        priority: Number(zone.comfort?.priority ?? 1),
+      }).then(() => refreshSection(state.section === 'manifolds' ? 'manifolds' : 'rooms')));
     });
   });
   root.querySelectorAll('[data-save-room]').forEach((btn) => {
@@ -1171,51 +1103,10 @@ export function bindActions(root) {
       }
       if (!Number.isFinite(payload.total_area_m2) || !Number.isFinite(payload.physical_weight) ||
           payload.total_area_m2 <= 0 || payload.physical_weight <= 0) {
-        patch({ error: 'Room area and physical weight must be positive numbers; your edits remain on screen.' });
+        patch({ error: 'Zone area and physical weight must be positive numbers; your edits remain on screen.' });
         return;
       }
       runAction(() => api.saveRoomAtomic(zone.room_id, payload).then(() => refreshSection('manifolds')));
-    });
-  });
-  root.querySelectorAll('[data-save-zone-row]').forEach((btn) => {
-    btn.addEventListener('click', () => {
-      const index = Number(btn.dataset.saveZoneRow);
-      const zone = state.zones[index];
-      const row = btn.closest('[data-zone-index]');
-      if (!zone || !row || !zone.room_id) return;
-      const field = (name) => row.querySelector(`[data-zone-field="${name}"]`);
-      const name = field('name')?.value?.trim() || zone.room_id;
-      const nodeIndex = Number(field('node')?.value || 0);
-      const zoneIndex = Math.max(0, Number(field('zone')?.value || 1) - 1);
-      const comfort = Number(field('comfort')?.value);
-      const bias = Number(field('bias')?.value || 0);
-      const priority = Number(field('priority')?.value || 1);
-      const startMin = parseClock(field('schedule-start')?.value, 360);
-      const endMin = parseClock(field('schedule-end')?.value, 1320);
-      const setpoint = Number(field('schedule-setpoint')?.value);
-      const dayMask = Number(zone.schedule?.day_mask || 127);
-      const enabled = field('schedule-enabled')?.checked ? 1 : 0;
-      const exterior_walls = [
-        ['north', 1],
-        ['east', 2],
-        ['south', 4],
-        ['west', 8],
-      ].reduce((mask, [key, bit]) => mask + (row.querySelector(`[data-zone-wall="${key}"]`)?.checked ? bit : 0), 0);
-      const wind_exposure = levelValue(field('forecast-wind-level')?.value || 'normal', 'wind');
-      const solar_gain = levelValue(field('forecast-solar-level')?.value || 'normal', 'solar');
-      const thermal_lead_h = Number(field('forecast-lead')?.value || 4);
-      if (!Number.isFinite(comfort) || !Number.isFinite(bias) || !Number.isFinite(setpoint) ||
-          !Number.isFinite(exterior_walls) || !Number.isFinite(wind_exposure) ||
-          !Number.isFinite(solar_gain) || !Number.isFinite(thermal_lead_h)) {
-        patch({ error: 'Zone values must be numeric' });
-        return;
-      }
-      runAction(() => api.saveZone(zone.room_id, { name, node_index: nodeIndex, zone_index: zoneIndex })
-        .then(() => api.saveComfort(zone.room_id, { comfort_setpoint_c: comfort, comfort_bias_c: bias, priority }))
-        .then(() => api.saveSchedule(zone.room_id, { enabled, day_mask: dayMask, start_min: startMin, end_min: endMin, setpoint_c: setpoint }))
-        .then(() => api.saveForecastProfile(zone.room_id, { exterior_walls, wind_exposure, solar_gain, thermal_lead_h }))
-        .then(() => patch({ zoneEditRoomId: '' }))
-        .then(() => refreshSection('zones')));
     });
   });
   root.querySelector('[data-action="scan"]')?.addEventListener('click', () => runNodeAction('Probing registered V6 manifolds…', () => api.scanNodes().then((result) => {
@@ -1283,17 +1174,9 @@ export function bindActions(root) {
   root.querySelector('[data-action="save-settings"]')?.addEventListener('click', () => {
     const data = {};
     const nameEl = root.querySelector('#settings-name');
-    const installEl = root.querySelector('#settings-install-id');
     const siteEl = root.querySelector('#settings-site-label');
-    const leaderEl = root.querySelector('#settings-authority-leader');
-    const coordinatorEl = root.querySelector('#settings-authority-coordinator');
-    const keyEl = root.querySelector('#settings-authority-key');
     if (nameEl) data.name = nameEl.value.trim();
-    if (installEl) data.install_id = installEl.value.trim();
     if (siteEl) data.site_label = siteEl.value.trim();
-    if (leaderEl) data.authority_leader_node_id = leaderEl.value.trim();
-    if (coordinatorEl) data.authority_coordinator_id = coordinatorEl.value.trim();
-    if (keyEl?.value) data.authority_shared_key = keyEl.value;
     runAction(() => api.saveSettings(data).then(refreshAll));
   });
   root.querySelector('[data-action="save-heat-source"]')?.addEventListener('click', () => {
@@ -1367,6 +1250,6 @@ export function bindActions(root) {
     });
   });
   root.querySelector('[data-action="reset-registry"]')?.addEventListener('click', () => {
-    if (confirm('Reset Lune Touch registry, zone mappings and command ledger? Forecast location is kept.')) runAction(() => api.resetRegistry().then(refreshAll));
+    if (confirm('Reset imported manifold records and command history? Forecast location is kept.')) runAction(() => api.resetRegistry().then(refreshAll));
   });
 }

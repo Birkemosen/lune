@@ -124,6 +124,10 @@ static void test_zone_registry() {
 
   ResolvedZone living = model.resolve_room("living");
   expect(living.node != nullptr && living.binding != nullptr, "registry: resolve bound room");
+  const LogicalRoom *living_room = model.room_by_id("living");
+  expect(living_room != nullptr && living_room->total_area_m2 == 1.0f &&
+             living_room->physical_weight == 1.0f,
+         "registry: imported room starts with neutral geometry defaults");
   expect(living.binding && living.binding->node_index == 0 && living.binding->zone_index == 1,
          "registry: resolved room maps to node/zone");
   expect(living.binding && living.binding->name_source == ZoneNameSource::TOUCH,
@@ -250,6 +254,40 @@ static void test_zone_name_sources() {
          "names: Touch override preserved");
 }
 
+static void test_rediscovered_physical_zone_reactivates_binding() {
+  HouseModel model;
+  model.upsert_node("v6-a", "a.local", "", "lune-v6", "1.0", NodeTrust::TRUSTED);
+  expect(model.bind_zone_with_source("legacy-room", "Old name", 0, 0,
+                                     ZoneNameSource::GENERATED),
+         "rediscovery: initial physical zone can be bound");
+
+  const ResolvedZone initial = model.resolve_room("legacy-room");
+  expect(initial.binding != nullptr && initial.binding->loop_id[0] != '\0',
+         "rediscovery: initial binding has stable loop identity");
+  char loop_id[48]{};
+  if (initial.binding != nullptr)
+    std::strncpy(loop_id, initial.binding->loop_id, sizeof(loop_id) - 1);
+  expect(model.remove_loop(loop_id), "rediscovery: removed loop becomes inactive");
+  expect(model.active_zone_count() == 0,
+         "rediscovery: inactive loop is excluded from active zones");
+
+  expect(model.bind_zone_with_source("v61-z1", "Kontor", 0, 0, ZoneNameSource::V6),
+         "rediscovery: V6 polling reactivates the existing physical loop");
+  expect(model.update_zone_live_by_binding(0, 0, 25.5f, true, 21.0f, true,
+                                           "IDLE", true, 1000, 0.0f, true),
+         "rediscovery: telemetry attaches after reactivation");
+
+  const ResolvedZone restored = model.resolve_room("legacy-room");
+  expect(restored.binding != nullptr && restored.live != nullptr &&
+             restored.binding->enabled && restored.live->has_temperature &&
+             std::fabs(restored.live->temperature_c - 25.5f) < 0.001f,
+         "rediscovery: historical room keeps the live V6 temperature");
+  expect(restored.binding != nullptr &&
+             std::strcmp(restored.binding->room_name, "Kontor") == 0 &&
+             restored.binding->name_source == ZoneNameSource::V6,
+         "rediscovery: V6 name replaces the generated historical name");
+}
+
 static void test_remove_node_remaps_zones() {
   HouseModel model;
   model.upsert_node("v6-a", "a.local", "", "lune-v6", "1.0", NodeTrust::TRUSTED);
@@ -308,10 +346,15 @@ static void test_persisted_state_roundtrip() {
   expect(model.export_state(&state), "persist: export succeeds");
   expect(state.magic == PERSISTED_STATE_MAGIC && state.version == PERSISTED_STATE_VERSION,
          "persist: magic and version set");
+  state.rooms[0].total_area_m2 = 0.0f;
+  state.rooms[0].physical_weight = 0.0f;
 
   HouseModel restored;
   expect(restored.import_state(state), "persist: import succeeds");
   expect(restored.node_count() == 1 && restored.zone_count() == 1, "persist: counts restored");
+  expect(restored.room(0) != nullptr && restored.room(0)->total_area_m2 == 1.0f &&
+             restored.room(0)->physical_weight == 1.0f,
+         "persist: legacy zero geometry is upgraded to neutral defaults");
   ResolvedZone living = restored.resolve_room("living");
   expect(living.node != nullptr && std::strcmp(living.node->hostname, "a.local") == 0,
          "persist: node fields restored");
@@ -643,6 +686,14 @@ static void test_zone_forecast_profile() {
   expect(living.binding != nullptr && living.binding->max_offset_c > 1.24f,
          "forecast profile: max offset stored");
 
+  expect(model.update_zone_forecast_profile_by_binding(0, 0, 0x0A, 0.7f, 0.4f, 7, 1.5f,
+                                                       false),
+         "forecast profile: V6 telemetry can update legacy factors without owning walls");
+  living = model.resolve_room("living");
+  expect(living.binding != nullptr && living.binding->exterior_walls == 0x05 &&
+             living.binding->wind_exposure > 0.69f && living.binding->wind_exposure < 0.71f,
+         "forecast profile: Touch-owned exterior walls survive V6 refresh");
+
   expect(model.update_zone_forecast_profile_by_binding(0, 0, 0xFF, 2.0f, -1.0f, 80, 9.0f),
          "forecast profile: clamps out-of-range values");
   living = model.resolve_room("living");
@@ -923,6 +974,7 @@ int main() {
   test_node_trust_updates();
   test_zone_registry();
   test_zone_name_sources();
+  test_rediscovered_physical_zone_reactivates_binding();
   test_remove_node_remaps_zones();
   test_logical_room_multiple_loops();
   test_persisted_state_roundtrip();

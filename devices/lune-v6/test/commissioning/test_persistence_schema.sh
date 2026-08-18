@@ -2,8 +2,8 @@
 set -eu
 
 repo_root=$(CDPATH= cd -- "$(dirname "$0")/../.." && pwd)
-types="$repo_root/components/hv6_config_store/hv6_types.h"
-store="$repo_root/components/hv6_config_store/hv6_config_store.cpp"
+types="$repo_root/components/lv6_config_store/hv6_types.h"
+store="$repo_root/components/lv6_config_store/lv6_config_store.cpp"
 
 # Layout changes must reject old blobs instead of assigning an invented physical
 # manifold identity or pump value to an existing installation.

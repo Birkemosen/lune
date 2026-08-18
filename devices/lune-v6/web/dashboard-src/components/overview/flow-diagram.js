@@ -7,27 +7,23 @@ import { subscribeLanguage, t } from '../../core/i18n.js';
 
 const ZONES = 6;
 
-const COLOR_DISABLED = '#6E7E96';
-const COLOR_EMPTY = '#5C6B85';
-const COLOR_FLOW_LOW = '#7aa7ce';
-const COLOR_FLOW_MID = '#9DBC78';
-const COLOR_FLOW_HIGH = '#FF8531';
-const COLOR_FLOW_HOT = '#FFA600';
-const COLOR_RETURN = '#7aa7ce';
-const COLOR_ZONE_ON = '#FFEAD2';
-const COLOR_ZONE_OFF = '#6E7E96';
-const COLOR_FRIENDLY_ON = '#B9CBD8';
-const COLOR_FRIENDLY_OFF = '#5C6B85';
-const COLOR_COL_HEAD = '#A6B9C7';
-const COLOR_DT_LABEL = '#A6B9C7';
-const COLOR_DT_LOW = '#7aa7ce';
+const COLOR_DISABLED = 'var(--flow-disabled)';
+const COLOR_EMPTY = 'var(--flow-unknown)';
+const COLOR_FLOW_ACTIVE = 'var(--accent)';
+const COLOR_RETURN = 'var(--flow-return)';
+const COLOR_ZONE_ON = 'var(--text-strong)';
+const COLOR_ZONE_OFF = 'var(--flow-disabled)';
+const COLOR_FRIENDLY_ON = 'var(--flow-label)';
+const COLOR_FRIENDLY_OFF = 'var(--flow-disabled)';
+const COLOR_COL_HEAD = 'var(--flow-label)';
+const COLOR_DT_LABEL = 'var(--flow-label)';
+const COLOR_DT_LOW = 'var(--flow-return)';
 const COLOR_DT_OK = '#66BB6A';
 const COLOR_DT_HIGH = '#FF6361';
 
 const DESKTOP = {
   w: 1160, h: 310,
   boxX: 452, boxY: 34, boxW: 256, boxH: 68,
-  topBarY: 0, topBarH: 24,
   srcY: 102, fanY: 158, zoneY: 232,
   zoneXs: [92, 286, 480, 674, 868, 1062],
   srcSpread: 15, bgDstHW: 28, srcHW: 7,
@@ -68,6 +64,15 @@ const css = `
   transition: d .6s ease, opacity .35s ease;
 }
 
+.flow-track {
+  fill: none;
+  stroke: var(--flow-track);
+  stroke-width: 2.25;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+  transition: opacity .25s ease, stroke-dasharray .25s ease;
+}
+
 .flow-metric {
   font-family: var(--mono);
   font-weight: 800;
@@ -99,27 +104,36 @@ function parseProbeIndex(label) {
 function flowColorByPercent(pct, enabled) {
   if (!enabled) return COLOR_DISABLED;
   if (pct == null || Number.isNaN(pct)) return COLOR_EMPTY;
-  if (pct < 0.15) return COLOR_FLOW_LOW;
-  if (pct < 0.4) return COLOR_FLOW_MID;
-  if (pct < 0.7) return COLOR_FLOW_HIGH;
-  return COLOR_FLOW_HOT;
+  return pct > 0 ? COLOR_FLOW_ACTIVE : COLOR_FRIENDLY_ON;
 }
 
 function bgDefs(layout) {
   const dir = layout === 'desktop' ? '0 1' : '1 0';
   const p = [];
   p.push('<defs>');
-  p.push('<pattern id="' + layout + '-fdots" x="0" y="0" width="20" height="20" patternUnits="userSpaceOnUse"><circle cx="10" cy="10" r="1" fill="rgba(92,138,196,0.26)"/></pattern>');
-  p.push('<radialGradient id="' + layout + '-fglow" cx="32%" cy="18%" r="78%"><stop offset="0%" stop-color="rgba(122,167,206,0.18)"/><stop offset="52%" stop-color="rgba(240,121,91,0.08)"/><stop offset="100%" stop-color="transparent"/></radialGradient>');
-  p.push('<linearGradient id="' + layout + '-boxgrad" x1="0" y1="0" x2="' + dir.split(' ')[0] + '" y2="' + dir.split(' ')[1] + '"><stop offset="0%" stop-color="#9E4A18"/><stop offset="100%" stop-color="#ff8531"/></linearGradient>');
   for (let z = 1; z <= ZONES; z++) {
     p.push('<linearGradient id="' + layout + '-rg' + z + '" x1="0" y1="0" x2="' + dir.split(' ')[0] + '" y2="' + dir.split(' ')[1] + '">');
-    p.push('<stop id="' + layout + '-rgs' + z + '" offset="0%" stop-color="#ff8531"/>');
-    p.push('<stop id="' + layout + '-rga' + z + '" offset="100%" stop-color="#7aa7ce"/>');
+    p.push('<stop id="' + layout + '-rgs' + z + '" offset="0%" stop-color="var(--accent)" stop-opacity=".96"/>');
+    p.push('<stop id="' + layout + '-rga' + z + '" offset="100%" stop-color="var(--accent)" stop-opacity=".7"/>');
     p.push('</linearGradient>');
   }
   p.push('</defs>');
   return p.join('');
+}
+
+function desktopRoute(zIdx) {
+  const x0 = DESKTOP.boxX + DESKTOP.boxW / 2 + (zIdx - 2.5) * DESKTOP.srcSpread;
+  const x1 = DESKTOP.zoneXs[zIdx];
+  return 'M' + x0.toFixed(1) + ' ' + DESKTOP.srcY +
+    ' C' + x0.toFixed(1) + ' ' + DESKTOP.fanY + ' ' + x1.toFixed(1) + ' ' + (DESKTOP.fanY + 34) + ' ' + x1.toFixed(1) + ' ' + (DESKTOP.zoneY - 20);
+}
+
+function mobileRoute(zIdx) {
+  const y0 = MOBILE.midY + (zIdx - 2.5) * MOBILE.spread;
+  const y1 = MOBILE.zoneYs[zIdx];
+  const dx = MOBILE.endX - MOBILE.srcX;
+  return 'M' + MOBILE.srcX + ' ' + y0.toFixed(1) +
+    ' C' + (MOBILE.srcX + dx * 0.34) + ' ' + y0.toFixed(1) + ' ' + (MOBILE.srcX + dx * 0.70) + ' ' + y1.toFixed(1) + ' ' + MOBILE.endX + ' ' + y1.toFixed(1);
 }
 
 function desktopRibbon(zIdx, hwSrc, hwDst) {
@@ -150,47 +164,44 @@ function mobileRibbon(zIdx, hwSrc, hwDst) {
 }
 
 function background(w, h, layout) {
-  return '<rect width="' + w + '" height="' + h + '" rx="22" fill="var(--card)"/>' +
-    '<rect width="' + w + '" height="' + h + '" rx="22" fill="url(#' + layout + '-fdots)" opacity="0.48"/>' +
-    '<rect width="' + w + '" height="' + h + '" rx="22" fill="url(#' + layout + '-fglow)"/>';
+  return '<rect width="' + w + '" height="' + h + '" rx="10" fill="var(--surface-raised)"/>';
 }
 
 function sourceBox(layout) {
   const g = layout === 'desktop' ? DESKTOP : MOBILE;
   const labelY = layout === 'desktop' ? g.boxY + 27 : g.boxY + 29;
   const valueY = layout === 'desktop' ? g.boxY + 56 : g.boxY + 58;
-  return '<rect x="' + g.boxX + '" y="' + g.boxY + '" width="' + g.boxW + '" height="' + g.boxH + '" rx="7" fill="#ff8531"/>' +
-    '<text id="' + layout + '-fd-flow-label" x="' + (g.boxX + g.boxW / 2) + '" y="' + labelY + '" text-anchor="middle" font-size="' + (layout === 'desktop' ? 18 : 17) + '" font-weight="800" fill="var(--text-on-accent)" letter-spacing="2">' + t('overview.flowDiagram.flow') + '</text>' +
-    '<text id="' + layout + '-fd-flow-temp" class="flow-metric" x="' + (g.boxX + g.boxW / 2) + '" y="' + valueY + '" text-anchor="middle" font-size="' + (layout === 'desktop' ? 26 : 24) + '" fill="var(--text-on-accent)">---</text>';
+  return '<rect x="' + g.boxX + '" y="' + g.boxY + '" width="' + g.boxW + '" height="' + g.boxH + '" rx="7" fill="var(--flow-source-bg)" stroke="var(--accent)" stroke-width="2"/>' +
+    '<text id="' + layout + '-fd-flow-label" x="' + (g.boxX + g.boxW / 2) + '" y="' + labelY + '" text-anchor="middle" font-size="' + (layout === 'desktop' ? 20 : 19) + '" font-weight="800" fill="var(--accent)" letter-spacing="2">' + t('overview.flowDiagram.flow') + '</text>' +
+    '<text id="' + layout + '-fd-flow-temp" class="flow-metric" x="' + (g.boxX + g.boxW / 2) + '" y="' + valueY + '" text-anchor="middle" font-size="' + (layout === 'desktop' ? 29 : 27) + '" fill="var(--text-strong)">---</text>';
 }
 
 function desktopSvg() {
   const p = [];
   const W = DESKTOP.w, H = DESKTOP.h;
   const lineY = DESKTOP.zoneY - 20;
-  p.push('<svg class="flow-svg flow-svg-desktop" viewBox="0 5 ' + W + ' ' + (H - 5) + '" preserveAspectRatio="xMidYMid meet">');
+  p.push('<svg class="flow-svg flow-svg-desktop" viewBox="0 5 ' + W + ' ' + (H - 5) + '" preserveAspectRatio="xMidYMid meet" aria-hidden="true" focusable="false">');
   p.push(bgDefs('desktop'));
   p.push(background(W, H, 'desktop'));
-  p.push('<rect x="' + DESKTOP.boxX + '" y="' + DESKTOP.topBarY + '" width="' + DESKTOP.boxW + '" height="' + DESKTOP.topBarH + '" fill="url(#desktop-boxgrad)" rx="5"/>');
   p.push(sourceBox('desktop'));
-  p.push('<text id="desktop-fd-ret-temp" x="' + (DESKTOP.boxX + DESKTOP.boxW + 24) + '" y="' + (DESKTOP.boxY + 20) + '" font-size="15" font-weight="800" fill="#7aa7ce" font-family="var(--mono)">' + t('overview.flowDiagram.returnShort') + ' ---</text>');
-  p.push('<text id="desktop-fd-dt-label" x="' + (DESKTOP.boxX + DESKTOP.boxW + 24) + '" y="' + (DESKTOP.boxY + 42) + '" font-size="12" font-weight="800" fill="' + COLOR_DT_LABEL + '" letter-spacing="2">' + t('overview.flowDiagram.dt') + '</text>');
-  p.push('<text id="desktop-fd-dt" x="' + (DESKTOP.boxX + DESKTOP.boxW + 24) + '" y="' + (DESKTOP.boxY + 65) + '" class="flow-metric" font-size="22" fill="#ff8531">---</text>');
+  p.push('<text id="desktop-fd-ret-temp" x="' + (DESKTOP.boxX + DESKTOP.boxW + 24) + '" y="' + (DESKTOP.boxY + 20) + '" font-size="17" font-weight="800" fill="' + COLOR_RETURN + '" font-family="var(--mono)">' + t('overview.flowDiagram.returnShort') + ' ---</text>');
+  p.push('<text id="desktop-fd-dt-label" x="' + (DESKTOP.boxX + DESKTOP.boxW + 24) + '" y="' + (DESKTOP.boxY + 42) + '" font-size="13" font-weight="800" fill="' + COLOR_DT_LABEL + '" letter-spacing="2">' + t('overview.flowDiagram.dt') + '</text>');
+  p.push('<text id="desktop-fd-dt" x="' + (DESKTOP.boxX + DESKTOP.boxW + 24) + '" y="' + (DESKTOP.boxY + 66) + '" class="flow-metric" font-size="24" fill="var(--accent)">---</text>');
 
-  for (let z = 1; z <= ZONES; z++) p.push('<path d="' + desktopRibbon(z - 1, DESKTOP.srcHW, DESKTOP.bgDstHW) + '" fill="#021824" opacity="0.9"/>');
+  for (let z = 1; z <= ZONES; z++) p.push('<path id="desktop-fd-track-' + z + '" class="flow-track" d="' + desktopRoute(z - 1) + '" opacity=".7"/>');
   for (let z = 1; z <= ZONES; z++) p.push('<path id="desktop-fd-path-' + z + '" class="flow-ribbon" d="' + desktopRibbon(z - 1, DESKTOP.srcHW, DESKTOP.bgDstHW) + '" fill="url(#desktop-rg' + z + ')" opacity="1"/>');
 
-  p.push('<line x1="54" y1="' + lineY + '" x2="' + (W - 54) + '" y2="' + lineY + '" stroke="#ff8531" stroke-width="2" opacity=".42"/>');
+  p.push('<line x1="54" y1="' + lineY + '" x2="' + (W - 54) + '" y2="' + lineY + '" stroke="var(--flow-track)" stroke-width="2" opacity=".72"/>');
   for (let z = 1; z <= ZONES; z++) {
     const x = DESKTOP.zoneXs[z - 1];
     p.push('<g class="flow-zone-hit">');
-    p.push('<line x1="' + x + '" y1="' + (lineY - 8) + '" x2="' + x + '" y2="' + (lineY + 8) + '" stroke="#ff8531" stroke-width="2" opacity=".5"/>');
-    p.push('<text id="desktop-fd-zn' + z + '" x="' + x + '" y="' + (lineY - 13) + '" text-anchor="middle" font-size="13" fill="#FFEAD2" font-weight="800" letter-spacing="1.8">Z' + z + '</text>');
-    p.push('<text id="desktop-fd-zf' + z + '" x="' + x + '" y="' + (lineY + 20) + '" text-anchor="middle" font-size="9.5" fill="#AFC1CD" font-weight="700" letter-spacing=".8">---</text>');
-    p.push('<text id="desktop-fd-zsp' + z + '" x="' + x + '" y="' + (lineY + 20) + '" text-anchor="middle" font-size="9" fill="' + COLOR_FRIENDLY_OFF + '" font-weight="600" font-family="var(--mono)"></text>');
-    p.push('<text id="desktop-fd-zt' + z + '" x="' + x + '" y="' + (lineY + 42) + '" text-anchor="middle" class="flow-metric" font-size="15" fill="#F6ECE0">---°C</text>');
-    p.push('<text id="desktop-fd-zv' + z + '" x="' + (x - 28) + '" y="' + (lineY + 61) + '" text-anchor="middle" class="flow-metric" font-size="13" fill="#C3D0D9">---%</text>');
-    p.push('<text id="desktop-fd-zr' + z + '" x="' + (x + 28) + '" y="' + (lineY + 61) + '" text-anchor="middle" class="flow-metric" font-size="13" fill="#C3D0D9">---</text>');
+    p.push('<line id="desktop-fd-tick-' + z + '" x1="' + x + '" y1="' + (lineY - 8) + '" x2="' + x + '" y2="' + (lineY + 8) + '" stroke="var(--flow-track)" stroke-width="2"/>');
+    p.push('<text id="desktop-fd-zn' + z + '" x="' + x + '" y="' + (lineY - 13) + '" text-anchor="middle" font-size="15" fill="' + COLOR_ZONE_ON + '" font-weight="800" letter-spacing="1.5">Z' + z + '</text>');
+    p.push('<text id="desktop-fd-zf' + z + '" x="' + x + '" y="' + (lineY + 21) + '" text-anchor="middle" font-size="11.5" fill="' + COLOR_FRIENDLY_ON + '" font-weight="700" letter-spacing=".55">---</text>');
+    p.push('<text id="desktop-fd-zsp' + z + '" x="' + x + '" y="' + (lineY + 21) + '" text-anchor="middle" font-size="10.5" fill="' + COLOR_FRIENDLY_OFF + '" font-weight="600" font-family="var(--mono)"></text>');
+    p.push('<text id="desktop-fd-zt' + z + '" x="' + x + '" y="' + (lineY + 44) + '" text-anchor="middle" class="flow-metric" font-size="17" fill="var(--text-strong)">---°C</text>');
+    p.push('<text id="desktop-fd-zv' + z + '" x="' + (x - 30) + '" y="' + (lineY + 64) + '" text-anchor="middle" class="flow-metric" font-size="14" fill="' + COLOR_FRIENDLY_ON + '">---%</text>');
+    p.push('<text id="desktop-fd-zr' + z + '" x="' + (x + 30) + '" y="' + (lineY + 64) + '" text-anchor="middle" class="flow-metric" font-size="14" fill="' + COLOR_RETURN + '">---</text>');
     p.push('</g>');
   }
   p.push('</svg>');
@@ -200,38 +211,37 @@ function desktopSvg() {
 function mobileSvg() {
   const p = [];
   const W = MOBILE.w, H = MOBILE.h;
-  p.push('<svg class="flow-svg flow-svg-mobile" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="xMidYMid meet">');
+  p.push('<svg class="flow-svg flow-svg-mobile" viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="xMidYMid meet" aria-hidden="true" focusable="false">');
   p.push(bgDefs('mobile'));
   p.push(background(W, H, 'mobile'));
-  p.push('<rect x="0" y="' + MOBILE.boxY + '" width="' + (MOBILE.boxX - 6) + '" height="' + MOBILE.boxH + '" fill="url(#mobile-boxgrad)" rx="4"/>');
   p.push(sourceBox('mobile'));
 
-  for (let z = 1; z <= ZONES; z++) p.push('<path d="' + mobileRibbon(z - 1, MOBILE.srcHW, MOBILE.bgDstHW) + '" fill="#021824" opacity="0.9"/>');
+  for (let z = 1; z <= ZONES; z++) p.push('<path id="mobile-fd-track-' + z + '" class="flow-track" d="' + mobileRoute(z - 1) + '" opacity=".7"/>');
   for (let z = 1; z <= ZONES; z++) p.push('<path id="mobile-fd-path-' + z + '" class="flow-ribbon" d="' + mobileRibbon(z - 1, MOBILE.srcHW, MOBILE.bgDstHW) + '" fill="url(#mobile-rg' + z + ')" opacity="1"/>');
-  p.push('<rect x="' + (MOBILE.boxX + 9) + '" y="' + (MOBILE.boxY + MOBILE.boxH + 9) + '" width="' + (MOBILE.boxW - 18) + '" height="60" rx="8" fill="rgba(2,29,43,.74)"/>');
-  p.push('<text id="mobile-fd-ret-temp" x="' + (MOBILE.boxX + MOBILE.boxW / 2) + '" y="' + (MOBILE.boxY + MOBILE.boxH + 27) + '" text-anchor="middle" font-size="12.5" font-weight="800" fill="#7aa7ce" font-family="var(--mono)">' + t('overview.flowDiagram.returnShort') + ' ---</text>');
-  p.push('<text id="mobile-fd-dt-label" x="' + (MOBILE.boxX + MOBILE.boxW / 2) + '" y="' + (MOBILE.boxY + MOBILE.boxH + 43) + '" text-anchor="middle" font-size="9.5" font-weight="800" fill="' + COLOR_DT_LABEL + '" letter-spacing="1.1">' + t('overview.flowDiagram.dt') + '</text>');
-  p.push('<text id="mobile-fd-dt" x="' + (MOBILE.boxX + MOBILE.boxW / 2) + '" y="' + (MOBILE.boxY + MOBILE.boxH + 63) + '" text-anchor="middle" class="flow-metric" font-size="19" fill="#ff8531">---</text>');
-  p.push('<line x1="' + MOBILE.endX + '" y1="34" x2="' + MOBILE.endX + '" y2="' + (H - 34) + '" stroke="#ff8531" stroke-width="2" opacity=".48"/>');
+  p.push('<rect x="' + (MOBILE.boxX + 9) + '" y="' + (MOBILE.boxY + MOBILE.boxH + 9) + '" width="' + (MOBILE.boxW - 18) + '" height="60" rx="8" fill="var(--flow-source-bg)" stroke="var(--flow-return)" stroke-opacity=".7"/>');
+  p.push('<text id="mobile-fd-ret-temp" x="' + (MOBILE.boxX + MOBILE.boxW / 2) + '" y="' + (MOBILE.boxY + MOBILE.boxH + 27) + '" text-anchor="middle" font-size="14" font-weight="800" fill="' + COLOR_RETURN + '" font-family="var(--mono)">' + t('overview.flowDiagram.returnShort') + ' ---</text>');
+  p.push('<text id="mobile-fd-dt-label" x="' + (MOBILE.boxX + MOBILE.boxW / 2) + '" y="' + (MOBILE.boxY + MOBILE.boxH + 43) + '" text-anchor="middle" font-size="11.5" font-weight="800" fill="' + COLOR_DT_LABEL + '" letter-spacing="1.1">' + t('overview.flowDiagram.dt') + '</text>');
+  p.push('<text id="mobile-fd-dt" x="' + (MOBILE.boxX + MOBILE.boxW / 2) + '" y="' + (MOBILE.boxY + MOBILE.boxH + 63) + '" text-anchor="middle" class="flow-metric" font-size="19" fill="var(--accent)">---</text>');
+  p.push('<line x1="' + MOBILE.endX + '" y1="34" x2="' + MOBILE.endX + '" y2="' + (H - 34) + '" stroke="var(--flow-track)" stroke-width="2" opacity=".72"/>');
 
-  p.push('<text id="mobile-fd-temp-head" x="506" y="30" font-size="10" fill="' + COLOR_COL_HEAD + '" font-weight="700" letter-spacing="1.5">' + t('overview.graph.layers.temp').toUpperCase() + '</text>');
-  p.push('<text id="mobile-fd-flow-head" x="592" y="30" font-size="10" fill="' + COLOR_COL_HEAD + '" font-weight="700" letter-spacing="1.5">' + t('overview.flowDiagram.flow') + '</text>');
-  p.push('<text id="mobile-fd-ret-head" x="678" y="30" font-size="10" fill="' + COLOR_COL_HEAD + '" font-weight="700" letter-spacing="1.5">' + t('overview.flowDiagram.returnShort') + '</text>');
+  p.push('<text id="mobile-fd-temp-head" x="506" y="30" font-size="12" fill="' + COLOR_COL_HEAD + '" font-weight="700" letter-spacing="1.2">' + t('overview.graph.layers.temp').toUpperCase() + '</text>');
+  p.push('<text id="mobile-fd-flow-head" x="592" y="30" font-size="12" fill="' + COLOR_COL_HEAD + '" font-weight="700" letter-spacing="1.2">' + t('overview.flowDiagram.flow') + '</text>');
+  p.push('<text id="mobile-fd-ret-head" x="678" y="30" font-size="12" fill="' + COLOR_COL_HEAD + '" font-weight="700" letter-spacing="1.2">' + t('overview.flowDiagram.returnShort') + '</text>');
   for (let z = 1; z <= ZONES; z++) {
     const y = MOBILE.zoneYs[z - 1];
-    p.push('<line x1="' + (MOBILE.endX - 8) + '" y1="' + y + '" x2="' + (MOBILE.endX + 8) + '" y2="' + y + '" stroke="#ff8531" stroke-width="2" opacity=".5"/>');
-    p.push('<text id="mobile-fd-zn' + z + '" x="' + (MOBILE.endX - 14) + '" y="' + (y + 4) + '" text-anchor="end" font-size="12" fill="#FFEAD2" font-weight="800" letter-spacing="1.4">Z' + z + '</text>');
-    p.push('<text id="mobile-fd-zf' + z + '" x="' + MOBILE.nameX + '" y="' + (y - 8) + '" text-anchor="middle" font-size="9" fill="#AFC1CD" font-weight="700" letter-spacing=".7">---</text>');
-    p.push('<text id="mobile-fd-zsp' + z + '" x="' + MOBILE.nameX + '" y="' + (y + 7) + '" text-anchor="middle" font-size="8.5" fill="' + COLOR_FRIENDLY_OFF + '" font-weight="600" font-family="var(--mono)"></text>');
-    p.push('<text id="mobile-fd-zt' + z + '" x="506" y="' + (y + 4) + '" class="flow-metric" font-size="13.5" fill="#F6ECE0">---°C</text>');
-    p.push('<text id="mobile-fd-zv' + z + '" x="592" y="' + (y + 4) + '" class="flow-metric" font-size="13.5" fill="#C3D0D9">---%</text>');
-    p.push('<text id="mobile-fd-zr' + z + '" x="678" y="' + (y + 4) + '" class="flow-metric" font-size="13.5" fill="#C3D0D9">---</text>');
+    p.push('<line id="mobile-fd-tick-' + z + '" x1="' + (MOBILE.endX - 8) + '" y1="' + y + '" x2="' + (MOBILE.endX + 8) + '" y2="' + y + '" stroke="var(--flow-track)" stroke-width="2"/>');
+    p.push('<text id="mobile-fd-zn' + z + '" x="' + (MOBILE.endX - 14) + '" y="' + (y + 5) + '" text-anchor="end" font-size="14" fill="' + COLOR_ZONE_ON + '" font-weight="800" letter-spacing="1.2">Z' + z + '</text>');
+    p.push('<text id="mobile-fd-zf' + z + '" x="' + MOBILE.nameX + '" y="' + (y - 8) + '" text-anchor="middle" font-size="10.5" fill="' + COLOR_FRIENDLY_ON + '" font-weight="700" letter-spacing=".5">---</text>');
+    p.push('<text id="mobile-fd-zsp' + z + '" x="' + MOBILE.nameX + '" y="' + (y + 8) + '" text-anchor="middle" font-size="10" fill="' + COLOR_FRIENDLY_OFF + '" font-weight="600" font-family="var(--mono)"></text>');
+    p.push('<text id="mobile-fd-zt' + z + '" x="506" y="' + (y + 5) + '" class="flow-metric" font-size="15" fill="var(--text-strong)">---°C</text>');
+    p.push('<text id="mobile-fd-zv' + z + '" x="592" y="' + (y + 5) + '" class="flow-metric" font-size="15" fill="' + COLOR_FRIENDLY_ON + '">---%</text>');
+    p.push('<text id="mobile-fd-zr' + z + '" x="678" y="' + (y + 5) + '" class="flow-metric" font-size="15" fill="' + COLOR_RETURN + '">---</text>');
   }
   p.push('</svg>');
   return p.join('');
 }
 
-const template = () => '<div class="flow-wrap">' + desktopSvg() + mobileSvg() + '</div>';
+const template = () => '<div class="flow-wrap" role="img" aria-label="' + t('overview.flowDiagram.flow') + '">' + desktopSvg() + mobileSvg() + '</div>';
 
 component({
   tag: 'flow-diagram',
@@ -256,6 +266,8 @@ component({
           textRet: el.querySelector('#' + layout + '-fd-zr' + zone),
           label: el.querySelector('#' + layout + '-fd-zn' + zone),
           friendly: el.querySelector('#' + layout + '-fd-zf' + zone),
+          track: el.querySelector('#' + layout + '-fd-track-' + zone),
+          tick: el.querySelector('#' + layout + '-fd-tick-' + zone),
           path: el.querySelector('#' + layout + '-fd-path-' + zone)
         };
       }
@@ -305,13 +317,15 @@ component({
       zoneRefs.textFlow.setAttribute('fill', flowColorByPercent(pct, enabled));
       zoneRefs.textRet.setAttribute('fill', hasReturn && enabled ? COLOR_RETURN : COLOR_EMPTY);
 
+      const flowing = enabled && pct != null && pct > 0;
+      zoneRefs.track.setAttribute('opacity', enabled ? '.78' : '.38');
+      zoneRefs.track.setAttribute('stroke-dasharray', enabled ? 'none' : '5 7');
+      zoneRefs.tick.setAttribute('stroke', flowing ? COLOR_FLOW_ACTIVE : 'var(--flow-track)');
+      zoneRefs.tick.setAttribute('stroke-width', flowing ? '3' : '2');
+
       const path = zoneRefs.path;
-      if (!enabled) {
-        path.setAttribute('d', layout === 'desktop'
-          ? desktopRibbon(zone - 1, 1, 2)
-          : mobileRibbon(zone - 1, 1, 2));
-        path.setAttribute('fill', '#021824');
-        path.setAttribute('opacity', '0.38');
+      if (!flowing) {
+        path.setAttribute('opacity', '0');
       } else {
         const cfg = layout === 'desktop' ? DESKTOP : MOBILE;
         const dstHW = Math.max(2.5, pct * cfg.bgDstHW);
@@ -320,7 +334,7 @@ component({
           ? desktopRibbon(zone - 1, srcHW, dstHW)
           : mobileRibbon(zone - 1, srcHW, dstHW));
         path.setAttribute('fill', 'url(#' + layout + '-rg' + zone + ')');
-        path.setAttribute('opacity', '1');
+        path.setAttribute('opacity', '.96');
       }
     }
 
@@ -340,7 +354,7 @@ component({
         const probe = parseProbeIndex(es(key.probe(zone)) || '');
         const returnTemp = probe ? ev(key.probeTemp(probe)) : null;
         const hasReturn = source !== 'Local Probe' && returnTemp != null && !Number.isNaN(Number(returnTemp));
-        const pct = valve != null ? Math.max(0, Math.min(100, Number(valve))) / 100 : 0;
+        const pct = valve != null ? Math.max(0, Math.min(100, Number(valve))) / 100 : null;
         const data = { enabled, pct, temp, setpoint, valve, returnTemp, hasReturn };
         layouts.forEach((layout) => updateZoneLayout(layout, zone, data));
       }

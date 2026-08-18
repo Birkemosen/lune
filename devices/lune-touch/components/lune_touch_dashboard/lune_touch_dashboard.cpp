@@ -17,7 +17,10 @@ static constexpr const char API_PREFIX[] = "/api/lune-touch/v1";
 static constexpr size_t API_PREFIX_LEN = sizeof(API_PREFIX) - 1;
 static constexpr const char CORS_ALLOW_METHODS[] = "GET, POST, OPTIONS";
 static constexpr const char CORS_ALLOW_HEADERS[] = "Content-Type";
-static constexpr size_t STATIC_CHUNK_SIZE = 2048;
+// Keep flash reads brief. The RGB framebuffer is in PSRAM and both memories
+// share the SPI bus on ESP32-S3, so sending a large PROGMEM range directly can
+// starve the RGB bounce-buffer refill while a browser loads the dashboard.
+static constexpr size_t STATIC_CHUNK_SIZE = 1024;
 
 namespace {
 
@@ -307,10 +310,11 @@ static const char DASHBOARD_HTML[] =
     "<!doctype html><html><head>"
     "<meta charset=\"utf-8\">"
     "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
+    "<meta name=\"color-scheme\" content=\"light dark\">"
     "<title>Lune Touch</title>"
     "</head><body>"
     "<div id=\"app\">Loading Lune Touch...</div>"
-    "<script src=\"/dashboard.js?v=lune-touch-setup-20260709\"></script>"
+    "<script src=\"/dashboard.js?v=zone-save-polish-20260815\"></script>"
     "</body></html>";
 
 void LuneTouchDashboard::setup() {
@@ -374,7 +378,7 @@ void LuneTouchDashboard::handle_js_(AsyncWebServerRequest *request) {
 #ifdef LUNE_TOUCH_HAS_DASHBOARD_JS
   send_gzip_chunked_(request, "application/javascript; charset=utf-8",
                      LUNE_TOUCH_DASHBOARD_JS_DATA, LUNE_TOUCH_DASHBOARD_JS_SIZE,
-                     "no-store, no-cache, max-age=0, must-revalidate");
+                     "public, max-age=31536000, immutable");
 #else
   send_text_(request, 404, "text/plain", "dashboard.js not configured");
 #endif
@@ -408,12 +412,21 @@ void LuneTouchDashboard::send_gzip_chunked_(AsyncWebServerRequest *request, cons
   if (cache_control != nullptr)
     httpd_resp_set_hdr(raw, "Cache-Control", cache_control);
 
+  // Stage each short flash read in internal SRAM before handing it to the
+  // socket. This prevents a slow TCP client from keeping a PROGMEM range busy
+  // while the LCD ISR needs the shared flash/PSRAM bus.
+  uint8_t chunk[STATIC_CHUNK_SIZE];
   size_t offset = 0;
   while (offset < length) {
     const size_t to_send = std::min(STATIC_CHUNK_SIZE, length - offset);
-    if (httpd_resp_send_chunk(raw, reinterpret_cast<const char *>(data + offset), to_send) != ESP_OK)
+    memcpy(chunk, data + offset, to_send);
+    if (httpd_resp_send_chunk(raw, reinterpret_cast<const char *>(chunk), to_send) != ESP_OK)
       return;
     offset += to_send;
+    // Give the display task and RGB refill path a scheduling point between
+    // network chunks. The added load latency is negligible for the compressed
+    // dashboard and avoids one sustained bus burst.
+    delay(1);
   }
   httpd_resp_send_chunk(raw, nullptr, 0);
 }
@@ -923,17 +936,8 @@ void LuneTouchDashboard::handle_v1_post_(ApiRequest &api, const char *path) {
       send_error_(api, 404, "unknown_route", "Unknown zone route");
       return;
     }
-    size_t node_index = 0;
-    size_t zone_index = 0;
-    if (!parse_size_param(api, api.json_body, "node_index", &node_index) ||
-        !parse_size_param(api, api.json_body, "zone_index", &zone_index)) {
-      send_error_(api, 400, "missing_param", "node_index and zone_index are required");
-      return;
-    }
-    char name[64];
-    parse_text_param(api, api.json_body, "name", name, sizeof(name));
-    const bool accepted = coordinator_->bind_room(room_id, name, node_index, zone_index, data_buf_, sizeof(data_buf_));
-    send_write_result_(api, accepted, 400);
+    send_error_(api, 410, "zone_managed_on_v6",
+                "Physical zones are imported automatically and configured on their V6 manifold");
   } else {
     send_error_(api, 404, "unknown_route", "Unknown route");
   }

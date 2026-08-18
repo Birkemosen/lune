@@ -1,4 +1,4 @@
-# Motor GPIO ownership belongs exclusively to hv6_valve_controller.  Registering
+# Motor GPIO ownership belongs exclusively to lv6_valve_controller.  Registering
 # the same pins as generic ESPHome output/binary_sensor entities races the
 # controller's safe boot state and cannot represent Rev 3.1's active-high
 # persistent LATCH_STATE signal.  The public diagnostic entity below is derived
@@ -10,4 +10,4 @@ binary_sensor:
     id: motor_nfault
     device_class: problem
     lambda: |-
-      return id(hv6_valves).get_last_fault() != hv6::FaultCode::NONE;
+      return id(hv6_valves).get_last_fault() != lv6::FaultCode::NONE;

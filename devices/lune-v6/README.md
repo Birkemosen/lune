@@ -22,9 +22,9 @@ been removed.
 devices/lune-v6/
 ├── heatvalve-6.yaml   # Main ESPHome firmware config for Lune V6
 ├── components/        # Custom ESPHome external components
-│   ├── hv6_config_store/
-│   ├── hv6_valve_controller/
-│   └── hv6_zone_controller/
+│   ├── lv6_config_store/
+│   ├── lv6_valve_controller/
+│   └── lv6_zone_controller/
 ├── docs/
 ├── README.md
 └── changelog.md

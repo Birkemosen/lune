@@ -370,7 +370,7 @@ button:
           App.safe_reboot();
 
   - platform: template
-    name: "Erase HV6 NVS + Reboot"
+    name: "Erase LV6 NVS + Reboot"
     icon: "mdi:database-remove"
     entity_category: config
     disabled_by_default: false
@@ -378,7 +378,7 @@ button:
       - lambda: |-
           id(hv6_valves).set_drivers_enabled(false);
           if (!id(hv6_config).erase_namespace_and_restart()) {
-            ESP_LOGE("hv6_ui", "Failed to erase HV6 NVS namespace");
+            ESP_LOGE("hv6_ui", "Failed to erase LV6 NVS namespace");
           }
 
 switch:
@@ -956,16 +956,16 @@ select:
       - "HmIP VdMot"
     lambda: |-
       switch (id(hv6_config).get_config().motor.default_profile) {
-        case hv6::MotorProfile::GENERIC:
+        case lv6::MotorProfile::GENERIC:
           return std::string("Generic");
-        case hv6::MotorProfile::HMIP_VDMOT:
+        case lv6::MotorProfile::HMIP_VDMOT:
         default:
           return std::string("HmIP VdMot");
       }
     set_action:
       - lambda: |-
           auto cfg = id(hv6_config).get_config();
-          cfg.motor.default_profile = (x == "Generic") ? hv6::MotorProfile::GENERIC : hv6::MotorProfile::HMIP_VDMOT;
+          cfg.motor.default_profile = (x == "Generic") ? lv6::MotorProfile::GENERIC : lv6::MotorProfile::HMIP_VDMOT;
           id(hv6_config).update_motor(cfg.motor);
           id(hv6_valves).reload_motor_config();
 
@@ -981,18 +981,18 @@ select:
       - Adaptive
     lambda: |-
       switch (id(hv6_zones).get_control_algorithm()) {
-        case hv6::ControlAlgorithm::LINEAR: return std::string("Linear");
-        case hv6::ControlAlgorithm::PID: return std::string("PID");
-        case hv6::ControlAlgorithm::ADAPTIVE: return std::string("Adaptive");
-        case hv6::ControlAlgorithm::TANH:
+        case lv6::ControlAlgorithm::LINEAR: return std::string("Linear");
+        case lv6::ControlAlgorithm::PID: return std::string("PID");
+        case lv6::ControlAlgorithm::ADAPTIVE: return std::string("Adaptive");
+        case lv6::ControlAlgorithm::TANH:
         default: return std::string("Tanh");
       }
     set_action:
       - lambda: |-
-          hv6::ControlAlgorithm algo = hv6::ControlAlgorithm::TANH;
-          if (x == "Linear") algo = hv6::ControlAlgorithm::LINEAR;
-          else if (x == "PID") algo = hv6::ControlAlgorithm::PID;
-          else if (x == "Adaptive") algo = hv6::ControlAlgorithm::ADAPTIVE;
+          lv6::ControlAlgorithm algo = lv6::ControlAlgorithm::TANH;
+          if (x == "Linear") algo = lv6::ControlAlgorithm::LINEAR;
+          else if (x == "PID") algo = lv6::ControlAlgorithm::PID;
+          else if (x == "Adaptive") algo = lv6::ControlAlgorithm::ADAPTIVE;
           id(hv6_zones).set_control_algorithm(algo);
 
 
@@ -1006,15 +1006,15 @@ select:
     lambda: |-
       uint8_t zi = id(ui_selected_zone_index);
       switch (id(hv6_config).get_config().zones[zi].motor_profile_override) {
-        case hv6::MotorProfile::GENERIC: return std::string("Generic");
-        case hv6::MotorProfile::HMIP_VDMOT: return std::string("HmIP VdMot");
+        case lv6::MotorProfile::GENERIC: return std::string("Generic");
+        case lv6::MotorProfile::HMIP_VDMOT: return std::string("HmIP VdMot");
         default: return std::string("Inherit");
       }
     set_action:
       - lambda: |-
           uint8_t zi = id(ui_selected_zone_index);
           auto cfg = id(hv6_config).get_config();
-          cfg.zones[zi].motor_profile_override = (x == "Generic") ? hv6::MotorProfile::GENERIC : (x == "HmIP VdMot") ? hv6::MotorProfile::HMIP_VDMOT : hv6::MotorProfile::INHERIT;
+          cfg.zones[zi].motor_profile_override = (x == "Generic") ? lv6::MotorProfile::GENERIC : (x == "HmIP VdMot") ? lv6::MotorProfile::HMIP_VDMOT : lv6::MotorProfile::INHERIT;
           id(hv6_config).update_zone(zi, cfg.zones[zi]);
           id(hv6_valves).reload_motor_config();
 
@@ -1027,13 +1027,13 @@ select:
       - "NO (Normally Open)"
       - "NC (Normally Closed)"
     lambda: |-
-      return id(hv6_valves).get_manifold_type() == hv6::ManifoldType::NC
+      return id(hv6_valves).get_manifold_type() == lv6::ManifoldType::NC
         ? std::string("NC (Normally Closed)")
         : std::string("NO (Normally Open)");
     set_action:
       - lambda: |-
           bool nc = x.find("NC") != std::string::npos;
-          id(hv6_valves).set_manifold_type(nc ? hv6::ManifoldType::NC : hv6::ManifoldType::NO);
+          id(hv6_valves).set_manifold_type(nc ? lv6::ManifoldType::NC : lv6::ManifoldType::NO);
 
   - platform: template
     name: "Manifold Flow Probe"
@@ -1088,17 +1088,17 @@ select:
     lambda: |-
       uint8_t zi = id(ui_selected_zone_index);
       int probe = id(hv6_zones).get_zone_probe(zi);
-      if (probe < 0 || probe >= hv6::MAX_PROBES) {
+      if (probe < 0 || probe >= lv6::MAX_PROBES) {
         return std::string("None");
       }
       return std::string("Probe ") + std::to_string(probe + 1);
     set_action:
       - lambda: |-
           uint8_t zi = id(ui_selected_zone_index);
-          int probe = hv6::PROBE_UNASSIGNED;
+          int probe = lv6::PROBE_UNASSIGNED;
           if (x != "None") {
             int parsed = 0;
-            if (sscanf(x.c_str(), "Probe %d", &parsed) == 1 && parsed >= 1 && parsed <= hv6::MAX_PROBES) {
+            if (sscanf(x.c_str(), "Probe %d", &parsed) == 1 && parsed >= 1 && parsed <= lv6::MAX_PROBES) {
               probe = parsed - 1;
             }
           }
@@ -1113,26 +1113,26 @@ select:
     lambda: |-
       uint8_t zi = id(ui_selected_zone_index);
       auto t = id(hv6_zones).get_zone_pipe_type(zi);
-      if (t == hv6::PipeType::PEX_12X2) return std::string("PEX 12mm");
-      if (t == hv6::PipeType::PEX_14X2) return std::string("PEX 14mm");
-      if (t == hv6::PipeType::PEX_16X2) return std::string("PEX 16mm");
-      if (t == hv6::PipeType::PEX_17X2) return std::string("PEX 17mm");
-      if (t == hv6::PipeType::PEX_18X2) return std::string("PEX 18mm");
-      if (t == hv6::PipeType::PEX_20X2) return std::string("PEX 20mm");
-      if (t == hv6::PipeType::ALUPEX_16X2) return std::string("ALUPEX 16mm");
-      if (t == hv6::PipeType::ALUPEX_20X2) return std::string("ALUPEX 20mm");
+      if (t == lv6::PipeType::PEX_12X2) return std::string("PEX 12mm");
+      if (t == lv6::PipeType::PEX_14X2) return std::string("PEX 14mm");
+      if (t == lv6::PipeType::PEX_16X2) return std::string("PEX 16mm");
+      if (t == lv6::PipeType::PEX_17X2) return std::string("PEX 17mm");
+      if (t == lv6::PipeType::PEX_18X2) return std::string("PEX 18mm");
+      if (t == lv6::PipeType::PEX_20X2) return std::string("PEX 20mm");
+      if (t == lv6::PipeType::ALUPEX_16X2) return std::string("ALUPEX 16mm");
+      if (t == lv6::PipeType::ALUPEX_20X2) return std::string("ALUPEX 20mm");
       return std::string("PEX 16mm");
     set_action:
       - lambda: |-
           uint8_t zi = id(ui_selected_zone_index);
-          hv6::PipeType t = hv6::PipeType::PEX_16X2;
-          if (x == "PEX 12mm") t = hv6::PipeType::PEX_12X2;
-          else if (x == "PEX 14mm") t = hv6::PipeType::PEX_14X2;
-          else if (x == "PEX 17mm") t = hv6::PipeType::PEX_17X2;
-          else if (x == "PEX 18mm") t = hv6::PipeType::PEX_18X2;
-          else if (x == "PEX 20mm") t = hv6::PipeType::PEX_20X2;
-          else if (x == "ALUPEX 16mm") t = hv6::PipeType::ALUPEX_16X2;
-          else if (x == "ALUPEX 20mm") t = hv6::PipeType::ALUPEX_20X2;
+          lv6::PipeType t = lv6::PipeType::PEX_16X2;
+          if (x == "PEX 12mm") t = lv6::PipeType::PEX_12X2;
+          else if (x == "PEX 14mm") t = lv6::PipeType::PEX_14X2;
+          else if (x == "PEX 17mm") t = lv6::PipeType::PEX_17X2;
+          else if (x == "PEX 18mm") t = lv6::PipeType::PEX_18X2;
+          else if (x == "PEX 20mm") t = lv6::PipeType::PEX_20X2;
+          else if (x == "ALUPEX 16mm") t = lv6::PipeType::ALUPEX_16X2;
+          else if (x == "ALUPEX 20mm") t = lv6::PipeType::ALUPEX_20X2;
           id(hv6_zones).set_zone_pipe_type(zi, t);
 
   - platform: template
@@ -1144,13 +1144,13 @@ select:
     lambda: |-
       uint8_t zi = id(ui_selected_zone_index);
       auto src = id(hv6_zones).get_zone_temp_source(zi);
-      if (src == hv6::TempSource::BLE_SENSOR) return std::string("BLE Sensor");
+      if (src == lv6::TempSource::BLE_SENSOR) return std::string("BLE Sensor");
       return std::string("Local Probe");
     set_action:
       - lambda: |-
           uint8_t zi = id(ui_selected_zone_index);
-          hv6::TempSource src = hv6::TempSource::LOCAL_PROBE;
-          if (x == "BLE Sensor") src = hv6::TempSource::BLE_SENSOR;
+          lv6::TempSource src = lv6::TempSource::LOCAL_PROBE;
+          if (x == "BLE Sensor") src = lv6::TempSource::BLE_SENSOR;
           id(hv6_zones).set_zone_temp_source(zi, src);
 
   - platform: template
@@ -1189,32 +1189,3 @@ text:
       - lambda: |-
           uint8_t zi = id(ui_selected_zone_index);
           id(hv6_zones).set_zone_ble_mac(zi, x);
-
-  - platform: template
-    name: "Zone Exterior Walls"
-    id: zone_exterior_walls
-    entity_category: config
-    mode: text
-    min_length: 0
-    max_length: 7
-    optimistic: false
-    lambda: |-
-      uint8_t zi = id(ui_selected_zone_index);
-      uint8_t w = id(hv6_zones).get_zone_exterior_walls(zi);
-      std::string s;
-      if (w & hv6::ExteriorWall::NORTH) s += "N";
-      if (w & hv6::ExteriorWall::EAST)  s += "E";
-      if (w & hv6::ExteriorWall::SOUTH) s += "S";
-      if (w & hv6::ExteriorWall::WEST)  s += "W";
-      return s.empty() ? std::string("None") : s;
-    set_action:
-      - lambda: |-
-          uint8_t zi = id(ui_selected_zone_index);
-          uint8_t w = 0;
-          for (char c : x) {
-            if (c == 'N' || c == 'n') w |= hv6::ExteriorWall::NORTH;
-            if (c == 'E' || c == 'e') w |= hv6::ExteriorWall::EAST;
-            if (c == 'S' || c == 's') w |= hv6::ExteriorWall::SOUTH;
-            if (c == 'W' || c == 'w') w |= hv6::ExteriorWall::WEST;
-          }
-          id(hv6_zones).set_zone_exterior_walls(zi, w);

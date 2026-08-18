@@ -13,6 +13,7 @@ void RpiDpiRgb::setup() {
   config.flags.fb_in_psram = 1;
   config.bounce_buffer_size_px = this->width_ * 10;
   config.num_fbs = 1;
+  config.dma_burst_size = 64;
   config.timings.h_res = this->width_;
   config.timings.v_res = this->height_;
   config.timings.hsync_pulse_width = this->hsync_pulse_width_;

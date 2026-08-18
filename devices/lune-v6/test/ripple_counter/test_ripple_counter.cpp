@@ -6,8 +6,8 @@
 //
 // Build + run (from repo root):
 //   clang++ -std=c++17 -O2 -Wall -Wextra -Wno-unused-parameter \
-//     -I components/hv6_valve_controller \
-//     components/hv6_valve_controller/ripple_counter.cpp \
+//     -I components/lv6_valve_controller \
+//     components/lv6_valve_controller/ripple_counter.cpp \
 //     test/ripple_counter/test_ripple_counter.cpp -o /tmp/test_ripple -lm \
 //   && /tmp/test_ripple
 // =============================================================================
@@ -42,12 +42,12 @@ static constexpr float    kAmplitude  = 80.0f;
 /// ripple_freq is chosen as 4× the HPF -3dB cutoff so the signal is well
 /// in the passband at every test rate.
 /// HPF -3dB: f_hp = Fs * (-ln α_hp) / (2π)
-static hv6::RippleCounter::Config make_config(float fs) {
+static lv6::RippleCounter::Config make_config(float fs) {
   const float f_hp         = fs * (-logf(kHpAlpha)) / (2.0f * 3.14159265f);
   const float ripple_freq  = 4.0f * f_hp;          // well into HPF passband
   const uint32_t min_p     = static_cast<uint32_t>(fs / ripple_freq / 2.0f);
 
-  hv6::RippleCounter::Config cfg;
+  lv6::RippleCounter::Config cfg;
   cfg.sampleRate       = fs;
   cfg.lpAlpha          = kLpAlpha;
   cfg.hpAlpha          = kHpAlpha;
@@ -79,7 +79,7 @@ static float gaussian(uint32_t& state, float sigma) {
 
 /// Warm up filters: feed N_WARMUP samples of pure sine+DC.
 /// Returns sample phase at end of warmup (so counting can continue from there).
-static float do_warmup(hv6::RippleCounter& rc, float fs, float freq, uint32_t n_warmup) {
+static float do_warmup(lv6::RippleCounter& rc, float fs, float freq, uint32_t n_warmup) {
   float phase = 0.0f;
   const float phase_step = 2.0f * 3.14159265f * freq / fs;
   for (uint32_t i = 0; i < n_warmup; ++i) {
@@ -98,10 +98,10 @@ static float do_warmup(hv6::RippleCounter& rc, float fs, float freq, uint32_t n_
 // TC 6.1: Synthetic sine wave — count within ±1 %
 // ---------------------------------------------------------------------------
 static void test_6_1_sine_wave(float fs) {
-  const hv6::RippleCounter::Config cfg = make_config(fs);
+  const lv6::RippleCounter::Config cfg = make_config(fs);
   const float freq = ripple_freq_for(fs);
 
-  hv6::RippleCounter rc(cfg);
+  lv6::RippleCounter rc(cfg);
 
   // Warm up: 3 × LPF time constant (= 3/lpAlpha samples)
   const uint32_t n_warmup = (uint32_t)(3.0f / kLpAlpha);  // 1500
@@ -146,10 +146,10 @@ static void test_6_1_sine_wave(float fs) {
 // TC 6.2: Noisy signal — false detections ≤ 5 %
 // ---------------------------------------------------------------------------
 static void test_6_2_noisy(float fs) {
-  const hv6::RippleCounter::Config cfg = make_config(fs);
+  const lv6::RippleCounter::Config cfg = make_config(fs);
   const float freq = ripple_freq_for(fs);
 
-  hv6::RippleCounter rc(cfg);
+  lv6::RippleCounter rc(cfg);
 
   const uint32_t n_warmup = (uint32_t)(3.0f / kLpAlpha);
   float phase = do_warmup(rc, fs, freq, n_warmup);
@@ -194,9 +194,9 @@ static void test_6_2_noisy(float fs) {
 // TC 6.3: Constant DC — ripple count = 0
 // ---------------------------------------------------------------------------
 static void test_6_3_constant_dc(float fs) {
-  const hv6::RippleCounter::Config cfg = make_config(fs);
+  const lv6::RippleCounter::Config cfg = make_config(fs);
 
-  hv6::RippleCounter rc(cfg);
+  lv6::RippleCounter rc(cfg);
 
   // Feed 5000 samples of constant value (no ripple)
   const uint32_t n = 5000;
@@ -215,12 +215,12 @@ static void test_6_3_constant_dc(float fs) {
 // TC 6.4: Frequency sweep — speed within ±5 %
 // ---------------------------------------------------------------------------
 static void test_6_4_frequency_sweep(float fs) {
-  const hv6::RippleCounter::Config cfg = make_config(fs);
+  const lv6::RippleCounter::Config cfg = make_config(fs);
   const float f_base = ripple_freq_for(fs);
   const float f_start = f_base * 0.5f;
   const float f_end   = f_base * 1.5f;
 
-  hv6::RippleCounter rc(cfg);
+  lv6::RippleCounter rc(cfg);
 
   // Warmup at f_start
   const uint32_t n_warmup = (uint32_t)(3.0f / kLpAlpha);
@@ -268,11 +268,11 @@ static void test_6_4_frequency_sweep(float fs) {
 // Assert: count from 3× section > 10 % of attempted (proves counter still works).
 // ---------------------------------------------------------------------------
 static void test_6_5_min_period(float fs) {
-  const hv6::RippleCounter::Config cfg = make_config(fs);
+  const lv6::RippleCounter::Config cfg = make_config(fs);
   const float freq    = ripple_freq_for(fs);
   const float freq_3x = freq * 3.0f;
 
-  hv6::RippleCounter rc(cfg);
+  lv6::RippleCounter rc(cfg);
 
   // Warmup + 100 clean cycles at base frequency
   const uint32_t n_warmup = (uint32_t)(3.0f / kLpAlpha);

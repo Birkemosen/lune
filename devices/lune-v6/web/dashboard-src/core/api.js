@@ -1,13 +1,13 @@
 // core/api.js
 
-import { beginPendingWrite, endPendingWrite, setEntity, setI2cResult, setLive, addActivity, setDashboardValue, setZoneStateHistory, appendDeviceLog, getDeviceLogSeq } from './store.js';
+import { beginPendingWrite, endPendingWrite, setEntity, es, setI2cResult, setLive, addActivity, setDashboardValue, setZoneStateHistory, appendDeviceLog, getDeviceLogSeq } from './store.js';
 import { handleMockPost } from './mock.js';
 import { key, gkey } from '../utils/keys.js';
 
 export const BASE = '/api/hv6/v1';
 
 function isMock() {
-  return !!(window.HV6_DASHBOARD_CONFIG && window.HV6_DASHBOARD_CONFIG.mock);
+  return !!(window.LV6_DASHBOARD_CONFIG && window.LV6_DASHBOARD_CONFIG.mock);
 }
 
 function queryUrl(path, params) {
@@ -19,8 +19,8 @@ function queryUrl(path, params) {
   return BASE + path + (query ? '?' + query : '');
 }
 
-// POST to a /api/hv6/v1 write endpoint. JSON bodies are the primary contract;
-// query params remain as a fallback for older firmware during migration.
+// POST to a /api/hv6/v1 write endpoint. ESPHome's ESP-IDF server consumes
+// URL-encoded form bodies; query params remain as a compatibility fallback.
 // mockBody carries the legacy {key, value, zone?} action shape consumed by core/mock.js.
 function postV1(path, params, mockBody) {
   beginPendingWrite();
@@ -35,12 +35,15 @@ function postV1(path, params, mockBody) {
   }
 
   let localKey = sessionStorage.getItem('hv6_local_access_key') || '';
-  const body = JSON.stringify(params || {});
+  const body = new URLSearchParams();
+  for (const [name, value] of Object.entries(params || {})) {
+    if (value !== undefined && value !== null) body.append(name, String(value));
+  }
   const send = (accessKey) => fetch(BASE + path, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Lune-Local-Key': accessKey, 'X-Lune-CSRF': accessKey,
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8', 'X-Lune-Local-Key': accessKey, 'X-Lune-CSRF': accessKey,
       'Idempotency-Key': crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) },
-    body,
+    body: body.toString(),
   });
   return send(localKey).then(async resp => {
     // Reads stay prompt-free. Ask only after an explicit write is rejected
@@ -96,19 +99,12 @@ export function runI2cScan() {
 const zoneSelectMap = {
   zone_probe: (zone) => key.probe(zone),
   zone_temp_source: (zone) => key.tempSource(zone),
-  zone_sync_to: (zone) => key.syncTo(zone),
-  zone_pipe_type: (zone) => key.pipeType(zone)
+  zone_sync_to: (zone) => key.syncTo(zone)
 };
 
 const zoneTextMap = {
   zone_ble_mac: (zone) => key.ble(zone),
-  zone_exterior_walls: (zone) => key.exteriorWalls(zone),
   zone_name: (zone) => key.name(zone)
-};
-
-const zoneNumberMap = {
-  zone_area_m2: (zone) => key.area(zone),
-  zone_pipe_spacing_mm: (zone) => key.spacing(zone)
 };
 
 const globalSelectMap = {
@@ -147,13 +143,6 @@ export function setZoneText(zone, settingKey, value) {
   return postV1('/settings/text', { key: settingKey, value, zone }, { key: settingKey, value, zone });
 }
 
-export function setZoneNumber(zone, settingKey, value) {
-  const numeric = Number(value);
-  const idBuilder = zoneNumberMap[settingKey];
-  if (idBuilder && !Number.isNaN(numeric)) setEntity(idBuilder(zone), { value: numeric });
-  return postV1('/settings/number', { key: settingKey, value: numeric, zone }, { key: settingKey, value: numeric, zone });
-}
-
 export function setGlobalSelect(settingKey, value) {
   const id = globalSelectMap[settingKey];
   if (id) setEntity(id, { state: value });
@@ -169,6 +158,36 @@ export function setGlobalNumber(settingKey, value) {
 
 export function setGlobalText(settingKey, value) {
   return postV1('/settings/text', { key: settingKey, value }, { key: settingKey, value });
+}
+
+export function approveTouchProposal() {
+  return postV1('/authority/approve-proposal', {}, { key: 'authority_approve_proposal' })
+    .then(async (response) => {
+      if (!response?.ok) throw new Error('V6 could not approve the discovered Lune Touch.');
+      const payload = typeof response.json === 'function' ? await response.json() : { data: {
+        installation_id: es(gkey.authorityProposalInstallationId) || 'lune-mock',
+        coordinator_id: es(gkey.authorityProposalCoordinatorId) || 'touch-mock',
+        local_access_key: 'mock-local-access-key',
+      } };
+      const data = payload?.data || {};
+      if (data.local_access_key) sessionStorage.setItem('hv6_local_access_key', data.local_access_key);
+      if (data.installation_id) setEntity(gkey.authorityInstallationId, { state: data.installation_id });
+      if (data.coordinator_id) setEntity(gkey.authorityCoordinatorId, { state: data.coordinator_id });
+      setEntity(gkey.authorityConfigured, { state: 'on', value: true });
+      setEntity(gkey.authorityProposalPending, { state: 'off', value: false });
+      return payload;
+    });
+}
+
+export function revokeTouchConnection() {
+  return postV1('/authority/revoke', {}, { key: 'authority_revoke' }).then((response) => {
+    if (!response?.ok) throw new Error('V6 could not disconnect Lune Touch.');
+    sessionStorage.removeItem('hv6_local_access_key');
+    setEntity(gkey.authorityInstallationId, { state: '' });
+    setEntity(gkey.authorityCoordinatorId, { state: '' });
+    setEntity(gkey.authorityConfigured, { state: 'off', value: false });
+    return response;
+  });
 }
 
 export function applyZoneName(zone, value) {

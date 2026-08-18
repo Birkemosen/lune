@@ -1,8 +1,6 @@
 esphome:
+  min_version: 2026.7.3
   platformio_options:
-    platform: platformio/espressif32@6.12.0
-    platform_packages:
-      - platformio/toolchain-xtensa-esp-elf@14.2.0+20251107
     board_build.flash_mode: qio
     board_build.psram_type: qio
     board_build.extra_flags:
@@ -11,6 +9,9 @@ esphome:
 esp32:
   board: esp32-s3-devkitc-1
   flash_size: 4MB
+  # Keep the repository's established PlatformIO build/deploy path while
+  # letting ESPHome select the platform and compiler that match ESP-IDF.
+  toolchain: platformio
   framework:
     type: esp-idf
     version: recommended

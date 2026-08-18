@@ -7,140 +7,13 @@ import { localize, subscribeLanguage } from '../../core/i18n.js';
 // CSS
 // ========================================
 const css = `
-.settings-control-stack {
-  display: grid;
-  gap: 14px;
-}
-
-.settings-card {
-  background: var(--panel-bg-vibrant);
-  border: 1px solid var(--panel-border);
-  border-radius: 8px;
-  padding: 20px;
-  box-shadow: var(--panel-shadow);
-  backdrop-filter: blur(18px) saturate(130%);
-  -webkit-backdrop-filter: blur(18px) saturate(130%);
-}
-
-.settings-card .card-title {
-  font-size: .84rem;
-  font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: 1.1px;
-  color: var(--accent);
-  margin-bottom: 12px;
-  padding-bottom: 10px;
-  border-bottom: 1px solid var(--panel-border);
-}
-
-.settings-card .toggle-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  margin-bottom: 10px;
-  padding: 10px 14px;
-  border: 1px solid var(--control-border);
-  border-radius: 8px;
-  background: linear-gradient(145deg, rgba(255,255,255,.075), rgba(255,255,255,.025));
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.08);
-}
-
-.settings-card .toggle-label {
-  font-size: .88rem;
-  font-weight: 700;
-  color: var(--text);
-}
-
-.settings-card .toggle-row.is-on {
-  border-color: var(--success-border);
-  background: var(--success-bg);
-}
-
-/* Shared toggle styling for consistency across settings cards */
-.settings-card .ui-toggle {
-  width: 48px;
-  height: 26px;
-  border-radius: 8px;
-  background: var(--control-bg-hover);
-  position: relative;
-  cursor: pointer;
-  border: 1px solid var(--control-border);
-  box-shadow: inset 0 1px 2px rgba(0,0,0,.28);
-  transition: background .2s ease, border-color .2s ease, box-shadow .2s ease;
-  flex-shrink: 0;
-}
-
-.settings-card .ui-toggle::after {
-  content: '';
-  position: absolute;
-  top: 3px;
-  left: 3px;
-  width: 18px;
-  height: 18px;
-  background: var(--control-knob);
-  border-radius: 6px;
-  transition: transform .2s ease;
-  box-shadow: 0 3px 10px rgba(0,0,0,.32);
-}
-
-.settings-card .ui-toggle.on {
-  background: var(--success-bg-soft);
-  border-color: var(--success-border);
-}
-
-.settings-card .ui-toggle.on::after {
-  transform: translateX(22px);
-  background: var(--text-on-accent);
-}
-
-.settings-card .btn-row {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
-}
-
-.settings-card .btn {
-  width: 100%;
-  min-width: 0;
-  border: 1px solid var(--control-border);
-  background: linear-gradient(145deg, rgba(255,255,255,.085), rgba(255,255,255,.025));
-  color: var(--text-strong);
-  border-radius: 8px;
-  padding: 9px 14px;
-  cursor: pointer;
-  font-weight: 700;
-  box-shadow: 0 8px 20px rgba(0,0,0,.18), inset 0 1px 0 rgba(255,255,255,.08);
-  transition: .18s ease;
-}
-
-.settings-card .btn:hover {
-  background: linear-gradient(145deg, rgba(255,138,61,.2), rgba(255,255,255,.055));
-  border-color: var(--control-border-hover);
-  color: var(--text-strong);
-}
-
-.settings-card .btn.warn {
-  grid-column: 1 / -1;
-  border-color: var(--danger-border);
-  background: var(--danger-bg);
-  color: var(--danger-text);
-}
-
-.settings-card .btn.warn:hover {
-  background: var(--danger-bg-strong);
-  border-color: var(--danger-border-strong);
-}
-
-@media (max-width: 640px) {
-  .settings-card .btn-row {
-    grid-template-columns: 1fr;
-  }
-
-  .settings-card .btn.warn {
-    grid-column: 1;
-  }
-}
+.settings-card{background:var(--surface-raised);border:1px solid var(--separator);border-radius:10px;padding:18px;box-shadow:none}
+.settings-card .card-title{margin:0 0 12px;padding-bottom:10px;border-bottom:1px solid var(--separator);color:var(--text-strong);font-size:.92rem;font-weight:650}
+.settings-card .btn-row{display:grid;grid-template-columns:1fr;gap:8px}
+.settings-card .btn{width:100%;min-width:0;min-height:44px;padding:9px 14px;border:1px solid var(--control-border);border-radius:8px;background:var(--control-bg);box-shadow:none;color:var(--text-strong);font:inherit;font-weight:650;cursor:pointer}
+.settings-card .btn:hover{border-color:var(--control-border-hover);background:var(--control-bg-hover)}
+.settings-card .btn.warn{border-color:var(--danger-border);background:transparent;color:var(--danger-text)}
+.settings-card .btn.warn:hover{border-color:var(--danger-border-strong);background:var(--danger-bg-soft)}
 `;
 
 injectStyle('settings-control-card', css);
@@ -150,10 +23,10 @@ injectStyle('settings-control-card', css);
 // ========================================
 const template = () => `
   <div class="settings-card settings-action-card">
-    <div class="card-title" data-i18n="settings.control.title">Device Control</div>
+    <div class="card-title">Recovery actions</div>
     <div class="btn-row">
-      <button class="btn sc-reset-probe-map" data-i18n="settings.control.resetProbeMap">Reset 1-Wire Probe Map</button>
       <button class="btn sc-dump-1wire" data-i18n="settings.control.dump1wire">Dump 1-Wire Diagnostics</button>
+      <button class="btn warn sc-reset-probe-map" data-i18n="settings.control.resetProbeMap">Reset 1-Wire Probe Map</button>
       <button class="btn warn sc-restart" data-i18n="settings.control.restart">Restart Device</button>
     </div>
   </div>
@@ -170,6 +43,7 @@ export default component({
     localize(el);
 
     el.querySelector('.sc-reset-probe-map').addEventListener('click', () => {
+      if (!window.confirm('Reset the 1-Wire probe map and restart V6? Probe assignments must be discovered again.')) return;
       command('reset_1wire_probe_map_reboot');
     });
 
@@ -178,6 +52,7 @@ export default component({
     });
 
     el.querySelector('.sc-restart').addEventListener('click', () => {
+      if (!window.confirm('Restart Lune V6 now? Heating continues after the controller has started again.')) return;
       command('restart');
     });
   }

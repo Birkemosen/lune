@@ -6,10 +6,8 @@
 # so OTA slot sizing is proven before the UI becomes large.
 
 esphome:
+  min_version: 2026.7.3
   platformio_options:
-    platform: platformio/espressif32@6.12.0
-    platform_packages:
-      - platformio/toolchain-xtensa-esp-elf@14.2.0+20251107
     board_build.flash_mode: qio
     board_build.psram_type: opi
     board_build.partitions: ../../../../partitions/lune_touch_16mb_ota.csv
@@ -20,6 +18,12 @@ esphome:
 esp32:
   board: esp32-s3-devkitc-1
   flash_size: 16MB
+  # ESPHome 2026.7 defaults to its native ESP-IDF builder. Keep the supported
+  # PlatformIO path while the repository's build/deploy tooling is migrated;
+  # ESPHome then selects the matching pioarduino platform and compiler for the
+  # recommended ESP-IDF release instead of combining independently pinned
+  # packages.
+  toolchain: platformio
   framework:
     type: esp-idf
     version: recommended
@@ -32,6 +36,10 @@ esp32:
       CONFIG_PARTITION_TABLE_OFFSET: "0x8000"
       CONFIG_LCD_RGB_ISR_IRAM_SAFE: "y"
       CONFIG_LCD_RGB_RESTART_IN_VSYNC: "y"
+      # RGB bounce-buffer refills copy cache lines from PSRAM in an ISR. A
+      # 64-byte data-cache line materially reduces refill overhead and screen
+      # drift when WiFi/flash traffic is active.
+      CONFIG_ESP32S3_DATA_CACHE_LINE_64B: "y"
       CONFIG_SPIRAM: "y"
       CONFIG_SPIRAM_MODE_OCT: "y"
       CONFIG_SPIRAM_SPEED_80M: "y"
@@ -56,6 +64,10 @@ esp32:
       CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC: "n"
       CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH: "y"
       CONFIG_ESP_COREDUMP_DATA_FORMAT_ELF: "y"
+    advanced:
+      # The RGB bounce-buffer ISR is deadline-sensitive. Prefer throughput over
+      # minimum firmware size; the 16 MB partition layout has ample headroom.
+      compiler_optimization: PERF
 
 psram:
   mode: octal

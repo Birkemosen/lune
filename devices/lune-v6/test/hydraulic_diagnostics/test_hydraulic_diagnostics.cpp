@@ -1,8 +1,8 @@
 #include <cassert>
-#include "../../components/hv6_zone_controller/hydraulic_diagnostics.h"
+#include "../../components/lv6_zone_controller/hydraulic_diagnostics.h"
 
 int main() {
-  using namespace hv6::hydraulic_diagnostics;
+  using namespace lv6::hydraulic_diagnostics;
   Input input{};
   assert(evaluate(0, input).state == State::UNAVAILABLE);
   assert(evaluate(3, input).state == State::UNAVAILABLE);

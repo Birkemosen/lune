@@ -46,9 +46,12 @@ automation, and diagnostics.
 `trust` remains the compact enum value and `trust_label` is the stable human/tool
 label: `paired` or `trusted`. `pairing_fingerprint` is the stored V6 identity
 hint used to detect a different device answering on the same address.
-Each node also includes a Touch-derived `health` block aggregated from mapped
-zones so commissioning tools can show useful manifold status before the richer
+Each node also includes a Touch-derived `health` block aggregated from the zones
+automatically imported from that V6, so commissioning tools can show useful manifold status before the richer
 V6 diagnostics poll is promoted:
+
+`imported_zones` is the preferred field name. `mapped_zones` remains a
+compatibility alias with the same value for existing clients.
 
 ```json
 {
@@ -57,6 +60,7 @@ V6 diagnostics poll is promoted:
   "reachable": true,
   "trust_label": "trusted",
   "health": {
+    "imported_zones": 6,
     "mapped_zones": 6,
     "fresh_zones": 6,
     "stale_zones": 0,
@@ -248,11 +252,12 @@ Diagnostics includes a `commissioning` readiness block for field testing:
 ```
 
 `ready_for_commands` is only true when at least one trusted node is reachable
-and fresh, trusted node identity is complete, and at least one mapped zone has
-fresh telemetry.
+and fresh, trusted node identity is complete, and at least one automatically
+imported V6 zone has fresh telemetry. Physical zone names, sensors, valve
+outputs, and configuration remain owned by the respective V6 manifold.
 
 `next_action` is one of `add_node`, `fix_node_poll`,
-`verify_node_identity`, `trust_node`, `map_zones`,
+`verify_node_identity`, `trust_node`, `review_v6_zones`,
 `wait_for_fresh_zone_poll`, `set_forecast_location`, or `ready`.
 `blockers` is a compact, ordered list of the first concrete commissioning
 reasons that keep commands or forecast from being fully ready. Each blocker has
@@ -390,10 +395,10 @@ registry import/export:
 }
 ```
 
-`name_source` is `generated`, `v6`, or `touch`. During V6 polling, Touch imports
-the V6 `/api/hv6/v1/zones` friendly `name` as the default room name. Imported or
-generated names may refresh from V6; a Touch-edited room name is preserved as a
-local override.
+`name_source` is `generated`, `v6`, or the legacy value `touch`. During V6 polling,
+Touch imports the V6 `/api/hv6/v1/zones` friendly `name` and physical zone identity.
+Names and physical assignments are configured on V6 and refresh automatically;
+the Touch dashboard does not expose rename or mapping controls.
 
 `comfort.effective_setpoint_c` is resolved by Touch. When local time is valid and
 the room schedule is active, `effective_source` is `schedule`; otherwise it is
@@ -423,22 +428,22 @@ command from a previous boot may remain active.
 
 ## Writes
 
-Write endpoints accept JSON request bodies and retain query-parameter
-compatibility for migration/debug tooling. The embedded dashboard sends JSON
-bodies first and falls back to query parameters only when talking to older
-firmware. Invalid writes return HTTP `4xx` with the standard `ok:false`
+Write endpoints accept `application/x-www-form-urlencoded` request bodies and retain
+query-parameter compatibility for migration/debug tooling. This matches ESPHome's
+ESP-IDF web-server POST parser, so request bodies reach the component handler without
+an unsupported-content-type fallback. Invalid writes return HTTP `4xx` with the standard `ok:false`
 envelope. Valid safety outcomes, such as a setpoint command blocked because its
 V6 node is stale, are returned as successful write responses and recorded in the
 command ledger.
 
-If a POST body is present and starts as JSON (`{` or `[`), malformed JSON is
-rejected with HTTP `400` and `error.code = "invalid_json"`. Query-parameter
-compatibility is still available for tools that send no JSON body.
+The API handler still understands JSON when invoked by a transport that supplies a
+parsed JSON document, but device and browser clients use URL-encoded forms. Query-
+parameter compatibility remains available for diagnostic tooling.
 
 ### `POST /zones/{room_id}/room`
 
-Atomically stores the Touch-owned room configuration. The complete mapping
-validation, geometry/inclusion, comfort, schedule, and weather profile must be
+Atomically stores Touch-owned coordination metadata for an already imported V6
+zone. Existing physical identity validation, geometry/inclusion, comfort, schedule, and weather profile must be
 supplied with the current runtime `expected_revision`; an invalid field or stale
 revision returns no partial change (`409 stale_revision` for a conflicting edit).
 The response contains the saved room and its new revision. V6 local applied
@@ -478,15 +483,18 @@ state is reported separately and is never silently copied back into this record.
 ```
 
 New nodes are stored as `paired`. A paired node can be polled and commissioned,
-but Touch will not dispatch setpoint/forecast commands to it until installers
-explicitly promote it to `trusted` after verifying the candidate is the intended
-manifold. If a fingerprint was captured during probe/add, later polling must see
+but Touch will not dispatch setpoint/forecast commands until the V6 overview
+reports that this installation and coordinator have been approved locally on
+that manifold. Touch then mirrors the node as `trusted`; it does not grant itself
+control. If a fingerprint was captured during probe/add, later polling must see
 the same V6 fingerprint or Touch marks the node unreachable with
 `overview identity_mismatch`.
 
-### `POST /nodes/{node_id}/trust`
+### `POST /nodes/{node_id}/trust` (compatibility)
 
-Promotes or demotes a stored node between commissioning trust states:
+Legacy commissioning endpoint for promoting or demoting stored trust state.
+The dashboard no longer exposes this action. A subsequent V6 overview poll
+overwrites the local state from the V6-owned approval status.
 
 ```json
 {
@@ -562,9 +570,9 @@ Response:
 
 During migration from older V6 firmware, Touch first tries the resource-shaped
 `/api/hv6/v1/zones` endpoint and then falls back to the legacy
-`/api/hv6/v1/state` snapshot. If no room mapping exists yet, legacy state ingest
-creates provisional `v6N-zM` room ids so the first manifold can be tested before
-the installer renames or remaps rooms.
+`/api/hv6/v1/state` snapshot. Legacy state ingest automatically creates stable
+provisional `v6N-zM` coordinator IDs and adopts V6 names when available. There is
+no installer mapping step on Touch.
 
 ```json
 {
@@ -588,21 +596,16 @@ the installer renames or remaps rooms.
 
 ### `POST /zones/{room_id}`
 
-```json
-{
-  "name": "Living",
-  "node_index": 0,
-  "zone_index": 2
-}
-```
-
-`zone_index` is zero-based and maps to V6 zones 1..6.
+Manual zone mapping is retired. The route returns HTTP `410` with
+`zone_managed_on_v6`. Configure the zone name, sensor, and valve output on the
+respective V6 manifold; Touch imports the result automatically.
 
 ### `POST /zones/{room_id}/comfort`
 
-Writes the permanent comfort target to the mapped V6 zone. Touch mirrors the
-value immediately and refreshes it from V6 on every zone poll, so changes made
-in either dashboard converge on the V6 value:
+Writes the permanent comfort target to every V6 loop mapped to the logical room.
+Touch stores the new intent only after every reachable, V6-approved loop accepts
+the update. The response includes `synced_loops`; a failed multi-loop update also
+reports `updated_loops` and `required_loops` so partial delivery is explicit:
 
 ```json
 {
@@ -612,8 +615,9 @@ in either dashboard converge on the V6 value:
 }
 ```
 
-`comfort_bias_c` and `priority` remain optional Touch coordination metadata;
-the normal target itself is owned and persisted by V6.
+`comfort_bias_c` and `priority` remain Touch coordination metadata. V6 reports its
+locally applied target separately on each poll; that telemetry never overwrites
+the Touch-owned room intent.
 
 ### `POST /zones/{room_id}/schedule`
 
@@ -717,7 +721,13 @@ clamps, absolute setpoint limits, expiry, and safety validation.
 
 ### `POST /settings`
 
-Stores coordinator-owned identity and install profile fields:
+Stores coordinator-owned display and install profile fields. On first boot Touch automatically
+creates and persists `install_id`, a unique coordinator ID, and a random authentication key;
+the identity is mirrored to the dedicated `touchreg` NVS partition so reboot and OTA updates do
+not rotate V6 trust. After a successful registry migration, Touch removes the obsolete registry
+namespace from default NVS to prevent identity writes from failing due to NVS pressure. Normal
+clients do not submit or display those values. Explicit identity fields remain accepted
+for service migration and recovery:
 
 ```json
 {

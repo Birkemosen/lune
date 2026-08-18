@@ -86,7 +86,7 @@ Important local ownership:
 - Snapshot / diagnostics API for local state
 
 When changing persisted config structs, increment the relevant version in
-`devices/lune-v6/components/hv6_config_store/hv6_types.h`.
+`devices/lune-v6/components/lv6_config_store/lv6_types.h`.
 
 ## Lune Touch / Mini
 

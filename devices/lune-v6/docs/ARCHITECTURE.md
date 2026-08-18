@@ -22,9 +22,9 @@ Public product references should use Lune V6.
 ┌──────────────────────────────────────────────────────────────┐
 │                    Custom C++ Components                     │
 │                                                              │
-│  hv6_config_store ← hv6_valve_controller ← hv6_zone_controller
+│  lv6_config_store ← lv6_valve_controller ← lv6_zone_controller
 │                                                  ↑           │
-│                                          hv6_dashboard       │
+│                                          lv6_dashboard       │
 └────────────────────────────┬─────────────────────────────────┘
                              ▼
 ┌──────────────────────────────────────────────────────────────┐
@@ -50,10 +50,10 @@ heatvalve-6/
 │   ├── network/              WiFi, API, OTA
 │   └── zones/                Climate entities, zone sensors, UI, dashboard wiring
 ├── components/               Custom ESPHome external components (C++)
-│   ├── hv6_config_store/     NVS persistence (DeviceConfig struct)
-│   ├── hv6_valve_controller/ Motor FSM, endstop detection, ripple counting
-│   ├── hv6_zone_controller/  Zone state machine, algorithms, hydraulic balance
-│   └── hv6_dashboard/        HTTP API (/api/hv6/v1), dashboard asset serving
+│   ├── lv6_config_store/     NVS persistence (DeviceConfig struct)
+│   ├── lv6_valve_controller/ Motor FSM, endstop detection, ripple counting
+│   ├── lv6_zone_controller/  Zone state machine, algorithms, hydraulic balance
+│   └── lv6_dashboard/        HTTP API (/api/hv6/v1), dashboard asset serving
 ├── web/
 │   ├── dashboard-src/        Dashboard source (modular JS, esbuild)
 │   └── dashboard.js          Bundled artifact (committed, embedded in firmware)
@@ -73,7 +73,7 @@ heatvalve-6/
 | ESPHome loopTask | 0 | 1 | — |
 
 Cross-task state is exchanged via FreeRTOS queues and mutexes. Dashboard snapshots are
-assembled in `hv6_dashboard::loop()` (main loop) under a dedicated `snapshot_mutex_`.
+assembled in `lv6_dashboard::loop()` (main loop) under a dedicated `snapshot_mutex_`.
 
 ## Data Flow
 
@@ -92,7 +92,7 @@ Temp source (DS18B20 / BLE) → Zone state machine → Control algorithm → Hyd
 ### Setpoint-offset command path
 
 Coordinator optimizers write per-zone setpoint-offset / preheat commands through
-`Hv6ZoneController::apply_helios_command()`. Offsets are clamped in firmware by per-zone
+`Lv6ZoneController::apply_helios_command()`. Offsets are clamped in firmware by per-zone
 safety limits; if a producer goes stale, its offsets are cleared and local control
 continues unchanged. `HeliosConfig.enabled` (NVS) remains as a compatibility quiesce gate.
 
@@ -115,7 +115,7 @@ on an external service.
 ## Dashboard API
 
 Dashboard transport uses the dedicated `/api/hv6/v1` JSON namespace served by
-`hv6_dashboard` on the device web server (port 80):
+`lv6_dashboard` on the device web server (port 80):
 
 - The dashboard app is served at `/` (+ `/dashboard.js`); `/dashboard` and
   `/dashboard/` are retained as redirect-only legacy bookmarks

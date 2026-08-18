@@ -26,17 +26,18 @@ injectStyle('zone-grid', css);
 // ========================================
 // TEMPLATE
 // ========================================
-const template = () => `<div class="zone-grid"></div>`;
+const template = () => `<div class="zone-grid" aria-label="Zones"></div>`;
 
 // ========================================
 // COMPONENT
 // ========================================
 export default component({
 	tag: 'zone-grid',
+	state: (props) => ({ selection: props.selection !== false, navigate: props.navigate !== false }),
 	render: template,
 	onMount(ctx, el) {
 		for (let zone = 1; zone <= 6; zone++) {
-			el.appendChild(mountComponent('zone-card', { zone }));
+			el.appendChild(mountComponent('zone-card', { zone, selection: ctx.selection, navigate: ctx.navigate }));
 		}
 	}
 });

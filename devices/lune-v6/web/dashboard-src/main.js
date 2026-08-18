@@ -22,6 +22,7 @@ import './components/diagnostics/diag-zone-motor-card.js';
 import './components/diagnostics/diag-zone-recovery-card.js';
 import './components/diagnostics/diag-system-card.js';
 import './components/settings/settings-manifold-card.js';
+import './components/settings/settings-touch-card.js';
 import './components/settings/settings-minimum-flow-card.js';
 import './components/settings/settings-control-card.js';
 import './components/settings/settings-motor-calibration-card.js';

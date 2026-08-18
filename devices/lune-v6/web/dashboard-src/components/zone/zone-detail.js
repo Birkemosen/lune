@@ -202,10 +202,54 @@ const css = `
 .zone-detail .zd-fault[hidden] { display: none; }
 .zone-detail .zd-fault-label { color: var(--text-secondary); }
 .zone-detail .zd-fault-val { color: var(--state-danger); font-weight: 700; font-family: var(--mono); }
+
+/* HIG list-detail treatment: one calm status surface with advanced data disclosed. */
+.zone-detail{height:auto;padding:0;background:transparent;box-shadow:none;backdrop-filter:none;overflow:hidden}
+.zone-detail .zd-head{min-height:58px;margin:0;padding:10px 16px;border-bottom:1px solid var(--separator)}
+.zone-detail .zd-title{font-size:1rem;font-weight:650;text-transform:none;letter-spacing:0}
+.zone-detail .zd-badge{padding:4px 9px;border:0;border-radius:999px;font-size:.72rem;font-weight:650;text-transform:none;letter-spacing:0}
+.zone-detail .zd-body{gap:0}
+.zone-detail .zd-body>div:first-child{padding:18px 16px}
+.zone-detail .zd-kicker{margin:0 0 7px;color:var(--text-muted);font-size:.76rem;font-weight:600;text-transform:none;letter-spacing:0}
+.zone-detail .zd-setpoint{font-family:var(--font-display);font-size:1.75rem;font-weight:700;color:var(--text-strong);font-variant-numeric:tabular-nums}
+.zone-detail .zd-target-row{gap:10px}
+.zone-detail .spb{width:44px;height:44px;border-color:var(--separator);border-radius:8px;background:var(--control-bg);box-shadow:none}
+.zone-detail .spb:active{background:rgba(var(--accent-rgb),.14)}
+.zone-detail .zd-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(112px,1fr));gap:0;padding:0 16px 18px}
+.zone-detail .zd-stat{min-width:0;padding:0 12px;border-left:1px solid var(--separator)}
+.zone-detail .zd-stat:first-child{padding-left:0;border-left:0}
+.zone-detail .zd-stat-label{color:var(--text-faint);font-size:.7rem;font-weight:600;text-transform:none;letter-spacing:0}
+.zone-detail .zd-stat-value{font-family:var(--font-display);font-size:1.08rem;font-weight:650}
+.zone-detail .zd-motor{margin:0;padding:0;border-top:1px solid var(--separator)}
+.zone-detail .zd-motor>summary{display:flex;align-items:center;min-height:52px;padding:0 16px;color:var(--text-strong);font-size:.86rem;font-weight:650;cursor:pointer;list-style:none}
+.zone-detail .zd-motor>summary::-webkit-details-marker{display:none}
+.zone-detail .zd-motor>summary::after{content:'›';margin-left:auto;color:var(--text-muted);font-size:1.2rem;transition:transform .16s ease}
+.zone-detail .zd-motor[open]>summary::after{transform:rotate(90deg)}
+.zone-detail .zd-motor>summary small{margin-left:auto;margin-right:14px;color:var(--text-muted);font-size:.74rem;font-weight:400}
+.zone-detail .zd-motor-body{padding:16px;border-top:1px solid var(--separator)}
+.zone-detail .zd-motor-body .zd-stats{padding:0}
+.zone-detail .zd-fault{margin:14px 0 0;padding:9px 10px;border:0;border-left:3px solid var(--state-danger);border-radius:0}
+@media(max-width:560px){.zone-detail .zd-stats{grid-template-columns:1fr 1fr;gap:16px 0}.zone-detail .zd-stat:nth-child(odd){padding-left:0;border-left:0}.zone-detail .zd-motor>summary small{display:none}}
 `;
 
-// inject once
-injectStyle('zone-detail', css);
+const higCss = `
+.zone-detail{height:auto;padding:0;background:transparent;border:1px solid var(--separator);border-radius:10px;box-shadow:none;overflow:hidden}
+.zone-detail .zd-head{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:58px;margin:0;padding:10px 16px;border-bottom:1px solid var(--separator)}
+.zone-detail .zd-title{color:var(--text-strong);font-size:1rem;font-weight:650}
+.zone-detail .zd-head-ctrl{display:flex;align-items:center;gap:10px}
+.zone-detail .zd-badge{padding:4px 9px;border:0;border-radius:999px;background:rgba(139,148,163,.12);color:var(--state-disabled);font-size:.72rem;font-weight:650}
+.zone-detail .zd-badge.badge-heating{background:rgba(var(--accent-rgb),.12);color:var(--accent)}.zone-detail .zd-badge.badge-idle{background:rgba(139,148,163,.12);color:var(--text-muted)}.zone-detail .zd-badge.badge-fault{background:rgba(239,68,68,.12);color:var(--state-danger)}
+.zone-detail .zd-body>div:first-child{padding:18px 16px}
+.zone-detail .zd-kicker{margin:0 0 7px;color:var(--text-muted);font-size:.76rem;font-weight:600}
+.zone-detail .zd-target-row{display:flex;align-items:center;gap:10px}.zone-detail .zd-setpoint{color:var(--text-strong);font-family:var(--font-display);font-size:1.75rem;font-weight:700;font-variant-numeric:tabular-nums}
+.zone-detail .spb{display:grid;width:44px;height:44px;place-items:center;border:1px solid var(--separator);border-radius:8px;background:var(--control-bg);color:var(--text-strong);font-size:1.15rem;cursor:pointer}.zone-detail .spb:hover,.zone-detail .spb:active{background:rgba(var(--accent-rgb),.12);color:var(--accent)}
+.zone-detail .zd-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(112px,1fr));gap:0;padding:0 16px 18px}.zone-detail .zd-stat{min-width:0;padding:0 12px;border-left:1px solid var(--separator)}.zone-detail .zd-stat:first-child{padding-left:0;border-left:0}.zone-detail .zd-stat-label{color:var(--text-faint);font-size:.7rem;font-weight:600}.zone-detail .zd-stat-value{margin-top:4px;color:var(--text-strong);font-family:var(--font-display);font-size:1.08rem;font-weight:650;font-variant-numeric:tabular-nums}
+.zone-detail .zd-motor{margin:0;border-top:1px solid var(--separator)}.zone-detail .zd-motor>summary{display:flex;align-items:center;min-height:52px;padding:0 16px;color:var(--text-strong);font-size:.86rem;font-weight:650;cursor:pointer;list-style:none}.zone-detail .zd-motor>summary::-webkit-details-marker{display:none}.zone-detail .zd-motor>summary::after{content:'›';margin-left:auto;color:var(--text-muted);font-size:1.2rem;transition:transform .16s ease}.zone-detail .zd-motor[open]>summary::after{transform:rotate(90deg)}.zone-detail .zd-motor>summary small{margin-left:auto;margin-right:14px;color:var(--text-muted);font-size:.74rem;font-weight:400}.zone-detail .zd-motor-body{padding:16px;border-top:1px solid var(--separator)}.zone-detail .zd-motor-body .zd-stats{padding:0}
+.zone-detail .zd-fault{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:14px 0 0;padding:9px 10px;border-left:3px solid var(--state-danger);background:rgba(239,68,68,.06);font-size:.76rem}.zone-detail .zd-fault[hidden]{display:none}.zone-detail .zd-fault-label{color:var(--text-muted)}.zone-detail .zd-fault-val{color:var(--state-danger);font-weight:650}
+@media(max-width:560px){.zone-detail .zd-stats{grid-template-columns:1fr 1fr;gap:16px 0}.zone-detail .zd-stat:nth-child(odd){padding-left:0;border-left:0}.zone-detail .zd-motor>summary small{display:none}}
+`;
+
+injectStyle('zone-detail', higCss);
 
 // ========================================
 // TEMPLATE
@@ -221,7 +265,7 @@ const template = (ctx) => `
     </div>
     <div class="zd-body">
       <div>
-        <div class="zd-kicker" data-i18n="zone.detail.targetTemperature">Target Temperature</div>
+        <div class="zd-kicker">Applied target</div>
         <div class="zd-target-row">
           <button class="spb btn-dec" data-i18n-label="common.decrease" aria-label="decrease">−</button>
           <div class="zd-setpoint">---</div>
@@ -230,20 +274,21 @@ const template = (ctx) => `
       </div>
       <div class="zd-stats">
         <div class="zd-stat"><div class="zd-stat-label" data-i18n="zone.detail.currentTemp">Current Temp</div><div class="zd-stat-value zd-temp">---</div></div>
+        <div class="zd-stat"><div class="zd-stat-label">Local fallback</div><div class="zd-stat-value zd-base">---</div></div>
+        <div class="zd-stat"><div class="zd-stat-label">Touch offset</div><div class="zd-stat-value zd-offset">---</div></div>
         <div class="zd-stat"><div class="zd-stat-label" data-i18n="zone.detail.returnTemp">Return Temp</div><div class="zd-stat-value zd-ret">---</div></div>
         <div class="zd-stat"><div class="zd-stat-label" data-i18n="zone.detail.flowPct">Flow %</div><div class="zd-stat-value zd-valve">---</div></div>
       </div>
-      <div class="zd-motor">
-        <div class="zd-motor-title" data-i18n="zone.detail.motorLearned">Motor learned parameters</div>
-        <div class="zd-stats">
+      <details class="zd-motor">
+        <summary>Advanced motor properties <small>Calibration and preheat</small></summary>
+        <div class="zd-motor-body"><div class="zd-stats">
           <div class="zd-stat"><div class="zd-stat-label" data-i18n="zone.detail.openRipples">Open Ripples</div><div class="zd-stat-value zd-orip">---</div></div>
           <div class="zd-stat"><div class="zd-stat-label" data-i18n="zone.detail.closeRipples">Close Ripples</div><div class="zd-stat-value zd-crip">---</div></div>
           <div class="zd-stat"><div class="zd-stat-label" data-i18n="zone.detail.openFactor">Open Factor</div><div class="zd-stat-value zd-ofac">---</div></div>
           <div class="zd-stat"><div class="zd-stat-label" data-i18n="zone.detail.closeFactor">Close Factor</div><div class="zd-stat-value zd-cfac">---</div></div>
           <div class="zd-stat"><div class="zd-stat-label" data-i18n="zone.detail.preheatAdv">Preheat Adv.</div><div class="zd-stat-value zd-ph">---</div></div>
-        </div>
-        <div class="zd-fault" hidden><span class="zd-fault-label" data-i18n="zone.detail.lastFault">Last fault</span><span class="zd-fault-val">NONE</span></div>
-      </div>
+        </div><div class="zd-fault" hidden><span class="zd-fault-label" data-i18n="zone.detail.lastFault">Last fault</span><span class="zd-fault-val">NONE</span></div></div>
+      </details>
     </div>
   </div>
 `;
@@ -289,7 +334,10 @@ export default component({
       this.zone = zone;
       el.dataset.zone = String(zone);
       refs.title.textContent = zoneLabel(zone);
-      refs.setpoint.textContent = fmtT(ev(key.setpoint(zone)));
+      refs.setpoint.textContent = fmtT(ev(key.effectiveSetpoint(zone)) ?? ev(key.setpoint(zone)));
+      refs.base.textContent = fmtT(ev(key.baseSetpoint(zone)) ?? ev(key.setpoint(zone)));
+      const offset = ev(key.coordinatorOffset(zone));
+      refs.offset.textContent = offset == null ? '---' : (offset > 0 ? '+' : '') + Number(offset).toFixed(1) + '°C';
       refs.temp.textContent = fmtT(ev(key.temp(zone)));
       refs.ret.textContent = fmtT(ev('sensor-manifold_return_temperature'));
       refs.valve.textContent = fmtV(ev(key.valve(zone)));
@@ -335,6 +383,8 @@ export default component({
       title: el.querySelector('.zd-title'),
       setpoint: el.querySelector('.zd-setpoint'),
       temp: el.querySelector('.zd-temp'),
+      base: el.querySelector('.zd-base'),
+      offset: el.querySelector('.zd-offset'),
       ret: el.querySelector('.zd-ret'),
       valve: el.querySelector('.zd-valve'),
       badge: el.querySelector('.zd-badge'),
@@ -371,6 +421,9 @@ export default component({
     for (let zone = 1; zone <= 6; zone++) {
       subscribe(key.temp(zone), updateIfSelectedZone);
       subscribe(key.setpoint(zone), updateIfSelectedZone);
+      subscribe(key.baseSetpoint(zone), updateIfSelectedZone);
+      subscribe(key.effectiveSetpoint(zone), updateIfSelectedZone);
+      subscribe(key.coordinatorOffset(zone), updateIfSelectedZone);
       subscribe(key.valve(zone), updateIfSelectedZone);
       subscribe(key.state(zone), updateIfSelectedZone);
       subscribe(key.enabled(zone), updateIfSelectedZone);

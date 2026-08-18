@@ -9,18 +9,26 @@ fetches, and V6 polling have passed a soak test.
 
 ## Stable Baseline
 
+- ESPHome: `2026.7.3`
+- ESP-IDF: ESPHome 2026.7 recommended release (`5.5.5`)
+- LVGL: `9.5.0`, supplied by ESPHome's built-in integration
+- Build toolchain: ESPHome's supported PlatformIO path with the matching
+  pioarduino platform selected by ESPHome
 - LVGL render mode: `PARTIAL`
 - RGB panel frame buffers: `1`
 - Frame buffer location: PSRAM
 - RGB bounce buffer: enabled, `LCD_HRES * 10`
 - RGB stream recovery: restart in VSYNC enabled
 - External-memory cache during flash/NVS writes: XIP from PSRAM enabled
-- Active pixel clock: `30MHz`
+- Active pixel clock: `20MHz`. The Waveshare demo uses 30 MHz, but Espressif's
+  practical ceiling for 80 MHz Octal PSRAM is about 22 MHz when other bus users
+  such as WiFi and flash are active.
 - LVGL draw buffer target: 10 lines when using the custom ESP-IDF path. ESPHome
   LVGL uses coarser fractional buffering, so the 7B bringup profile must be
   soak-tested separately before increasing UI complexity.
 - Flush callback copies only the dirty rectangle via `esp_lcd_panel_draw_bitmap`
-- Flush-ready is signaled from RGB panel `on_color_trans_done`
+- ESPHome releases the LVGL draw buffer only after the RGB driver has
+  synchronously copied the dirty rectangle into the panel framebuffer.
 - RGB DMA burst: `64`
 - LVGL tick: 2 ms periodic timer
 - LVGL task: stack `16384`, priority `2`, pinned to core `1`
@@ -39,7 +47,16 @@ The active Waveshare 7B hardware profile is documented in
 - Keep the RGB bounce buffer at 10 lines until measured headroom proves a larger
   buffer is safe.
 - Keep `CONFIG_SPIRAM_XIP_FROM_PSRAM=y` while the framebuffer lives in PSRAM.
+- Keep the ESP32-S3 data-cache line at 64 bytes with RGB bounce-buffer mode.
+- Keep compiler optimization on `PERF`; the refill ISR is deadline-sensitive.
 - Keep RGB restart in VSYNC enabled for recovery from transient DMA underruns.
+- Serve the versioned dashboard bundle from 1 KiB internal-RAM staging chunks
+  and cache it in the browser. Do not stream a large PROGMEM range directly to
+  a slow client.
+- Use LVGL's built-in `LV_SYMBOL_*`/Font Awesome glyph range for local-display
+  icons. The built-in Montserrat fonts do not contain arbitrary Unicode arrows,
+  geometric circles, middle dots, or mathematical minus signs; unsupported
+  characters render as rectangles.
 - Do not force `bb_invalidate_cache=true`.
 
 ## Failure Symptoms

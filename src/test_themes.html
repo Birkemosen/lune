@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lune V6 Theme Preview</title>
+    <style>
+        :root {
+            /* Default Base Colors */
+            --bg: #161616;
+            --text-main: #ffffff;
+            --text-muted: rgba(255, 255, 255, 0.6);
+            --font-mono: 'ui-monospace', 'Cascadia Code', 'Source Code Pro', Menlo, Monaco, Consolas, monospace;
+        }
+
+        /* Theme Definitions */
+        .theme-refined-ember {
+            --accent: #F59E0B;
+            --surface: #1A1C1E;
+            --success: rgba(34, 197, 94, 0.2);
+            --warning: rgba(244, 63, 94, 0.2);
+            --vbar-gradient: linear-gradient(90deg, #fcd34d, #F59E0B);
+        }
+
+        .theme-arctic-tech {
+            --accent: #38BDF8;
+            --surface: #1F2937;
+            --success: rgba(52, 211, 153, 0.2);
+            --warning: rgba(248, 113, 113, 0.2);
+            --vbar-gradient: linear-gradient(90deg, #7dd3fc, #38BDF8);
+        }
+
+        .theme-deep-forest {
+            --accent: #10B981;
+            --surface: #14141E;
+            --success: rgba(52, 211, 153, 0.2);
+            --warning: rgba(239, 68, 68, 0.2);
+            --vbar-gradient: linear-gradient(90deg, #34d399, #10B981);
+        }
+
+        body {
+            background-color: var(--bg);
+            color: var(--text-main);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            margin: 0;
+            padding: 2rem;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        header {
+            margin-bottom: 3rem;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+            padding-bottom: 1rem;
+        }
+
+        .preview-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 2rem;
+        }
+
+        /* Component Styles from Design System */
+        .card {
+            background: var(--surface);
+            padding: 1.5rem;
+            border-radius: 12px;
+            border: 1px solid rgba(255,255,255,0.05);
+            box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+        }
+
+        .card-title {
+            color: var(--accent);
+            font-size: 0.8rem;
+            letter-spacing: 1px;
+            margin: 0 0 0.5rem 0;
+            padding-bottom: 0.5rem;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+
+        .zone-info {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 1rem;
+        }
+
+        .status-row {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.9rem;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--accent);
+        }
+
+        /* Progress Bar */
+        .vbar-container {
+            margin-top: 2rem;
+        }
+        .vbar-label {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            margin-bottom: 0.5rem;
+            display: block;
+        }
+        .vbar {
+            height: 7px;
+            border-radius: 999px;
+            background: rgba(255,255,255,.08);
+            overflow: hidden;
+        }
+        .vbar .fill {
+            height: 100%;
+            width: 65%;
+            background: var(--vbar-gradient);
+            transition: width .6s ease;
+        }
+
+        /* Switch */
+        .sw {
+            width: 48px;
+            height: 26px;
+            border-radius: 999px;
+            background: #2b2b2b;
+            position: relative;
+            cursor: pointer;
+            border: none;
+        }
+        .sw.on {
+            background: var(--accent);
+        }
+        .sw::before {
+            content: '';
+            position: absolute;
+            top: 3px;
+            left: 3px;
+            width: 20px;
+            height: 20px;
+            background: white;
+            border-radius: 50%;
+            transition: transform 0.2s;
+        }
+        .sw.on::before {
+            transform: translateX(22px);
+        }
+
+        .badge {
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.7rem;
+            text-transform: uppercase;
+        }
+        .bg-success { background: var(--success); }
+        .bg-warning { background: var(--warning); }
+
+        h2 { font-weight: 300; margin-top: 0; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <header>
+        <h1>Lune V6 Theme Comparison</h1>
+        <p style="color: var(--text-muted)">Comparing proposed modern color schemes against the design system.</p>
+    </header>
+
+    <div class="preview-grid">
+        <!-- Theme 1 -->
+        <div class="theme-refined-ember card" id="theme1">
+            <h2>Refined Ember</h2>
+            <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 2rem;">Warm, premium, hydronic focus.</p>
+            
+            <div class="card">
+                <h3 class="card-title">LIVING ROOM</h3>
+                <div class="zone-info">
+                    <div>
+                        <div class="status-row"><span class="status-dot"></span> <span style="font-size: 0.8rem;">HEATING</span></div>
+                        <div style="font-size: 1.5rem; font-weight: bold; margin-top: 0.5rem;">21.5°C</div>
+                    </div>
+                    <div class="badge bg-success">Satisfied</div>
+                </div>
+            </div>
+
+            <div class="vbar-container">
+                <span class="vbar-label">Target: 22.0°C</span>
+                <div class="vbar"><div class="fill"></div></div>
+            </div>
+
+            <div style="margin-top: 1.5rem; display: flex; justify-content: space-between;">
+                <span>System Active</span>
+                <button class="sw on"></button>
+            </div>
+        </div>
+
+        <!-- Theme 2 -->
+        <div class="theme-arctic-tech card" id="theme2">
+            <h2>Arctic Tech</h2>
+            <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 2rem;">Cool, precise, modern smart home.</p>
+            
+            <div class="card">
+                <h3 class="card-title">MASTER BEDROOM</h3>
+                <div class="zone-info">
+                    <div>
+                        <div class="status-row"><span class="status-dot"></span> <span style="font-size: 0.8rem;">IDLE</span></div>
+                        <div style="font-size: 1.5rem; font-weight: bold; margin-top: 0.5rem;">19.0°C</div>
+                    </div>
+                    <div class="badge">Standby</div>
+                </div>
+            </div>
+
+            <div class="vbar-container">
+                <span class="vbar-label">Target: 20.0°C</span>
+                <div class="vbar"><div class="fill" style="width: 40%;"></div></div>
+            </div>
+
+            <div style="margin-top: 1.5rem; display: flex; justify-content: space-between;">
+                <span>System Active</span>
+                <button class="sw on"></button>
+            </div>
+        </div>
+
+        <!-- Theme 3 -->
+        <div class="theme-deep-forest card" id="theme3">
+            <h2>Deep Forest</h2>
+            <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 2rem;">Organic, high-end architectural.</p>
+            
+            <div class="card">
+                <h3 class="card-title">KITCHEN</h3>
+                <div class="zone-info">
+                    <div>
+                        <div class="status-row"><span class="status-dot"></span> <span style="font-size: 0.8rem;">FAULT</span></div>
+                        <div style="font-size: 1.5rem; font-weight: bold; margin-top: 0.5rem; color: #ff4444;">--°C</div>
+                    </div>
+                    <div class="badge bg-warning">Overheated</div>
+                </div>
+            </div>
+
+            <div class="vbar-container">
+                <span class="vbar-label">Target: 18.0°C</span>
+                <div class="vbar"><div class="fill" style="width: 95%;"></div></div>
+            </div>
+
+            <div style="margin-top: 1.5rem; display: flex; justify-content: space-between;">
+                <span>System Active</span>
+                <button class="sw on"></button>
+            </div>
+        </div>
+    </div>
+</div>
+
+</body>
+</html>

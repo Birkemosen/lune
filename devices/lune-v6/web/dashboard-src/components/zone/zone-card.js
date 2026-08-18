@@ -1,112 +1,34 @@
 import { component, subscribe } from '../../core/component.js';
 import { injectStyle } from '../../core/style.js';
-import { ev, es, getDashboardValue, isEntityOn, setSelectedZone, subscribeDashboard, zoneLabel, zoneTag } from '../../core/store.js';
-import { fmtT } from '../../utils/format.js';
+import { ev, es, getDashboardValue, isEntityOn, setSection, setSelectedZone, subscribeDashboard, zoneLabel, zoneTag } from '../../core/store.js';
+import { fmtT, fmtV } from '../../utils/format.js';
 import { key } from '../../utils/keys.js';
 import { subscribeLanguage, t } from '../../core/i18n.js';
 
-// ========================================
-// CSS (scoped by class)
-// ========================================
 const css = `
 .zone-card {
-	display: grid;
-	grid-template-rows: auto auto auto;
-	gap: 2px;
-	padding: 7px 10px;
-	border-radius: 8px;
-	border: 1px solid var(--panel-border);
-	border-left: 3px solid rgba(120,146,200,.45);
-	background: linear-gradient(145deg, rgba(255,255,255,.085), rgba(0,0,0,.045));
-	box-shadow: inset 0 1px 0 rgba(255,255,255,.10), 0 10px 22px rgba(0,0,0,.14);
-	cursor: pointer;
-	transition: .18s ease;
-	min-width: 0;
-	overflow: hidden;
+  width:100%; min-width:0; min-height:72px; margin:0; padding:12px 16px; border:0; border-radius:0;
+  display:grid; grid-template-columns:minmax(170px,1.4fr) minmax(100px,.8fr) minmax(90px,.7fr) minmax(100px,.7fr) 28px;
+  align-items:center; gap:16px; background:transparent; color:var(--text-main); font:inherit; text-align:left; cursor:pointer;
 }
-.zone-card:hover {
-	border-color: rgba(235,245,248,.30);
-	border-left-color: rgba(126,182,216,.82);
-	background: linear-gradient(145deg, rgba(255,255,255,.12), rgba(255,255,255,.045));
-}
-.zone-card.active {
-	border-color: rgba(255,138,61,.54);
-	border-left-color: rgba(255,138,61,.92);
-	background: linear-gradient(135deg, rgba(255,138,61,.20), rgba(255,255,255,.075));
-	box-shadow: 0 0 0 1px rgba(255,138,61,.08), inset 0 1px 0 rgba(255,255,255,.16), 0 14px 26px rgba(255,138,61,.10);
-}
-
-.zone-card.disabled {
-	opacity: .72;
-	border-left-color: rgba(120,146,200,.35);
-}
-
-.zone-card.zs-heating { border-left-color: var(--accent); }
-.zone-card.zs-idle { border-left-color: var(--blue); }
-.zone-card.zs-fault { border-left-color: var(--state-danger); }
-.zone-card.zs-off { border-left-color: rgba(120,146,200,.4); }
-
-.zone-card .zc-state-row {
-	display: flex;
-	align-items: center;
-	gap: 5px;
-	line-height: 1;
-	min-width: 0;
-}
-
-.zone-card .zc-dot {
-	width: 6px;
-	height: 6px;
-	border-radius: 50%;
-	flex-shrink: 0;
-	background: rgba(120,146,200,.4);
-}
-
-.zone-card .zc-state-label {
-	font-size: .84rem;
-	font-weight: 700;
-	text-transform: uppercase;
-	letter-spacing: .55px;
-	color: var(--text-secondary);
-	min-width: 0;
-	overflow: hidden;
-	text-overflow: ellipsis;
-}
-
-.zone-card .zc-link {
-	margin-left: auto;
-	padding: 1px 6px 2px;
-	border-radius: 8px;
-	border: 1px solid rgba(255,138,61,.44);
-	background: rgba(255,138,61,.14);
-	color: var(--accent);
-	font-size: .72rem;
-	font-weight: 800;
-	line-height: 1.2;
-	letter-spacing: .55px;
-	white-space: nowrap;
-}
-.zone-card .zc-link[hidden] { display: none; }
-
-.zone-card .zc-zone-name {
-	font-size: 14px;
-	font-weight: 800;
-	line-height: 1;
-	color: var(--text-strong);
-	white-space: nowrap;
-	overflow: hidden;
-	text-overflow: ellipsis;
-}
-
-.zone-card .zc-friendly {
-	font-size: .84rem;
-	font-weight: 600;
-	line-height: 1.1;
-	color: var(--text-secondary);
-	white-space: nowrap;
-	overflow: hidden;
-	text-overflow: ellipsis;
-}
+.zone-card + .zone-card{border-top:1px solid var(--separator)}
+.zone-card:hover{background:rgba(255,255,255,.025)}
+.zone-card:active{background:rgba(var(--accent-rgb),.08)}
+.zone-card.active{background:rgba(var(--accent-rgb),.10)}
+.zone-card.disabled{color:var(--text-muted)}
+.zone-card .zc-zone-name,.zone-card .zc-friendly,.zone-card .zc-reading,.zone-card .zc-valve,.zone-card .zc-state-row{min-width:0}
+.zone-card .zc-zone-name{grid-column:1;grid-row:1;color:var(--text-strong);font-size:.94rem;font-weight:650;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.zone-card .zc-friendly{grid-column:1;grid-row:1;margin-top:25px;color:var(--text-faint);font-size:.74rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.zone-card .zc-reading{grid-column:2;grid-row:1}.zone-card .zc-valve{grid-column:3;grid-row:1}
+.zone-card .zc-reading strong,.zone-card .zc-valve strong{display:block;color:var(--text-strong);font-size:.94rem;font-weight:650;font-variant-numeric:tabular-nums}
+.zone-card .zc-reading small,.zone-card .zc-valve small{display:block;margin-top:3px;color:var(--text-muted);font-size:.72rem}
+.zone-card .zc-state-row{grid-column:4;grid-row:1;display:flex;align-items:center;gap:6px}
+.zone-card .zc-dot{width:7px;height:7px;flex:0 0 auto;border-radius:50%;background:var(--state-disabled)}
+.zone-card .zc-state-label{overflow:hidden;color:var(--text-muted);font-size:.78rem;font-weight:600;text-overflow:ellipsis;white-space:nowrap}
+.zone-card.zs-heating .zc-dot{background:var(--accent)}.zone-card.zs-heating .zc-state-label{color:var(--accent)}
+.zone-card.zs-idle .zc-dot,.zone-card.zs-off .zc-dot{background:var(--state-disabled)}.zone-card.zs-idle .zc-state-label,.zone-card.zs-off .zc-state-label{color:var(--text-muted)}
+.zone-card.zs-fault .zc-dot{background:var(--state-danger)}.zone-card.zs-fault .zc-state-label{color:var(--state-danger)}
+.zone-card::after{content:'›';grid-column:5;grid-row:1;color:var(--text-muted);font-size:1.35rem;text-align:right}
 `;
 injectStyle('zone-card', css);
 
@@ -114,11 +36,13 @@ injectStyle('zone-card', css);
 // TEMPLATE
 // ========================================
 const template = (ctx) => `
-	<div class="zone-card" data-zone="${ctx.zone}">
-		<div class="zc-state-row"><span class="zc-dot"></span><span class="zc-state-label">---</span><span class="zc-link" hidden>LINK</span></div>
+	<button type="button" class="zone-card" data-zone="${ctx.zone}" aria-label="Open zone ${ctx.zone}">
+		<div class="zc-state-row"><span class="zc-dot"></span><span class="zc-state-label">---</span></div>
 		<div class="zc-zone-name">${zoneLabel(ctx.zone)}</div>
 		<div class="zc-friendly">${zoneTag(ctx.zone) || '---'}</div>
-	</div>
+		<div class="zc-reading"><strong class="zc-temp">---</strong><small class="zc-target">Target ---</small></div>
+		<div class="zc-valve"><strong class="zc-valve-value">---</strong><small>Valve</small></div>
+	</button>
 `;
 
 // ========================================
@@ -128,6 +52,8 @@ export default component({
 	tag: 'zone-card',
 	state: (props) => ({
 		zone: props.zone,
+		selection: props.selection !== false,
+		navigate: props.navigate !== false,
 	}),
 	render: template,
 		onMount(ctx, el) {
@@ -136,15 +62,11 @@ export default component({
 			const stateKey = key.state(zone);
 			const enabledKey = key.enabled(zone);
 			const stateEl = el.querySelector('.zc-state-label');
-			const dotEl = el.querySelector('.zc-dot');
-			const linkEl = el.querySelector('.zc-link');
 			const nameEl = el.querySelector('.zc-zone-name');
 			const friendlyEl = el.querySelector('.zc-friendly');
-
-			function syncTarget(value) {
-				const match = String(value || '').match(/\d+/);
-				return match ? Number(match[0]) : 0;
-			}
+			const tempEl = el.querySelector('.zc-temp');
+			const targetEl = el.querySelector('.zc-target');
+			const valveEl = el.querySelector('.zc-valve-value');
 
 			function update() {
 				const enabled = isEntityOn(enabledKey);
@@ -154,11 +76,14 @@ export default component({
 				const lastFault = String(es(key.motorLastFault(zone)) || '').toUpperCase();
 				const hasFault = lastFault && lastFault !== 'NONE' && lastFault !== 'OK';
 				const state = (enabled && (rawState === 'FAULT' || hasFault)) ? 'FAULT' : rawState;
-				const active = getDashboardValue('selectedZone') === zone;
+				const active = ctx.selection && getDashboardValue('selectedZone') === zone;
 				const friendlyTag = zoneTag(zone);
 
-				nameEl.textContent = zoneLabel(zone);
-				friendlyEl.textContent = friendlyTag || fmtT(ev(tempKey));
+				nameEl.textContent = friendlyTag || 'Zone ' + zone;
+				friendlyEl.textContent = 'Zone ' + zone + ' · physical loop';
+				tempEl.textContent = fmtT(ev(tempKey));
+				targetEl.textContent = 'Applied ' + fmtT(ev(key.effectiveSetpoint(zone)) ?? ev(key.setpoint(zone)));
+				valveEl.textContent = fmtV(ev(key.valve(zone)));
 				const displayState = enabled ? state : 'OFF';
 				stateEl.textContent =
 					displayState === 'HEATING' ? t('state.heating') :
@@ -168,56 +93,32 @@ export default component({
 					displayState === 'OVERHEATED' ? t('state.overheated') :
 					displayState === 'CALIBRATING' ? t('state.calibrating') :
 					t('state.off');
-				const ownTarget = syncTarget(es(key.syncTo(zone)));
-				const linkedFrom = [];
-				for (let z = 1; z <= 6; z++) {
-					if (z !== zone && syncTarget(es(key.syncTo(z))) === zone) {
-						linkedFrom.push(z);
-					}
-				}
-				const hasLink = (ownTarget > 0 && ownTarget !== zone) || linkedFrom.length > 0;
-				linkEl.hidden = !hasLink;
-				linkEl.textContent = ownTarget > 0 && ownTarget !== zone
-					? t('zone.card.linkZone', { zone: ownTarget })
-					: (linkedFrom.length > 1 ? t('zone.card.groupCount', { count: linkedFrom.length }) : t('zone.card.linkZone', { zone: linkedFrom[0] }));
-				const linkTitle = ownTarget > 0 && ownTarget !== zone
-					? t('zone.card.groupedWith', { zones: zoneLabel(ownTarget) })
-					: (linkedFrom.length > 0 ? t('zone.card.groupedWith', { zones: linkedFrom.map(zoneLabel).join(', ') }) : '');
-				el.title = hasFault ? t('zone.card.fault', { fault: lastFault }) : linkTitle;
+				el.title = hasFault ? t('zone.card.fault', { fault: lastFault }) : '';
 
-				const stateColor =
-					displayState === 'HEATING' ? '#ffd380' :
-					displayState === 'IDLE'    ? '#7aa7ce' :
-					displayState === 'FAULT'   ? '#ff6361' :
-					'#6E7E96';
-				const dotColor =
-					displayState === 'HEATING' ? '#ff8531' :
-					displayState === 'IDLE'    ? '#7aa7ce' :
-					displayState === 'FAULT'   ? '#ff6361' :
-					'rgba(120,146,200,.35)';
-				stateEl.style.color = stateColor;
-				dotEl.style.background = dotColor;
-				dotEl.style.boxShadow =
-					displayState === 'HEATING' ? '0 0 5px rgba(255,133,49,.6)' :
-					displayState === 'FAULT'   ? '0 0 5px rgba(255,100,100,.6)' :
-					'';
 				el.classList.toggle('active', active);
+				if (active) el.setAttribute('aria-current', 'location'); else el.removeAttribute('aria-current');
+				el.setAttribute('aria-label', `${nameEl.textContent}, ${tempEl.textContent}, ${targetEl.textContent}, ${stateEl.textContent}. Open details.`);
 				el.classList.toggle('disabled', !enabled);
 				el.classList.toggle('zs-heating', enabled && displayState === 'HEATING');
 				el.classList.toggle('zs-fault', enabled && displayState === 'FAULT');
-				el.classList.toggle('zs-idle', enabled && displayState !== 'HEATING' && displayState !== 'FAULT');
-				el.classList.toggle('zs-off', !enabled);
+				el.classList.toggle('zs-idle', enabled && displayState === 'IDLE');
+				el.classList.toggle('zs-off', !enabled || displayState === 'OFF');
 			}
 
-			el.addEventListener('click', () => {
+			function select() {
 				setSelectedZone(zone);
-			});
+				if (ctx.navigate) setSection('zones');
+				el.dispatchEvent(new CustomEvent('zone-open', { bubbles: true, detail: { zone } }));
+			}
+			el.addEventListener('click', select);
 
 			subscribe(tempKey, update);
+			subscribe(key.setpoint(zone), update);
+			subscribe(key.effectiveSetpoint(zone), update);
+			subscribe(key.valve(zone), update);
 			subscribe(stateKey, update);
 			subscribe(enabledKey, update);
 			subscribe(key.motorLastFault(zone), update);
-			for (let z = 1; z <= 6; z++) subscribe(key.syncTo(z), update);
 			subscribeDashboard('selectedZone', update);
 			subscribeDashboard('zoneNames', update);
 			subscribeLanguage(update);
