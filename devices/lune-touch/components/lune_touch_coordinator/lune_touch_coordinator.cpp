@@ -5155,16 +5155,16 @@ uint8_t LuneTouchCoordinator::display_zone_valve_pct(uint8_t node_index, uint8_t
 uint32_t LuneTouchCoordinator::display_zone_status_color(uint8_t node_index,
                                                          uint8_t physical_zone_index) const {
   if (!take_state_lock_(50))
-    return 0x667080;
+    return 0x8E8E93;
   const auto *node = model_.node(node_index);
   if (node == nullptr || !node->reachable || model_.is_node_stale(node_index, esphome::millis())) {
     give_state_lock_();
-    return 0x667080;
+    return 0x8E8E93;
   }
   if (node_index < ::lune_touch::MAX_NODES && node_telemetry_[node_index].has_motor_fault &&
       node_telemetry_[node_index].motor_fault) {
     give_state_lock_();
-    return 0xEF4444;
+    return 0xFF453A;
   }
   const ::lune_touch::ZoneLiveState *live = nullptr;
   for (size_t i = 0; i < model_.zone_count(); i++) {
@@ -5175,16 +5175,16 @@ uint32_t LuneTouchCoordinator::display_zone_status_color(uint8_t node_index,
       break;
     }
   }
-  uint32_t color = 0x667080;
+  uint32_t color = 0x8E8E93;
   if (live == nullptr || !live->fresh)
-    color = live == nullptr ? 0x667080 : 0xEF4444;
+    color = live == nullptr ? 0x8E8E93 : 0xFF453A;
   else if (std::strcmp(live->status, "fault") == 0)
-    color = 0xEF4444;
+    color = 0xFF453A;
   else if (std::strcmp(live->status, "heat") == 0 || std::strcmp(live->status, "call") == 0 ||
            std::strcmp(live->status, "preheat") == 0)
-    color = 0xF59E0B;
+    color = 0xFF9F0A;
   else
-    color = 0x34D399;
+    color = 0x32D74B;
   give_state_lock_();
   return color;
 }

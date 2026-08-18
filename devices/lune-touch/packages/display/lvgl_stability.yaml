@@ -273,11 +273,11 @@ text_sensor:
                   lv_obj_set_pos(zone_setpoint_labels[node][zone], 14, setpoint_y);
                   lv_obj_set_size(zone_setpoint_labels[node][zone], text_width, setpoint_height);
                   lv_obj_set_style_text_font(zone_setpoint_labels[node][zone], small_font, LV_PART_MAIN);
-                  lv_obj_set_pos(zone_stripes[node][zone], zone_width - 22, 12);
-                  lv_obj_set_pos(zone_bars[node][zone], zone_width - 22, bar_y);
+                  lv_obj_set_pos(zone_stripes[node][zone], zone_width - 24, 12);
+                  lv_obj_set_pos(zone_bars[node][zone], zone_width - 24, bar_y);
                   lv_obj_set_size(zone_bars[node][zone], 10, bar_height);
                   for (uint8_t tick = 0; tick < 4; tick++) {
-                    lv_obj_set_pos(zone_ticks[node][zone][tick], zone_width - 22,
+                    lv_obj_set_pos(zone_ticks[node][zone][tick], zone_width - 24,
                                    bar_y + (bar_height * (tick + 1)) / 5);
                     lv_obj_set_width(zone_ticks[node][zone][tick], 10);
                   }
@@ -385,7 +385,7 @@ lvgl:
   # LVGL 9 models display background styling on the persistent bottom layer.
   # This replaces the deprecated LVGL 8 disp_bg_* compatibility properties.
   bottom_layer:
-    bg_color: 0x100F12
+    bg_color: 0x000000
     bg_opa: 100%
   widgets:
     - obj:
@@ -394,7 +394,7 @@ lvgl:
         y: 0
         width: 1024
         height: 600
-        bg_color: 0x100F12
+        bg_color: 0x000000
         bg_opa: 100%
         border_width: 0
         outline_width: 0
@@ -427,10 +427,10 @@ lvgl:
               width: 476
               height: 24
               text: "Waiting for system status"
-              text_color: 0xF7F4F2
+              text_color: 0xFFFFFF
               text_font: montserrat_18
               long_mode: clip
-              bg_color: 0x100F12
+              bg_color: 0x000000
               bg_opa: 100%
           - label:
               x: 660
@@ -438,7 +438,7 @@ lvgl:
               width: 96
               height: 24
               text: "\uF00C  Live"
-              text_color: 0x30D158
+              text_color: 0x32D74B
               text_font: montserrat_16
               text_align: right
           - button:
@@ -448,9 +448,9 @@ lvgl:
               y: 4
               width: 44
               height: 44
-              bg_color: 0x211D22
+              bg_color: 0x1C1C1E
               bg_opa: 100%
-              border_color: 0x49414B
+              border_color: 0x38383A
               border_width: 1
               radius: 10
               pad_all: 0
@@ -458,7 +458,7 @@ lvgl:
                 - label:
                     align: CENTER
                     text: "<"
-                    text_color: 0xF7F4F2
+                    text_color: 0xFFFFFF
                     text_font: montserrat_22
               on_click:
                 - lambda: |-
@@ -473,7 +473,7 @@ lvgl:
               width: 96
               height: 24
               text: "1 / 2"
-              text_color: 0xA99FA7
+              text_color: 0x8E8E93
               text_font: montserrat_16
               text_align: center
           - button:
@@ -483,9 +483,9 @@ lvgl:
               y: 4
               width: 44
               height: 44
-              bg_color: 0x211D22
+              bg_color: 0x1C1C1E
               bg_opa: 100%
-              border_color: 0x49414B
+              border_color: 0x38383A
               border_width: 1
               radius: 10
               pad_all: 0
@@ -493,7 +493,7 @@ lvgl:
                 - label:
                     align: CENTER
                     text: ">"
-                    text_color: 0xF7F4F2
+                    text_color: 0xFFFFFF
                     text_font: montserrat_22
               on_click:
                 - lambda: |-
@@ -506,7 +506,7 @@ lvgl:
               y: 51
               width: 1024
               height: 1
-              bg_color: 0x302B33
+              bg_color: 0x2C2C2E
               bg_opa: 100%
               border_width: 0
               radius: 0
@@ -523,8 +523,8 @@ lvgl:
               pad_all: 0
               scrollable: false
               widgets:
-                - label: {x: 16, y: 2, width: 120, height: 20, text: "Manifold", text_color: 0xA99FA7, text_font: montserrat_14}
-                - label: {x: 156, y: 2, width: 808, height: 20, text: "Zones (Z1-Z6)", text_color: 0xA99FA7, text_font: montserrat_14}
+                - label: {x: 16, y: 2, width: 120, height: 20, text: "Manifold", text_color: 0x8E8E93, text_font: montserrat_14}
+                - label: {x: 156, y: 2, width: 808, height: 20, text: "Zones (Z1-Z6)", text_color: 0x8E8E93, text_font: montserrat_14}
 
           - !include
               file: lvgl/manifold_card.yaml
@@ -545,9 +545,9 @@ lvgl:
               y: 542
               width: 984
               height: 50
-              bg_color: 0x19171D
+              bg_color: 0x1C1C1E
               bg_opa: 100%
-              border_color: 0x403945
+              border_color: 0x38383A
               border_width: 1
               radius: 14
               pad_all: 0
@@ -571,14 +571,14 @@ lvgl:
                     text_color: 0x8E867C
                     text_font: montserrat_16
                     long_mode: clip
-                    bg_color: 0x19171D
+                    bg_color: 0x1C1C1E
                     bg_opa: 100%
                 - obj:
                     x: 472
                     y: 10
                     width: 1
                     height: 30
-                    bg_color: 0x403945
+                    bg_color: 0x38383A
                     bg_opa: 100%
                     border_width: 0
                     radius: 0
@@ -589,7 +589,7 @@ lvgl:
                     width: 72
                     height: 20
                     text: "Forecast"
-                    text_color: 0xBF9AFF
+                    text_color: 0xBF5AF2
                     text_font: montserrat_14
                 - label:
                     id: dashboard_weather_status_label
@@ -598,10 +598,10 @@ lvgl:
                     width: 388
                     height: 24
                     text: "Waiting for forecast"
-                    text_color: 0xF7F4F2
+                    text_color: 0xFFFFFF
                     text_font: montserrat_16
                     long_mode: clip
-                    bg_color: 0x19171D
+                    bg_color: 0x1C1C1E
                     bg_opa: 100%
 
           - obj:
@@ -636,7 +636,7 @@ lvgl:
                     width: 944
                     height: 24
                     text: ""
-                    text_color: 0xFFD8A8
+                    text_color: 0xFFD60A
                     text_font: montserrat_16
                     long_mode: wrap
                     bg_color: 0x241A18
@@ -649,7 +649,7 @@ lvgl:
               y: 0
               width: 1024
               height: 600
-              bg_color: 0x080706
+              bg_color: 0x000000
               bg_opa: 78%
               border_width: 0
               radius: 0
@@ -661,9 +661,9 @@ lvgl:
                     y: 102
                     width: 716
                     height: 396
-                    bg_color: 0x211D22
+                    bg_color: 0x1C1C1E
                     bg_opa: 100%
-                    border_color: 0x49414B
+                    border_color: 0x38383A
                     border_width: 1
                     radius: 16
                     pad_all: 0
@@ -675,18 +675,18 @@ lvgl:
                           width: 500
                           height: 28
                           text: "Adjust zone"
-                          text_color: 0xF7F4F2
+                          text_color: 0xFFFFFF
                           text_font: montserrat_20
                       - button:
                           x: 628
                           y: 16
                           width: 60
                           height: 52
-                          bg_color: 0x302B33
+                          bg_color: 0x2C2C2E
                           border_width: 0
                           radius: 12
                           text: "Close"
-                          text_color: 0xF7F4F2
+                          text_color: 0xFFFFFF
                           text_font: montserrat_14
                           on_click:
                             - lvgl.widget.hide: zone_control_modal
@@ -697,10 +697,10 @@ lvgl:
                           width: 660
                           height: 54
                           text: "Select a zone"
-                          text_color: 0xF7F4F2
+                          text_color: 0xFFFFFF
                           text_font: montserrat_18
                           long_mode: wrap
-                          bg_color: 0x211D22
+                          bg_color: 0x1C1C1E
                           bg_opa: 100%
                       - label:
                           x: 28
@@ -708,14 +708,14 @@ lvgl:
                           width: 300
                           height: 22
                           text: "Comfort target"
-                          text_color: 0xA99FA7
+                          text_color: 0x8E8E93
                           text_font: montserrat_14
                       - button:
                           x: 28
                           y: 188
                           width: 84
                           height: 64
-                          bg_color: 0x302B33
+                          bg_color: 0x2C2C2E
                           border_width: 0
                           radius: 12
                           text: "- 0.5"
@@ -735,7 +735,7 @@ lvgl:
                           y: 188
                           width: 84
                           height: 64
-                          bg_color: 0x302B33
+                          bg_color: 0x2C2C2E
                           border_width: 0
                           radius: 12
                           text: "+ 0.5"
@@ -771,7 +771,7 @@ lvgl:
                           y: 188
                           width: 236
                           height: 64
-                          bg_color: 0x302B33
+                          bg_color: 0x2C2C2E
                           border_width: 0
                           radius: 12
                           text: "Away 6 hours"
@@ -789,9 +789,9 @@ lvgl:
                           width: 660
                           height: 42
                           text: "Changes save automatically. V6 validates every command."
-                          text_color: 0xA99FA7
+                          text_color: 0x8E8E93
                           text_font: montserrat_14
-                          bg_color: 0x211D22
+                          bg_color: 0x1C1C1E
                           bg_opa: 100%
                       - label:
                           x: 28
@@ -799,7 +799,7 @@ lvgl:
                           width: 660
                           height: 24
                           text: "Tap Close to return to the heating overview."
-                          text_color: 0xA99FA7
+                          text_color: 0x8E8E93
                           text_font: montserrat_14
 
           # Startup remains visible until the first complete coordinator model
@@ -811,7 +811,7 @@ lvgl:
               y: 0
               width: 1024
               height: 600
-              bg_color: 0x0B0A0D
+              bg_color: 0x1C1C1E
               bg_opa: 100%
               border_width: 0
               radius: 0
@@ -845,7 +845,7 @@ lvgl:
                     width: 1024
                     height: 42
                     text: "Lune Touch"
-                    text_color: 0xF7F4F2
+                    text_color: 0xFFFFFF
                     text_font: montserrat_32
                     text_align: center
                 - label:
@@ -854,7 +854,7 @@ lvgl:
                     width: 1024
                     height: 28
                     text: "Starting local heating control"
-                    text_color: 0xA99FA7
+                    text_color: 0x8E8E93
                     text_font: montserrat_18
                     text_align: center
                 - spinner:
@@ -865,7 +865,7 @@ lvgl:
                     height: 50
                     spin_time: 900ms
                     arc_length: 90deg
-                    arc_color: 0x302B33
+                    arc_color: 0x2C2C2E
                     arc_width: 6
                     indicator:
                       arc_color: 0xFF9F0A
