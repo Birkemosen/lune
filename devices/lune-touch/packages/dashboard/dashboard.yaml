@@ -1,4 +1,0 @@
-lune_touch_dashboard:
-  id: lune_touch_dashboard_id
-  coordinator_id: lune_touch_app
-  dashboard_js: ../web/dashboard.js

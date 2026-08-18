@@ -7,7 +7,7 @@ Quick map:
 
 ```text
 devices/lune-v6/       Lune V6 ESPHome firmware and local dashboard
-devices/lune-touch/    Lune Touch / Mini coordinator workspace
+Lune Touch / Mini       Private repository: Birkemosen/lune-coordinator
 docs/                  Product-level notes
 shared/                Shared contracts/design notes only
 ```
@@ -20,5 +20,4 @@ make dashboard-build
 make build
 make test
 make test-lune-v6
-make test-lune-touch
 ```

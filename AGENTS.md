@@ -10,10 +10,12 @@ dedicated subfolder:
 ```text
 devices/
   lune-v6/       ESPHome firmware, local dashboard, hardware files, V6 tests/docs
-  lune-touch/    Coordinator workspace for Lune Touch / Lune Mini
 docs/            Product-level brand and cross-device architecture notes
 shared/          Shared contracts/design notes; no shared runtime dashboard code yet
 ```
+
+Lune Touch / Lune Mini coordinator code lives in the private repository
+`Birkemosen/lune-coordinator`.
 
 Keep hardware code separate unless a deliberate shared package is introduced. In
 particular, Lune V6 must remain a safe local manifold node and must not depend on Lune
@@ -31,11 +33,7 @@ make deploy
 make logs
 make test
 make test-v6
-make test-touch
-make test-forecast
 make deploy-v6 HOST=192.168.x.x
-make deploy-touch HOST=192.168.x.x
-make deploy-mini HOST=192.168.x.x
 ```
 
 Device-local commands also work:
@@ -44,14 +42,13 @@ Device-local commands also work:
 make -C devices/lune-v6 config
 make -C devices/lune-v6 dashboard-build
 make -C devices/lune-v6 test
-make -C devices/lune-touch test
 ```
 
 The Makefiles resolve `esphome`, `platformio`, and `python3` from the repo-root
 `.venv313/` -> `.venv/` -> PATH. The active Lune V6 ESPHome entrypoint is:
 
 ```text
-devices/lune-v6/configurations/heatvalve-6-ble.yaml
+devices/lune-v6/configurations/lune-ble.yaml
 ```
 
 `secrets.yaml` stays at the repository root and remains gitignored.
@@ -62,7 +59,7 @@ Lune V6 is the local 6-zone hydronic manifold controller. Its code lives under
 `devices/lune-v6/`:
 
 ```text
-heatvalve-6.yaml
+lune.yaml
 configurations/
 packages/
 components/
@@ -90,14 +87,9 @@ When changing persisted config structs, increment the relevant version in
 
 ## Lune Touch / Mini
 
-Coordinator-owned code lives under `devices/lune-touch/`. The first extracted module is
-the wind-aware forecast preload model:
-
-```text
-devices/lune-touch/components/hv6_forecast/
-devices/lune-touch/tests/forecast/
-devices/lune-touch/docs/forecast_preload.md
-```
+Coordinator-owned code lives in the private `Birkemosen/lune-coordinator` repository.
+It owns forecast fetch/cache, wind/solar/thermal-lead decisions, whole-house learning,
+zone prioritization, and command ledgers.
 
 Coordinator ownership includes forecast fetch/cache, wind/solar/thermal-lead decisions,
 whole-house learning, zone prioritization, and command ledgers. Lune V6 still validates
