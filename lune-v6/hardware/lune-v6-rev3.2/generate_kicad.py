@@ -291,6 +291,18 @@ PASSIVE_DEFAULTS = {
     ("C", "22n 5% 50V C0G", "Capacitor_SMD:C_1206_3216Metric"):
         {"Dielectric": "C0G_NP0_MANDATORY",
          "Sourcing": "OPEN_VERIFY_LCSC_22N_5PCT_50V_C0G_1206"},
+    # 0805 -> 0603 shrink.  The 16 V rating is not margin, it is capacitance:
+    # a 10 uF 10 V part in 0603 loses roughly half its value to DC bias at
+    # 3.3 V, while a 16 V part keeps most of it.  X7R does not exist at
+    # 10 uF/16 V in 0603, so this ratifies X5R in place of the X7R the 0805
+    # part used: the derating band widens from -55..125 C to -55..85 C, which
+    # the cabinet ambient still clears.  Same CCTC TCC family as the outgoing
+    # part and the same K (+/-10%) tolerance.  Initial tolerance is noise next
+    # to DC-bias loss, so the effective capacitance at 3.3 V is a measurement
+    # item in the validation plan, not a sourcing question.
+    ("C", "10u 16V", "Capacitor_SMD:C_0603_1608Metric"):
+        {"MPN": "TCC0603X5R106K160CT", "LCSC": "C18164635",
+         "Dielectric": "X5R_RATIFIED_VERIFY_EFFECTIVE_C_AT_3V3"},
 }
 
 
@@ -445,7 +457,7 @@ def add_usb_and_power():
     r5 = passive_wired("R5", "23.7k 1%", (220, 85))
     net(r5, 2, "GND")
     link((u2, 5), (r5, 1), label="USB_ILIM")
-    decoupling("C2", "10u 10V", (280, 40), "VBUS_PROTECTED", footprint="Capacitor_SMD:C_0805_2012Metric")
+    decoupling("C2", "10u 16V", (280, 40), "VBUS_PROTECTED", footprint="Capacitor_SMD:C_0603_1608Metric")
     decoupling("C3", "100n 10V", (298, 40), "VBUS_PROTECTED")
 
     # SY8089AAAC: 1 EN, 2 GND, 3 LX, 4 IN, 5 FB.  Internally compensated, so
@@ -463,7 +475,7 @@ def add_usb_and_power():
     net(u3, 1, "VBUS_PROTECTED")
     net(u3, 2, "GND")
     net(u3, 4, "VBUS_PROTECTED")
-    decoupling("C4", "10u 10V", (330, 35), "VBUS_PROTECTED", footprint="Capacitor_SMD:C_0805_2012Metric")
+    decoupling("C4", "10u 16V", (330, 35), "VBUS_PROTECTED", footprint="Capacitor_SMD:C_0603_1608Metric")
     l1 = add(
         "Device:L",
         "L1",
@@ -497,7 +509,7 @@ def add_usb_and_power():
     net(u4, 3, "VBUS_PROTECTED")
     nc(u4, 4)
     net(u4, 5, "+3V3_MOTOR_REG")
-    decoupling("C7", "10u 10V", (500, 40), "+3V3_MOTOR_REG", footprint="Capacitor_SMD:C_0805_2012Metric")
+    decoupling("C7", "10u 16V", (500, 40), "+3V3_MOTOR_REG", footprint="Capacitor_SMD:C_0603_1608Metric")
     decoupling("C8", "100n 10V", (518, 40), "+3V3_MOTOR_REG")
     # ECO rev3.2-B: the Rev3.2-A 220 uF 6.3x7.7 mm electrolytic is replaced by
     # a second stocked 22 uF ceramic.  The qualified actuator draws 14-19 mA
@@ -511,13 +523,13 @@ def add_usb_and_power():
         "FB1",
         "600R@100MHz",
         (575, 60),
-        "Inductor_SMD:L_0603_1608Metric_Pad1.05x0.95mm_HandSolder",
+        "Inductor_SMD:L_0603_1608Metric",
         MPN="GZ1608D601TF",
         LCSC="C1002",
     )
     net(fb, 1, "+3V3_LOGIC")
     net(fb, 2, "+3V3_ANALOG")
-    decoupling("C10", "10u 10V", (605, 40), "+3V3_ANALOG", footprint="Capacitor_SMD:C_0805_2012Metric")
+    decoupling("C10", "10u 16V", (605, 40), "+3V3_ANALOG", footprint="Capacitor_SMD:C_0603_1608Metric")
     decoupling("C11", "100n 10V", (623, 40), "+3V3_ANALOG", LCSC="C14663")
     note("TPS2553-1 is latch-off: an input fault removes power from the ESP32 too. Validate USB inrush and the ~1 A limit.", (110, 140))
     note("Logic buck, motor LDO and analog ferrite branch share one deliberate ground plane.", (110, 149))
@@ -597,7 +609,7 @@ def add_esp32():
     )
     net(sw2, 2, "GND")
     bus(((u1, 27), (r9, 2), (sw2, 1)), spine_x=272, label="BOOT_N")
-    decoupling("C13", "10u", (355, 175), "+3V3_LOGIC", footprint="Capacitor_SMD:C_0805_2012Metric")
+    decoupling("C13", "10u 16V", (355, 175), "+3V3_LOGIC", footprint="Capacitor_SMD:C_0603_1608Metric")
     decoupling("C14", "100n", (373, 175), "+3V3_LOGIC", LCSC="C14663")
     note("Motor-control GPIOs avoid GPIO0/3/19/20/45/46; GPIO35-37 belong to the N8R8 octal PSRAM.", (110, 195))
     note("GPIO5 samples the amplified commutation ripple: qualification evidence and a digital cross-check on COMM_TACHO_N.", (110, 204))
@@ -647,11 +659,11 @@ def add_decoder_logic():
     nand = add(
         "Connector_Generic:Conn_01x05",
         "U25",
-        "SN74LVC1G00DBVR",
+        "SN74LVC1G00DCKR",
         (110, 310),
-        "Package_TO_SOT_SMD:SOT-23-5",
-        MPN="SN74LVC1G00DBVR",
-        LCSC="C7826",
+        "Package_TO_SOT_SMD:SOT-353_SC-70-5",
+        MPN="SN74LVC1G00DCKR",
+        LCSC="C8185",
         Pinout="1 A; 2 B; 3 GND; 4 Y; 5 VCC",
     )
     net(nand, 1, "MOTOR_ENABLE")
@@ -1051,10 +1063,10 @@ def add_motor_drivers():
 
         decoupling(
             f"C{28 + index * 2}",
-            "10u 10V",
+            "10u 16V",
             (x - 18, 372),
             "+3V3_MOTOR",
-            footprint="Capacitor_SMD:C_0805_2012Metric",
+            footprint="Capacitor_SMD:C_0603_1608Metric",
         )
         decoupling(f"C{29 + index * 2}", "100n 10V", (x, 372), "+3V3_MOTOR", LCSC="C14663")
         # DRV8411 pins 11/14 are NC. These pads exist only so the pin-compatible
@@ -1084,9 +1096,9 @@ def add_motor_drivers():
             f"RSA{index}",
             "1R 1% 0.5W",
             (x - 55, xy(drv, 3)[1] + 3.81),
-            footprint="Resistor_SMD:R_1206_3216Metric",
-            MPN="CSR1206FK1R00",
-            LCSC="C346773",
+            footprint="Resistor_SMD:R_0603_1608Metric",
+            MPN="RC0603FR-071RL",
+            LCSC="C112305",
             Status="PRODUCTION_TUNING_PARAMETER",
         )
         net(rsa, 2, "GND")
@@ -1095,9 +1107,9 @@ def add_motor_drivers():
             f"RSB{index}",
             "1R 1% 0.5W",
             (x - 30, xy(drv, 6)[1] + 3.81),
-            footprint="Resistor_SMD:R_1206_3216Metric",
-            MPN="CSR1206FK1R00",
-            LCSC="C346773",
+            footprint="Resistor_SMD:R_0603_1608Metric",
+            MPN="RC0603FR-071RL",
+            LCSC="C112305",
             Status="PRODUCTION_TUNING_PARAMETER",
         )
         net(rsb, 2, "GND")

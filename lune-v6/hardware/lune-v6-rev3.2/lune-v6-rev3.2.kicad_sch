@@ -1,16 +1,36 @@
 (kicad_sch
-	(version 20250114)
+	(version 20260306)
 	(generator "eeschema")
-	(generator_version "9.0")
+	(generator_version "10.0")
 	(uuid "3cc8096b-13b1-4b0d-9c58-1fdfb9628e5b")
 	(paper "A0")
 	(title_block
 		(title "Lune V6 Rev 3.2")
 	)
 	(lib_symbols)
+	(text "ECO rev3.2-B: commutation-tacho and runtime-timeout correction"
+		(exclude_from_sim no)
+		(at 40 53 0)
+		(effects
+			(font
+				(size 1.2 1.2)
+			)
+		)
+		(uuid "42901ab4-4bfc-431f-b6a8-1c055bef38a0")
+	)
+	(text "Hierarchical schematic: Power, Controller, Motors, Analog, and Connectors"
+		(exclude_from_sim no)
+		(at 40 45 0)
+		(effects
+			(font
+				(size 1.2 1.2)
+			)
+		)
+		(uuid "5eb13e75-b4a3-4ca5-8515-f545e2cda813")
+	)
 	(text "Lune V6 Rev 3.2 - six-channel two-wire manifold controller"
 		(exclude_from_sim no)
-		(at 40 35 0.0000)
+		(at 40 35 0)
 		(effects
 			(font
 				(size 2 2)
@@ -19,28 +39,8 @@
 		)
 		(uuid "9bdb3c93-0f2e-4fb8-b1b6-07f1bc31defa")
 	)
-	(text "Hierarchical schematic: Power, Controller, Motors, Analog, and Connectors"
-		(exclude_from_sim no)
-		(at 40 45 0.0000)
-		(effects
-			(font
-				(size 1.2 1.2)
-			)
-		)
-		(uuid "5eb13e75-b4a3-4ca5-8515-f545e2cda813")
-	)
-	(text "ECO rev3.2-B: commutation-tacho and runtime-timeout correction"
-		(exclude_from_sim no)
-		(at 40 53 0.0000)
-		(effects
-			(font
-				(size 1.2 1.2)
-			)
-		)
-		(uuid "42901ab4-4bfc-431f-b6a8-1c055bef38a0")
-	)
 	(sheet
-		(at 45 65)
+		(at 160 120)
 		(size 90 35)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -52,11 +52,13 @@
 			(type solid)
 		)
 		(fill
-			(color 0 0 0 0.0000)
+			(color 0 0 0 0)
 		)
-		(uuid "c7813df0-c554-4bf5-baec-6fc2e08f1077")
-		(property "Sheetname" "Power"
-			(at 45 64.2884 0)
+		(uuid "0997b576-2249-4f2b-8913-9c5b6bad0d6c")
+		(property "Sheetname" "Current and Commutation Tacho"
+			(at 160 119.2884 0)
+			(show_name no)
+			(do_not_autoplace no)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -64,8 +66,10 @@
 				(justify left bottom)
 			)
 		)
-		(property "Sheetfile" "lune-v6-rev3.2-power.kicad_sch"
-			(at 45 100.5846 0)
+		(property "Sheetfile" "lune-v6-rev3.2-analog.kicad_sch"
+			(at 160 155.5846 0)
+			(show_name no)
+			(do_not_autoplace no)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -74,9 +78,9 @@
 			)
 		)
 		(instances
-			(project None
+			(project "lune-v6-rev3.2"
 				(path "/3cc8096b-13b1-4b0d-9c58-1fdfb9628e5b"
-					(page "2")
+					(page "5")
 				)
 			)
 		)
@@ -94,11 +98,13 @@
 			(type solid)
 		)
 		(fill
-			(color 0 0 0 0.0000)
+			(color 0 0 0 0)
 		)
 		(uuid "799875e0-1f01-4a79-8f5a-ddb7654d6a5a")
 		(property "Sheetname" "Controller and Safety"
 			(at 160 64.2884 0)
+			(show_name no)
+			(do_not_autoplace no)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -108,6 +114,8 @@
 		)
 		(property "Sheetfile" "lune-v6-rev3.2-controller.kicad_sch"
 			(at 160 100.5846 0)
+			(show_name no)
+			(do_not_autoplace no)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -116,93 +124,9 @@
 			)
 		)
 		(instances
-			(project None
+			(project "lune-v6-rev3.2"
 				(path "/3cc8096b-13b1-4b0d-9c58-1fdfb9628e5b"
 					(page "3")
-				)
-			)
-		)
-	)
-	(sheet
-		(at 45 120)
-		(size 90 35)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(dnp no)
-		(fields_autoplaced yes)
-		(stroke
-			(width 0.1524)
-			(type solid)
-		)
-		(fill
-			(color 0 0 0 0.0000)
-		)
-		(uuid "baf1dae1-f9f2-4f19-aa25-a3bf1ca41842")
-		(property "Sheetname" "Motor Drivers"
-			(at 45 119.2884 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left bottom)
-			)
-		)
-		(property "Sheetfile" "lune-v6-rev3.2-motors.kicad_sch"
-			(at 45 155.5846 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left top)
-			)
-		)
-		(instances
-			(project None
-				(path "/3cc8096b-13b1-4b0d-9c58-1fdfb9628e5b"
-					(page "4")
-				)
-			)
-		)
-	)
-	(sheet
-		(at 160 120)
-		(size 90 35)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(dnp no)
-		(fields_autoplaced yes)
-		(stroke
-			(width 0.1524)
-			(type solid)
-		)
-		(fill
-			(color 0 0 0 0.0000)
-		)
-		(uuid "0997b576-2249-4f2b-8913-9c5b6bad0d6c")
-		(property "Sheetname" "Current and Commutation Tacho"
-			(at 160 119.2884 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left bottom)
-			)
-		)
-		(property "Sheetfile" "lune-v6-rev3.2-analog.kicad_sch"
-			(at 160 155.5846 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(justify left top)
-			)
-		)
-		(instances
-			(project None
-				(path "/3cc8096b-13b1-4b0d-9c58-1fdfb9628e5b"
-					(page "5")
 				)
 			)
 		)
@@ -220,11 +144,13 @@
 			(type solid)
 		)
 		(fill
-			(color 0 0 0 0.0000)
+			(color 0 0 0 0)
 		)
 		(uuid "84121926-5e78-4f6d-9b3c-18415b3d03b8")
 		(property "Sheetname" "Connectors and Interfaces"
 			(at 45 174.2884 0)
+			(show_name no)
+			(do_not_autoplace no)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -234,6 +160,8 @@
 		)
 		(property "Sheetfile" "lune-v6-rev3.2-connectors.kicad_sch"
 			(at 45 210.5846 0)
+			(show_name no)
+			(do_not_autoplace no)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -242,9 +170,101 @@
 			)
 		)
 		(instances
-			(project None
+			(project "lune-v6-rev3.2"
 				(path "/3cc8096b-13b1-4b0d-9c58-1fdfb9628e5b"
 					(page "6")
+				)
+			)
+		)
+	)
+	(sheet
+		(at 45 120)
+		(size 90 35)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(stroke
+			(width 0.1524)
+			(type solid)
+		)
+		(fill
+			(color 0 0 0 0)
+		)
+		(uuid "baf1dae1-f9f2-4f19-aa25-a3bf1ca41842")
+		(property "Sheetname" "Motor Drivers"
+			(at 45 119.2884 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left bottom)
+			)
+		)
+		(property "Sheetfile" "lune-v6-rev3.2-motors.kicad_sch"
+			(at 45 155.5846 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left top)
+			)
+		)
+		(instances
+			(project "lune-v6-rev3.2"
+				(path "/3cc8096b-13b1-4b0d-9c58-1fdfb9628e5b"
+					(page "4")
+				)
+			)
+		)
+	)
+	(sheet
+		(at 45 65)
+		(size 90 35)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(stroke
+			(width 0.1524)
+			(type solid)
+		)
+		(fill
+			(color 0 0 0 0)
+		)
+		(uuid "c7813df0-c554-4bf5-baec-6fc2e08f1077")
+		(property "Sheetname" "Power"
+			(at 45 64.2884 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left bottom)
+			)
+		)
+		(property "Sheetfile" "lune-v6-rev3.2-power.kicad_sch"
+			(at 45 100.5846 0)
+			(show_name no)
+			(do_not_autoplace no)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left top)
+			)
+		)
+		(instances
+			(project "lune-v6-rev3.2"
+				(path "/3cc8096b-13b1-4b0d-9c58-1fdfb9628e5b"
+					(page "2")
 				)
 			)
 		)
