@@ -5,8 +5,8 @@
   "fabrication_status": "SCHEMATIC_ECO_PENDING_PCB_PLACEMENT_ROUTING_AND_PHYSICAL_VALIDATION",
   "layers": 2,
   "target_outline_mm": {
-    "width": 90,
-    "height": 75
+    "width": 100,
+    "height": 70
   },
   "maximum_outline_mm": {
     "width": 100,
@@ -37,14 +37,12 @@
     ],
     "rev31_entrypoint_is_unsafe_on_rev32_hardware": "GPIO5_WAS_A_NO_CONNECT_IN_REV3.2A_AND_IS_NOW_AN_AMPLIFIED_ANALOG_INPUT"
   },
-  "populated_placement_projection": 111,
-  "populated_placement_schematic_count": 111,
-  "second_source_dnp_placements": 6,
-  "copper_only_pads": 14,
+  "populated_placement_projection": 116,
+  "populated_placement_schematic_count": 116,
+  "second_source_dnp_placements": 0,
+  "copper_only_pads": 8,
   "mechanical_items": 4,
-  "open_sourcing_items": [
-    "C25"
-  ],
+  "open_sourcing_items": [],
   "current_sense_v_per_a": 10.0,
   "mechanical_placement": {
     "candidate": "PENDING_REV3.2_PCB",
@@ -102,38 +100,84 @@
     "drc_violations": null,
     "unconnected_items": null,
     "layout_integrity": null,
-    "physical_validation_complete": false
+    "physical_validation_complete": false,
+    "outline_rationale": "Width 100 mm is set by the all-south connector edge (99.35 mm with corner M3) and by the flat sub-100x100 fab price class. Height 70 mm gives 38% free-area fill; 68 mm still passes DRC, 80 mm gives 26%.",
+    "connector_edge": "SOUTH_PLUS_USBC_WEST",
+    "mounting_hole_positions_mm": [
+      [
+        4.5,
+        4.5
+      ],
+      [
+        94.85,
+        4.5
+      ],
+      [
+        4.5,
+        65.5
+      ],
+      [
+        94.85,
+        65.5
+      ]
+    ],
+    "mounting_hole_note": "Corner holes require the ESP32 at the north centre and USB-C off the south edge; the inherited 82x67 rectangle does not fit.",
+    "south_edge_budget_mm": 99.35,
+    "mounting_hole_footprint": "MountingHole:MountingHole_3.2mm_M3_ISO14580_Pad",
+    "mounting_rectangle_mm": {
+      "width": 90.35,
+      "height": 61.0
+    },
+    "connector_projection_mm": {
+      "rj9": 1.03,
+      "one_wire": 1.03,
+      "usb_c": 0.0
+    },
+    "usb_c_projection_note": "TYPE-C-31-M-12 cannot project through a straight edge without breaking 0.25 mm copper-to-edge; needs a deeper enclosure opening or a board notch.",
+    "free_area_fill_percent": 38,
+    "antenna_cutout_mm": {
+      "width": 21.0,
+      "depth": 7.0,
+      "edge": "NORTH",
+      "centred_on": "U1"
+    },
+    "antenna_cutout_rationale": "7 mm is the module's pad-free length at the antenna end (northmost pad edge 5.71 mm from origin vs 12.75 mm body half-length); 21 mm gives 1.5 mm either side of the 18 mm module. Replaces the stock 48x21 footprint keepout, which encodes Espressif's 15 mm housing clearance rather than a board copper rule.",
+    "antenna_housing_clearance_mm": 15,
+    "antenna_housing_clearance_note": "No metal within 15 mm of the antenna in any direction. Enclosure constraint, verified on the mechanical design, not on the PCB.",
+    "board_area_mm2": 6853,
+    "antenna_board_rule": "GROUND_COPPER_AND_DENSE_STITCHING_UP_TO_THE_CUTOUT_EDGE",
+    "antenna_board_rule_note": "Espressif requires sufficient ground copper and dense ground vias on the base board near the antenna. The 15 mm figure is a housing clearance and must NOT be applied as a copper keepout. Keep magnetics (SWPA4018S buck inductor) and the buck switch node away from the notch instead.",
+    "block_placement": {
+      "analog_island": "WEST_NORTH  - beside ADC_CURRENT/ADC_TACHO/COMM_TACHO_N pads",
+      "usb_connector": "WEST_SOUTH  - beside USB_DM/USB_DP pads 13/14",
+      "motor_ldo_shunt_ina180": "WEST_NORTH - Kelvin pair, must be near the ADC pads",
+      "buck_u3_l1": "EAST_OR_SOUTHEAST - noisiest block, must not share the west side with the analog island",
+      "decoder_u24": "EAST - all 17 nets are static logic, run length is free",
+      "one_wire_terminal": "SOUTH_EAST - ONEWIRE_MCU is on the module east side"
+    }
   },
   "driver": {
     "primary_part": "DRV8411PWPR",
     "primary_lcsc_part": "C18212622",
-    "second_source_part": "DRV8833PWPR",
-    "second_source_lcsc_part": "C50506",
-    "population": "DRV8411_ONLY",
-    "population_rationale": "DRV8411 specifies xISEN V_TRIP as 180/200/230 mV and is characterized from VM=1.65 V. The DRV8833 electrical-characteristics table specifies no xISEN trip limits and its datasheet states RDS(on) increases and output current is reduced below VM=5 V, so on a 3.2 V motor rail it is both slower and unspecified in the current-ceiling role. Six 0603 DNP pads keep it available as a drop-in shortage substitute only.",
+    "second_source_part": "DRV8410PWPR",
+    "second_source_lcsc_part": "NOT_STOCKED_AT_LCSC",
+    "population": "DRV8411_ONLY_NO_DNP",
+    "population_rationale": "DRV8411 specifies xISEN V_TRIP as 180/200/230 mV and is characterized from VM=1.65 V, and it integrates the charge-pump and internal-regulator capacitors on die, so pins 11 and 14 are NC and stay open. No DNP placements remain.",
     "primary_unit_price_usd": 1.18,
     "primary_stock_units": 726,
-    "second_source_unit_price_usd": 2.37,
-    "second_source_stock_units": 256,
     "driver_cost_per_board_usd": 3.54,
-    "second_source_cost_penalty_per_board_usd": 3.57,
     "stock_headroom_boards": 242,
     "selection_constraint": "VM must be specified at the ~3.18 V seen at the driver pin (3.3 V rail less the 0.116 V shunt drop). That alone excludes most of the H-bridge market, which starts at 5 V or 8 V. Adding shunt-programmable current regulation with a specified trip voltage, an open-drain nFAULT and internal input pulldowns narrows the field to one family.",
     "alternatives_evaluated": {
       "DRV8410": "Functional drop-in: same PWP pinout including NC pins 11/14, same VM 1.65-11 V, same xISEN V_TRIP 180/200/230 mV, same nFAULT, nSLEEP 500k and 100k input pulldowns, same t_OFF/t_BLANK/t_DEG. Only RDS(on) differs (800 vs 400 mOhm total), which costs 40 mV instead of 20 mV at 50 mA - immaterial on this rail. Not stocked at LCSC and priced above DRV8411 elsewhere, so it is not a cost-down. It is the best functional second source if it ever appears at LCSC.",
       "DRV8411A": "Same physical pin positions but pins 3/6 are IPROPI current-mirror outputs, not xISEN shunt returns, and TI lists no direct pin-to-pin replacement for it. A 1 ohm resistor there would set a mirror scale, not a trip point, so the shunt-programmable ceiling disappears. Not a drop-in for this topology.",
-      "DRV8833_DRV8833C": "The only LCSC-stocked fallback, which is why the six DNP pads are retained. Worse on all four axes: 2.0x the unit price, 0.35x the stock, six extra capacitors, and no specified xISEN trip limits with RDS(on) explicitly derated below VM=5 V.",
+      "DRV8833_DRV8833C": "Dropped as second source in Rev3.2-E and its six DNP pads removed. TI lists DRV8411 as the newer replacement for DRV8833 - pin-for-pin with the same functionality, adding integrated VCP and VINT capacitors, 1.8 V logic inputs and ultra-low sleep current. So the pads preserved the OLDER part, which carries more EOL risk than the one it was backing up. It was also worse on every axis already recorded: 2.0x the unit price, 0.35x the stock, six extra capacitors, and no specified xISEN trip limits with RDS(on) explicitly derated below VM=5 V.",
       "DRV8841_DRV8842_DRV8844": "Cheaper at LCSC (0.54-0.62 USD) but VM floors of 8.0-8.2 V. Cannot run on a 3.3 V motor rail at all.",
       "DRV8835_DRV8836": "VM from 0 V and 220 mOhm on-resistance, but no current regulation and no fault output. Trades two nested protection layers for well under 1 USD per board.",
       "TC78H660FNG": "Toshiba dual bridge, VM 2.5-16 V, 0.48 ohm, TSSOP16, with an error-flag output. Uses sense-resistor-less internal current detection, so the ceiling is a fixed ~2 A overcurrent protection with no programmable trip and no specified threshold - it removes the 1.5 ohm retune path and the specified-ceiling argument. VM floor is also 2.5 V against DRV8411's 1.65 V."
     },
     "selection_conclusion": "DRV8411 retained. It is simultaneously the cheapest, best-stocked and most capable part that meets the constraint set, so the original cost-down framing was inverted. Driver cost is 3.54 USD of a roughly 43 USD per-board budget, so chasing a cheaper bridge is not where prototype cost lives.",
-    "drv8411_populated_placements": 111,
-    "drv8833_populated_placements": 117,
-    "drv8833_required_capacitors": {
-      "vint": "3x 2.2uF 6.3V X5R to GND",
-      "vcp": "3x 10nF 50V X7R to VM"
-    },
+    "drv8411_populated_placements": 116,
     "devices": 3,
     "bridges_per_device": 2,
     "bridge_current_limit_ohm": 1.0,
@@ -159,32 +203,76 @@
     "production_retune_window_ma": [
       118.8,
       154.9
-    ]
+    ],
+    "second_source_rationale": "DRV8410 is pin-compatible INCLUDING the NC pins 11 and 14, so it needs no external VCP or VINT capacitors and drops in with no board change. DRV8833 was the previous nominated second source and is dropped: TI now lists DRV8411 as its newer replacement, it costs 2.0x, stocks at 0.35x, and - decisively - its electrical table specifies no xISEN trip limits and derates RDS(on) below VM=5 V, so on this 3.18 V rail it is unspecified in exactly the current-ceiling role it would have to fill. The six DNP pads preserved an option this contract had already argued was not viable.",
+    "pins_11_and_14_must_stay_open": true,
+    "dnp_removal_gain": "Six 0603 placements, six nets (VINT1-3, VCP1-3) and the two pads per driver that pinned the decoder gap. The gap between the west and middle drivers' cap clusters widens from 9.90 to 16.90 mm, and the y = 35.5 band clears so the FWD/REV fan-out crosses only +3V3_MOTOR."
   },
   "decoder": {
-    "part": "XL74HC4514D",
-    "lcsc_part": "C50202050",
+    "part": "74HC4514PW,118",
+    "lcsc_part": "C58910",
     "active_high_outputs": true,
     "active_high_inhibit": true,
     "latch_enable_tied_high": false,
     "latch_enable_net": "DECODER_INHIBIT",
     "address_locked_while_driving": true,
     "connected_forward_outputs": [
+      7,
+      4,
+      13,
+      14,
+      9,
+      10
+    ],
+    "connected_reverse_outputs": [
+      6,
+      5,
+      12,
+      15,
+      8,
+      11
+    ],
+    "package": "TSSOP-24",
+    "output_assignment_is_a_layout_choice": true,
+    "output_assignment_rationale": "U24 sits at the driver row's latitude, so its output pins are level with the driver bodies and every output must go north around the package before dropping south into the input row. In that topology the southernmost decoder pin lands in the southernmost lane and reaches the NEAREST destination, so the order inverts against a straight-across layout: side A pins 4-7 serve U20, side B pins 13-16 the near eastern driver U21, and 17-20 the far one U22. Within each group FWD takes the outer pins and REV the inner, mirroring the DRV8411's own flank order AIN1, AIN2 ... BIN2, BIN1.",
+    "within_group_order_assumes": "NORTH_AROUND_ROUTING: outputs leave the flank, pass north of the package, run along, and drop south into the driver input row. Southernmost decoder pin -> nearest destination.",
+    "unreachable_addresses": [
       0,
       1,
       2,
-      3,
-      4,
-      5
+      3
     ],
-    "connected_reverse_outputs": [
-      8,
-      9,
-      10,
-      11,
-      12,
-      13
-    ]
+    "unreachable_addresses_rationale": "Side A keeps four spare outputs rather than being packed, because packing them would move a driver's signals onto the flank facing away from it. Q0-Q3 are the cost and they are left unconnected, which check_design asserts.",
+    "superseded_encoding": "(dir << 3) | (channel - 1), which required MOTOR_TERM_DIR as the direction bit",
+    "superseded_encoding_rationale": "Q0-Q7 all sit on side A and Q8-Q15 on side B, so making bit 3 the direction bit forced every motor's forward/reverse pair to straddle the package. All four address lines are now plain address bits and MOTOR_TERM_DIR was renamed MOTOR_ADDR3.",
+    "channel_address_map": {
+      "1": {
+        "forward": 7,
+        "reverse": 6
+      },
+      "2": {
+        "forward": 4,
+        "reverse": 5
+      },
+      "3": {
+        "forward": 13,
+        "reverse": 12
+      },
+      "4": {
+        "forward": 14,
+        "reverse": 15
+      },
+      "5": {
+        "forward": 9,
+        "reverse": 8
+      },
+      "6": {
+        "forward": 10,
+        "reverse": 11
+      }
+    },
+    "address_bit0_is_direction": false,
+    "address_bit0_rationale": "Direction tracks bit 0 only on odd channels and inverts on even ones, because the mirrored bridge order forces the FWD/REV pair to swap sense between motor A and motor B of each driver. Firmware uses the 12-entry map rather than a formula."
   },
   "rail_overcurrent": {
     "shunt_ohm": 0.5,
@@ -258,9 +346,9 @@
     "required_blanking_ms": 250,
     "output": "COMM_TACHO_N",
     "output_type": "OPEN_COLLECTOR_PULLUP_TO_3V3_LOGIC",
-    "gpio": 15,
+    "gpio": 38,
     "analog_monitor_net": "TACHO_AMP",
-    "analog_monitor_gpio": 5,
+    "analog_monitor_gpio": 1,
     "analog_monitor_series_ohm": 1000,
     "analog_monitor_purpose": "QUALIFICATION_WAVEFORM_CAPTURE_AND_DIGITAL_CROSS_CHECK_ON_COMM_TACHO_N",
     "test_points": [
@@ -275,38 +363,71 @@
       "full_stroke_count_repeatability",
       "false_edge_immunity_during_current_regulation_chop_and_cable_transients",
       "missed_and_false_edge_rate_of_COMM_TACHO_N_versus_ADC_TACHO"
-    ]
-  },
-  "hardware_runtime_cutoff": {
-    "part": "74HC4060D,653",
-    "lcsc_part": "C5649",
-    "normal_firmware_limit_hmip_s": 40,
-    "normal_firmware_limit_generic_s": 45,
-    "reset_net": "LATCH_STATE",
-    "reset_semantics": "BOUNDS_TOTAL_ARMED_TIME",
-    "reset_rationale": "DECODER_INHIBIT is the only signal firmware can chop for duty-cycle control, and any brief coast reset the counter. Referencing the latch /Q makes the cutoff immune to both and turns it into a watchdog on the whole armed window. Firmware must arm per move; an idle armed latch self-disarms.",
-    "target_nominal_cutoff_s": 71.4,
-    "alternate_formula_cutoff_s": 81.1,
-    "required_characterized_minimum_s": 50,
-    "required_characterized_maximum_s": 90,
-    "oscillator_rt_ohm": 180000,
-    "oscillator_r2_ohm": 360000,
-    "oscillator_ct_f": 2.2e-08,
-    "oscillator_ct_dielectric": "C0G_NP0_MANDATORY",
-    "oscillator_ct_tolerance_percent": 5,
-    "oscillator_rt_tolerance_percent": 1,
-    "oscillator_device_spread_percent": 15,
-    "oscillator_tolerance_stack_percent": 21,
-    "oscillator_tolerance_note": "Formula factor and initial RC tolerance are trimmable with Rt after the first measurement; part-to-part and over-temperature spread is not. A 10uF class-2 Ct stacks to roughly +/-56% and cannot be trimmed into the 50-90 s window at all.",
-    "oscillator_ct_rationale": "A 10uF class-2 part stacked tolerance, tempco, DC bias and aging to roughly -40%, putting the cutoff near 43 s - under both the 45 s firmware limit and the 50 s floor. Initial tolerance is trimmable with Rt; temperature coefficient is not.",
-    "oscillator_formula_factors_checked": [
-      2.2,
-      2.5
     ],
-    "timeout_output_pin": 3,
-    "timeout_output_divider": 16384,
-    "timeout_first_high_cycles": 8192,
-    "persistent_fault_latched": true
+    "is_load_bearing": false,
+    "load_bearing_pair": [
+      "ADC_CURRENT_DC_STEP",
+      "FIRMWARE_RUNTIME_LIMIT"
+    ],
+    "enhancement_rationale": "Commutation counting is resolution above what the application needs - a heating valve wants 'roughly 40 percent open', not micron precision. The load-bearing pair is the DC current step (140-190 mV running against 230-500 mV stalled, a 50 LSB floor at 12 bit) plus the firmware runtime limit. Nothing may be built that assumes the tacho is reliable.",
+    "degradation_path": "If qualified commutation proves unreliable in the field, firmware degrades to stall-and-time: find both end stops from the DC current step, then position by elapsed time calibrated against the measured stroke. That needs NO hardware change - ADC_CURRENT on GPIO2 already carries it - which is what makes the sophisticated path safe to depend on provisionally.",
+    "cannot_distinguish": "Rotation from brush chatter or rotor buzz against a hard stop. Both produce in-band current ripple and are indistinguishable in the current domain. The chopper (engages only at 178-232 mA against a 23-50 mA measured stall), the buck at 1.5 MHz and supply ripple at 100 Hz through the LDO's PSRR are all excluded quantitatively; mechanical chatter is not. A false-edge stall therefore reads as 'elevated current, still moving' - a heavy move continuing - and is caught by the runtime limit, not by the endpoint classifier.",
+    "only_discriminator_would_be": "Back-EMF measured during a coast interruption: a turning rotor generates it, a stalled one does not. Rev3.1 carried that frontend and it was removed for ten parts, an ADC GPIO and the coast interruption. See architecture.md - the removal note claimed the ripple gives the same evidence less directly, which is not true on this one point."
+  },
+  "actuator_overrun_hazard": {
+    "supersedes": "hardware_runtime_cutoff_74HC4060_ECO_rev3.2-B",
+    "decision": "NO_HARDWARE_MAX_ON_TIME",
+    "decision_basis": "HAZARD_ASSESSMENT_NOT_OMISSION",
+    "failure_mode": "FIRMWARE_KEEPS_A_CHANNEL_ARMED_PAST_END_STOP",
+    "damage_mechanism": "STALL_TORQUE_TIMES_DURATION_NOT_POWER",
+    "damaging_direction": "OPENING_ONLY",
+    "worst_case_outcome": "ONE_ACTUATOR_GEAR_TRAIN",
+    "head_separation_consequence": "VALVE_INSERT_AND_SEAL_REMAIN_IN_MANIFOLD_PIN_RELEASED_TO_FULL_FLOW",
+    "water_escape_risk": false,
+    "water_escape_rationale": "Closed system; the actuator head is a removable cap and the hydraulic seal belongs to the manifold insert, not the head.",
+    "floor_temperature_bounded_by": "MIXING_VALVE_SUPPLY_TEMPERATURE",
+    "stuck_open_consequence": "ONE_LOOP_AT_FULL_FLOW_COMFORT_AND_ENERGY_ONLY",
+    "self_announcing": true,
+    "self_announcing_evidence": [
+      "ROOM_OVERSHOOT",
+      "LOOP_RETURN_TEMPERATURE_STAYS_HIGH"
+    ],
+    "person_hazard": false,
+    "rail_overcurrent_offers_no_protection": true,
+    "rail_overcurrent_rationale": "Stall current sits below the 280 mA comparator trip, and the comparator bounds current, i.e. torque, never duration.",
+    "retained_mitigations": [
+      "FIRMWARE_RUNTIME_LIMIT_ALREADY_IN_SERVICE",
+      "COMMUTATION_TACHO_ROTATION_STALL_EVIDENCE",
+      "ESP32_TASK_WATCHDOG",
+      "R10_R15_PULLDOWNS_DEFINE_SAFE_STATE_WHEN_GPIO_HIGH_Z"
+    ],
+    "primary_protection": "FAST_STALL_DETECTION_IN_FIRMWARE_NOT_A_MAX_ON_TIME",
+    "primary_protection_rationale": "Gear damage accumulates in tens of seconds, so any fixed cutoff long enough to clear a legitimate stroke is already long enough to strip the train. Detecting the end stop quickly is the only effective defence; a max-on-time could only have bounded the indefinite case.",
+    "removal_cost_rationale": "The removed part cost more than the hazard it addressed. Its oscillator network shipped rotated one position around the timing star (Ct on RTC, Rt on RS, Rs on CTC), invisible to ERC and to check_design because the timeout was computed from contract values rather than from schematic topology.",
+    "learning_mode_collision": "Learning must reach both end stops: 659 + 1048 commutation counts across a 20-40 Hz band is 43-85 s, against a 71.4 s nominal cutoff whose 21% stack spans 56-86 s. Commissioning could therefore latch a fault that firmware is by design unable to clear.",
+    "removed_parts": [
+      "U36",
+      "R27",
+      "R28",
+      "C25",
+      "Q2",
+      "C24"
+    ],
+    "removed_nets": [
+      "TIMEOUT_Q14",
+      "TIMER_RTC",
+      "TIMER_RS",
+      "TIMER_CTC",
+      "TIMING_COMMON"
+    ],
+    "latch_no_longer_self_disarms": true,
+    "latch_self_disarm_loss_is_benign": "MOTOR_ENABLE falling to its 100k pulldown drives DECODER_INHIBIT high, and the 4514 inhibit turns every output off regardless of DRIVE_PERMIT.",
+    "reassess_if": [
+      "AN_ACTUATOR_WHOSE_RIGID_INTERNAL_STOP_IS_ON_THE_CLOSING_SIDE",
+      "A_SYSTEM_WITHOUT_SUPPLY_TEMPERATURE_LIMITING",
+      "AN_ACTUATOR_WHOSE_HEAD_CARRIES_THE_HYDRAULIC_SEAL"
+    ],
+    "open_measurement": "STALL_SURVIVAL_TIME_OF_THE_SUPPORTED_ACTUATOR_GEAR_TRAIN"
   },
   "fault_latch": {
     "part": "74LVC1G74DP,125",
@@ -374,24 +495,24 @@
     "temperature_data_may_bypass_motor_safety": false
   },
   "gpio": {
-    "ADC_CURRENT": 4,
-    "ADC_TACHO": 5,
-    "I2C_SDA": 8,
-    "I2C_SCL": 9,
-    "MOTOR_ADDR0": 10,
+    "ADC_TACHO": 1,
+    "ADC_CURRENT": 2,
+    "I2C_SDA": 21,
+    "I2C_SCL": 47,
+    "MOTOR_ADDR0": 12,
     "MOTOR_ADDR1": 11,
-    "MOTOR_ADDR2": 12,
-    "MOTOR_ENABLE": 13,
-    "MOTOR_TERM_DIR": 14,
-    "COMM_TACHO_N": 15,
-    "LATCH_ARM": 16,
-    "LATCH_STATE": 17,
+    "MOTOR_ADDR2": 14,
+    "MOTOR_ENABLE": 15,
+    "LATCH_STATE": 16,
+    "LATCH_ARM": 17,
     "USB_DM": 19,
     "USB_DP": 20,
-    "ONEWIRE_MCU": 42,
+    "COMM_TACHO_N": 38,
+    "ONEWIRE_MCU": 18,
     "UART_TX_DBG": 43,
     "UART_RX_DBG": 44,
-    "STATUS_LED_N": 48
+    "STATUS_LED_N": 4,
+    "MOTOR_ADDR3": 13
   },
   "forbidden_motor_control_gpio": [
     0,
@@ -416,5 +537,51 @@
     "includes_freight": true,
     "includes_vat_and_import_fees": true,
     "live_jlcpcb_quote_required_before_release": true
+  },
+  "motor_esd": {
+    "part": "TPD1E10B06DYAR",
+    "lcsc_part": "C3712135",
+    "package": "SOD-523",
+    "topology": "GND_REFERENCED_SINGLE_LINE_ONE_PER_MOTOR_WIRE",
+    "count": 12,
+    "replaces": "USBLC6-4SC6_x3_RAIL_CLAMP_WITH_VBUS_ON_3V3_MOTOR",
+    "rejection_rationale": "A rail-clamp array steers a positive strike through a steering diode into its VBUS pin before ground. VBUS was +3V3_MOTOR, which carries DRV8411 VM and INA180 IN-, so the fast edge landed on the rail the current sense and commutation tacho depend on. ST's own 8 kV worked example gives VCL+ = +31.2 V against a DRV8411 output rated -V_SD..VM+V_SD and a 2 V/us VM ramp limit.",
+    "clamp_v_at_1a": 10,
+    "dynamic_resistance_ohm": 0.4,
+    "iec_61000_4_2_contact_kv": 30,
+    "bidirectional_cannot_be_reversed": true,
+    "placement_rule": "TVS_AT_CONNECTOR_PIN_OWN_GND_VIA_TRACE_LENGTH_IS_THE_CLAMP"
+  },
+  "module_variant_rationale": "N8R8 chosen over N8R2 on price: $3.63 vs $3.83 at 100+, $3.41 vs $3.57 at 1300+ (LCSC C2913201 / C2913204). The 8 MB octal PSRAM is surplus - measured use is ~75 kB plus the NimBLE host - and octal PSRAM consumes IO33..IO37, so module pads 28/29/30 are unavailable. Neither cost mattered for this design: the pin budget is not tight and 2 MB was never the constraint.",
+  "module_temperature_rating": {
+    "ambient_c_without_ecc": 65,
+    "ambient_c_with_ecc": 85,
+    "condition": "CONFIG_SPIRAM_ECC_ENABLE=y, which itself depends on CONFIG_SPIRAM_MODE_OCT=y",
+    "datasheet_quote": "R8 and R16V series modules operate at -40 ~ 65 C ambient temperature ... if the PSRAM ECC function is enabled, the maximum ambient temperature can be improved to 85 C, while the usable size of PSRAM will be reduced by 1/16.",
+    "runtime_assertion": "Free PSRAM reads ~7680 kB with ECC on, ~8192 kB with it off. The sensor is the proof that the 85 C rating actually applies.",
+    "risk": "This makes a datasheet temperature rating depend on a build flag. The current build has SPIRAM_MODE_QUAD on an octal module with SPIRAM_IGNORE_NOTFOUND, so PSRAM is silently absent - the same class of fault."
+  },
+  "adc1_reserved_for_analog": true,
+  "adc1_reserved_rationale": "ADC1 is GPIO1-10 and is the only ADC usable while WiFi runs; ADC2 (GPIO11-20) is not. ADC_TACHO (GPIO1) and ADC_CURRENT (GPIO2) hold it, and every digital function was moved off: MOTOR_ENABLE 10 -> 15, I2C_SDA 8 -> 21, I2C_SCL 9 -> 47. One channel is spent back on purpose - see adc1_digital_exceptions - leaving six spare against two analog and one exception. check_design asserts the rule and prints the exceptions on every run, so a future pin move still cannot quietly eat a channel.",
+  "adc1_digital_exceptions": {
+    "STATUS_LED_N": "GPIO4 (pad 4), rev3.2-G. Layout, not electrical. On pad 25 the LED left the module on the south row, which put D3 and R23 in the x 49-52 / y 38-43 pocket and made R23's supply tap drag the 3V3_LOGIC spine up to y=37.21. That pocket is the only room available to re-arrange the 3V3_LOGIC, VBUS_PROTECTED and 3V3_MOTOR spines into a two-wide channel for UART_TX_DBG/UART_RX_DBG and I2C_SDA/I2C_SCL, which have no top-layer route otherwise. No cheaper pin exists: every other free pad on the west and south rows is an ADC1 channel (15/17/18 = IO3/IO9/IO10) or a strapping pin (16/26 = IO46/IO45), pads 28-30 are the octal PSRAM, and pads 32-35 sit on the east side with the analog island. The BEMF frontend that would have wanted a third analog channel was removed in rev3.2, so the reserve had headroom to spend."
+  },
+  "i2c_bus": {
+    "pull_up_ohm": 4700,
+    "pull_up_rail": "+3V3_LOGIC",
+    "pull_up_refs": [
+      "R16",
+      "R17"
+    ],
+    "pull_ups_are_mandatory": true,
+    "pull_up_rationale": "Not only for the bus to function: without them SDA and SCL float on the ESP32 inputs whenever no display is fitted, which is the failure R10-R13 exist to prevent at the decoder. A display module carrying its own pull-ups gives 2k35 effective - inside spec, and a 100 ns rise into 50 pF against the 300 ns that 400 kHz allows.",
+    "connector": "J21"
+  },
+  "unpopulated_connectors": {
+    "J21": "DISPLAY_I2C: GND, +3V3_LOGIC, SDA, SCL",
+    "J22": "UART_CONSOLE: GND, +3V3_LOGIC, TXD0, RXD0",
+    "footprint": "JST_XH_B4B-XH-A_1x04_P2.50mm_Vertical",
+    "assembly": "COPPER_ONLY",
+    "series_rationale": "JST XH, already in stock, so nothing new is bought. Note it is 2.50 mm pitch, not the 2.54 it is often sold as. Through-hole only: eight drills total, all at x 77-91, over 4 mm east of the analog island where the pour is reference plane rather than a return path. Vertical entry suits a lid-mounted display, and the B4B body is 13.40 x 6.75 mm - smaller than the PH SMD part it replaces."
   }
 }

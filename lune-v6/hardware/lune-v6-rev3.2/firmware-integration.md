@@ -34,13 +34,30 @@ ESP-IDF sdkconfig must contain `CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y` and
 | ADC_TACHO | 5 | input, amplified commutation ripple |
 | COMM_TACHO_N | 15 | PCNT/RMT input |
 | I2C SDA / SCL | 8 / 9 | no on-board pull-ups |
-| MOTOR_ADDR0..2 | 10 / 11 / 12 | only change while inhibited |
-| MOTOR_ENABLE | 13 | low |
-| MOTOR_TERM_DIR | 14 | only change while inhibited |
+| MOTOR_ADDR0 | 12 | only change while inhibited |
+| MOTOR_ADDR1 | 11 | only change while inhibited |
+| MOTOR_ADDR2 | 14 | only change while inhibited |
+| MOTOR_ADDR3 | 13 | only change while inhibited |
+| MOTOR_ENABLE | 15 | low |
+
+All four address lines are plain address bits: **no bit encodes direction**. The
+decoder's output assignment is a layout choice, so the channel/direction pair maps
+to an address through the 12-entry `decoder.channel_address_map`:
+
+| Channel | Forward | Reverse |
+|---|---|---|
+| 1 | 7 | 6 |
+| 2 | 4 | 5 |
+| 3 | 13 | 12 |
+| 4 | 14 | 15 |
+| 5 | 9 | 8 |
+| 6 | 10 | 11 |
+
+Addresses 0-3 are unreachable by design; `Q0`-`Q3` reach no bridge input.
 | LATCH_ARM | 16 | low pulse source |
 | LATCH_STATE | 17 | input, **high means faulted or not armed** |
 | ONEWIRE_MCU | 42 | protected external bus |
-| STATUS_LED_N | 48 | active low |
+| STATUS_LED_N | 4 | active low |
 
 The backend drives `MOTOR_ENABLE` low before configuring any selection pin.
 Selection changes are accepted only in coast, followed by at least 1 ms before
@@ -138,6 +155,14 @@ fault, not a clamp artefact.
 Rev3.2 omits the low-rate BEMF mux and its coast sampling. Firmware leaves the
 motor drive continuous, measures current, and maintains the qualified
 commutation count and cadence throughout the move.
+
+**Dependency order.** The commutation count is an *enhancement*. The load-bearing
+pair is the DC current step - 140-190 mV running against 230-500 mV stalled, a
+50 LSB floor at 12 bit - and the runtime limit. Do not build anything that
+assumes the tacho is reliable: it cannot distinguish rotation from brush chatter
+against a hard stop, so a false-edge stall presents as a heavy move continuing.
+If qualified commutation proves unreliable, degrade to stall-and-time on the
+current step alone; that path needs no hardware change.
 
 A normal endpoint requires:
 

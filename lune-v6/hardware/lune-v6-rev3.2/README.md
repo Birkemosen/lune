@@ -64,8 +64,8 @@ reverted.
 | 1 | Tacho comparator hysteresis moved from the threshold input to the non-inverting input (`R50` now bridges `COMM_TACHO_N` to `TACHO_CMP`) | Feedback to the inverting input is negative feedback. As drawn it was a relaxation oscillator with a 144 mV chatter band, not a Schmitt trigger - and PCNT counts that chatter. |
 | 2 | Tacho stage rebuilt as a band-pass: high-pass 1.6 Hz (was 15.9 Hz), in-band gain ~85 (was 11), new 339 Hz low-pass | Measured commutation is 20-40 Hz at 14-19 mA, i.e. 7-30 mV at `CURRENT_RAW`. The old corner sat inside the signal band, the old gain matched the hysteresis, and nothing rejected the 50 kHz current-regulation chop. Now -43 dB at the chop. |
 | 3 | `TACHO_REF` is a stiff 1k/1k mid-rail bypassed by 22 µF (was 47k/47k + 1 µF) | The gain-setting return used to see a 23.5 kΩ source impedance, so gain fell to ~6.6 at 20 Hz, and comparator transitions injected back into the reference. |
-| 4 | 74HC4060 master reset moved from `DECODER_INHIBIT` to `LATCH_STATE` | `DECODER_INHIBIT` is the only handle firmware has for duty-cycle control, and the shipping firmware chops at 25 Hz - which reset the counter forever. Worse, *any* brief coast did. The cutoff now bounds total armed time. |
-| 5 | Timing set is `Rt = 180k`, `Rs = 360k`, `Ct = 22 nF C0G` on `Q14` (was 180k/360k/10 µF X7R on `Q5`) | A 10 µF class-2 capacitor stacks tolerance, tempco, DC bias and aging to about ±56%, which cannot be trimmed into the 50-90 s window at all. C0G stacks to ±21%. Nominal is 71.4 s under either published formula factor. |
+| 4 | ~~74HC4060 master reset moved to `LATCH_STATE`~~ | **Superseded by ECO rev3.2-C** — the whole timer block is removed. |
+| 5 | ~~Timing set `Rt = 180k`, `Rs = 360k`, `Ct = 22 nF C0G` on `Q14`~~ | **Superseded by ECO rev3.2-C** — the C0G reasoning was right, but the oscillator was wired rotated one position around the star, so 71.4 s was never what the board would have made. |
 | 6 | Rail overcurrent comparator senses `CURRENT_RAW` instead of the filtered ADC node | An output-to-GND short bypasses the xISEN resistor and the DRV8411 OCP is 4 A, so this comparator is the only fast protection for that fault. The 1k/100n filter was adding 100 µs to it. |
 | 7 | `D1` BAT54S ADC clamp removed | The INA180 runs from `+3V3_ANALOG` and cannot drive the node outside 0-3V3, so the clamp protected nothing, while its reverse leakage through `R20` added a temperature-dependent offset that room-temperature calibration cannot remove. |
 | 8 | `R3`/`R4` 22 Ω USB series resistors removed | ESP32-S3 native USB drives D+/D- directly in Espressif reference designs; 22 Ω moved the single-ended impedance away from the ~45 Ω target for no protection benefit. |
@@ -79,6 +79,203 @@ the unsourced 47k and 2.2M values are gone. Net BOM lines are down by two
 (22 Ω, BAT54S and the electrolytic out; 22 nF C0G in). `C25` is the single
 remaining open sourcing item and `check_design.py` tracks it explicitly.
 
+## ECO rev3.2-C - the runtime cutoff is removed
+
+`U36` (74HC4060), `R27`, `R28`, `C25`, `Q2` and `C24` are deleted: **6 parts, ~100 mm2**
+of courtyard out of the congested west block, plus the `TIMEOUT_Q14`, `TIMER_RTC`,
+`TIMER_RS`, `TIMER_CTC` and `TIMING_COMMON` nets and one characterization gate.
+
+This is a hazard-assessment result, recorded as `actuator_overrun_hazard` in the design
+contract. Two things drove it:
+
+- **The hazard is bounded and not electrical.** An over-driven actuator strips its own
+  gear train, in the *opening* direction only. A parted head leaves the valve insert and
+  its seal in the manifold, releasing the pin to full flow - closed system, no escape, and
+  the loop cannot exceed the mixing-valve supply temperature. Worst case is one actuator,
+  and it announces itself. The rail comparator never helped here: stall current sits below
+  its 280 mA trip, and the damage mechanism is torque x duration while the comparator
+  bounds current.
+- **The part cost more than it saved.** Its oscillator was wired rotated one position
+  around the timing star, invisible to ERC and to `check_design.py` because the timeout
+  was computed from contract values rather than schematic topology. And bounding *total
+  armed time* collided with learning mode, which needs 43-85 s to reach both end stops
+  against a 56-86 s cutoff - so commissioning could latch a fault firmware cannot clear.
+
+Retained: the firmware runtime limit already in service, the commutation tacho as
+rotation/stall evidence, the ESP32 task watchdog, and `R10`-`R15` for a defined safe state
+when GPIOs go high-Z. The **fault latch stays** - `U35` pin 6 is the only consumer of
+`FAULT_N_RAW`, which five sources feed, so `check_design.py` now asserts that consumer and
+those contributors as an invariant.
+
+One behavioural change: the latch no longer self-disarms when idle. That is benign -
+`MOTOR_ENABLE` falling to its 100 k pulldown drives `DECODER_INHIBIT` high and the 4514
+turns every output off regardless of `DRIVE_PERMIT`.
+
+## ECO rev3.2-D - decoder package, placement and address map
+
+`U24` goes from `XL74HC4514D` in **SOIC-24W** to Nexperia **`74HC4514PW,118`** (`C58910`,
+TSSOP-24). Same logic, same pin numbering, so the netlist is unaffected by the package
+change itself.
+
+| | Courtyard |
+|---|---|
+| `SOIC-24W` | 188.6 mm² |
+| `TSSOP-24` | **63.9 mm²** (66% less) |
+
+Two smaller chips were considered and rejected. Active-low decoders (`'138`, `'139`, `'137`,
+`'4515`) are out on safety grounds: with active-low outputs, idle becomes `IN1=IN2=1`, i.e.
+**brake on all six channels**, and `DECODER_INHIBIT` would assert brake rather than release
+to coast. Shift registers (`'595`) give a three-wire bus and lovely routing but let firmware
+write any pattern, which destroys the structural one-hot guarantee - and one-hot is load
+bearing for the *measurement* too, since the shared shunt would otherwise sum two motors and
+the commutation tacho would count garbage. That leaves only `74HC4514` and `74HC237`, and two
+`'237` cost more copper (232 mm vs 200 mm) and more area (84.7 mm² vs 63.9) because you trade
+four long output runs for five long bus runs.
+
+### Placement and remap
+
+`U24` moves from east of the module into the gap between `U20`'s and `U21`'s VM-cap
+clusters**, unrotated, at the driver row's latitude. Its pin rows then run north-south and
+each flank faces the drivers it serves - side A west to `U20`, side B east to `U21` then
+`U22` - so **no output crosses the package**. Output trace budget falls from ~540 mm spanning
+the whole board to ~120 mm beside the drivers.
+
+The address-to-output assignment is remapped to suit that geometry, and the address space
+falls out unusually well:
+
+| Channel | Code | Forward | Reverse |
+|---|---|---|---|
+| 1 | 2 | 4 | 5 |
+| 2 | 3 | 6 | 7 |
+| 3 | 5 | 10 | 11 |
+| 4 | 4 | 8 | 9 |
+| 5 | 7 | 14 | 15 |
+| 6 | 6 | 12 | 13 |
+
+`address = (channel_code << 1) | direction`, direction 0 = forward. So **bit 0 is now the
+direction bit**, and firmware needs only the six-entry code table above.
+
+Two consequences. `MOTOR_TERM_DIR` is renamed **`MOTOR_ADDR3`**: keeping bit 3 as the
+direction bit is exactly what forced every motor's forward/reverse pair to straddle the
+package, because Q0-Q7 all sit on side A and Q8-Q15 on side B. And addresses **0-3 are
+unreachable by design** - side A keeps four spare outputs rather than being packed, since
+packing them would move a driver's signals onto the flank facing away from it.
+`check_design.py` asserts that `Q0`-`Q3` reach no bridge input.
+
+## ECO rev3.2-E - the six DNP second-source pads are removed
+
+`C110`-`C112` (VINT, 2.2 µF) and `C114`-`C116` (VCP, 10 nF) are deleted, and `DRV8411`
+pins 11 and 14 are left open. `check_design.py` now asserts that **no DNP placement
+remains**, so they cannot come back quietly.
+
+They existed to keep the pin-compatible `DRV8833` available as a shortage substitute. TI
+now lists `DRV8411` as the **newer replacement for** `DRV8833` — pin-for-pin with the same
+functionality, adding integrated VCP and VINT capacitors, 1.8 V logic inputs and ultra-low
+sleep current. So the pads preserved the *older* part, which carries more EOL risk than the
+one it was backing up.
+
+And this contract had already argued the substitute was not viable: 2.0× the unit price,
+0.35× the stock, six extra capacitors, and — decisively — no specified `xISEN` trip limits
+with `RDS(on)` explicitly derated below `VM = 5 V`. On a 3.18 V motor rail the DRV8833 is
+unspecified in exactly the current-ceiling role it would have had to fill.
+
+The nominated second source becomes **`DRV8410`**, which is pin-compatible *including* the NC
+pins 11 and 14 — so it needs no external capacitors and drops in with no board change. It is
+not stocked at LCSC today; that is the open item, not the pads.
+
+### What it buys
+
+| | Before | After |
+|---|---|---|
+| Placements | 114 + 6 DNP | **114, no DNP** |
+| Nets | `VINT1-3`, `VCP1-3` | gone |
+| Decoder gap | 9.90 mm | **16.90 mm** |
+| Clearance each side of `U24` | 1.10 mm | **4.60 mm** |
+
+The two pads per driver at `dx ± 6.5` were what pinned the decoder gap. Removing them also
+clears the **y = 35.5 band**, so the `FWD`/`REV` fan-out heading east now crosses only
+`+3V3_MOTOR` instead of three traces per driver — the crossing problem the previous ECO was
+working around disappears rather than being solved.
+
+## ECO rev3.2-F - connector-driven pin moves, I2C pull-ups, JST pads
+
+Four signals move so that each sits on the side of the module its connector is on, and
+so that nothing digital occupies an ADC1 channel:
+
+| Net | Pad | GPIO | Why |
+|---|---|---|---|
+| `MOTOR_ENABLE` | 18 → **8** | 10 → **15** | Off ADC1, and onto the west row beside the latch block it feeds |
+| `ONEWIRE_MCU` | 35 → **11** | 42 → **18** | Connector moved beside USB-C on the west edge; frees a JTAG pin |
+| `I2C_SDA` | 12 → **23** | 8 → **21** | Display connector goes east; frees an ADC1 channel |
+| `I2C_SCL` | 17 → **24** | 9 → **47** | Same, and adjacent to SDA on the module's south edge |
+
+**ADC1 is now reserved for analog.** It is `GPIO1`–`GPIO10` and the only ADC usable while
+WiFi runs; ADC2 (`GPIO11`–`GPIO20`) is not, which is where slow digital belongs. Only
+`ADC_TACHO` (1), `ADC_CURRENT` (2) and one declared exception sit on ADC1, leaving **six
+spare channels**. `check_design.py` asserts the rule, so a future pin move cannot quietly
+eat an analog channel — which is exactly what these three signals were doing.
+
+Exceptions are declared data, not a code exemption: they live in `design-contract.json`
+under `adc1_digital_exceptions`, and `check_design.py` prints each one on every run and
+fails if a listed signal is no longer on ADC1, so the list cannot go stale. There is one —
+`STATUS_LED_N` on `GPIO4`, see § [ECO rev3.2-G](#eco-rev32-g---status_led_n-moves-off-the-south-row).
+
+### I2C pull-ups added
+
+`R16`/`R17`, 4k7 to `+3V3_LOGIC`. The bus had none. They are not optional and not only for
+the bus to function: without them `SDA` and `SCL` float on the ESP32's inputs whenever no
+display is fitted, which is the failure `R10`–`R13` exist to prevent at the decoder — a
+floating CMOS input sits near mid-rail with both transistors conducting. A display module
+carrying its own pull-ups gives 2k35 effective, still inside spec, and a 100 ns rise into
+50 pF against the 300 ns that 400 kHz allows.
+
+### Two unpopulated JST footprints replace eight test pads
+
+`TP30`–`TP37` are gone. In their place:
+
+| | Pins | Footprint |
+|---|---|---|
+| `J21` display I2C | GND, +3V3_LOGIC, SDA, SCL | `JST_PH_S4B-PH-SM4-TB_1x04-1MP_P2.00mm_Horizontal` |
+| `J22` UART console | GND, +3V3_LOGIC, TXD0, RXD0 | same |
+
+Both are `COPPER_ONLY`: the pads exist, nothing is ordered or placed, and a connector gets
+soldered on only when a display or a console is actually wanted. Side-entry SMD so no drill
+holes cut the ground pour, and PH's 2.00 mm pitch is the most hand-solderable JST — which is
+the whole point of pads you fit by hand. Copper-only items go from 14 to 8.
+
+## ECO rev3.2-G - STATUS_LED_N moves off the south row
+
+`STATUS_LED_N` moves from module **pad 25 (`GPIO48`)** to **pad 4 (`GPIO4`)**. Nothing about
+the LED changes: `D3` is still a plain green `KT-0805G` sinking through `R23` 1 k from
+`+3V3_LOGIC`, still active low. Only the pin and therefore the escape direction change.
+
+**It is a layout change, not an electrical one.** On pad 25 the net left the module on the
+south row, which put `D3` and `R23` in the `x 49–52 / y 38–43` pocket, and `R23`'s supply
+tap is what drags the `3V3_LOGIC` spine up to `y = 37.21`. That pocket is the only room
+available to re-arrange the `3V3_LOGIC`, `VBUS_PROTECTED` and `3V3_MOTOR` spines, which
+today leave a single one-trace-wide lane between them. `UART_TX_DBG`, `UART_RX_DBG`,
+`I2C_SDA` and `I2C_SCL` are all still unrouted and none of them has a top-layer route
+while that lane is one wide. Pad 4 leaves west instead, clear of the band entirely.
+
+**It spends an ADC1 channel, and that is the cost.** `GPIO4` is `ADC1_CH3`, so the move
+needs the declared exception described under the ADC1 reserve above. No cheaper pin exists:
+
+| Pads | GPIOs | Why not |
+|---|---|---|
+| 5, 6, 7, 12 | `IO5`–`IO7`, `IO8` | Same ADC1 reserve — no better than pad 4 |
+| 15, 17, 18 | `IO3`, `IO9`, `IO10` | ADC1 as well, and `IO3` is a strapping pin |
+| 16, 26 | `IO46`, `IO45` | Strapping. The LED pulls its pin high through 1 k at reset, which on `IO46` suppresses the ROM log and on `IO45` selects 1.8 V `VDD_SPI` |
+| 28, 29, 30 | `IO35`–`IO37` | Octal PSRAM |
+| 32–35 | `IO39`–`IO42` | Free, but on the east side with the analog island — the wrong direction |
+
+The BEMF frontend that would have wanted a third analog channel was removed in Rev 3.2, so
+the reserve had the headroom. Two analog channels and one exception leave six spare.
+
+**Firmware.** `lune.yaml` still declares `pin_rgb_status_led: GPIO48` and also
+`pin_nfault: "4"`. The rev3.2 migration already marks `pin_nfault` for deletion; both edits
+must land together or `GPIO4` is assigned twice. See § Migration status in
+`../../README.md`.
+
 ## Size and assembly target
 
 - 2 layers, `90 x 75 mm`, within the JLCPCB `100 x 100 mm` price class.
@@ -89,7 +286,7 @@ remaining open sourcing item and `check_design.py` tracks it explicitly.
 - The tacho components must be placed adjacent to the existing current-sense
   amplifier and kept away from motor loops and the current ADC. Copper, pours,
   thermal design and final placement remain a Rev3.2 layout task.
-- **111 populated placements**, plus 6 DNP second-source capacitors, 14
+- **116 populated placements**, no DNP parts, 8
   copper-only pads and 4 mounting holes. The DRV8833 substitute population is
   117. No electrolytic parts; tallest passive is 1.45 mm.
 - The final footprint total, assembly price and manufacturing files are

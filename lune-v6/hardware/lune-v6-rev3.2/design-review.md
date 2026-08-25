@@ -11,6 +11,18 @@ Datasheet cross-checks were done against TI SLVSGI0C (DRV8411), SLVSAR1E (DRV883
 the installed KiCad 10 symbol libraries. Placement counts and net connectivity were
 computed from the generated `.kicad_sch` files.
 
+> **Superseded, 2026-08: findings B3 and B4 no longer apply.** The whole
+> `74HC4060` runtime-cutoff block (`U36`, `R27`, `R28`, `C25`, `Q2`, `C24`) was
+> removed by hazard assessment — see `actuator_overrun_hazard` in
+> `design-contract.json` and *No hardware runtime cutoff* in `architecture.md`.
+> The open question below about the `Rt`/`Rs`/`Ct` star topology was answered,
+> and the answer was bad: the network was wired **rotated one position** around
+> the star (`Ct` on `RTC`, `Rt` on `RS`, `Rs` on `CTC`), so the 71.4 s that B4
+> was gated on was never what the board would have produced. That, plus a
+> collision with learning mode — 43–85 s to reach both end stops against a
+> 56–86 s cutoff, latching a fault firmware cannot clear — is why the subsystem
+> went rather than got fixed.
+
 Overall: the safety architecture is sound and a clear improvement over Rev 3.1 — hardware
 one-hot selection with a latched address, nested protection layers, and correct failsafe
 defaults. The pin-level work is accurate; I found no pinout errors. The problems are
@@ -31,8 +43,8 @@ re-injected copies of each defect.
 |---|---|---|---|
 | B1 | Tacho hysteresis on the wrong comparator input | **Fixed** — `R50` bridges the output to pin 5 (non-inverting); pin 6 is the fixed reference | tacho hysteresis / threshold-feedback checks |
 | B2 | Tacho gain and passband mismatched to the actuator | **Fixed** — 1.6 Hz / gain ~85 / 339 Hz band-pass, stiff 1k/1k reference | corner, gain, hysteresis, chop-rejection and band checks |
-| B3 | Runtime cutoff reset by the duty-control signal | **Fixed** — 4060 `MR` is `LATCH_STATE`; cutoff bounds armed time | 4060 master-reset checks |
-| B4 | Class-2 timing capacitor cannot hold 50–90 s | **Fixed** — 22 nF C0G on `Q14`, `Rt`/`Rs` unchanged, 71.4 s under either formula factor | dielectric + tolerance-stack-vs-window checks |
+| B3 | Runtime cutoff reset by the duty-control signal | **Moot** — the entire cutoff block is removed (hazard assessment) | removed-part / removed-net invariants |
+| B4 | Class-2 timing capacitor cannot hold 50–90 s | **Moot** — `C25` removed with the block; the C0G fix was correct but the oscillator was miswired anyway | removed-part / removed-net invariants |
 | B5 | DNP intent absent from native attributes | **Fixed** — generator emits `(dnp yes)` / `(in_bom no)` | fabrication-attribute checks |
 | D1 | Placement counts wrong in README/architecture | **Fixed** — 111 / 117, recounted from the sheets and asserted | placement-count checks |
 | D2 | `removed_gpio: 5` overstated | **Fixed** — now 1 (`ADC_BEMF`) | — |
@@ -218,8 +230,9 @@ Two related items:
 - `architecture.md` and `design-contract.json` use fosc = 1/(2.5·Rt·Ct). Nexperia and TI
   publish 1/(2.2·Rt·Ct) for the 4060 family, which makes the nominal 63 s rather than 72 s.
   Cite the exact figure and datasheet edition being used.
-- Confirm the Rt/Rs/Ct star topology (all three meeting at `TIMING_COMMON`) against the
-  datasheet oscillator figure. ERC cannot detect a wrong-but-connected oscillator, and an
+- ~~Confirm the Rt/Rs/Ct star topology (all three meeting at `TIMING_COMMON`) against the
+  datasheet oscillator figure.~~ **Answered: it was rotated one position.** This bullet
+  was the one that mattered and it stayed open until the block was deleted. ERC cannot detect a wrong-but-connected oscillator, and an
   oscillator that does not start silently removes the last safety layer. The validation
   plan does require measuring the timeout on every board, which bounds the risk — but the
   topology should be confirmed on paper first.

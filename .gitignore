@@ -20,3 +20,5 @@ secrets.yaml
 
 # Claude Code session state (contains per-session tool allow-lists)
 .claude/settings.json
+graphify-out/
+.code-review-graph/

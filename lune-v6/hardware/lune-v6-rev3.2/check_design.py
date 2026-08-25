@@ -251,9 +251,10 @@ def check_placements(symbols: dict[str, list[Symbol]], contract: dict) -> None:
         f"matches {len(populated)}",
     )
     check(
-        driver["drv8833_populated_placements"] == len(populated) + len(dnp),
-        f"contract drv8833_populated_placements {driver['drv8833_populated_placements']} "
-        f"matches populated + {len(dnp)} second-source caps",
+        not dnp,
+        "no DNP placements remain: the DRV8411 integrates its VCP and VINT "
+        "capacitors, so the six second-source pads were removed"
+        + (f" (still DNP: {', '.join(sorted(dnp))})" if dnp else ""),
     )
 
 
@@ -337,9 +338,42 @@ def check_gpio(pin_net: dict, contract: dict) -> None:
             f"{signal} is on GPIO{gpio}"
             + ("" if seen.get(signal) == gpio else f" (schematic: {seen.get(signal)})"),
         )
+    # ADC1 (GPIO1..10) is the only ADC usable while WiFi runs, so nothing digital
+    # may sit there.  Without this assertion a future pin move eats an analog
+    # channel silently - which is exactly what MOTOR_ENABLE, I2C_SDA and I2C_SCL
+    # were doing before they moved to GPIO15/21/47.
+    if contract.get("adc1_reserved_for_analog"):
+        analog_ok = {"ADC_CURRENT", "ADC_TACHO", "ADC_BEMF"}
+        # A digital signal may sit on ADC1 only if the contract names it and says
+        # why.  Keeping the list in the contract rather than here means the spend
+        # is reviewable data, and printing it on every run means it stays visible
+        # instead of decaying into a silent hole in the rule.
+        exceptions = contract.get("adc1_digital_exceptions", {}) or {}
+        squatters = sorted(
+            f"{sig} on GPIO{gpio}" for sig, gpio in wanted.items()
+            if 1 <= gpio <= 10 and sig not in analog_ok and sig not in exceptions
+        )
+        check(not squatters,
+              "no undeclared digital signal occupies an ADC1 channel (GPIO1-10)"
+              + (f" ({', '.join(squatters)})" if squatters else ""))
+        for sig in sorted(exceptions):
+            gpio = wanted.get(sig)
+            # A stale exception is worse than none: it would keep a channel
+            # reserved-with-permission that nothing actually uses any more.
+            check(gpio is not None and 1 <= gpio <= 10,
+                  f"ADC1 exception {sig} is still on an ADC1 channel"
+                  + ("" if gpio is not None and 1 <= gpio <= 10
+                     else f" (now GPIO{gpio}) - drop it from adc1_digital_exceptions"))
+            if gpio is not None and 1 <= gpio <= 10:
+                info(f"ADC1 channel GPIO{gpio} deliberately spent on {sig}: "
+                     f"{exceptions[sig]}")
+        spare = sorted(set(range(1, 11)) - {g for s, g in wanted.items()} - {3})
+        info(f"ADC1 spare channels (GPIO3 excluded, strapping): "
+             f"{', '.join(f'GPIO{g}' for g in spare)}")
+
     forbidden = set(contract["forbidden_motor_control_gpio"])
     motor_signals = {"MOTOR_ADDR0", "MOTOR_ADDR1", "MOTOR_ADDR2", "MOTOR_ENABLE",
-                     "MOTOR_TERM_DIR", "LATCH_ARM", "LATCH_STATE", "ADC_CURRENT",
+                     "MOTOR_ADDR3", "LATCH_ARM", "LATCH_STATE", "ADC_CURRENT",
                      "ADC_TACHO", "COMM_TACHO_N"}
     clash = sorted(s for s in motor_signals if wanted.get(s) in forbidden)
     check(not clash, "no motor-control signal uses a forbidden GPIO"
@@ -358,9 +392,11 @@ def check_decoder(pin_net: dict, contract: dict) -> None:
     for index, q in enumerate(decoder["connected_reverse_outputs"], 1):
         check(pin_net.get(("U24", str(q_pin[q]))) == f"REV{index}",
               f"decoder Q{q} (pin {q_pin[q]}) drives REV{index}")
-    unused = [6, 7, 14, 15]
+    unused = sorted(set(range(16)) - set(decoder["connected_forward_outputs"])
+                    - set(decoder["connected_reverse_outputs"]))
     dangling = [q for q in unused if ("U24", str(q_pin[q])) in pin_net]
-    check(not dangling, "decoder Q6/Q7/Q14/Q15 reach no bridge input"
+    check(not dangling,
+          f"decoder {'/'.join('Q%d' % q for q in unused)} reach no bridge input"
           + (f" (connected: {dangling})" if dangling else ""))
     check(pin_net.get(("U24", "1")) == decoder["latch_enable_net"],
           f"decoder LE is {decoder['latch_enable_net']}")
@@ -406,23 +442,33 @@ def check_safety_topology(pin_net: dict, net_pins: dict, symbols: dict, contract
           "no feedback path from the tacho comparator output to its threshold input"
           + (f" ({', '.join(wrong)})" if wrong else ""))
 
-    # Runtime cutoff must not be resettable by the signal firmware chops for
-    # duty control, and must not be defeated by a brief coast.
-    cutoff = contract["hardware_runtime_cutoff"]
-    check(pin_net.get(("U36", "12")) == cutoff["reset_net"],
-          f"4060 master reset is {cutoff['reset_net']}")
-    check(pin_net.get(("U36", "12")) != "DECODER_INHIBIT",
-          "4060 master reset is not the decoder inhibit signal")
-    tap = str(cutoff["timeout_output_pin"])
-    timeout_net = pin_net.get(("U36", tap))
-    check(timeout_net is not None, f"4060 pin {tap} carries the timeout output")
-    check(pin_net.get(("Q2", "1")) == timeout_net,
-          "timeout output drives the fault-injection MOSFET gate")
-    check(pin_net.get(("Q2", "3")) == "FAULT_N_RAW",
-          "timeout MOSFET pulls the wired-AND fault net")
-    if "C25" in symbols:
-        check(symbols["C25"][0].dielectric == "C0G_NP0_MANDATORY",
-              "runtime-timeout capacitor declares a C0G/NP0 dielectric")
+    # The 74HC4060 max-on-time watchdog was removed by hazard assessment, not
+    # dropped.  Guard the removal: re-adding the part without revisiting that
+    # assessment - and without fixing the rotated oscillator network it
+    # shipped with - has to fail here rather than pass quietly.
+    hazard = contract["actuator_overrun_hazard"]
+    check(hazard["decision"] == "NO_HARDWARE_MAX_ON_TIME",
+          "actuator overrun hazard declares no hardware max-on-time")
+    readded = sorted(r for r in hazard["removed_parts"] if r in symbols)
+    check(not readded,
+          "no removed runtime-cutoff part is back in the schematic"
+          + (f" ({', '.join(readded)})" if readded else ""))
+    revived = sorted(n for n in hazard["removed_nets"] if n in net_pins)
+    check(not revived,
+          "no removed runtime-cutoff net is back in the schematic"
+          + (f" ({', '.join(revived)})" if revived else ""))
+
+    # FAULT_N_RAW is a wired-AND with five contributors and exactly one
+    # consumer.  Deleting that consumer would silently strand the rail
+    # comparator, all three DRV8411 nFAULT outputs and the TPS2553 fault pin,
+    # so this is an invariant and not an incidental fact about the netlist.
+    fault_pins = net_pins.get("FAULT_N_RAW", set())
+    check(("U35", "6") in fault_pins,
+          "the fault latch async reset is the consumer of FAULT_N_RAW")
+    sources = {ref for ref, _ in fault_pins} - {"U35", "R23", "C20", "TP3"}
+    check(sources >= {"U2", "U20", "U21", "U22", "U34"},
+          "every fault source still reaches FAULT_N_RAW "
+          f"(present: {', '.join(sorted(sources))})")
 
     # Fault latch wiring.
     check(pin_net.get(("U35", "6")) == "FAULT_N_RAW", "latch async reset is FAULT_N_RAW")
@@ -476,6 +522,16 @@ def check_analog_numbers(contract: dict) -> None:
           "bridge ceiling (>=10% required)")
 
     tacho = contract["commutation_tacho"]
+    # These two facts are duplicated from the gpio block, and both had already
+    # drifted once - gpio said 15 and analog_monitor_gpio said 5 after the pins
+    # moved.  Assert them so a duplicated fact cannot rot again.
+    for field, signal in (("gpio", "COMM_TACHO_N"), ("analog_monitor_gpio", "ADC_TACHO")):
+        check(tacho[field] == contract["gpio"][signal],
+              f"commutation_tacho.{field} agrees with gpio[{signal}] "
+              f"(= GPIO{contract['gpio'][signal]})")
+    check(tacho["is_load_bearing"] is False,
+          "the commutation tacho is recorded as an enhancement, not load bearing")
+
     hp = 1.0 / (2 * math.pi * tacho["input_bias_ohm"] * tacho["input_coupling_f"])
     lp = 1.0 / (2 * math.pi * tacho["feedback_ohm"] * tacho["feedback_f"])
     gain = 1.0 + tacho["feedback_ohm"] / tacho["gain_return_ohm"]
@@ -500,45 +556,6 @@ def check_analog_numbers(contract: dict) -> None:
           f"AC-coupling settling {settle_ms:.0f} ms fits the required "
           f"{tacho['required_blanking_ms']} ms drive-start blanking")
 
-    cut = contract["hardware_runtime_cutoff"]
-    for factor in (2.2, 2.5):
-        seconds = (cut["timeout_first_high_cycles"] * factor
-                   * cut["oscillator_rt_ohm"] * cut["oscillator_ct_f"])
-        check(
-            cut["required_characterized_minimum_s"] <= seconds
-            <= cut["required_characterized_maximum_s"],
-            f"4060 timeout {seconds:.1f} s (formula factor {factor}) lies inside "
-            f"{cut['required_characterized_minimum_s']}-"
-            f"{cut['required_characterized_maximum_s']} s",
-        )
-        check(seconds > contract["hardware_runtime_cutoff"]["normal_firmware_limit_generic_s"],
-              f"4060 timeout {seconds:.1f} s exceeds the {cut['normal_firmware_limit_generic_s']} s "
-              "firmware limit")
-    check(cut["oscillator_r2_ohm"] >= 2 * cut["oscillator_rt_ohm"],
-          "oscillator Rs is at least 2x Rt as the datasheet requires")
-
-    # The formula factor and the initial RC tolerance are both trimmable with
-    # Rt after the first measurement; the part-to-part and over-temperature
-    # spread is not.  The release criterion is therefore that the tolerance
-    # stack fits inside the acceptance window at all, whatever the nominal is.
-    # A 10 uF class-2 Ct stacks to about +/-56% and cannot.
-    stack = (
-        cut["oscillator_ct_tolerance_percent"]
-        + cut["oscillator_rt_tolerance_percent"]
-        + cut["oscillator_device_spread_percent"]
-    ) / 100.0
-    check(close(stack * 100, cut["oscillator_tolerance_stack_percent"], 0.001),
-          f"contracted tolerance stack {cut['oscillator_tolerance_stack_percent']}% "
-          f"matches the component breakdown ({stack * 100:.0f}%)")
-    spread_ratio = (1 + stack) / (1 - stack)
-    window_ratio = (cut["required_characterized_maximum_s"]
-                    / cut["required_characterized_minimum_s"])
-    check(spread_ratio <= window_ratio,
-          f"timing tolerance stack +/-{stack * 100:.0f}% (max/min ratio "
-          f"{spread_ratio:.2f}) fits the "
-          f"{cut['required_characterized_minimum_s']}-"
-          f"{cut['required_characterized_maximum_s']} s window "
-          f"(ratio {window_ratio:.2f})")
 
 
 def library_pin_names(lib_id: str) -> dict[str, str]:

@@ -24,9 +24,10 @@ dual H-bridges, with channel selection by a hardware one-hot `74HC4514` decoder.
 
 All six channels share one high-side current sense — a 0.5 Ω shunt into an `INA180A1` at
 ×20 — which serves the ADC reading, a commutation-ripple tacho for position learning, and
-a rail-overcurrent backstop. An independent hardware chain (fault latch plus a `74HC4060`
-runtime cutoff) can shut the board down without firmware, and firmware cannot clear a
-latched fault.
+a rail-overcurrent backstop. A hardware fault latch shuts the board down without firmware
+on a driver fault, a rail overcurrent or a USB input fault, and firmware cannot clear a
+latched fault. Actuator travel is bounded in firmware; see `actuator_overrun_hazard` for
+why no hardware max-on-time timer backs it up.
 
 Rev3.2 status: schematic and design contract complete and checked; **PCB not yet routed**.
 

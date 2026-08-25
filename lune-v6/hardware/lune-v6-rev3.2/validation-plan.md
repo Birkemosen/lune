@@ -24,10 +24,9 @@ Available now, run on every change:
   `check_design.py` is auditing a stale netlist.
 - Manual pin-by-pin audit against current manufacturer data sheets, recorded in
   a `pinout-audit.md` for this revision. The Rev 3.0 audit does not cover the
-  Rev 3.2 analog chain, the `Q14` timer tap or the `+3V3_EXT` branch.
-- Source `C25` (22 nF ±5% 50 V C0G/NP0 1206) and record its LCSC part number.
-  `check_design.py` lists it as the single open sourcing item and fails if the
-  declaration goes stale.
+  Rev 3.2 analog chain or the `+3V3_EXT` branch.
+- No open sourcing items remain: `C25` was the last one and left with the
+  runtime-cutoff block. `check_design.py` fails if that declaration goes stale.
 
 Required once the PCB exists. These scripts are retained in
 `../lune-v6-rev3.1-lean/`, which holds nothing else. Each is hard-wired to Rev 3.1
@@ -232,7 +231,8 @@ Release criteria:
   a physical re-plug. Decide before production whether to move to the
   auto-retry variant or keep the logic rail alive upstream.
 - JLCPCB Gerber/BOM/CPL upload resolves every populated designator and rotation.
-  Confirm the six DNP second-source capacitors and the fourteen copper-only pads
+  Confirm the eight copper-only pads - including `J21`/`J22`, which are
+  unpopulated JST footprints and must not be ordered or placed -
   are excluded, which the native attributes now encode and `check_design.py`
   asserts.
 - Live stock covers at least 25 boards or alternates are validated.

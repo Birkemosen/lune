@@ -21,8 +21,8 @@ NAND(MOTOR_ENABLE, DRIVE_PERMIT) --------------------> decoder E (HIGH disables 
                                  -> LMV393 Schmitt -> COMM_TACHO_N -> ESP32 PCNT/RMT
                                  -> 1k -> ADC_TACHO (waveform + digital cross-check)
 
-LATCH_STATE (latch /Q) -> reset of 74HC4060 timer -> open-drain FAULT_N_RAW at timeout
-driver faults + overcurrent + timeout -> async fault latch -> persistent shutdown
+driver faults + rail overcurrent + TPS2553 fault -> async fault latch -> shutdown
+LATCH_STATE (latch /Q) -> ESP32 pad 9, the only firmware view of the armed state
 ```
 
 ## Six channels and driver choice
@@ -152,8 +152,9 @@ Against that population the 178-232 mA bridge regulation and the 267-293 mA rail
 comparator are **board-protection backstops**: neither can engage in normal
 operation or at a hard mechanical stop, and the bridge limit is roughly 4x the
 actuator's stall torque, so it is not a torque ceiling. They act on wiring
-faults. Mechanical protection of the valve rests on firmware plus the
-independent runtime cutoff.
+faults. Mechanical protection of the valve rests on the firmware runtime limit
+and on the commutation tacho as rotation/stall evidence - see *No hardware
+runtime cutoff* below for why no hardware timer backs them up.
 
 xISEN is therefore recorded as a production tuning parameter. `1.5 ohm` would
 give a 118.8-154.9 mA window, sitting just above the 100 mA firmware cap while
@@ -246,11 +247,37 @@ prevented the timer from ever expiring. That coupling is removed (below).
 The Rev3.1 terminal-tap mux, buffer, clamp and ADC path are omitted from the
 production Rev3.2 schematic. They consume ten mounted parts, an ADC GPIO and a
 coast interruption, while firmware gets continuous position and stall evidence
-from `COMM_TACHO_N` — and, with `ADC_TACHO`, an amplified analog view of the
-same ripple that the old BEMF channel was providing far less directly. The
-current path, tacho pulse qualification and hard shutdown paths are retained.
-This trade does not transfer the overcurrent latch, one-hot inhibit or hardware
-timeout into firmware.
+from `COMM_TACHO_N` and, with `ADC_TACHO`, an amplified analog view of the same
+ripple. The current path, tacho pulse qualification and hard shutdown paths are
+retained. This trade does not transfer the overcurrent latch or the one-hot
+inhibit into firmware.
+
+**One correction to the original rationale.** It said the commutation ripple
+gives the same evidence the BEMF channel gave, only less directly. That is right
+about position and about stall-by-absence, but wrong about one thing: the ripple
+cannot distinguish **rotation from brush chatter or rotor buzz against a hard
+stop**. Both are in-band current ripple and are indistinguishable in the current
+domain. Back-EMF measured during a coast interruption is the only measurement
+that separates them - a turning rotor generates it, a stalled one does not - so
+the removal did trade that discrimination away.
+
+The trade still holds, for three reasons rather than the one originally given:
+
+- A false-edge stall reads as *elevated current, still moving*, i.e. a heavy move
+  continuing. It does not produce a false endpoint, because the classifier below
+  requires motion to have **ceased**. It is caught by the firmware runtime limit.
+- Every non-mechanical ripple source is excluded quantitatively: the current
+  regulator engages only at 178-232 mA against a 23-50 mA measured stall, the
+  buck sits at 1.5 MHz against a 339 Hz low-pass, and 100 Hz supply ripple
+  arrives through the LDO's PSRR at roughly 0.03% of the commutation ripple.
+- The tacho is not load bearing. See `commutation_tacho.degradation_path`: if
+  qualified commutation proves unreliable, firmware falls back to stall-and-time
+  using the DC current step, which needs no hardware change at all.
+
+What the removal costs is therefore bounded and backstopped, and the open
+qualification item `false_edge_immunity_...` is the measurement that closes it:
+stall an actuator deliberately, capture `ADC_TACHO`, and see whether
+`COMM_TACHO_N` keeps ticking.
 
 ## Endpoint classifier in both directions
 
@@ -315,48 +342,79 @@ And `LATCH_STATE` alone cannot distinguish "never armed" from "faulted" —
 to firmware. Both are acceptable for the prototype; a spare GPIO on
 `FAULT_N_RAW` is the cheap fix if field diagnosis needs it.
 
-## Independent runtime cutoff
+## No hardware runtime cutoff
 
 Firmware limits normal HmIP VdMot movement to 40 s and generic profiles to
-45 s. A `74HC4060D` RC oscillator/counter provides the hardware bound.
+45 s, and that limit is the bound. `Rev3.2-B` carried a `74HC4060D`
+oscillator/counter as an independent hardware max-on-time, resetting on
+`LATCH_STATE` and injecting a latched fault through a `2N7002` at ~71 s. It is
+removed. The removal is a hazard-assessment result and is recorded as
+`actuator_overrun_hazard` in the design contract, not as an omission.
 
-Its master reset is `LATCH_STATE`, the latch's `/Q`. This is the change that
-makes the layer real. Referenced to `DECODER_INHIBIT`, as in `rev3.2-A`, the
-counter was reset on every drive-off phase — so firmware chopping
-`MOTOR_ENABLE` for duty control would have prevented expiry entirely, and even
-without PWM a single brief coast every few seconds postponed it forever.
-Referenced to the armed state, the cutoff bounds **total armed time** and is
-immune to both. The consequences for firmware are explicit:
+### The hazard is bounded and is not electrical
 
-- arm the latch per move, not once at boot;
-- an idle armed latch self-disarms after the cutoff; treat "disarmed while
-  idle" as a normal state and re-arm before the next move rather than as a
-  fault;
-- the cutoff must exceed the longest single move plus arm-to-move latency,
-  which the 50 s floor guarantees against the 45 s firmware limit.
+An over-driven actuator strips its own gear train, **in the opening direction
+only**. If the head parts from the manifold, the valve insert and its seal stay
+behind — the head is a removable cap, and the hydraulic seal was never in it —
+so the pin is released to full flow. The system is closed, nothing escapes, and
+a stuck-open loop cannot exceed the mixing valve's supply temperature. Worst
+case is one actuator, and the failure announces itself: the room overshoots and
+that loop's return temperature stays high.
 
-`Rt = 180k`, `Rs = 360k` (the datasheet's `Rs >= 2*Rt`) and `Ct = 22 nF C0G`
-tapped at `Q14` (physical pin 3, first HIGH after 8192 oscillator periods) give
-`T_osc = 2.2*Rt*Ct = 8.71 ms` and a **71.4 s** nominal — 81.1 s if the 2.5
-formula factor some datasheet editions quote is the correct one, so the design
-lands inside the required 50-90 s window either way and the formula ambiguity
-stops being a risk.
+Note what does *not* help. The rail overcurrent comparator offers no protection
+against this at all: stall current sits below its 280 mA trip, and the damage
+mechanism is torque times duration, while the comparator bounds current — that
+is, torque — and never duration.
 
-The dielectric is not negotiable. A 10 µF class-2 part, as fitted in
-`rev3.2-A`, stacks initial tolerance, X7R tempco, DC-bias derating and aging to
-roughly ±40% on the capacitor alone — about ±56% with the device spread — which
-gives a worst case near 43 s, under both the 45 s firmware limit and the 50 s
-floor, and cannot be trimmed into the window at all. C0G stacks to ±21%
-(max/min ratio 1.53 against the window's 1.80). Initial tolerance and the
-formula factor are both trimmable with `Rt` after the first measurement;
-temperature coefficient is not.
+### Why a fixed timer was the wrong instrument anyway
 
-At timeout an already-used `2N7002` pulls `FAULT_N_RAW` low, the asynchronous
-fault latch disables the decoder, and `LATCH_STATE` rising then resets the
-counter — the latch stays faulted regardless. The exact RC/output selection is
-not production-frozen: it must be measured at minimum/maximum supply and
-temperature on every board. The hard timer is not endpoint detection; it bounds
-harm if the ESP32, ADC or firmware fails.
+Gear damage accumulates in tens of seconds. Any cutoff long enough to clear a
+legitimate stroke is therefore already long enough to strip the train, so a
+max-on-time could only ever have bounded the *indefinite* case. Detecting the
+end stop quickly is the only effective defence, which makes the tacho's
+`missed_and_false_edge_rate` qualification the real release gate.
+
+### And the part cost more than it saved
+
+Two defects, both found only under review:
+
+- Its oscillator network shipped **rotated one position around the timing
+  star** — `Ct` on `RTC`, `Rt` on `RS`, `Rs` on `CTC`. Neither ERC nor
+  `check_design.py` could see it, because the timeout was computed from
+  contract values rather than from schematic topology. The 71.4 s figure was
+  never what the board would have produced. `design-review.md` had already
+  asked for the star topology to be confirmed against the datasheet; it never
+  was.
+- Bounding *total armed time* collided with learning mode, which must reach
+  both end stops. 659 + 1048 commutation counts across a 20-40 Hz band is
+  **43-85 s** against a cutoff whose ±21% stack spans **56-86 s** — so
+  commissioning could latch a fault that firmware is, by design, unable to
+  clear.
+
+A protection device whose realistic failure mode is bricking the product during
+commissioning, weighed against one gear train, does not earn its place.
+
+### What is retained
+
+The firmware runtime limit already in service, the commutation tacho as
+rotation/stall evidence, the ESP32 task watchdog, and `R10`-`R15` to define a
+safe state whenever the GPIOs go high-Z.
+
+The fault latch **stays**, and not as a leftover: `U35` pin 6 is the *only*
+consumer of `FAULT_N_RAW`, which five sources feed — the rail comparator, all
+three `DRV8411` `nFAULT` outputs and the `TPS2553` fault pin. Deleting it would
+strand the whole chain, so `check_design.py` now asserts that consumer and
+those five contributors as an invariant.
+
+One behavioural change: the latch **no longer self-disarms** when left idle,
+because that property came from the counter. It is benign. `MOTOR_ENABLE`
+falling to its 100 k pulldown drives `DECODER_INHIBIT` high, and the 4514's
+inhibit turns every output off regardless of `DRIVE_PERMIT` — so an armed latch
+left behind by a crashed firmware holds awake drivers with dead outputs.
+
+Reassess if a supported actuator turns out to have its rigid internal stop on
+the closing side, if a system omits supply-temperature limiting, or if a head
+ever carries the hydraulic seal itself.
 
 ## USB input
 
@@ -390,33 +448,312 @@ item, and add no safety function.
 
 ## Two-layer layout targets
 
-- Board `90 x 75 mm`, retaining the JLCPCB `100 x 100 mm` price class. Four
-  3.2 mm NPTH M3 holes sit at `(4,4)`, `(86,4)`, `(4,71)` and `(86,71)`, giving
-  a symmetric `82 x 67 mm` mounting rectangle.
-- All six RJ9 body outlines are centered on the bottom edge at 12.25 mm pitch
-  and project 1.0 mm. USB-C is rotated 90 degrees counter-clockwise and
-  projects 1.0 mm through the left enclosure edge; the right-edge 1-wire
-  terminal projects 1.75 mm. Connector projection is a checked 0-2 mm
-  mechanical invariant.
-- No electrolytic parts remain; the tallest passive is 1.45 mm, which relaxes
-  the enclosure profile.
-- Top should carry components and most routing. Both sides require GND pours;
-  the necessary stitching-via count and B.Cu crossover budget are Rev3.2
-  layout outputs, not inherited Rev3.1 facts.
-- Do not route digital address, USB or buck switch nodes under the current
-  amplifier, tacho chain, ADC traces or ESP32 antenna.
-- Shunt-to-INA180 traces are a Kelvin pair with identical quiet routing.
-- Place each driver, its VM capacitors, sense resistors and motor ESD between
-  the motor rail spine and its two connectors.
-- Place the analog chain adjacent to ESP32 ADC1 pins, with the tacho
-  op-amp/comparator immediately beside the INA180. `TACHO_REF` and its 22 µF
-  bypass belong in the same quiet island; the reference is now part of the gain
+Rev3.2 places every connector on the **south edge**: the board outline dictates
+the enclosure, and one cable-exit face is worth more than a few millimetres of
+board. That single decision sets the width, and the width then sets everything
+else.
+
+### Outline: 100 x 70 mm
+
+- **Width is set by the south edge, not by the circuit.** With 6.0 mm M3 pads
+  in the south corners, measured from the actual footprints:
+
+  | Item | Width |
+  |---|---|
+  | margin | 1.5 mm |
+  | M3 corner pad | 6.0 mm |
+  | gap | 1.0 mm |
+  | 6 x RJ9 courtyard span @ 12.25 mm pitch | 73.35 mm |
+  | gap | 1.0 mm |
+  | 1-wire terminal, rotated for south wire entry | 8.0 mm |
+  | gap | 1.0 mm |
+  | M3 corner pad | 6.0 mm |
+  | margin | 1.5 mm |
+  | **total** | **99.35 mm** |
+
+  100 mm is therefore the width, and it is also the last width inside the
+  JLCPCB `100 x 100 mm` price class.
+
+- **USB-C cannot also be on the south edge.** It is 10.64 mm wide against the
+  1-wire terminal's 8.0 mm, which pushes the same budget to 101.99 mm. Corner
+  M3 pads plus *all three* connector types on the south edge needs 110.99 mm.
+  USB-C therefore sits on the **west** edge, as it did in Rev3.1. The 1-wire
+  terminal keeps the south edge because it is field wiring and belongs with the
+  motor cables; USB-C is power and service.
+
+- **Height 70 mm.** The naive north-south sum is 75.5 mm (RJ9 19.0, TVS row
+  3.0, driver band 14, mixed band 13, ESP32 column 26.5), but the bands are not
+  exclusive: the ESP32 is only 18 mm of the 100 mm width, so the north band is
+  shared with the decoder, USB-C and the analog island. Measured free area at
+  70 mm is 2315 mm2 against the 877 mm2 the unplaced parts need - **38% fill**,
+  comfortably inside the 45% that two-layer routing wants.
+- 80 mm was the first working height and drops to 26% fill; 68 mm still passes
+  DRC. 70 mm was chosen as the point where the enclosure gets smaller without
+  spending the routing slack that the analog island needs.
+- **Price is flat below 100 x 100 mm**, so 70 mm buys nothing in prototype
+  quantities. At volume, where cost follows area, 100 x 70 is 12.5% less
+  laminate than 100 x 80. The real gain is a smaller enclosure.
+
+### Connector projection
+
+The 0-2 mm projection invariant holds, but not at the same value on every part:
+
+| Connector | Edge | Projection | Nearest copper |
+|---|---|---|---|
+| J11-J16 RJ9 | south | +1.03 mm | 5.78 mm inside |
+| J20 1-wire | south | +1.03 mm | 0.40 mm inside |
+| J1 USB-C | west | **0.00 mm (flush)** | 1.00 mm inside |
+
+USB-C also had to move north to `y = 30` at this height: at 70 mm the TVS row
+sits 12 mm further north than at 80 mm and collided with it on the west edge.
+
+The `TYPE-C-31-M-12` footprint **cannot project 1 mm through a straight board
+edge**: its pads sit too close to the shell front, and any projection drops
+copper-to-edge below 0.25 mm. Either the enclosure gives the west wall a deeper
+opening, or the outline gets a local notch at J1. This is an enclosure decision,
+not a placement one.
+
+### ESP32 antenna: a 21 x 7 mm cutout, not a 48 x 21 mm keepout
+
+The stock KiCad footprint carries one keepout zone - `x -24..24`,
+`y -27.75..-6.75` relative to the module origin, forbidding tracks, vias, pads,
+copper pour **and footprints**. That is 48 x 21 mm, and it is misleading: the
+arithmetic is `18 + 15 + 15` wide and `6 + 15` deep. It is Espressif's
+**"at least 15 mm clearance in all directions"** recommendation baked into a
+footprint zone - and that 15 mm is a clearance to metal in the **product
+housing**, not a copper rule on the base board. Enforced as drawn it sterilises
+a 48 mm band across the north edge, including for mounting holes, for a
+constraint the board does not own.
+
+What the board actually owes the antenna:
+
+- Espressif's hardware design guidelines rank the options: antenna beyond the
+  board edge, or antenna at the board edge, are both **strongly recommended**;
+  a hollowed clearance area is the fallback if neither is possible.
+- The datasheet land pattern marks an **Antenna Area** of about 18 x 6 mm, and
+  measurement of the footprint confirms the module has **7.04 mm of pad-free
+  length** at the antenna end - the northmost pad edge sits 5.71 mm from the
+  origin against a body half-length of 12.75 mm.
+
+Rev3.2 therefore cuts a **21 x 7 mm notch** in the north edge, centred on the
+module: 7 mm is the pad-free length, 21 mm gives 1.5 mm either side of the
+18 mm module. The module sits 0.5 mm inside the edge so the northmost pads keep
+0.54 mm to the cut. The board loses 147 mm2 and the antenna gets air under it,
+which is the recommended arrangement rather than a compromise.
+
+The stock footprint keepout is **removed on the board instance** because it
+encodes the housing rule. The 15 mm does still apply - as an **enclosure**
+constraint:
+
+> No metal within 15 mm of the antenna in any direction: no screws, no shield
+> cans, no foil, no metallised plastic. This is an enclosure requirement and
+> must be checked on the mechanical design, not on the PCB.
+
+**Do not turn the 15 mm into a copper keepout beside the cutout.** That would
+invert the guideline. Espressif's wording is the opposite: *"Please note that
+sufficient ground copper and dense ground vias should be placed on the base
+board near the antenna."* What harms the antenna is the **dielectric** under
+it, which is why the instruction is to *"cut off the base board on both sides
+of the antenna and below it"* - and that is what the 21 x 7 mm notch does, 1.5
+mm past each module edge and the full pad-free depth.
+
+So the rule beside the cutout is a positive one, not a prohibition:
+
+- **Bring ground copper right up to the cutout edge on both layers, with dense
+  stitching vias along it.** The pour is wanted there; it is the antenna's
+  counterpoise.
+- What to keep away is **magnetics and switching**, not copper: the
+  `SWPA4018S` buck inductor, the buck switch node, and anything else with a
+  ferrite or metal body belong at the far end of the board from the notch.
+  This design helps itself here - no electrolytics remain and the tallest
+  passive is 1.45 mm, so there is nothing else with a metal body to place.
+- Components as such need no 15 mm exclusion on the board. The constraint that
+  matters is the housing one above.
+
+### Mounting holes: the inherited 82 x 67 rectangle does not survive
+
+The Rev3.1 `(4,4) (86,4) (4,71) (86,71)` pattern was checked against this
+outline and **fails at all four corners**: north-west collides with the ESP32
+and its keepout, north-east with the USB-C receptacle, and both south corners
+with the RJ9 row. Corner holes and edge connectors on the same face are
+mutually exclusive here.
+
+The resolution is to move the **ESP32 to the north centre**, which frees both
+north corners, and to size the south edge so the corner pads fit beside the
+connector row. Holes are `MountingHole_3.2mm_M3_ISO14580_Pad` - 3.2 mm drill,
+5.5 mm pad, 6.0 mm courtyard - at `(4.5, 4.5)`, `(94.85, 4.5)`, `(4.5, 75.5)`
+and `(94.85, 65.5)`, a `90.35 x 61 mm` rectangle. That is close to the full
+board and carries connector insertion force properly.
+
+### Module variant: N8R8 with PSRAM ECC
+
+`ESP32-S3-WROOM-1-N8R8` (LCSC `C2913201`), chosen over `N8R2` on price:
+$3.63 vs $3.83 at 100+, $3.41 vs $3.57 at 1300+. About $0.18 per board.
+
+The 8 MB octal PSRAM is surplus - measured use on a running board is ~75 kB,
+plus whatever the NimBLE host takes - and octal PSRAM costs two things:
+`IO33..IO37` are consumed by the PSRAM interface, so module pads 28/29/30 are
+unavailable, and the R8 variants are rated **-40 ~ 65 °C ambient** where the
+quad-PSRAM variants get 85 °C. Neither cost decided against it: the pin budget
+is not tight, and 2 MB was never the constraint.
+
+The 65 °C is recovered by enabling ECC. The datasheet:
+
+> R8 and R16V series modules operate at -40 ~ 65 °C ambient temperature ... if
+> the PSRAM ECC function is enabled, the maximum ambient temperature can be
+> improved to 85 °C, while the usable size of PSRAM will be reduced by 1/16.
+
+**This makes a datasheet temperature rating depend on a build flag, and that is
+the real cost of the choice.** Two config items must both be right:
+
+```
+CONFIG_SPIRAM_MODE_OCT=y      # octal hardware needs octal mode
+CONFIG_SPIRAM_ECC_ENABLE=y    # depends on SPIRAM_MODE_OCT
+```
+
+Neither is set today. The current build has `CONFIG_SPIRAM_MODE_QUAD=y` on an
+octal module together with `CONFIG_SPIRAM_IGNORE_NOTFOUND=y`, so the PSRAM is
+silently absent and ECC is not even selectable. That is exactly the failure mode
+this note exists to prevent, and it has already happened once.
+
+There is a runtime assertion for it. ECC reserves 1/16 of the array, so the
+firmware's own **Free PSRAM** sensor distinguishes the two states:
+
+| Free PSRAM | ECC | Ambient rating |
+|---|---|---|
+| ~7680 kB | on | **85 °C** |
+| ~8192 kB | off | 65 °C |
+
+Read that sensor before shipping. Anything near 8192 kB means the board is out
+of spec above 65 °C. Also drop `SPIRAM_IGNORE_NOTFOUND`: a missing PSRAM should
+fail loudly, not on a warm day.
+
+### The module's pinout decides the west/east split
+
+Measured off the placed footprint, U1's nets group by side, and that - not
+aesthetics - is what fixes where the blocks go:
+
+| Module side | Nets |
+|---|---|
+| **West, north end** | `+3V3_LOGIC`, `STATUS_LED_N` (pad 4), `LATCH_STATE` (pad 9), `LATCH_ARM` (pad 10) |
+| **West, south end** | `USB_DM`, `USB_DP`, `I2C_SDA` |
+| **South row** | `MOTOR_ADDR0..3`, `MOTOR_ENABLE`, `I2C_SCL` |
+| **East** | `ADC_CURRENT`, `ADC_TACHO`, `COMM_TACHO_N`, `ONEWIRE_MCU`, `UART_TX_DBG`, `UART_RX_DBG`, `BOOT_N` |
+
+The analog signals were **moved** to the east side to get them off the west,
+where the USB pair lives - see the reassignment table below.
+
+Three consequences:
+
+- **USB-C stays on the west edge.** `USB_DM`/`USB_DP` are pads 13 and 14, at
+  the *south* end of the west side. J1 sits directly below them, so the
+  differential pair is a short straight run. Moving USB-C east would drag that
+  pair the full width of the board, across or under the analog island - which
+  the routing rules already forbid.
+- **The analog island moves to the east side.** `ADC_CURRENT` and `ADC_TACHO`
+  are now on pads 38/39 (`GPIO2`/`GPIO1`), the only ADC-capable pins on that
+  side: ADC1 is `GPIO1..GPIO10` and ADC2 is unusable while WiFi runs, so pads
+  34/35 (`IO41`/`IO42`) were never an option - they have no ADC at all. This
+  leaves the whole west side to USB and the logic supply, and puts the full
+  board width between the buck and the tacho chain.
+- **The whole safety-logic block stays west**, at pads 9/10. Counting nets
+  suggested putting `U35` over the driver row - it has six driver connections -
+  but that weighs the wrong thing: `DRIVE_PERMIT` is a static level with a 100 k
+  pulldown and `FAULT_N_RAW` is an open-drain wired-OR filtered by 10 k/100 n
+  (1 ms), so both are length-indifferent by design. The one sensitive node is
+  **`ARM_CLK`**: edge-coupled through 10 nF onto a 100 k pulldown at the
+  flip-flop clock. A spike there arms the drive, which is a safety-relevant
+  false trigger, so `U35` + `Q1` + `R25` + `C23` must be one compact cluster
+  next to `LATCH_ARM`.
+- `LATCH_STATE` is on pad 9 and `LATCH_ARM` on pad 10 - **swapped** from Rev3.1.
+  On the 74LVC1G74, CLK (pin 1) and /Q (pin 3) sit on the same side of the
+  package, so this order lets the arm network and the readback route without
+  crossing. Both are plain I/O on ADC2 channels that WiFi makes unusable, so the
+  swap costs nothing.
+- **The decoder goes into the driver row, not east.** An earlier revision put
+  `U24` east of the module, reasoning that all seventeen of its nets are static
+  logic - the address is latched while driving and the only firmware handle is
+  `DECODER_INHIBIT` - so run length is electrically free. That is true and it
+  was the wrong conclusion: it weighed only signal integrity. From the east side
+  the twelve outputs are ~45 mm each, about **540 mm of trace** that on a
+  two-layer board cuts the bottom pour into ribbons across the whole width,
+  exactly where the motor return current flows, and threads past the analog
+  island.
+
+  `U24` now sits in the **16.9 mm gap between `U20`'s and `U21`'s VM-cap
+  clusters** - widened from 9.9 mm by ECO rev3.2-E, which deleted the six DNP
+  VINT/VCP pads that used to sit at `dx +/- 6.5`, at the driver row's own latitude and unrotated. In `TSSOP-24` the
+  courtyard is 7.70 x 8.30 mm, so it fits with ~1 mm either side - the old
+  `SOIC-24W` at 11.86 x 15.90 mm could not have. The pin rows then run
+  north-south and each flank faces the drivers it serves:
+
+  | Flank | Faces | Serves |
+  |---|---|---|
+  | Side A, pins 4-11 | west | `U20` (four used, four spare) |
+  | Side B, pins 13-20 | east | `U21` northern four, `U22` southern four |
+
+  **No output crosses the package**, and the output budget drops to ~120 mm
+  confined to a band beside the drivers. The control cluster - pins 1,2,3 and
+  21-24 - sits at the north end of both flanks, facing the module's address
+  pads.
+
+The one thing this does *not* solve is where the buck goes. `U3`, `L1` and the
+`+3V3_LOGIC` bulk are the noisiest block on the board, and the analog island is
+the most sensitive; they must not share the west side. Split the power chain by
+what it is, not by which connector it belongs to:
+
+- `J1` + `U2` (the USB-C receptacle and its current limiter) stay west at the
+  connector, with the USB pair.
+- `U3` + `L1` + `C5`/`C6` (the buck) go **east or south-east**. `VBUS_PROTECTED`
+  feeding them is a DC rail and does not care about the distance.
+- `U4` + `C7`-`C9` + `RSH1` + `INA180` stay **north-west** with the analog
+  island. The shunt and the amplifier are a Kelvin pair and cannot be separated,
+  and they must be near the ADC pads.
+
+### Placement rules
+
+- All six RJ9 body outlines on the south edge at 12.25 mm pitch, projecting
+  1.0 mm, with the 1-wire terminal rotated for south wire entry beside them.
+  USB-C is on the west edge. Connector projection remains a checked 0-2 mm
+  mechanical invariant - see the table above for the achieved values.
+- **Motor ESD: one GND-referenced TVS per wire, at its own connector pin.** The
+  only trace that sets the clamp is `connector pin -> TVS -> GND via`; ST's own
+  worked example shows 10 mm of track adding 144 V to the clamp voltage. Give
+  each TVS its own ground via straight into the plane. Everything downstream of
+  the clamp is layout-free, so the drivers may sit wherever suits the routing.
+  This supersedes the Rev3.1 rule that placed motor ESD "between the motor rail
+  spine and its two connectors" - that put the array inboard, behind the very
+  track inductance that is the problem.
+- Do not substitute a rail-clamp ESD array (USBLC6 class). Its VBUS pin steers
+  positive strikes into `+3V3_MOTOR`, i.e. into DRV8411 `VM` and INA180 `IN-`.
+- Place each driver with its VM capacitors and sense resistors above its two
+  connectors. **Each xISEN resistor gets its own via to the plane, close to the
+  driver and outside the ESD return path**: the pin tolerates only +/-0.6 V and
+  trips at 200 mV, so ground bounce there is a false overcurrent and a latched
+  shutdown.
+- One unbroken ground plane. Do **not** split the ground to keep ESD out of the
+  analog island - a split forces return current through a narrow bridge and
+  makes it worse. Let the TVS ground vias spread the discharge into the plane
+  immediately at the south edge, and place the analog island at the north so
+  ESD return current never flows under it.
+- Place the analog chain adjacent to the ESP32 ADC1 pins, with the tacho
+  op-amp/comparator immediately beside the INA180. `TACHO_REF` and its 22 uF
+  bypass belong in the same quiet island; the reference is part of the gain
   network, so its ground return is a signal-integrity item, not a bypass
-  detail. Separate the whole block from driver outputs by a quiet ground return.
+  detail. Target region is east of the ESP32 and below the keepout band -
+  about 260 mm2 against the roughly 130 mm2 the block needs.
+- Shunt-to-INA180 traces are a Kelvin pair taken from the shunt's own pads, not
+  from rail copper, routed as a tight differential pair with no ESD or motor
+  return current sharing that copper.
 - `ADC_CURRENT` and `ADC_TACHO` may run together toward the MCU; keep both away
   from `COMM_TACHO_N`, which is a fast digital edge.
-- Preserve the ESP32 module antenna keepout on both copper layers and at the
-  board edge.
+- Do not route digital address, USB or buck switch nodes under the current
+  amplifier, tacho chain, ADC traces or ESP32 antenna.
+- Top carries components and most routing. Both sides require GND pours; the
+  stitching-via count and B.Cu crossover budget are Rev3.2 layout outputs, not
+  inherited Rev3.1 facts.
+- No electrolytic parts remain; the tallest passive is 1.45 mm, which relaxes
+  the enclosure profile.
 - No fabrication release until bottom-plane continuity, return-current paths,
   thermal copper and every unrouted item have been reviewed manually.
 
@@ -429,5 +766,5 @@ Recorded so they are not re-proposed without the counter-argument.
 | Drop `R10`-`R13` address/direction pull-downs | 4 placements | The 4514 has no input pulldowns and inhibit alone would leave four HC inputs floating during ESP32 reset. Requirement S-01 covers "all motor-drive inputs"; four resistors is not a reason to weaken it. |
 | Drop the `SN74LVC1G00` NAND and inhibit straight from a pulled-up GPIO | 2 placements | `nSLEEP` would become the latch's only path to remove drive. Two independent paths is the point. |
 | Delete the tacho chain and count ripple digitally from `ADC_CURRENT` | 14 placements | 7-30 mV of ripple against ESP32-S3 ADC noise is roughly unity SNR. `ADC_TACHO` gets the digital path its amplified signal for one resistor instead. |
-| Delete the six DRV8833 DNP pads | 6 footprints | They cost no placements and keep a pin-compatible second source for a five-board prototype run during a shortage-prone period. |
+| ~~Delete the six DRV8833 DNP pads~~ | **done, rev3.2-E** | The second source they preserved is the part TI has superseded, and it is unspecified for xISEN trip on this rail. Removing them widened the decoder gap from 9.9 to 16.9 mm and cleared the fan-out band. |
 | Delete `SW2`/`R9` (BOOT) | 2 placements | Removing recovery hardware from a bring-up board is false economy. |

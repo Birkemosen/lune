@@ -552,23 +552,69 @@ def add_esp32():
     net(u1, 2, "+3V3_LOGIC")
     module_pin_nets = {
         3: "ESP_EN",             # EN
-        4: "ADC_CURRENT",        # GPIO4  / ADC1_CH3
-        5: "ADC_TACHO",          # GPIO5  / ADC1_CH4 amplified commutation ripple
-        8: "COMM_TACHO_N",       # GPIO15 / PCNT-RMT commutation capture
-        9: "LATCH_ARM",          # GPIO16
-        10: "LATCH_STATE",       # GPIO17
-        12: "I2C_SDA",           # GPIO8
+        # The analog block moved to the module's east side.  ADC1 is GPIO1..10 and
+        # ADC2 is unusable while WiFi runs, so pads 38/39 (IO2/IO1) are the only
+        # ADC-capable pins on that side - pads 34/35 carry IO41/IO42, which have
+        # no ADC at all.  This frees the module's west side for the USB pair on
+        # pads 13/14 and keeps the buck away from the tacho chain.
+        38: "ADC_CURRENT",       # GPIO2  / ADC1_CH1
+        39: "ADC_TACHO",         # GPIO1  / ADC1_CH0 amplified commutation ripple
+        31: "COMM_TACHO_N",      # GPIO38 / PCNT-RMT capture, follows the comparator east
+        # LATCH_ARM/LATCH_STATE stay west: they serve U35, which belongs over the
+        # driver row, and both are slow digital.  IO16/IO17 are ADC2 channels that
+        # WiFi makes unusable anyway, so nothing is wasted by keeping them here.
+        # Swapped relative to Rev3.1 to match the 74LVC1G74 pin order: CLK on
+        # U35 pin 1 and /Q on pin 3 sit on the same side of the package, so
+        # putting LATCH_STATE on the northern module pad and LATCH_ARM on the
+        # southern one lets the arm network (R25/C23/Q1) and the /Q readback
+        # route without crossing.  Both GPIOs are plain I/O - ADC2 channels that
+        # WiFi makes unusable anyway - so the swap is free.
+        9: "LATCH_STATE",        # GPIO16
+        10: "LATCH_ARM",         # GPIO17
+        # Digital functions are kept OFF ADC1 (GPIO1..10), which is the only ADC
+        # usable while WiFi runs.  ADC2 (GPIO11..20) is unusable then anyway, so
+        # it is where slow digital belongs.  MOTOR_ENABLE and ONEWIRE_MCU moved
+        # here from GPIO10 and GPIO42: pad 8 puts MOTOR_ENABLE on the west row
+        # beside the latch block it feeds, and pad 11 puts 1-wire on the west
+        # row now that its connector sits beside USB-C.
+        8: "MOTOR_ENABLE",       # GPIO15 / ADC2, worthless for analog
+        11: "ONEWIRE_MCU",       # GPIO18 / ADC2, worthless for analog
+        # I2C moved off GPIO8/GPIO9 - two ADC1 channels - onto two unencumbered
+        # pins that are adjacent on the module's south edge, east of centre, so
+        # the display connector can sit in the east with SDA/SCL side by side.
+        23: "I2C_SDA",           # GPIO21
+        24: "I2C_SCL",           # GPIO47
         13: "USB_DM",            # GPIO19 native USB D-
         14: "USB_DP",            # GPIO20 native USB D+
-        17: "I2C_SCL",           # GPIO9
-        18: "MOTOR_ADDR0",       # GPIO10
+        # Pads 18..22 are IO10..IO14 - all plain digital I/O, none on the
+        # forbidden list, no strapping or peripheral binding - so the order is
+        # free and is chosen to match how the four address lines and MOTOR_ENABLE
+        # leave the module toward U24.  GPIO10 is an ADC1 channel spent on
+        # digital, which costs little: pads 5-7 carry IO5-IO7, three more free
+        # ADC1 channels (pad 4 now carries STATUS_LED_N).  MOTOR_ENABLE cannot move to IO3 or IO46 - both are
+        # strapping pins, so its 100k safe-state pulldown would be sampled as
+        # boot configuration at every reset, and that pulldown is what defines
+        # coast when the GPIO is high-Z.
         19: "MOTOR_ADDR1",       # GPIO11
-        20: "MOTOR_ADDR2",       # GPIO12
-        21: "MOTOR_ENABLE",      # GPIO13
-        22: "MOTOR_TERM_DIR",    # GPIO14 / decoder A3
-        25: "STATUS_LED_N",      # GPIO48
+        20: "MOTOR_ADDR0",       # GPIO12
+        21: "MOTOR_ADDR3",       # GPIO13 - a plain address bit since the remap;
+        #                          it no longer selects direction.
+        22: "MOTOR_ADDR2",       # GPIO14
+        # STATUS_LED_N moved from pad 25 (GPIO48) to pad 4 (GPIO4) in rev3.2-G.
+        # This deliberately spends an ADC1 channel, which the ADC1 reserve
+        # otherwise forbids - see adc1_digital_exceptions in the contract.  The
+        # reason is layout, not electrical: on pad 25 the LED left the module on
+        # the south row and put D3 and R23 in the x 49-52 / y 38-43 pocket,
+        # which is the only place the 3V3_LOGIC, VBUS_PROTECTED and 3V3_MOTOR
+        # spines can be re-arranged to open a two-wide channel for UART and I2C.
+        # R23's supply tap is also what drags the 3V3_LOGIC spine up to y=37.21.
+        # Pad 4 leaves west instead, clear of that band.  Every other free pad on
+        # the west and south rows is either an ADC1 channel or a strapping pin,
+        # so no cheaper pin exists: 15/17/18 are IO3/IO9/IO10, 16 and 26 are
+        # IO46/IO45 (strapping), 28-30 are the octal PSRAM, and 32-35 are on the
+        # east side with the analog island.
+        4: "STATUS_LED_N",       # GPIO4 / ADC1_CH3, spent on purpose
         27: "BOOT_N",            # GPIO0
-        35: "ONEWIRE_MCU",       # GPIO42
         36: "UART_RX_DBG",       # GPIO44
         37: "UART_TX_DBG",       # GPIO43
     }
@@ -620,35 +666,52 @@ def add_decoder_logic():
     decoder = add(
         "4xxx_IEEE:4514",
         "U24",
-        "XL74HC4514D",
+        "74HC4514PW,118",
         (110, 250),
-        "Package_SO:SOIC-24W_7.5x15.4mm_P1.27mm",
-        MPN="XL74HC4514D",
-        LCSC="C50202050",
+        "Package_SO:TSSOP-24_4.4x7.8mm_P0.65mm",
+        MPN="74HC4514PW,118",
+        LCSC="C58910",
     )
     net(decoder, 2, "MOTOR_ADDR0")
     net(decoder, 3, "MOTOR_ADDR1")
     net(decoder, 21, "MOTOR_ADDR2")
-    net(decoder, 22, "MOTOR_TERM_DIR")
+    net(decoder, 22, "MOTOR_ADDR3")
     net(decoder, 12, "GND")
     net(decoder, 24, "+3V3_LOGIC")
+    # Address-to-output assignment is a layout choice, not the datasheet's, and
+    # this is the third iteration - the first two got the geometry wrong.
+    #
+    # U24 is centred at the driver row's own latitude, so its output pins sit
+    # level with the driver BODIES, not with their input rows ~2.5 mm further
+    # north.  There is therefore no straight path sideways: every output has to
+    # go north around the package first, run along, and drop south into the pin
+    # row.  In that topology the SOUTHERNMOST decoder pin ends up in the
+    # southernmost lane of the bundle and drops at the NEAREST destination, so
+    # the order inverts against the naive straight-across assumption.
+    #
+    #     side A (pins 4..7)   -> U20, west
+    #     side B (pins 13..16) -> U21, the NEAR eastern driver
+    #     side B (pins 17..20) -> U22, the FAR eastern driver
+    #
+    # Note the east groups are the other way round from a straight-across
+    # layout: both share one northbound channel, so the southern pins have to
+    # serve the nearer driver or the two groups cross inside the channel.
+    #
+    # Within each group FWD takes the two OUTER pins and REV the two inner ones.
+    # That mirror symmetry is not cosmetic - the DRV8411's two bridges are
+    # themselves mirrored along the input flank (AIN1, AIN2 ... BIN2, BIN1), so
+    # the pair order that is crossing-free for motor A is reversed for motor B.
+    #
+    # Bit 0 is no longer uniformly the direction bit; it alternates with channel
+    # parity. Firmware uses the 12-entry channel_address_map in the contract.
     output_pins = {
-        11: "FWD1",
-        9: "FWD2",
-        10: "FWD3",
-        8: "FWD4",
-        7: "FWD5",
-        6: "FWD6",
-        18: "REV1",
-        17: "REV2",
-        20: "REV3",
-        19: "REV4",
-        14: "REV5",
-        13: "REV6",
+        4: "FWD1", 5: "REV1", 6: "REV2", 7: "FWD2",           # -> U20, west
+        13: "FWD3", 14: "REV3", 15: "REV4", 16: "FWD4",       # -> U21, near east
+        17: "FWD5", 18: "REV5", 19: "REV6", 20: "FWD6",       # -> U22, far east
     }
     for pin, name in output_pins.items():
         net(decoder, pin, name)
-    for pin in (4, 5, 15, 16):
+    for pin in (8, 9, 10, 11):
         nc(decoder, pin)
     decoupling("C15", "100n", (175, 210), "+3V3_LOGIC", LCSC="C14663")
 
@@ -678,7 +741,7 @@ def add_decoder_logic():
     # each net fans out from the module across the sheet, which is what a name is
     # for.  The inhibit node, which gates both decoder control pins, is drawn.
     for index, name in enumerate(
-        ("MOTOR_ADDR0", "MOTOR_ADDR1", "MOTOR_ADDR2", "MOTOR_TERM_DIR", "MOTOR_ENABLE"),
+        ("MOTOR_ADDR0", "MOTOR_ADDR1", "MOTOR_ADDR2", "MOTOR_ADDR3", "MOTOR_ENABLE"),
         10,
     ):
         passive(f"R{index}", "100k", (330 + (index - 10) * 20, 250), name, "GND")
@@ -830,61 +893,36 @@ def add_current_fault_latch_and_timeout():
     bus(((c23, 2), (latch, 1), (r25, 1), (arm_inhibit, 3)), spine_x=375,
         label="ARM_CLK")
 
-    # ---------------- Independent runtime cutoff (ECO rev3.2-B) -------------
-    # MR is driven by LATCH_STATE (the latch /Q), not DECODER_INHIBIT.  The
-    # 4514 feeds the drivers static logic, so the only handle firmware has for
-    # duty-cycle control is chopping MOTOR_ENABLE - and that used to reset this
-    # counter on every off phase, which also meant a single brief coast per
-    # cycle could postpone the timeout forever.  Referencing the armed state
-    # instead makes the cutoff a bound on total armed time, immune to both.
-    # Firmware therefore arms per move; an idle armed latch self-disarms.
+    # -------- No hardware runtime cutoff (ECO rev3.2-C, deliberate) --------
+    # Rev3.2-B carried a 74HC4060 max-on-time watchdog (U36 + Rt/Rs/Ct + Q2)
+    # that reset on LATCH_STATE and injected a latched fault after ~71 s.  It
+    # is removed, and the removal is a hazard-assessment result, not an
+    # omission - see design-contract.json "actuator_overrun_hazard".
     #
-    # Q14 (physical pin 3) first goes HIGH after 8192 oscillator periods.
-    # Rt=180k, Rs=360k, Ct=22n: T_osc = 2.2*Rt*Ct = 8.71 ms -> 71.4 s.  With
-    # the 2.5 factor some datasheet editions quote it is 81.1 s, so the design
-    # sits inside the required 50-90 s window either way.
-    timer = add(
-        "74xx:74HC4060",
-        "U36",
-        "74HC4060D,653",
-        (540, 240),
-        "Package_SO:SOIC-16_3.9x9.9mm_P1.27mm",
-        MPN="74HC4060D,653",
-        LCSC="C5649",
-    )
-    for pin in (1, 2, 4, 5, 6, 7, 13, 14, 15):
-        nc(timer, pin)
-    net(timer, 8, "GND")
-    net(timer, 12, "LATCH_STATE")
-    net(timer, 16, "+3V3_LOGIC")
-    r27 = passive_wired("R27", "180k 1%", (500, 250))
-    r28 = passive_wired("R28", "360k 1%", (515, 272))
-    c25 = passive_wired(
-        "C25",
-        "22n 5% 50V C0G",
-        (478, 262),
-        footprint="Capacitor_SMD:C_1206_3216Metric",
-        Status="CHARACTERIZE_AND_TRIM_RT",
-    )
-    # The three timing components meet at one node; each reaches its own
-    # oscillator pin, so the RC network is drawn rather than named four times.
-    link((timer, 10), (r27, 1), label="TIMER_RTC")
-    link((timer, 11), (r28, 1), label="TIMER_RS")
-    link((timer, 9), (c25, 1), label="TIMER_CTC")
-    bus(((r27, 2), (r28, 2), (c25, 2)), spine_y=288, label="TIMING_COMMON")
-    decoupling("C24", "100n", (565, 210), "+3V3_LOGIC", LCSC="C14663")
-    timeout_fault = add(
-        "Transistor_FET:2N7002",
-        "Q2",
-        "2N7002 TIMEOUT FAULT",
-        (590, 265),
-        "Package_TO_SOT_SMD:SOT-23",
-        MPN="2N7002",
-        LCSC="C8545",
-    )
-    net(timeout_fault, 2, "GND")
-    net(timeout_fault, 3, "FAULT_N_RAW")
-    link((timer, 3), (timeout_fault, 1), label="TIMEOUT_Q14")
+    # The hazard it addressed is bounded: an over-driven actuator strips its
+    # own gear train, in the opening direction only.  If the head parts from
+    # the manifold the valve insert and its seal stay behind, so the pin is
+    # released to full flow - a closed system, no water escape, and the floor
+    # cannot exceed the mixing-valve supply temperature.  Worst case is one
+    # actuator, and the stuck-open loop is self-announcing.  The rail
+    # overcurrent comparator gives no protection here at all: stall current
+    # sits below its 280 mA trip, and the damage mechanism is torque x time.
+    #
+    # Against that, the part cost more than it saved.  Its oscillator network
+    # shipped rotated one position around the timing star (Ct on RTC, Rt on
+    # RS, Rs on CTC), which neither ERC nor check_design could see because the
+    # timeout was computed from contract values rather than from topology.  And
+    # bounding *total armed time* collided with learning mode, which must drive
+    # to both end stops: 659 + 1048 commutation counts over a 20-40 Hz band is
+    # 43-85 s against a 56-86 s cutoff, so commissioning could latch a fault
+    # that firmware is by design unable to clear.
+    #
+    # Retained instead: the firmware runtime limit already in service, the
+    # commutation tacho as rotation/stall evidence, the ESP32 task watchdog,
+    # and R10-R15 for a defined safe state whenever the GPIOs go high-Z.  Note
+    # that the latch no longer self-disarms when left idle; that is benign,
+    # because MOTOR_ENABLE falling to its 100k pulldown drives DECODER_INHIBIT
+    # high and the 4514 turns every output off regardless of DRIVE_PERMIT.
 
     # ------------- Continuous commutation tacho (ECO rev3.2-B) --------------
     # Measured HmIP VdMot + Danfoss RA-N: 14-19 mA running, 659/1048 commutation
@@ -997,8 +1035,8 @@ def add_current_fault_latch_and_timeout():
 
     note("INA180 gives 10 V/A. LMV393A senses CURRENT_RAW directly: nominal 280 mA trip with no filter delay.", (60, 400))
     note("Tacho band-pass 1.6 Hz .. 339 Hz, gain ~85: matched to 20-40 Hz commutation, -43 dB at the 50 kHz chop.", (60, 409))
-    note("Hysteresis (R49/R50) is on the comparator non-inverting input. 4060 MR = LATCH_STATE bounds total ARMED time.", (60, 418))
-    note("4060 Q14 with 180k/360k/22n C0G: 71.4 s typical; release only after 50..90 s characterization and Rt trim.", (60, 427))
+    note("Hysteresis (R49/R50) is on the comparator non-inverting input.", (60, 418))
+    note("No hardware max-on-time: the firmware runtime limit and tacho stall evidence bound actuator travel. See actuator_overrun_hazard.", (60, 427))
 
 
 DRIVER_PIN_NAMES = {
@@ -1012,10 +1050,10 @@ DRIVER_PIN_NAMES = {
     8: "nFAULT",
     9: "BIN1",
     10: "BIN2",
-    11: "NC/VCP fallback",
+    11: "NC (VCP on die)",
     12: "VM",
     13: "GND",
-    14: "NC/VINT fallback",
+    14: "NC (VINT on die)",
     15: "AIN2",
     16: "AIN1",
     17: "EP",
@@ -1069,29 +1107,15 @@ def add_motor_drivers():
             footprint="Capacitor_SMD:C_0603_1608Metric",
         )
         decoupling(f"C{29 + index * 2}", "100n 10V", (x, 372), "+3V3_MOTOR", LCSC="C14663")
-        # DRV8411 pins 11/14 are NC. These pads exist only so the pin-compatible
-        # DRV8833 remains a drop-in second source; DRV8411 is the population.
-        # Each sense resistor and second-source capacitor is placed level with
-        # the driver pin it serves, so the connection is a single straight wire
-        # rather than a matching pair of net names.  The nearer part always
-        # serves the lower pin so no run crosses the other part's pads.
-        vint_cap = passive_wired(
-            f"C{109 + index}",
-            "2.2u DNP DRV8833",
-            (x - 30, xy(drv, 14)[1] + 3.81),
-            footprint="Capacitor_SMD:C_0603_1608Metric",
-            DNP="yes",
-        )
-        net(vint_cap, 2, "GND")
-        link((drv, 14), (vint_cap, 1), label=f"VINT{index}")
-        vcp_cap = passive_wired(
-            f"C{113 + index}",
-            "10n DNP DRV8833",
-            (x - 55, xy(drv, 11)[1] + 3.81),
-            DNP="yes",
-        )
-        net(vcp_cap, 2, "+3V3_MOTOR")
-        link((drv, 11), (vcp_cap, 1), label=f"VCP{index}")
+        # Pins 11 and 14 are NC on the DRV8411 - it integrates the charge-pump
+        # and internal-regulator capacitors on die - so they are left open.
+        # Rev3.2-B carried six DNP 0603 pads here (VINT 2.2 uF, VCP 10 nF) to
+        # keep the pin-compatible DRV8833 available as a shortage substitute.
+        # They are removed; see driver.second_source_rationale.  Sense resistors
+        # are still placed level with the pin they serve so each connection is a
+        # single straight wire rather than a matching pair of net names.
+        nc(drv, 11)
+        nc(drv, 14)
         rsa = passive_wired(
             f"RSA{index}",
             "1R 1% 0.5W",
@@ -1130,22 +1154,41 @@ def add_motor_drivers():
             net(conn, 3, f"MOT{channel}_B")
             nc(conn, 4)
 
-        esd = add(
-            "Connector_Generic:Conn_01x06",
-            f"U{39 + index}",
-            "USBLC6-4SC6 MOTOR ESD",
-            (x + 58, 333),
-            "Package_TO_SOT_SMD:SOT-23-6",
-            MPN="USBLC6-4SC6",
-            LCSC="C111212",
-            Pinout="1 I/O1; 2 GND; 3 I/O2; 4 I/O3; 5 VBUS; 6 I/O4",
-        )
-        net(esd, 1, f"MOT{channel_a}_A")
-        net(esd, 3, f"MOT{channel_a}_B")
-        net(esd, 4, f"MOT{channel_b}_B")
-        net(esd, 6, f"MOT{channel_b}_A")
-        net(esd, 2, "GND")
-        net(esd, 5, "+3V3_MOTOR")
+            # One GND-referenced TVS per motor wire, at its own connector pin.
+            #
+            # This replaces the three USBLC6-4SC6 quad arrays.  Those are rail
+            # clamps: ST's own datasheet gives VCL+ = V_TRANSIL + V_F, so a
+            # positive strike is steered *up* through a steering diode into the
+            # VBUS pin before it ever reaches ground.  VBUS was tied to
+            # +3V3_MOTOR, which is the DRV8411 VM node and the INA180 IN- node,
+            # so the fast edge was routed into the one rail the current sense
+            # and the commutation tacho both depend on.  ST's worked example for
+            # an 8 kV contact discharge is +31.2 V at the I/O, against a
+            # DRV8411 output rated -V_SD..VM+V_SD and a VM ramp limit of 2 V/us.
+            #
+            # TPD1E10B06 has no supply pin at all, so the strike goes straight
+            # to the plane: 10 V max clamp at 1 A, 0.4 ohm dynamic resistance,
+            # +/-30 kV IEC contact.  Two pins and bidirectional, so it cannot be
+            # fitted backwards - the failure recorded against the OneWire TVS in
+            # rev2-review-addendum.md item 7 is not reachable here.
+            #
+            # Per wire rather than per connector or per driver because the only
+            # trace that sets the clamp is connector pin -> TVS -> GND via.
+            # Everything downstream of the clamp is layout-free.
+            for leg, dx in (("A", -9), ("B", 9)):
+                tvs = add(
+                    "Device:D_TVS",
+                    f"D{38 + 2 * channel + (0 if leg == 'A' else 1)}",
+                    "TPD1E10B06 ESD",
+                    (x + offset + dx, 392),
+                    "Diode_SMD:D_SOD-523",
+                    MPN="TPD1E10B06DYAR",
+                    LCSC="C3712135",
+                )
+                net(tvs, 1, f"MOT{channel}_{leg}")
+                net(tvs, 2, "GND")
+    note("Motor ESD is one GND-referenced TPD1E10B06 per wire at its own connector pin. Do not substitute a rail-clamp", (105, 470))
+    note("array (USBLC6 class): its VBUS pin steers positive strikes into +3V3_MOTOR, i.e. into DRV8411 VM and INA180 IN-.", (105, 479))
     note("1R xISEN gives a 178..232 mA bridge ceiling: a board-protection backstop, ~4x above the 23..50 mA measured stall.", (105, 443))
     note("xISEN is a production tuning parameter. 1.5R -> 119..155 mA sits just above the 100 mA firmware cap; do not", (105, 452))
     note("narrow it before the section 3 current distributions exist, or the prototype clips the data it must collect.", (105, 461))
@@ -1221,17 +1264,48 @@ def add_external_interfaces_and_flags():
     net(r42, 1, "+3V3_LOGIC")
     link((led, 2), (r42, 2), label="STATUS_LED_A")
 
-    for ref, label, pos, signal in (
-        ("TP30", "DISPLAY GND", (225, 608), "GND"),
-        ("TP31", "DISPLAY 3V3", (245, 608), "+3V3_LOGIC"),
-        ("TP32", "DISPLAY SDA", (265, 608), "I2C_SDA"),
-        ("TP33", "DISPLAY SCL", (285, 608), "I2C_SCL"),
-        ("TP34", "DEBUG GND", (325, 608), "GND"),
-        ("TP35", "DEBUG 3V3", (345, 608), "+3V3_LOGIC"),
-        ("TP36", "UART TX", (365, 608), "UART_TX_DBG"),
-        ("TP37", "UART RX", (385, 608), "UART_RX_DBG"),
+    # The eight scattered display/debug test pads are replaced by two JST XH
+    # footprints - the series already in stock, so no new part to buy.  Both are
+    # COPPER_ONLY: the pads exist, nothing is ordered or placed, and a connector
+    # gets soldered on only when a display or a console is actually wanted.
+    #
+    # XH is 2.50 mm pitch, not the 2.54 it is often sold as, and it is
+    # through-hole only, so each connector puts four drills through the ground
+    # pour.  That is acceptable here: both sit at x 77..91, more than 4 mm east
+    # of the analog island, where the pour is reference plane and not a return
+    # path for anything.  Vertical entry so the cable leaves toward a lid-mounted
+    # display; the B4B body is also 13.40 x 6.75 mm, smaller than the PH SMD
+    # alternative it replaces.
+    for ref, label, pos, pins in (
+        ("J21", "DISPLAY I2C", (245, 608),
+         ("GND", "+3V3_LOGIC", "I2C_SDA", "I2C_SCL")),
+        ("J22", "UART CONSOLE", (345, 608),
+         ("GND", "+3V3_LOGIC", "UART_TX_DBG", "UART_RX_DBG")),
     ):
-        test_pad(ref, label, pos, signal)
+        conn = add(
+            "Connector_Generic:Conn_01x04",
+            ref,
+            label,
+            pos,
+            "Connector_JST:JST_XH_B4B-XH-A_1x04_P2.50mm_Vertical",
+            Assembly="COPPER_ONLY",
+            Pinout="1 GND; 2 +3V3_LOGIC; 3 data/TX; 4 clock/RX",
+        )
+        for index, signal in enumerate(pins, 1):
+            net(conn, index, signal)
+
+    # I2C has no pull-ups anywhere on the board.  They are not optional: without
+    # them SDA and SCL float on the ESP32's inputs whenever no display is fitted,
+    # which is the same failure R10-R13 exist to prevent at the decoder - a
+    # floating CMOS input sits near mid-rail with both transistors conducting.
+    # 4k7 to +3V3_LOGIC; a display module carrying its own gives 2k35 effective,
+    # still well inside spec and a 100 ns rise into 50 pF against 400 kHz.
+    for ref, signal, x in (("R16", "I2C_SDA", 265), ("R17", "I2C_SCL", 285)):
+        pull = passive_wired(ref, "4k7", (x, 585),
+                            footprint="Resistor_SMD:R_0603_1608Metric",
+                            MPN="RC0603FR-074K7L", LCSC="C23162")
+        net(pull, 1, "+3V3_LOGIC")
+        net(pull, 2, signal)
 
     for index, (rail, x) in enumerate(
         (
@@ -1253,10 +1327,10 @@ def add_external_interfaces_and_flags():
             f"H{index}",
             "M3",
             pos,
-            "MountingHole:MountingHole_3.2mm_M3",
+            "MountingHole:MountingHole_3.2mm_M3_ISO14580_Pad",
             Assembly="MECHANICAL_ONLY",
         )
-    note("TP30..TP33 are four labelled I2C display pads with no on-board bus pull-ups.", (105, 652))
+    note("J21/J22 are unpopulated JST PH pads: display I2C with R16/R17 4k7 pull-ups, and the UART console.", (105, 652))
     note("Four M3 holes and the ESP32 antenna keepout are mandatory PCB release constraints.", (105, 661))
 
 
