@@ -32,13 +32,13 @@ ESP-IDF sdkconfig must contain `CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y` and
 |---|---:|---|
 | ADC_CURRENT | 4 | input, 6 dB attenuation |
 | ADC_TACHO | 5 | input, amplified commutation ripple |
-| COMM_TACHO_N | 15 | PCNT/RMT input |
-| I2C SDA / SCL | 8 / 9 | no on-board pull-ups |
+| COMM_TACHO_N | 38 | PCNT/RMT input |
+| I2C SDA / SCL | 21 / 47 | 4k7 pull-ups fitted (`R16`/`R17`) |
 | MOTOR_ADDR0 | 12 | only change while inhibited |
 | MOTOR_ADDR1 | 11 | only change while inhibited |
 | MOTOR_ADDR2 | 14 | only change while inhibited |
 | MOTOR_ADDR3 | 13 | only change while inhibited |
-| MOTOR_ENABLE | 15 | low |
+| MOTOR_ENABLE | 18 | low |
 
 All four address lines are plain address bits: **no bit encodes direction**. The
 decoder's output assignment is a layout choice, so the channel/direction pair maps
@@ -54,10 +54,15 @@ to an address through the 12-entry `decoder.channel_address_map`:
 | 6 | 10 | 11 |
 
 Addresses 0-3 are unreachable by design; `Q0`-`Q3` reach no bridge input.
-| LATCH_ARM | 16 | low pulse source |
-| LATCH_STATE | 17 | input, **high means faulted or not armed** |
-| ONEWIRE_MCU | 42 | protected external bus |
-| STATUS_LED_N | 4 | active low |
+| LATCH_ARM | 17 | low pulse source |
+| LATCH_STATE | 16 | input, **high means faulted or not armed** |
+| ONEWIRE_MCU | 8 | protected external bus (declared ADC1 exception) |
+| UART_TX_MCU / UART_RX_MCU | 43 / 44 | ROM console; 1k series to `J22` |
+| STATUS_LED_N | 4 | active low (declared ADC1 exception) |
+
+Every number in these two tables is the `gpio` map in `design-contract.json`,
+which `check_design.py` asserts against the schematic. If they disagree, the
+contract is right and this file is stale.
 
 The backend drives `MOTOR_ENABLE` low before configuring any selection pin.
 Selection changes are accepted only in coast, followed by at least 1 ms before
@@ -97,7 +102,7 @@ invalid until re-measured on Rev 3.2 hardware.
 
 ## Continuous tacho capture
 
-`COMM_TACHO_N` is connected to GPIO15 and must be captured by ESP32 PCNT or RMT
+`COMM_TACHO_N` is connected to GPIO38 and must be captured by ESP32 PCNT or RMT
 while `MOTOR_ENABLE` is asserted. Count every qualified comparator transition;
 do not sample this net from the normal controller task. Firmware must reject
 pulses outside the board-characterized minimum and maximum width/period, reset

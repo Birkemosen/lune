@@ -1,7 +1,7 @@
 # Lune V6 Rev 3.2
 
-Status: multi-sheet schematic ECO at level **rev3.2-B**; PCB placement, routing
-and physical qualification pending.
+Status: multi-sheet schematic ECO at level **rev3.2-H**; PCB placed and routed,
+physical qualification pending.
 
 Rev 3.2 is the successor to Rev 3.1 Lean. It retains the compact, two-layer,
 six-channel manifold controller with an embedded `ESP32-S3-WROOM-1-N8R8`. The
@@ -12,7 +12,9 @@ ECO **rev3.2-B** supersedes the first Rev 3.2 schematic. It corrects the
 commutation tacho, re-references the independent runtime cutoff, and removes
 three parts that were not earning their place. See
 [design-review.md](design-review.md) for the findings behind each change and
-§ [ECO rev3.2-B](#eco-rev32-b) below for the change list.
+§ [ECO rev3.2-B](#eco-rev32-b) below for the change list. Seven further ECOs have
+landed since; each has its own section below, and the schematic is at
+**rev3.2-H**.
 
 ## Decision
 
@@ -204,8 +206,8 @@ so that nothing digital occupies an ADC1 channel:
 
 | Net | Pad | GPIO | Why |
 |---|---|---|---|
-| `MOTOR_ENABLE` | 18 → **8** | 10 → **15** | Off ADC1, and onto the west row beside the latch block it feeds |
-| `ONEWIRE_MCU` | 35 → **11** | 42 → **18** | Connector moved beside USB-C on the west edge; frees a JTAG pin |
+| `MOTOR_ENABLE` | 18 → **8** | 10 → **15** | Off ADC1, and onto the west row beside the latch block it feeds. *Moved again in rev3.2-H to pad 11 / GPIO18.* |
+| `ONEWIRE_MCU` | 35 → **11** | 42 → **18** | Connector moved beside USB-C on the west edge; frees a JTAG pin. *Moved again in rev3.2-H to pad 12 / GPIO8.* |
 | `I2C_SDA` | 12 → **23** | 8 → **21** | Display connector goes east; frees an ADC1 channel |
 | `I2C_SCL` | 17 → **24** | 9 → **47** | Same, and adjacent to SDA on the module's south edge |
 
@@ -218,7 +220,9 @@ eat an analog channel — which is exactly what these three signals were doing.
 Exceptions are declared data, not a code exemption: they live in `design-contract.json`
 under `adc1_digital_exceptions`, and `check_design.py` prints each one on every run and
 fails if a listed signal is no longer on ADC1, so the list cannot go stale. There is one —
-`STATUS_LED_N` on `GPIO4`, see § [ECO rev3.2-G](#eco-rev32-g---status_led_n-moves-off-the-south-row).
+`STATUS_LED_N` on `GPIO4` (§ [ECO rev3.2-G](#eco-rev32-g---status_led_n-moves-off-the-south-row))
+and `ONEWIRE_MCU` on `GPIO8` (§ [ECO rev3.2-H](#eco-rev32-h---two-pin-moves-and-the-console-series-resistors)).
+Two analog channels, two exceptions, five spare.
 
 ### I2C pull-ups added
 
@@ -275,6 +279,65 @@ the reserve had the headroom. Two analog channels and one exception leave six sp
 `pin_nfault: "4"`. The rev3.2 migration already marks `pin_nfault` for deletion; both edits
 must land together or `GPIO4` is assigned twice. See § Migration status in
 `../../README.md`.
+
+## ECO rev3.2-H - two pin moves and the console series resistors
+
+Three changes, all of them layout consequences that the schematic has to record.
+
+### `MOTOR_ENABLE` pad 8 → 11, `ONEWIRE_MCU` pad 11 → 12
+
+The safety cluster that `MOTOR_ENABLE` feeds sits at one latitude: `U7` at
+`y = 49.01`, `R30` at `48.90`, `Q1` at `49.04`. Module pad 11 is at `y = 49.19`,
+so from there the net is a straight west line. From pad 8 at `y = 53.00` it had
+to drop 4 mm across the escapes of pads 9 and 10 - `LATCH_STATE` and
+`LATCH_ARM`, the two nets it least wants to cross. `ONEWIRE_MCU` followed onto
+pad 12.
+
+**It costs an ADC1 channel.** Pad 12 is `IO8`, which is the channel `I2C_SDA`
+was moved off in rev3.2-F, so this partly reverses that move. The difference is
+what sits there now: `I2C` is a live bus on every boot, while 1-wire is a
+15 kbit/s field bus behind a 33 Ω series resistor and a TVS. Of the two, it is
+the cheaper one to put back.
+
+No cheaper pin exists. Every other free pad on the west and south rows is either
+an ADC1 channel (15/17/18 = `IO3`/`IO9`/`IO10`) or a strapping pin (16/26 =
+`IO46`/`IO45`); pads 28-30 are the octal PSRAM; pads 32-35 sit east with the
+analog island. The move is declared in `adc1_digital_exceptions`, so
+`check_design.py` prints it on every run and fails if it ever stops being true.
+
+### `R53`/`R54`, 1 kΩ in series with the console
+
+`J22` sits 34 mm east of the module and the run crosses the analog island's
+south flank. `TXD0` is a full-speed CMOS output with roughly 2 ns edges; 1 kΩ
+against the ~40 pF the run presents stretches that to about 90 ns, which is 1 %
+of a bit at 115200 and removes the harmonic content the ADC and tacho nodes
+would otherwise see. Both resistors sit at the module end so the whole run is
+damped. The `RXD0` one is pin protection rather than edge rate - that edge is
+driven by whatever adapter is plugged in.
+
+1 kΩ is already a BOM line six times over (`R1`, `R8`, `R11`, `R12`, `R13`,
+`R23`), so this adds no part number.
+
+**Consequence for net names:** `UART_TX_DBG` and `UART_RX_DBG` now name the
+**header** side. The module side is `UART_TX_MCU` and `UART_RX_MCU`, and that is
+what the `gpio` map tracks. Pads 36/37 are `RXD0`/`TXD0` - the ROM bootloader
+console - and cannot move.
+
+### Antenna cutout 21 → 22 mm
+
+The notch was cut 1 mm wider than specified, so the module gets 2.0 mm of air
+either side instead of 1.5. That is margin, not a defect; the contract now
+records what the board has. Ground copper and stitching run up to the cut on
+both flanks and along its south edge at a 2 mm pitch.
+
+### Also corrected in this ECO
+
+`pcb.block_placement` still described the Rev3.1 arrangement, with the analog
+block in the west. The rev3.2 pin reassignment moved `ADC_CURRENT` and
+`ADC_TACHO` to the module's east row and the block followed; the contract now
+carries the as-built positions. `firmware-integration.md`'s pin table had
+drifted on five entries and is now generated from the same `gpio` map that
+`check_design.py` asserts.
 
 ## Size and assembly target
 

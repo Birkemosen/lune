@@ -2,7 +2,7 @@
 	(version 20250114)
 	(generator "eeschema")
 	(generator_version "9.0")
-	(uuid "124d1c7b-9415-4973-bd29-d1ac467a8c00")
+	(uuid "9075a9e8-8c2a-4478-aa0d-5fd3fddcc543")
 	(paper "A0")
 	(title_block
 		(title "Lune V6 Rev 3.2")
@@ -17,7 +17,7 @@
 				(bold yes)
 			)
 		)
-		(uuid "a8737111-908f-45c2-a53f-dcca7e02d8e0")
+		(uuid "ee9969ea-16a2-4dce-bee3-0a7eda1ab378")
 	)
 	(text "Hierarchical schematic: Power, Controller, Motors, Analog, and Connectors"
 		(exclude_from_sim no)
@@ -27,7 +27,7 @@
 				(size 1.2 1.2)
 			)
 		)
-		(uuid "f9eb491a-ba30-4923-af2c-8f7542d70a81")
+		(uuid "7ad989e0-40aa-44b7-962c-a4b4660a1e01")
 	)
 	(text "ECO rev3.2-B: commutation-tacho and runtime-timeout correction"
 		(exclude_from_sim no)
@@ -37,7 +37,7 @@
 				(size 1.2 1.2)
 			)
 		)
-		(uuid "21923db9-66d0-4f81-8ec9-796b93f9b635")
+		(uuid "e711b02c-5991-4890-958e-882d0839ee33")
 	)
 	(sheet
 		(at 45 65)
@@ -54,7 +54,7 @@
 		(fill
 			(color 0 0 0 0.0000)
 		)
-		(uuid "c2e4ce9f-6378-4a2e-832e-2ecb7dd0d9fe")
+		(uuid "0a9576fa-b7c5-499b-bffe-acaa8263cc0b")
 		(property "Sheetname" "Power"
 			(at 45 64.2884 0)
 			(effects
@@ -75,7 +75,7 @@
 		)
 		(instances
 			(project None
-				(path "/124d1c7b-9415-4973-bd29-d1ac467a8c00"
+				(path "/9075a9e8-8c2a-4478-aa0d-5fd3fddcc543"
 					(page "2")
 				)
 			)
@@ -96,7 +96,7 @@
 		(fill
 			(color 0 0 0 0.0000)
 		)
-		(uuid "addeae92-993b-4530-ae71-0bc2a6c01356")
+		(uuid "8baa04aa-ae7f-4993-99ca-b980830d44b8")
 		(property "Sheetname" "Controller and Safety"
 			(at 160 64.2884 0)
 			(effects
@@ -117,7 +117,7 @@
 		)
 		(instances
 			(project None
-				(path "/124d1c7b-9415-4973-bd29-d1ac467a8c00"
+				(path "/9075a9e8-8c2a-4478-aa0d-5fd3fddcc543"
 					(page "3")
 				)
 			)
@@ -138,7 +138,7 @@
 		(fill
 			(color 0 0 0 0.0000)
 		)
-		(uuid "505f39cd-e7de-4934-ad1d-ce2e2b5c0e6a")
+		(uuid "daf31d82-0fef-4926-9d29-ff5c9078ed9d")
 		(property "Sheetname" "Motor Drivers"
 			(at 45 119.2884 0)
 			(effects
@@ -159,7 +159,7 @@
 		)
 		(instances
 			(project None
-				(path "/124d1c7b-9415-4973-bd29-d1ac467a8c00"
+				(path "/9075a9e8-8c2a-4478-aa0d-5fd3fddcc543"
 					(page "4")
 				)
 			)
@@ -180,7 +180,7 @@
 		(fill
 			(color 0 0 0 0.0000)
 		)
-		(uuid "ef2eb6d0-3ce5-4d68-8de5-b2453360b95b")
+		(uuid "7ef48c42-2dee-4288-96b8-8af0facdade8")
 		(property "Sheetname" "Current and Commutation Tacho"
 			(at 160 119.2884 0)
 			(effects
@@ -201,7 +201,7 @@
 		)
 		(instances
 			(project None
-				(path "/124d1c7b-9415-4973-bd29-d1ac467a8c00"
+				(path "/9075a9e8-8c2a-4478-aa0d-5fd3fddcc543"
 					(page "5")
 				)
 			)
@@ -222,7 +222,7 @@
 		(fill
 			(color 0 0 0 0.0000)
 		)
-		(uuid "3847b165-0abd-4c84-9bbd-006612fb3cd1")
+		(uuid "b587e48b-38a8-4037-9ade-e041cbc7b572")
 		(property "Sheetname" "Connectors and Interfaces"
 			(at 45 174.2884 0)
 			(effects
@@ -243,7 +243,7 @@
 		)
 		(instances
 			(project None
-				(path "/124d1c7b-9415-4973-bd29-d1ac467a8c00"
+				(path "/9075a9e8-8c2a-4478-aa0d-5fd3fddcc543"
 					(page "6")
 				)
 			)

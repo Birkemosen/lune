@@ -2,7 +2,7 @@
 	(version "E")
 	(design
 		(source "/Users/birkemose/workspace/github.com/birkemosen/lune/lune-v6/hardware/lune-v6-rev3.2/lune-v6-rev3.2.kicad_sch")
-		(date "2026-08-24T12:39:23")
+		(date "2026-08-26T23:50:21")
 		(tool "Eeschema 10.0.3")
 		(sheet
 			(number "1")
@@ -55,7 +55,7 @@
 		(sheet
 			(number "2")
 			(name "/Power/")
-			(tstamps "/c2e4ce9f-6378-4a2e-832e-2ecb7dd0d9fe/")
+			(tstamps "/0a9576fa-b7c5-499b-bffe-acaa8263cc0b/")
 			(title_block
 				(title "Power")
 				(company)
@@ -103,7 +103,7 @@
 		(sheet
 			(number "3")
 			(name "/Controller and Safety/")
-			(tstamps "/addeae92-993b-4530-ae71-0bc2a6c01356/")
+			(tstamps "/8baa04aa-ae7f-4993-99ca-b980830d44b8/")
 			(title_block
 				(title "Controller and Safety")
 				(company)
@@ -151,7 +151,7 @@
 		(sheet
 			(number "4")
 			(name "/Motor Drivers/")
-			(tstamps "/505f39cd-e7de-4934-ad1d-ce2e2b5c0e6a/")
+			(tstamps "/daf31d82-0fef-4926-9d29-ff5c9078ed9d/")
 			(title_block
 				(title "Motor Drivers")
 				(company)
@@ -199,7 +199,7 @@
 		(sheet
 			(number "5")
 			(name "/Current and Commutation Tacho/")
-			(tstamps "/ef2eb6d0-3ce5-4d68-8de5-b2453360b95b/")
+			(tstamps "/7ef48c42-2dee-4288-96b8-8af0facdade8/")
 			(title_block
 				(title "Current and Commutation Tacho")
 				(company)
@@ -247,7 +247,7 @@
 		(sheet
 			(number "6")
 			(name "/Connectors and Interfaces/")
-			(tstamps "/3847b165-0abd-4c84-9bbd-006612fb3cd1/")
+			(tstamps "/b587e48b-38a8-4037-9ade-e041cbc7b572/")
 			(title_block
 				(title "Connectors and Interfaces")
 				(company)
@@ -343,9 +343,9 @@
 			)
 			(sheetpath
 				(names "/Power/")
-				(tstamps "/c2e4ce9f-6378-4a2e-832e-2ecb7dd0d9fe/")
+				(tstamps "/0a9576fa-b7c5-499b-bffe-acaa8263cc0b/")
 			)
-			(tstamps "5e40be37-082e-4326-8188-b8abebaebc40")
+			(tstamps "92a32827-2154-47d3-a253-8784cfe12bcd")
 			(units
 				(unit
 					(name "A")
@@ -415,9 +415,9 @@
 			)
 			(sheetpath
 				(names "/Power/")
-				(tstamps "/c2e4ce9f-6378-4a2e-832e-2ecb7dd0d9fe/")
+				(tstamps "/0a9576fa-b7c5-499b-bffe-acaa8263cc0b/")
 			)
-			(tstamps "eeafbebb-7351-4a79-bf32-e62f9c0ad175")
+			(tstamps "afa373bc-4b58-46e6-a59c-9ab4170cb053")
 			(units
 				(unit
 					(name "A")
@@ -481,9 +481,9 @@
 			)
 			(sheetpath
 				(names "/Power/")
-				(tstamps "/c2e4ce9f-6378-4a2e-832e-2ecb7dd0d9fe/")
+				(tstamps "/0a9576fa-b7c5-499b-bffe-acaa8263cc0b/")
 			)
-			(tstamps "4d4f80cf-411e-4483-853a-26d066e141ae")
+			(tstamps "057d4f81-dc4c-470e-8a65-6518179a25ae")
 			(units
 				(unit
 					(name "A")
@@ -553,9 +553,9 @@
 			)
 			(sheetpath
 				(names "/Power/")
-				(tstamps "/c2e4ce9f-6378-4a2e-832e-2ecb7dd0d9fe/")
+				(tstamps "/0a9576fa-b7c5-499b-bffe-acaa8263cc0b/")
 			)
-			(tstamps "12e0bf06-c03f-4590-86ea-99fa1b216dc1")
+			(tstamps "21b654a0-7ec2-4684-9893-3775332f96ce")
 			(units
 				(unit
 					(name "A")
@@ -619,9 +619,9 @@
 			)
 			(sheetpath
 				(names "/Power/")
-				(tstamps "/c2e4ce9f-6378-4a2e-832e-2ecb7dd0d9fe/")
+				(tstamps "/0a9576fa-b7c5-499b-bffe-acaa8263cc0b/")
 			)
-			(tstamps "74e7f909-a425-4c2f-87c2-653f9d2fc1e7")
+			(tstamps "6d160769-c2c4-4273-b1df-fb174c066468")
 			(units
 				(unit
 					(name "A")
@@ -685,9 +685,9 @@
 			)
 			(sheetpath
 				(names "/Power/")
-				(tstamps "/c2e4ce9f-6378-4a2e-832e-2ecb7dd0d9fe/")
+				(tstamps "/0a9576fa-b7c5-499b-bffe-acaa8263cc0b/")
 			)
-			(tstamps "aaf3dff0-7038-4c1e-98a2-3e1fef0641bf")
+			(tstamps "e78944bf-43e9-42e3-a3ce-01ca1e253145")
 			(units
 				(unit
 					(name "A")
@@ -757,9 +757,9 @@
 			)
 			(sheetpath
 				(names "/Power/")
-				(tstamps "/c2e4ce9f-6378-4a2e-832e-2ecb7dd0d9fe/")
+				(tstamps "/0a9576fa-b7c5-499b-bffe-acaa8263cc0b/")
 			)
-			(tstamps "95ef2bd0-695d-4ea8-8ecb-142757c49768")
+			(tstamps "418a6256-06a3-47fa-b76f-1711a065b451")
 			(units
 				(unit
 					(name "A")
@@ -823,9 +823,9 @@
 			)
 			(sheetpath
 				(names "/Power/")
-				(tstamps "/c2e4ce9f-6378-4a2e-832e-2ecb7dd0d9fe/")
+				(tstamps "/0a9576fa-b7c5-499b-bffe-acaa8263cc0b/")
 			)
-			(tstamps "ca396d12-c7e3-4e4c-9444-e21e740b4c5d")
+			(tstamps "b472b062-ab09-4a9d-a412-b3db44b9289d")
 			(units
 				(unit
 					(name "A")
@@ -889,9 +889,9 @@
 			)
 			(sheetpath
 				(names "/Power/")
-				(tstamps "/c2e4ce9f-6378-4a2e-832e-2ecb7dd0d9fe/")
+				(tstamps "/0a9576fa-b7c5-499b-bffe-acaa8263cc0b/")
 			)
-			(tstamps "71e2ce5f-d47d-4f30-875a-961970282125")
+			(tstamps "62d389f9-77d6-4e2f-81d4-ba31877cde15")
 			(units
 				(unit
 					(name "A")
@@ -961,9 +961,9 @@
 			)
 			(sheetpath
 				(names "/Power/")
-				(tstamps "/c2e4ce9f-6378-4a2e-832e-2ecb7dd0d9fe/")
+				(tstamps "/0a9576fa-b7c5-499b-bffe-acaa8263cc0b/")
 			)
-			(tstamps "f4072524-7680-42af-a246-b8d1a5d57bc1")
+			(tstamps "cc096461-821e-4d6b-bcd7-aa337430d5cb")
 			(units
 				(unit
 					(name "A")
@@ -1027,9 +1027,9 @@
 			)
 			(sheetpath
 				(names "/Power/")
-				(tstamps "/c2e4ce9f-6378-4a2e-832e-2ecb7dd0d9fe/")
+				(tstamps "/0a9576fa-b7c5-499b-bffe-acaa8263cc0b/")
 			)
-			(tstamps "57ece872-fdde-4be4-86bf-2567008398df")
+			(tstamps "bd604f4f-a8a6-46e6-b78c-39589934faa6")
 			(units
 				(unit
 					(name "A")
@@ -1093,9 +1093,9 @@
 			)
 			(sheetpath
 				(names "/Power/")
-				(tstamps "/c2e4ce9f-6378-4a2e-832e-2ecb7dd0d9fe/")
+				(tstamps "/0a9576fa-b7c5-499b-bffe-acaa8263cc0b/")
 			)
-			(tstamps "d83a546a-681a-46df-a5ac-fc7edf399fb3")
+			(tstamps "9a2fe112-86ce-40af-a591-8e5ecda71f1f")
 			(units
 				(unit
 					(name "A")
@@ -1159,9 +1159,9 @@
 			)
 			(sheetpath
 				(names "/Power/")
-				(tstamps "/c2e4ce9f-6378-4a2e-832e-2ecb7dd0d9fe/")
+				(tstamps "/0a9576fa-b7c5-499b-bffe-acaa8263cc0b/")
 			)
-			(tstamps "fcebcf40-ded8-4c8c-8258-ddda87832813")
+			(tstamps "7992677d-0f79-4750-a529-af292278b60b")
 			(units
 				(unit
 					(name "A")
@@ -1270,9 +1270,9 @@
 			)
 			(sheetpath
 				(names "/Power/")
-				(tstamps "/c2e4ce9f-6378-4a2e-832e-2ecb7dd0d9fe/")
+				(tstamps "/0a9576fa-b7c5-499b-bffe-acaa8263cc0b/")
 			)
-			(tstamps "4e5a21f0-e80e-4f55-a8e2-71ae58c11bfb")
+			(tstamps "f8a9c3f5-9a29-401d-9fb6-66c20227b682")
 			(units
 				(unit
 					(name "A")
@@ -1336,9 +1336,9 @@
 			)
 			(sheetpath
 				(names "/Power/")
-				(tstamps "/c2e4ce9f-6378-4a2e-832e-2ecb7dd0d9fe/")
+				(tstamps "/0a9576fa-b7c5-499b-bffe-acaa8263cc0b/")
 			)
-			(tstamps "b3de4379-9faa-4737-907b-1ceb5d88d767")
+			(tstamps "3f192295-a2ee-494a-87a9-d744dc321039")
 			(units
 				(unit
 					(name "A")
@@ -1402,9 +1402,9 @@
 			)
 			(sheetpath
 				(names "/Power/")
-				(tstamps "/c2e4ce9f-6378-4a2e-832e-2ecb7dd0d9fe/")
+				(tstamps "/0a9576fa-b7c5-499b-bffe-acaa8263cc0b/")
 			)
-			(tstamps "579c381d-687c-4cb0-82e8-734782389899")
+			(tstamps "7bd09004-d3b9-4417-a27b-ed9a1cc79cfa")
 			(units
 				(unit
 					(name "A")
@@ -1468,9 +1468,9 @@
 			)
 			(sheetpath
 				(names "/Power/")
-				(tstamps "/c2e4ce9f-6378-4a2e-832e-2ecb7dd0d9fe/")
+				(tstamps "/0a9576fa-b7c5-499b-bffe-acaa8263cc0b/")
 			)
-			(tstamps "908439f9-2155-4ac7-813a-a1c6c53d3161")
+			(tstamps "39f3bdd8-a180-4c9f-af7b-0d12e5bd1cf4")
 			(units
 				(unit
 					(name "A")
@@ -1534,9 +1534,9 @@
 			)
 			(sheetpath
 				(names "/Power/")
-				(tstamps "/c2e4ce9f-6378-4a2e-832e-2ecb7dd0d9fe/")
+				(tstamps "/0a9576fa-b7c5-499b-bffe-acaa8263cc0b/")
 			)
-			(tstamps "9f1ba5b2-b179-4ae0-9960-2d62cdb0257e")
+			(tstamps "b3b8b35e-976d-4b7d-8eeb-e31f5c9d153d")
 			(units
 				(unit
 					(name "A")
@@ -1600,9 +1600,9 @@
 			)
 			(sheetpath
 				(names "/Power/")
-				(tstamps "/c2e4ce9f-6378-4a2e-832e-2ecb7dd0d9fe/")
+				(tstamps "/0a9576fa-b7c5-499b-bffe-acaa8263cc0b/")
 			)
-			(tstamps "ba3cedc8-d137-4fad-bc21-cb9365cd7a17")
+			(tstamps "940b0212-9263-4a4f-a3bc-6153f3ea39b8")
 			(units
 				(unit
 					(name "A")
@@ -1672,9 +1672,9 @@
 			)
 			(sheetpath
 				(names "/Power/")
-				(tstamps "/c2e4ce9f-6378-4a2e-832e-2ecb7dd0d9fe/")
+				(tstamps "/0a9576fa-b7c5-499b-bffe-acaa8263cc0b/")
 			)
-			(tstamps "f3ea1255-5373-4727-9a30-ca6a646a9f4f")
+			(tstamps "9d99b311-b8e8-4b10-ba12-0f62582852a2")
 			(units
 				(unit
 					(name "A")
@@ -1756,9 +1756,9 @@
 			)
 			(sheetpath
 				(names "/Power/")
-				(tstamps "/c2e4ce9f-6378-4a2e-832e-2ecb7dd0d9fe/")
+				(tstamps "/0a9576fa-b7c5-499b-bffe-acaa8263cc0b/")
 			)
-			(tstamps "e714e0e0-afea-4a30-86e9-f7fec05bfe33")
+			(tstamps "96f65fb3-b070-4757-84cb-830db116028d")
 			(units
 				(unit
 					(name "A")
@@ -1831,9 +1831,9 @@
 			)
 			(sheetpath
 				(names "/Power/")
-				(tstamps "/c2e4ce9f-6378-4a2e-832e-2ecb7dd0d9fe/")
+				(tstamps "/0a9576fa-b7c5-499b-bffe-acaa8263cc0b/")
 			)
-			(tstamps "c44f5ca8-dda1-42bf-acae-6989d3b1e75e")
+			(tstamps "b70c8333-593d-4911-a57a-9af8cda7b429")
 			(units
 				(unit
 					(name "A")
@@ -1906,9 +1906,9 @@
 			)
 			(sheetpath
 				(names "/Power/")
-				(tstamps "/c2e4ce9f-6378-4a2e-832e-2ecb7dd0d9fe/")
+				(tstamps "/0a9576fa-b7c5-499b-bffe-acaa8263cc0b/")
 			)
-			(tstamps "51a0f045-254d-4691-870d-16b7dac3ebd5")
+			(tstamps "3c7434c8-5f6c-422a-bc43-464af6a551c0")
 			(units
 				(unit
 					(name "A")
@@ -1984,9 +1984,9 @@
 			)
 			(sheetpath
 				(names "/Controller and Safety/")
-				(tstamps "/addeae92-993b-4530-ae71-0bc2a6c01356/")
+				(tstamps "/8baa04aa-ae7f-4993-99ca-b980830d44b8/")
 			)
-			(tstamps "7ee778d5-656f-4072-a35b-2180a5d9f795")
+			(tstamps "a02c7028-e67b-40c9-9070-9f0b9f1423a7")
 			(units
 				(unit
 					(name "A")
@@ -2056,9 +2056,9 @@
 			)
 			(sheetpath
 				(names "/Controller and Safety/")
-				(tstamps "/addeae92-993b-4530-ae71-0bc2a6c01356/")
+				(tstamps "/8baa04aa-ae7f-4993-99ca-b980830d44b8/")
 			)
-			(tstamps "fc970bea-15c6-4715-8b70-6c01c24cfed4")
+			(tstamps "2f9e6d71-d008-4fcf-ab7a-2e58e6b60cd3")
 			(units
 				(unit
 					(name "A")
@@ -2122,9 +2122,9 @@
 			)
 			(sheetpath
 				(names "/Controller and Safety/")
-				(tstamps "/addeae92-993b-4530-ae71-0bc2a6c01356/")
+				(tstamps "/8baa04aa-ae7f-4993-99ca-b980830d44b8/")
 			)
-			(tstamps "8a0d2bb9-474e-48bc-b7d9-c7397aaca653")
+			(tstamps "989448f0-8494-4f58-a48f-e2d8c2969830")
 			(units
 				(unit
 					(name "A")
@@ -2188,9 +2188,9 @@
 			)
 			(sheetpath
 				(names "/Controller and Safety/")
-				(tstamps "/addeae92-993b-4530-ae71-0bc2a6c01356/")
+				(tstamps "/8baa04aa-ae7f-4993-99ca-b980830d44b8/")
 			)
-			(tstamps "d0fe8adf-5c25-461a-b223-12a054237da5")
+			(tstamps "1c63f7b3-3d8a-479b-89c7-5f3175e4e146")
 			(units
 				(unit
 					(name "A")
@@ -2254,9 +2254,9 @@
 			)
 			(sheetpath
 				(names "/Controller and Safety/")
-				(tstamps "/addeae92-993b-4530-ae71-0bc2a6c01356/")
+				(tstamps "/8baa04aa-ae7f-4993-99ca-b980830d44b8/")
 			)
-			(tstamps "4522b1ba-6d07-497a-b154-a8a5aa4c6d48")
+			(tstamps "f2bf0b14-9a77-41e6-a2bf-fd54676581c9")
 			(units
 				(unit
 					(name "A")
@@ -2320,9 +2320,9 @@
 			)
 			(sheetpath
 				(names "/Controller and Safety/")
-				(tstamps "/addeae92-993b-4530-ae71-0bc2a6c01356/")
+				(tstamps "/8baa04aa-ae7f-4993-99ca-b980830d44b8/")
 			)
-			(tstamps "d06a635a-5748-4fe9-b3fe-cd51cbfe160b")
+			(tstamps "0c03bedd-61e8-48cc-b434-c3a43d15acf2")
 			(units
 				(unit
 					(name "A")
@@ -2386,9 +2386,9 @@
 			)
 			(sheetpath
 				(names "/Controller and Safety/")
-				(tstamps "/addeae92-993b-4530-ae71-0bc2a6c01356/")
+				(tstamps "/8baa04aa-ae7f-4993-99ca-b980830d44b8/")
 			)
-			(tstamps "d8970265-fe4d-4396-9431-7dcece8231a4")
+			(tstamps "c6fba8f0-7b90-49fc-a3cf-a74928e9229c")
 			(units
 				(unit
 					(name "A")
@@ -2452,9 +2452,9 @@
 			)
 			(sheetpath
 				(names "/Controller and Safety/")
-				(tstamps "/addeae92-993b-4530-ae71-0bc2a6c01356/")
+				(tstamps "/8baa04aa-ae7f-4993-99ca-b980830d44b8/")
 			)
-			(tstamps "91af55bd-b7d1-4742-9772-93a26da40b37")
+			(tstamps "9bcda6e1-0cd8-461a-ac4d-f0032483cdd6")
 			(units
 				(unit
 					(name "A")
@@ -2518,9 +2518,9 @@
 			)
 			(sheetpath
 				(names "/Controller and Safety/")
-				(tstamps "/addeae92-993b-4530-ae71-0bc2a6c01356/")
+				(tstamps "/8baa04aa-ae7f-4993-99ca-b980830d44b8/")
 			)
-			(tstamps "e3b1b583-b6c9-4292-861b-434a8bc87045")
+			(tstamps "2565e4d7-1c2f-4f08-8dd7-21334f2ed7f1")
 			(units
 				(unit
 					(name "A")
@@ -2584,9 +2584,9 @@
 			)
 			(sheetpath
 				(names "/Controller and Safety/")
-				(tstamps "/addeae92-993b-4530-ae71-0bc2a6c01356/")
+				(tstamps "/8baa04aa-ae7f-4993-99ca-b980830d44b8/")
 			)
-			(tstamps "a175364a-81c8-4b96-a969-3c0c908f7028")
+			(tstamps "d1f01241-fdad-46f3-83d9-774a31b22d5b")
 			(units
 				(unit
 					(name "A")
@@ -2650,9 +2650,9 @@
 			)
 			(sheetpath
 				(names "/Controller and Safety/")
-				(tstamps "/addeae92-993b-4530-ae71-0bc2a6c01356/")
+				(tstamps "/8baa04aa-ae7f-4993-99ca-b980830d44b8/")
 			)
-			(tstamps "5d8de788-e448-4ac2-be43-6fd4af0f79cd")
+			(tstamps "1a79c2d2-71b7-454b-ad2a-59ee3332822f")
 			(units
 				(unit
 					(name "A")
@@ -2716,9 +2716,9 @@
 			)
 			(sheetpath
 				(names "/Controller and Safety/")
-				(tstamps "/addeae92-993b-4530-ae71-0bc2a6c01356/")
+				(tstamps "/8baa04aa-ae7f-4993-99ca-b980830d44b8/")
 			)
-			(tstamps "2a1e39d6-1d91-405a-b380-5e935db38f74")
+			(tstamps "5216331d-2f19-4c9d-aa9a-1d1e8dbc0785")
 			(units
 				(unit
 					(name "A")
@@ -2782,9 +2782,141 @@
 			)
 			(sheetpath
 				(names "/Controller and Safety/")
-				(tstamps "/addeae92-993b-4530-ae71-0bc2a6c01356/")
+				(tstamps "/8baa04aa-ae7f-4993-99ca-b980830d44b8/")
 			)
-			(tstamps "7919a6fe-0f16-4836-b185-0efd0ed2e280")
+			(tstamps "56316044-41ec-4d6b-9648-09cbc3ca1ece")
+			(units
+				(unit
+					(name "A")
+					(pins
+						(pin
+							(num "1")
+						)
+						(pin
+							(num "2")
+						)
+					)
+				)
+			)
+		)
+		(comp
+			(ref "R53")
+			(value "1k")
+			(footprint "Resistor_SMD:R_0603_1608Metric")
+			(fields
+				(field
+					(name "MPN") "RC0603FR-071KL")
+				(field
+					(name "LCSC") "C22548")
+				(field
+					(name "Footprint") "Resistor_SMD:R_0603_1608Metric")
+				(field
+					(name "Datasheet")
+				)
+				(field
+					(name "Description")
+				)
+			)
+			(libsource
+				(lib "Device")
+				(part "R")
+				(description "Resistor")
+			)
+			(property
+				(name "MPN")
+				(value "RC0603FR-071KL")
+			)
+			(property
+				(name "LCSC")
+				(value "C22548")
+			)
+			(property
+				(name "Sheetname")
+				(value "Controller and Safety")
+			)
+			(property
+				(name "Sheetfile")
+				(value "lune-v6-rev3.2-controller.kicad_sch")
+			)
+			(property
+				(name "ki_keywords")
+				(value "R res resistor")
+			)
+			(property
+				(name "ki_fp_filters")
+				(value "R_*")
+			)
+			(sheetpath
+				(names "/Controller and Safety/")
+				(tstamps "/8baa04aa-ae7f-4993-99ca-b980830d44b8/")
+			)
+			(tstamps "c71d843d-b889-499c-a0df-1f537048cc1b")
+			(units
+				(unit
+					(name "A")
+					(pins
+						(pin
+							(num "1")
+						)
+						(pin
+							(num "2")
+						)
+					)
+				)
+			)
+		)
+		(comp
+			(ref "R54")
+			(value "1k")
+			(footprint "Resistor_SMD:R_0603_1608Metric")
+			(fields
+				(field
+					(name "MPN") "RC0603FR-071KL")
+				(field
+					(name "LCSC") "C22548")
+				(field
+					(name "Footprint") "Resistor_SMD:R_0603_1608Metric")
+				(field
+					(name "Datasheet")
+				)
+				(field
+					(name "Description")
+				)
+			)
+			(libsource
+				(lib "Device")
+				(part "R")
+				(description "Resistor")
+			)
+			(property
+				(name "MPN")
+				(value "RC0603FR-071KL")
+			)
+			(property
+				(name "LCSC")
+				(value "C22548")
+			)
+			(property
+				(name "Sheetname")
+				(value "Controller and Safety")
+			)
+			(property
+				(name "Sheetfile")
+				(value "lune-v6-rev3.2-controller.kicad_sch")
+			)
+			(property
+				(name "ki_keywords")
+				(value "R res resistor")
+			)
+			(property
+				(name "ki_fp_filters")
+				(value "R_*")
+			)
+			(sheetpath
+				(names "/Controller and Safety/")
+				(tstamps "/8baa04aa-ae7f-4993-99ca-b980830d44b8/")
+			)
+			(tstamps "87a020f3-1645-4f84-9864-fa886de1ab07")
 			(units
 				(unit
 					(name "A")
@@ -2844,9 +2976,9 @@
 			)
 			(sheetpath
 				(names "/Controller and Safety/")
-				(tstamps "/addeae92-993b-4530-ae71-0bc2a6c01356/")
+				(tstamps "/8baa04aa-ae7f-4993-99ca-b980830d44b8/")
 			)
-			(tstamps "e9734f38-edf1-47c2-9e85-98acd805ca41")
+			(tstamps "3bc76983-e01a-4f3e-bc2d-b7f9fa1e0b27")
 			(units
 				(unit
 					(name "A")
@@ -2906,9 +3038,9 @@
 			)
 			(sheetpath
 				(names "/Controller and Safety/")
-				(tstamps "/addeae92-993b-4530-ae71-0bc2a6c01356/")
+				(tstamps "/8baa04aa-ae7f-4993-99ca-b980830d44b8/")
 			)
-			(tstamps "b4ada97a-7d53-40a9-9277-08a77f678ba9")
+			(tstamps "d54ef49a-f09e-4172-93e0-68cbb2b4a028")
 			(units
 				(unit
 					(name "A")
@@ -2978,9 +3110,9 @@
 			)
 			(sheetpath
 				(names "/Controller and Safety/")
-				(tstamps "/addeae92-993b-4530-ae71-0bc2a6c01356/")
+				(tstamps "/8baa04aa-ae7f-4993-99ca-b980830d44b8/")
 			)
-			(tstamps "34ee51cc-83c7-4886-846c-80edfcefb596")
+			(tstamps "8a5364db-6d52-4944-906b-c51686c1a66b")
 			(units
 				(unit
 					(name "A")
@@ -3041,9 +3173,9 @@
 			)
 			(sheetpath
 				(names "/Controller and Safety/")
-				(tstamps "/addeae92-993b-4530-ae71-0bc2a6c01356/")
+				(tstamps "/8baa04aa-ae7f-4993-99ca-b980830d44b8/")
 			)
-			(tstamps "f13175a4-3ee0-4352-8846-dc323be11ccb")
+			(tstamps "ecfa87c3-d9d0-414d-87a7-e82f5acd02c6")
 			(units
 				(unit
 					(name "A")
@@ -3216,9 +3348,9 @@
 			)
 			(sheetpath
 				(names "/Controller and Safety/")
-				(tstamps "/addeae92-993b-4530-ae71-0bc2a6c01356/")
+				(tstamps "/8baa04aa-ae7f-4993-99ca-b980830d44b8/")
 			)
-			(tstamps "818a9c18-3c0f-459a-8050-023afc65e0c8")
+			(tstamps "3ddd82d6-afcd-455f-a15f-1ff454664e42")
 			(units
 				(unit
 					(name "A")
@@ -3354,9 +3486,9 @@
 			)
 			(sheetpath
 				(names "/Controller and Safety/")
-				(tstamps "/addeae92-993b-4530-ae71-0bc2a6c01356/")
+				(tstamps "/8baa04aa-ae7f-4993-99ca-b980830d44b8/")
 			)
-			(tstamps "80224bb0-95de-47ba-ad05-2d85eaa27ea4")
+			(tstamps "decb5892-2e1c-418c-adb0-4cb560163907")
 			(units
 				(unit
 					(name "A")
@@ -3435,9 +3567,9 @@
 			)
 			(sheetpath
 				(names "/Motor Drivers/")
-				(tstamps "/505f39cd-e7de-4934-ad1d-ce2e2b5c0e6a/")
+				(tstamps "/daf31d82-0fef-4926-9d29-ff5c9078ed9d/")
 			)
-			(tstamps "999ccaff-11c6-412a-90a1-8e15507e31a5")
+			(tstamps "6dd6dd35-7618-4623-8c21-eaeac4de38fa")
 			(units
 				(unit
 					(name "A")
@@ -3501,9 +3633,9 @@
 			)
 			(sheetpath
 				(names "/Motor Drivers/")
-				(tstamps "/505f39cd-e7de-4934-ad1d-ce2e2b5c0e6a/")
+				(tstamps "/daf31d82-0fef-4926-9d29-ff5c9078ed9d/")
 			)
-			(tstamps "1646bfdd-f71b-427d-9dad-14266a37e424")
+			(tstamps "9e4d9d2b-de1b-4a12-aae5-b1bcd75f5966")
 			(units
 				(unit
 					(name "A")
@@ -3573,9 +3705,9 @@
 			)
 			(sheetpath
 				(names "/Motor Drivers/")
-				(tstamps "/505f39cd-e7de-4934-ad1d-ce2e2b5c0e6a/")
+				(tstamps "/daf31d82-0fef-4926-9d29-ff5c9078ed9d/")
 			)
-			(tstamps "9df5c205-3af0-4885-a32f-fd92478a2419")
+			(tstamps "53cb2fdb-2efb-44f0-9138-c01c0377ce64")
 			(units
 				(unit
 					(name "A")
@@ -3639,9 +3771,9 @@
 			)
 			(sheetpath
 				(names "/Motor Drivers/")
-				(tstamps "/505f39cd-e7de-4934-ad1d-ce2e2b5c0e6a/")
+				(tstamps "/daf31d82-0fef-4926-9d29-ff5c9078ed9d/")
 			)
-			(tstamps "19f2f9b5-2365-4e54-aff3-069e9a0d3000")
+			(tstamps "2ac73b6d-a906-4a39-92aa-d01f25be9997")
 			(units
 				(unit
 					(name "A")
@@ -3711,9 +3843,9 @@
 			)
 			(sheetpath
 				(names "/Motor Drivers/")
-				(tstamps "/505f39cd-e7de-4934-ad1d-ce2e2b5c0e6a/")
+				(tstamps "/daf31d82-0fef-4926-9d29-ff5c9078ed9d/")
 			)
-			(tstamps "1a5ee839-554c-4d16-a1a7-32d5ff95d460")
+			(tstamps "c499603c-9503-4d7d-9514-850f81a1233d")
 			(units
 				(unit
 					(name "A")
@@ -3777,9 +3909,9 @@
 			)
 			(sheetpath
 				(names "/Motor Drivers/")
-				(tstamps "/505f39cd-e7de-4934-ad1d-ce2e2b5c0e6a/")
+				(tstamps "/daf31d82-0fef-4926-9d29-ff5c9078ed9d/")
 			)
-			(tstamps "ae72fcab-aaa1-4301-826f-1393cc157530")
+			(tstamps "74ec1379-00e0-427e-ba7d-8efc96a335ed")
 			(units
 				(unit
 					(name "A")
@@ -3843,9 +3975,9 @@
 			)
 			(sheetpath
 				(names "/Motor Drivers/")
-				(tstamps "/505f39cd-e7de-4934-ad1d-ce2e2b5c0e6a/")
+				(tstamps "/daf31d82-0fef-4926-9d29-ff5c9078ed9d/")
 			)
-			(tstamps "2e96db86-3cf5-48a5-b44b-54b613cd619f")
+			(tstamps "0ef5fc26-67c7-4142-bb15-f1e4f5707ff6")
 			(units
 				(unit
 					(name "A")
@@ -3909,9 +4041,9 @@
 			)
 			(sheetpath
 				(names "/Motor Drivers/")
-				(tstamps "/505f39cd-e7de-4934-ad1d-ce2e2b5c0e6a/")
+				(tstamps "/daf31d82-0fef-4926-9d29-ff5c9078ed9d/")
 			)
-			(tstamps "3f9732e4-9fc7-477b-b391-36b82f3ad9e9")
+			(tstamps "b88e174a-b58f-47af-9dab-b40c48ac63c2")
 			(units
 				(unit
 					(name "A")
@@ -3975,9 +4107,9 @@
 			)
 			(sheetpath
 				(names "/Motor Drivers/")
-				(tstamps "/505f39cd-e7de-4934-ad1d-ce2e2b5c0e6a/")
+				(tstamps "/daf31d82-0fef-4926-9d29-ff5c9078ed9d/")
 			)
-			(tstamps "4c301c6e-7191-4349-bc5f-f43d02270560")
+			(tstamps "6a4eb392-629f-46c8-86d1-9272be97db1f")
 			(units
 				(unit
 					(name "A")
@@ -4041,9 +4173,9 @@
 			)
 			(sheetpath
 				(names "/Motor Drivers/")
-				(tstamps "/505f39cd-e7de-4934-ad1d-ce2e2b5c0e6a/")
+				(tstamps "/daf31d82-0fef-4926-9d29-ff5c9078ed9d/")
 			)
-			(tstamps "8eb98b6f-bcd9-4ad4-8c5f-034d6b58e0ff")
+			(tstamps "3bf6fd19-c259-4976-ad1f-a57b6985b858")
 			(units
 				(unit
 					(name "A")
@@ -4107,9 +4239,9 @@
 			)
 			(sheetpath
 				(names "/Motor Drivers/")
-				(tstamps "/505f39cd-e7de-4934-ad1d-ce2e2b5c0e6a/")
+				(tstamps "/daf31d82-0fef-4926-9d29-ff5c9078ed9d/")
 			)
-			(tstamps "285bf296-59b4-425e-b949-be271682e6bb")
+			(tstamps "3963dfee-fcab-488e-8f95-285d4c7efe51")
 			(units
 				(unit
 					(name "A")
@@ -4173,9 +4305,9 @@
 			)
 			(sheetpath
 				(names "/Motor Drivers/")
-				(tstamps "/505f39cd-e7de-4934-ad1d-ce2e2b5c0e6a/")
+				(tstamps "/daf31d82-0fef-4926-9d29-ff5c9078ed9d/")
 			)
-			(tstamps "537f0fbd-6f7f-47d2-a6d4-9836298c0f41")
+			(tstamps "d9b3a15a-69a3-4f28-9015-b5b8c72c509e")
 			(units
 				(unit
 					(name "A")
@@ -4239,9 +4371,9 @@
 			)
 			(sheetpath
 				(names "/Motor Drivers/")
-				(tstamps "/505f39cd-e7de-4934-ad1d-ce2e2b5c0e6a/")
+				(tstamps "/daf31d82-0fef-4926-9d29-ff5c9078ed9d/")
 			)
-			(tstamps "8bdd8f2d-40fd-4da6-adac-abc2835c0d32")
+			(tstamps "d4713a5e-81de-43b1-8968-415be4dcfafd")
 			(units
 				(unit
 					(name "A")
@@ -4305,9 +4437,9 @@
 			)
 			(sheetpath
 				(names "/Motor Drivers/")
-				(tstamps "/505f39cd-e7de-4934-ad1d-ce2e2b5c0e6a/")
+				(tstamps "/daf31d82-0fef-4926-9d29-ff5c9078ed9d/")
 			)
-			(tstamps "32e8eb8c-3e91-4fc1-a042-51dd62269b28")
+			(tstamps "aaf26768-7a18-49e0-bd11-d9121caed162")
 			(units
 				(unit
 					(name "A")
@@ -4371,9 +4503,9 @@
 			)
 			(sheetpath
 				(names "/Motor Drivers/")
-				(tstamps "/505f39cd-e7de-4934-ad1d-ce2e2b5c0e6a/")
+				(tstamps "/daf31d82-0fef-4926-9d29-ff5c9078ed9d/")
 			)
-			(tstamps "bf53f336-4b2d-414e-9194-e9e406933a55")
+			(tstamps "eb5a3bae-5b8a-41ac-a6d3-9ad28fd90f7a")
 			(units
 				(unit
 					(name "A")
@@ -4437,9 +4569,9 @@
 			)
 			(sheetpath
 				(names "/Motor Drivers/")
-				(tstamps "/505f39cd-e7de-4934-ad1d-ce2e2b5c0e6a/")
+				(tstamps "/daf31d82-0fef-4926-9d29-ff5c9078ed9d/")
 			)
-			(tstamps "18e32a9a-84df-4ac4-aefd-e8747b092ad3")
+			(tstamps "681f1d94-5ae6-4f66-b15b-37e00ddc0306")
 			(units
 				(unit
 					(name "A")
@@ -4503,9 +4635,9 @@
 			)
 			(sheetpath
 				(names "/Motor Drivers/")
-				(tstamps "/505f39cd-e7de-4934-ad1d-ce2e2b5c0e6a/")
+				(tstamps "/daf31d82-0fef-4926-9d29-ff5c9078ed9d/")
 			)
-			(tstamps "85fdabca-d530-4a32-a321-33646ae24f69")
+			(tstamps "4773f254-3e87-449f-aaa2-b553e2e7dc1d")
 			(units
 				(unit
 					(name "A")
@@ -4569,9 +4701,9 @@
 			)
 			(sheetpath
 				(names "/Motor Drivers/")
-				(tstamps "/505f39cd-e7de-4934-ad1d-ce2e2b5c0e6a/")
+				(tstamps "/daf31d82-0fef-4926-9d29-ff5c9078ed9d/")
 			)
-			(tstamps "0fedef72-c0bb-4bc0-8c8b-13458f3be7bd")
+			(tstamps "7a2aa947-1d77-4880-96c8-69d84ef561aa")
 			(units
 				(unit
 					(name "A")
@@ -4635,9 +4767,9 @@
 			)
 			(sheetpath
 				(names "/Motor Drivers/")
-				(tstamps "/505f39cd-e7de-4934-ad1d-ce2e2b5c0e6a/")
+				(tstamps "/daf31d82-0fef-4926-9d29-ff5c9078ed9d/")
 			)
-			(tstamps "47496cd5-b84b-402d-a269-17200a6076b3")
+			(tstamps "1f05ecba-4217-49dc-a20e-9bdd848c76a7")
 			(units
 				(unit
 					(name "A")
@@ -4707,9 +4839,9 @@
 			)
 			(sheetpath
 				(names "/Motor Drivers/")
-				(tstamps "/505f39cd-e7de-4934-ad1d-ce2e2b5c0e6a/")
+				(tstamps "/daf31d82-0fef-4926-9d29-ff5c9078ed9d/")
 			)
-			(tstamps "265302a2-b040-47e9-8662-de46c8ddf614")
+			(tstamps "e0f421b3-b90d-4245-a2fb-1ec3d55dd06c")
 			(units
 				(unit
 					(name "A")
@@ -4779,9 +4911,9 @@
 			)
 			(sheetpath
 				(names "/Motor Drivers/")
-				(tstamps "/505f39cd-e7de-4934-ad1d-ce2e2b5c0e6a/")
+				(tstamps "/daf31d82-0fef-4926-9d29-ff5c9078ed9d/")
 			)
-			(tstamps "ab2dda6c-547d-41d0-a6e9-4f3451e48213")
+			(tstamps "afd69a22-712a-4e84-ac6a-0febec542865")
 			(units
 				(unit
 					(name "A")
@@ -4851,9 +4983,9 @@
 			)
 			(sheetpath
 				(names "/Motor Drivers/")
-				(tstamps "/505f39cd-e7de-4934-ad1d-ce2e2b5c0e6a/")
+				(tstamps "/daf31d82-0fef-4926-9d29-ff5c9078ed9d/")
 			)
-			(tstamps "3d87516e-e3d0-4c9d-9d1e-716f17c704ba")
+			(tstamps "44bfe256-6a71-4451-8f5f-30d93e54d375")
 			(units
 				(unit
 					(name "A")
@@ -4923,9 +5055,9 @@
 			)
 			(sheetpath
 				(names "/Motor Drivers/")
-				(tstamps "/505f39cd-e7de-4934-ad1d-ce2e2b5c0e6a/")
+				(tstamps "/daf31d82-0fef-4926-9d29-ff5c9078ed9d/")
 			)
-			(tstamps "e6516fc7-f83b-4564-9d08-cc42ec42c9a8")
+			(tstamps "ecbaf659-d357-4dd6-9a53-722e15733617")
 			(units
 				(unit
 					(name "A")
@@ -4995,9 +5127,9 @@
 			)
 			(sheetpath
 				(names "/Motor Drivers/")
-				(tstamps "/505f39cd-e7de-4934-ad1d-ce2e2b5c0e6a/")
+				(tstamps "/daf31d82-0fef-4926-9d29-ff5c9078ed9d/")
 			)
-			(tstamps "bf4e5a0f-56a3-4861-a1e2-9be2ae64ce0d")
+			(tstamps "4ef3d609-103f-46a7-a81f-6ecd8341e17e")
 			(units
 				(unit
 					(name "A")
@@ -5073,9 +5205,9 @@
 			)
 			(sheetpath
 				(names "/Motor Drivers/")
-				(tstamps "/505f39cd-e7de-4934-ad1d-ce2e2b5c0e6a/")
+				(tstamps "/daf31d82-0fef-4926-9d29-ff5c9078ed9d/")
 			)
-			(tstamps "88ed145d-ac23-46fb-bd38-02889bc7d5f3")
+			(tstamps "306ff71e-da29-4baa-b83f-60a52b251dc0")
 			(units
 				(unit
 					(name "A")
@@ -5145,9 +5277,9 @@
 			)
 			(sheetpath
 				(names "/Motor Drivers/")
-				(tstamps "/505f39cd-e7de-4934-ad1d-ce2e2b5c0e6a/")
+				(tstamps "/daf31d82-0fef-4926-9d29-ff5c9078ed9d/")
 			)
-			(tstamps "43f6c408-80bd-43d7-b8ed-4a6883e389b3")
+			(tstamps "0a7a58f9-89f8-4414-81b1-f5cbb501cae1")
 			(units
 				(unit
 					(name "A")
@@ -5217,9 +5349,9 @@
 			)
 			(sheetpath
 				(names "/Motor Drivers/")
-				(tstamps "/505f39cd-e7de-4934-ad1d-ce2e2b5c0e6a/")
+				(tstamps "/daf31d82-0fef-4926-9d29-ff5c9078ed9d/")
 			)
-			(tstamps "bc73ae04-d157-4694-a5b1-521a5caa8886")
+			(tstamps "fca4f77c-d71a-4a55-bdb9-ccbb3162b1ba")
 			(units
 				(unit
 					(name "A")
@@ -5289,9 +5421,9 @@
 			)
 			(sheetpath
 				(names "/Motor Drivers/")
-				(tstamps "/505f39cd-e7de-4934-ad1d-ce2e2b5c0e6a/")
+				(tstamps "/daf31d82-0fef-4926-9d29-ff5c9078ed9d/")
 			)
-			(tstamps "39552201-fe01-474a-b3c0-ed2e5bab596b")
+			(tstamps "39d291f4-d550-422c-914f-6eb402739782")
 			(units
 				(unit
 					(name "A")
@@ -5361,9 +5493,9 @@
 			)
 			(sheetpath
 				(names "/Motor Drivers/")
-				(tstamps "/505f39cd-e7de-4934-ad1d-ce2e2b5c0e6a/")
+				(tstamps "/daf31d82-0fef-4926-9d29-ff5c9078ed9d/")
 			)
-			(tstamps "5628a8ba-3f77-46c1-befd-d27ce68d4f49")
+			(tstamps "2635a06c-465b-4873-ac3a-0088927b57dd")
 			(units
 				(unit
 					(name "A")
@@ -5433,9 +5565,9 @@
 			)
 			(sheetpath
 				(names "/Motor Drivers/")
-				(tstamps "/505f39cd-e7de-4934-ad1d-ce2e2b5c0e6a/")
+				(tstamps "/daf31d82-0fef-4926-9d29-ff5c9078ed9d/")
 			)
-			(tstamps "bec19f44-4c31-4ab4-9b78-e68ced5dced9")
+			(tstamps "0b8f4e38-926d-43fe-a9ea-96e064ee55c4")
 			(units
 				(unit
 					(name "A")
@@ -5523,9 +5655,9 @@
 			)
 			(sheetpath
 				(names "/Motor Drivers/")
-				(tstamps "/505f39cd-e7de-4934-ad1d-ce2e2b5c0e6a/")
+				(tstamps "/daf31d82-0fef-4926-9d29-ff5c9078ed9d/")
 			)
-			(tstamps "027db075-4c00-471d-8639-d79006342e14")
+			(tstamps "a55fef56-03c3-4261-8139-5fb1d8b822d3")
 			(units
 				(unit
 					(name "A")
@@ -5658,9 +5790,9 @@
 			)
 			(sheetpath
 				(names "/Motor Drivers/")
-				(tstamps "/505f39cd-e7de-4934-ad1d-ce2e2b5c0e6a/")
+				(tstamps "/daf31d82-0fef-4926-9d29-ff5c9078ed9d/")
 			)
-			(tstamps "c052a178-42f8-422a-9a03-a391e4268d55")
+			(tstamps "5c6ab311-63cb-4d64-92a0-ad855c78ef40")
 			(units
 				(unit
 					(name "A")
@@ -5793,9 +5925,9 @@
 			)
 			(sheetpath
 				(names "/Motor Drivers/")
-				(tstamps "/505f39cd-e7de-4934-ad1d-ce2e2b5c0e6a/")
+				(tstamps "/daf31d82-0fef-4926-9d29-ff5c9078ed9d/")
 			)
-			(tstamps "7b32be88-227a-42c1-84b5-0ac43b36f57e")
+			(tstamps "6d7fe5ef-831e-40cc-bad4-e1bd9cd063eb")
 			(units
 				(unit
 					(name "A")
@@ -5904,9 +6036,9 @@
 			)
 			(sheetpath
 				(names "/Current and Commutation Tacho/")
-				(tstamps "/ef2eb6d0-3ce5-4d68-8de5-b2453360b95b/")
+				(tstamps "/7ef48c42-2dee-4288-96b8-8af0facdade8/")
 			)
-			(tstamps "c365b0b3-7e5c-4eea-9847-e6b779918de1")
+			(tstamps "53b4f5a2-471a-4b76-ab3d-5f7e62ff4d65")
 			(units
 				(unit
 					(name "A")
@@ -5970,9 +6102,9 @@
 			)
 			(sheetpath
 				(names "/Current and Commutation Tacho/")
-				(tstamps "/ef2eb6d0-3ce5-4d68-8de5-b2453360b95b/")
+				(tstamps "/7ef48c42-2dee-4288-96b8-8af0facdade8/")
 			)
-			(tstamps "ad7614b2-e5dd-49ec-bd10-4e79d11fe144")
+			(tstamps "a057d971-394c-4178-a625-fa036af15b8b")
 			(units
 				(unit
 					(name "A")
@@ -6036,9 +6168,9 @@
 			)
 			(sheetpath
 				(names "/Current and Commutation Tacho/")
-				(tstamps "/ef2eb6d0-3ce5-4d68-8de5-b2453360b95b/")
+				(tstamps "/7ef48c42-2dee-4288-96b8-8af0facdade8/")
 			)
-			(tstamps "c6b1a713-d588-44b2-8e29-09db5f944f30")
+			(tstamps "b461794c-489c-4a44-93cf-15ce0579b041")
 			(units
 				(unit
 					(name "A")
@@ -6102,9 +6234,9 @@
 			)
 			(sheetpath
 				(names "/Current and Commutation Tacho/")
-				(tstamps "/ef2eb6d0-3ce5-4d68-8de5-b2453360b95b/")
+				(tstamps "/7ef48c42-2dee-4288-96b8-8af0facdade8/")
 			)
-			(tstamps "d0b03e58-eb4d-47bf-b87d-7f7248c3489e")
+			(tstamps "c2de3cf6-6bb1-4785-aea4-59164dcf12c0")
 			(units
 				(unit
 					(name "A")
@@ -6168,9 +6300,9 @@
 			)
 			(sheetpath
 				(names "/Current and Commutation Tacho/")
-				(tstamps "/ef2eb6d0-3ce5-4d68-8de5-b2453360b95b/")
+				(tstamps "/7ef48c42-2dee-4288-96b8-8af0facdade8/")
 			)
-			(tstamps "e78e58d8-5475-44d7-98cc-9c6b547d4d24")
+			(tstamps "31865a17-0fff-4410-b9fe-a40b26fc11c0")
 			(units
 				(unit
 					(name "A")
@@ -6234,9 +6366,9 @@
 			)
 			(sheetpath
 				(names "/Current and Commutation Tacho/")
-				(tstamps "/ef2eb6d0-3ce5-4d68-8de5-b2453360b95b/")
+				(tstamps "/7ef48c42-2dee-4288-96b8-8af0facdade8/")
 			)
-			(tstamps "e4b45eec-b03b-43e2-8569-ad73219dd3c1")
+			(tstamps "98bdb016-a045-4714-b7fc-1614cf347246")
 			(units
 				(unit
 					(name "A")
@@ -6300,9 +6432,9 @@
 			)
 			(sheetpath
 				(names "/Current and Commutation Tacho/")
-				(tstamps "/ef2eb6d0-3ce5-4d68-8de5-b2453360b95b/")
+				(tstamps "/7ef48c42-2dee-4288-96b8-8af0facdade8/")
 			)
-			(tstamps "3da88be4-db66-4bba-a123-d0f0dd3d774a")
+			(tstamps "0a940ad1-3dba-4856-b9bc-297b479d6860")
 			(units
 				(unit
 					(name "A")
@@ -6366,9 +6498,9 @@
 			)
 			(sheetpath
 				(names "/Current and Commutation Tacho/")
-				(tstamps "/ef2eb6d0-3ce5-4d68-8de5-b2453360b95b/")
+				(tstamps "/7ef48c42-2dee-4288-96b8-8af0facdade8/")
 			)
-			(tstamps "7636f5fd-6f10-4447-9e31-8907c96a1568")
+			(tstamps "7379e214-69ea-40ac-b485-322b3e552968")
 			(units
 				(unit
 					(name "A")
@@ -6432,9 +6564,9 @@
 			)
 			(sheetpath
 				(names "/Current and Commutation Tacho/")
-				(tstamps "/ef2eb6d0-3ce5-4d68-8de5-b2453360b95b/")
+				(tstamps "/7ef48c42-2dee-4288-96b8-8af0facdade8/")
 			)
-			(tstamps "3dfdc50c-fbf5-45fb-86f5-1c3a6abc80c5")
+			(tstamps "23a62516-12f7-479a-bdf6-64d26fe4619b")
 			(units
 				(unit
 					(name "A")
@@ -6498,9 +6630,9 @@
 			)
 			(sheetpath
 				(names "/Current and Commutation Tacho/")
-				(tstamps "/ef2eb6d0-3ce5-4d68-8de5-b2453360b95b/")
+				(tstamps "/7ef48c42-2dee-4288-96b8-8af0facdade8/")
 			)
-			(tstamps "4b4aa1f9-45a2-40e8-8d9c-a9e7e1ce4805")
+			(tstamps "5442193b-5fc2-4372-b6bd-93b9c4e05a93")
 			(units
 				(unit
 					(name "A")
@@ -6564,9 +6696,9 @@
 			)
 			(sheetpath
 				(names "/Current and Commutation Tacho/")
-				(tstamps "/ef2eb6d0-3ce5-4d68-8de5-b2453360b95b/")
+				(tstamps "/7ef48c42-2dee-4288-96b8-8af0facdade8/")
 			)
-			(tstamps "5d206efe-3b68-48be-b10c-e3d483f49354")
+			(tstamps "56b4283c-3a59-4e3a-9ca6-ffec72ab1202")
 			(units
 				(unit
 					(name "A")
@@ -6630,9 +6762,9 @@
 			)
 			(sheetpath
 				(names "/Current and Commutation Tacho/")
-				(tstamps "/ef2eb6d0-3ce5-4d68-8de5-b2453360b95b/")
+				(tstamps "/7ef48c42-2dee-4288-96b8-8af0facdade8/")
 			)
-			(tstamps "d59bc56e-8e47-4da1-a437-58c4882b0133")
+			(tstamps "4fdf011f-5c20-458f-8921-8306139de5a3")
 			(units
 				(unit
 					(name "A")
@@ -6699,9 +6831,9 @@
 			)
 			(sheetpath
 				(names "/Current and Commutation Tacho/")
-				(tstamps "/ef2eb6d0-3ce5-4d68-8de5-b2453360b95b/")
+				(tstamps "/7ef48c42-2dee-4288-96b8-8af0facdade8/")
 			)
-			(tstamps "df3ef8a7-54a3-4365-a1fc-27dd757fb966")
+			(tstamps "a8079060-5e70-4173-b330-7d39a1350231")
 			(units
 				(unit
 					(name "A")
@@ -6765,9 +6897,9 @@
 			)
 			(sheetpath
 				(names "/Current and Commutation Tacho/")
-				(tstamps "/ef2eb6d0-3ce5-4d68-8de5-b2453360b95b/")
+				(tstamps "/7ef48c42-2dee-4288-96b8-8af0facdade8/")
 			)
-			(tstamps "459b3d0c-7e7c-49f9-a592-c0181f789225")
+			(tstamps "2ab203fb-8ddb-40c5-9e7c-4ba8853d6908")
 			(units
 				(unit
 					(name "A")
@@ -6831,9 +6963,9 @@
 			)
 			(sheetpath
 				(names "/Current and Commutation Tacho/")
-				(tstamps "/ef2eb6d0-3ce5-4d68-8de5-b2453360b95b/")
+				(tstamps "/7ef48c42-2dee-4288-96b8-8af0facdade8/")
 			)
-			(tstamps "6ae01a93-d24a-48aa-b080-7d5f59c7613c")
+			(tstamps "3f45b780-7b23-4373-987f-23509c0cb5be")
 			(units
 				(unit
 					(name "A")
@@ -6897,9 +7029,9 @@
 			)
 			(sheetpath
 				(names "/Current and Commutation Tacho/")
-				(tstamps "/ef2eb6d0-3ce5-4d68-8de5-b2453360b95b/")
+				(tstamps "/7ef48c42-2dee-4288-96b8-8af0facdade8/")
 			)
-			(tstamps "83d5c7c0-44f7-45d4-8365-8c23b7aac9cc")
+			(tstamps "eb2fab60-1f2a-4102-aa53-9314f9dcbd93")
 			(units
 				(unit
 					(name "A")
@@ -6963,9 +7095,9 @@
 			)
 			(sheetpath
 				(names "/Current and Commutation Tacho/")
-				(tstamps "/ef2eb6d0-3ce5-4d68-8de5-b2453360b95b/")
+				(tstamps "/7ef48c42-2dee-4288-96b8-8af0facdade8/")
 			)
-			(tstamps "4b12cc8a-ba0b-4e4c-8b4f-943dd526ae4b")
+			(tstamps "62fef680-cfcb-45bc-af06-38bc365d2c6c")
 			(units
 				(unit
 					(name "A")
@@ -7029,9 +7161,9 @@
 			)
 			(sheetpath
 				(names "/Current and Commutation Tacho/")
-				(tstamps "/ef2eb6d0-3ce5-4d68-8de5-b2453360b95b/")
+				(tstamps "/7ef48c42-2dee-4288-96b8-8af0facdade8/")
 			)
-			(tstamps "e5f9152d-6ed2-4d28-bd05-6c42a672ef6a")
+			(tstamps "810abece-ddfb-461c-8149-73da7727617e")
 			(units
 				(unit
 					(name "A")
@@ -7095,9 +7227,9 @@
 			)
 			(sheetpath
 				(names "/Current and Commutation Tacho/")
-				(tstamps "/ef2eb6d0-3ce5-4d68-8de5-b2453360b95b/")
+				(tstamps "/7ef48c42-2dee-4288-96b8-8af0facdade8/")
 			)
-			(tstamps "e8e0543d-cdca-4add-ba2d-775f9fcf8f18")
+			(tstamps "8ea51dc6-d383-45cb-8eaa-b0bbdd8ec080")
 			(units
 				(unit
 					(name "A")
@@ -7161,9 +7293,9 @@
 			)
 			(sheetpath
 				(names "/Current and Commutation Tacho/")
-				(tstamps "/ef2eb6d0-3ce5-4d68-8de5-b2453360b95b/")
+				(tstamps "/7ef48c42-2dee-4288-96b8-8af0facdade8/")
 			)
-			(tstamps "8cd19592-d307-4019-be05-6882362a5c47")
+			(tstamps "bbcdf660-ac92-4151-9bfc-b1dd18a29c63")
 			(units
 				(unit
 					(name "A")
@@ -7227,9 +7359,9 @@
 			)
 			(sheetpath
 				(names "/Current and Commutation Tacho/")
-				(tstamps "/ef2eb6d0-3ce5-4d68-8de5-b2453360b95b/")
+				(tstamps "/7ef48c42-2dee-4288-96b8-8af0facdade8/")
 			)
-			(tstamps "ef487c9c-698a-4d1a-bfbe-1d46b3d69e78")
+			(tstamps "45982897-ce8f-4783-b476-fadbe27c6bf2")
 			(units
 				(unit
 					(name "A")
@@ -7293,9 +7425,9 @@
 			)
 			(sheetpath
 				(names "/Current and Commutation Tacho/")
-				(tstamps "/ef2eb6d0-3ce5-4d68-8de5-b2453360b95b/")
+				(tstamps "/7ef48c42-2dee-4288-96b8-8af0facdade8/")
 			)
-			(tstamps "2fd73991-5364-4708-b69d-87f1418b4442")
+			(tstamps "7e90d896-95c6-4043-90e4-710c40d4ca60")
 			(units
 				(unit
 					(name "A")
@@ -7359,9 +7491,9 @@
 			)
 			(sheetpath
 				(names "/Current and Commutation Tacho/")
-				(tstamps "/ef2eb6d0-3ce5-4d68-8de5-b2453360b95b/")
+				(tstamps "/7ef48c42-2dee-4288-96b8-8af0facdade8/")
 			)
-			(tstamps "aeb2517a-d03f-470c-b9c0-6e3e75d5c886")
+			(tstamps "9fe6f995-8d23-4d2e-a7bc-55b08d2c3370")
 			(units
 				(unit
 					(name "A")
@@ -7425,9 +7557,9 @@
 			)
 			(sheetpath
 				(names "/Current and Commutation Tacho/")
-				(tstamps "/ef2eb6d0-3ce5-4d68-8de5-b2453360b95b/")
+				(tstamps "/7ef48c42-2dee-4288-96b8-8af0facdade8/")
 			)
-			(tstamps "194e17db-727d-486a-b8e1-b5de0f24a62b")
+			(tstamps "268e852d-1cc4-493e-9e0d-82bdf8c01f52")
 			(units
 				(unit
 					(name "A")
@@ -7491,9 +7623,9 @@
 			)
 			(sheetpath
 				(names "/Current and Commutation Tacho/")
-				(tstamps "/ef2eb6d0-3ce5-4d68-8de5-b2453360b95b/")
+				(tstamps "/7ef48c42-2dee-4288-96b8-8af0facdade8/")
 			)
-			(tstamps "73483db7-b3f9-4eac-8027-37307a408931")
+			(tstamps "85260f4e-d1c1-4521-b188-e3899498dfde")
 			(units
 				(unit
 					(name "A")
@@ -7557,9 +7689,9 @@
 			)
 			(sheetpath
 				(names "/Current and Commutation Tacho/")
-				(tstamps "/ef2eb6d0-3ce5-4d68-8de5-b2453360b95b/")
+				(tstamps "/7ef48c42-2dee-4288-96b8-8af0facdade8/")
 			)
-			(tstamps "e275c10c-0a9b-4d70-9a2d-a92a889a2740")
+			(tstamps "3cfc674f-6113-4f04-b5c0-4be8ae6a2b5b")
 			(units
 				(unit
 					(name "A")
@@ -7623,9 +7755,9 @@
 			)
 			(sheetpath
 				(names "/Current and Commutation Tacho/")
-				(tstamps "/ef2eb6d0-3ce5-4d68-8de5-b2453360b95b/")
+				(tstamps "/7ef48c42-2dee-4288-96b8-8af0facdade8/")
 			)
-			(tstamps "4cd690f2-1185-449a-a4b0-477ae682f2d9")
+			(tstamps "f3a45310-88f8-4a52-bdd5-fb2440e82eea")
 			(units
 				(unit
 					(name "A")
@@ -7695,9 +7827,9 @@
 			)
 			(sheetpath
 				(names "/Current and Commutation Tacho/")
-				(tstamps "/ef2eb6d0-3ce5-4d68-8de5-b2453360b95b/")
+				(tstamps "/7ef48c42-2dee-4288-96b8-8af0facdade8/")
 			)
-			(tstamps "652c0c83-877c-4c00-8b88-eab64b3631bf")
+			(tstamps "1bf58e99-9c50-4e97-b49c-85a6bc9269de")
 			(units
 				(unit
 					(name "A")
@@ -7767,9 +7899,9 @@
 			)
 			(sheetpath
 				(names "/Current and Commutation Tacho/")
-				(tstamps "/ef2eb6d0-3ce5-4d68-8de5-b2453360b95b/")
+				(tstamps "/7ef48c42-2dee-4288-96b8-8af0facdade8/")
 			)
-			(tstamps "200c82ed-ec83-4a0c-a485-5608b5b0ce5c")
+			(tstamps "d9f84c91-33c5-4886-9d9a-0c62c2ca5e77")
 			(units
 				(unit
 					(name "A")
@@ -7836,9 +7968,9 @@
 			)
 			(sheetpath
 				(names "/Current and Commutation Tacho/")
-				(tstamps "/ef2eb6d0-3ce5-4d68-8de5-b2453360b95b/")
+				(tstamps "/7ef48c42-2dee-4288-96b8-8af0facdade8/")
 			)
-			(tstamps "4581f8cf-abea-4bfa-bec7-a8f7a91025e2")
+			(tstamps "fbfda5d6-6397-4b30-af69-73d44f9f3e16")
 			(units
 				(unit
 					(name "A")
@@ -7905,9 +8037,9 @@
 			)
 			(sheetpath
 				(names "/Current and Commutation Tacho/")
-				(tstamps "/ef2eb6d0-3ce5-4d68-8de5-b2453360b95b/")
+				(tstamps "/7ef48c42-2dee-4288-96b8-8af0facdade8/")
 			)
-			(tstamps "40391c70-ac2b-4289-819f-54d729ec908f")
+			(tstamps "9618e577-fbec-40ed-a23b-e5ae7caee285")
 			(units
 				(unit
 					(name "A")
@@ -7974,9 +8106,9 @@
 			)
 			(sheetpath
 				(names "/Current and Commutation Tacho/")
-				(tstamps "/ef2eb6d0-3ce5-4d68-8de5-b2453360b95b/")
+				(tstamps "/7ef48c42-2dee-4288-96b8-8af0facdade8/")
 			)
-			(tstamps "bb57dd09-8fc8-4e0f-b61f-49f3ed7655c4")
+			(tstamps "6947c875-d022-484e-b366-3991ca673937")
 			(units
 				(unit
 					(name "A")
@@ -8043,9 +8175,9 @@
 			)
 			(sheetpath
 				(names "/Current and Commutation Tacho/")
-				(tstamps "/ef2eb6d0-3ce5-4d68-8de5-b2453360b95b/")
+				(tstamps "/7ef48c42-2dee-4288-96b8-8af0facdade8/")
 			)
-			(tstamps "efe0df36-ad23-4b1f-a7ba-41f59a05a713")
+			(tstamps "a9e20dfd-0a1f-4f36-86e5-54c9f1016c78")
 			(units
 				(unit
 					(name "A")
@@ -8106,9 +8238,9 @@
 			)
 			(sheetpath
 				(names "/Current and Commutation Tacho/")
-				(tstamps "/ef2eb6d0-3ce5-4d68-8de5-b2453360b95b/")
+				(tstamps "/7ef48c42-2dee-4288-96b8-8af0facdade8/")
 			)
-			(tstamps "b0567447-52c5-45e9-9092-b6ab14133c5b")
+			(tstamps "e5cfd55d-84b4-45ef-aad2-33d0b864e34a")
 			(units
 				(unit
 					(name "A")
@@ -8181,10 +8313,10 @@
 			)
 			(sheetpath
 				(names "/Current and Commutation Tacho/")
-				(tstamps "/ef2eb6d0-3ce5-4d68-8de5-b2453360b95b/")
+				(tstamps "/7ef48c42-2dee-4288-96b8-8af0facdade8/")
 			)
-			(tstamps "8de859de-463a-41e1-85f9-574aeb112f90" "6992048b-2bff-42ce-9522-643d65e31c23"
-				"0326b10f-a211-4d7e-9093-ccc85c3baed1"
+			(tstamps "73810a79-b1bb-4f70-83e0-676b60dde5d2" "5ed8bdde-36cc-4b76-b141-834127357549"
+				"1302e162-ec79-448f-a025-4a03cbbed459"
 			)
 			(units
 				(unit
@@ -8283,9 +8415,9 @@
 			)
 			(sheetpath
 				(names "/Current and Commutation Tacho/")
-				(tstamps "/ef2eb6d0-3ce5-4d68-8de5-b2453360b95b/")
+				(tstamps "/7ef48c42-2dee-4288-96b8-8af0facdade8/")
 			)
-			(tstamps "b659605c-ef95-4a3e-b0d5-ad9fa5cd00c5")
+			(tstamps "ef49cc5e-ff34-4b65-a7c9-db0c291d426a")
 			(units
 				(unit
 					(name "A")
@@ -8373,9 +8505,9 @@
 			)
 			(sheetpath
 				(names "/Current and Commutation Tacho/")
-				(tstamps "/ef2eb6d0-3ce5-4d68-8de5-b2453360b95b/")
+				(tstamps "/7ef48c42-2dee-4288-96b8-8af0facdade8/")
 			)
-			(tstamps "e48a1c9b-8387-4ce0-b61a-a89eaba94742")
+			(tstamps "a8f91f1d-8234-4bb8-944c-0a30d7e4384a")
 			(units
 				(unit
 					(name "A")
@@ -8448,9 +8580,9 @@
 			)
 			(sheetpath
 				(names "/Connectors and Interfaces/")
-				(tstamps "/3847b165-0abd-4c84-9bbd-006612fb3cd1/")
+				(tstamps "/b587e48b-38a8-4037-9ade-e041cbc7b572/")
 			)
-			(tstamps "55672ce9-ad42-4d41-b98f-2f00fbd487c1")
+			(tstamps "28836803-c19a-476e-88bf-b2bf63daeff1")
 			(units
 				(unit
 					(name "A")
@@ -8514,9 +8646,9 @@
 			)
 			(sheetpath
 				(names "/Connectors and Interfaces/")
-				(tstamps "/3847b165-0abd-4c84-9bbd-006612fb3cd1/")
+				(tstamps "/b587e48b-38a8-4037-9ade-e041cbc7b572/")
 			)
-			(tstamps "9c35c802-ae83-4c10-8868-9cddc2ca88d8")
+			(tstamps "8be254d4-db83-4aef-ae28-aeb061583a77")
 			(units
 				(unit
 					(name "A")
@@ -8580,9 +8712,9 @@
 			)
 			(sheetpath
 				(names "/Connectors and Interfaces/")
-				(tstamps "/3847b165-0abd-4c84-9bbd-006612fb3cd1/")
+				(tstamps "/b587e48b-38a8-4037-9ade-e041cbc7b572/")
 			)
-			(tstamps "f7dcceba-2aa3-467a-a364-bb9f3911b0f3")
+			(tstamps "9820721f-e444-4d8a-8d49-fd9d5c2e3f41")
 			(units
 				(unit
 					(name "A")
@@ -8643,9 +8775,9 @@
 			)
 			(sheetpath
 				(names "/Connectors and Interfaces/")
-				(tstamps "/3847b165-0abd-4c84-9bbd-006612fb3cd1/")
+				(tstamps "/b587e48b-38a8-4037-9ade-e041cbc7b572/")
 			)
-			(tstamps "b40bc806-74c6-45fe-820f-c373345375c2")
+			(tstamps "532968c9-81c6-4d70-8e8c-fb0d7a2e6db2")
 			(units
 				(unit
 					(name "A")
@@ -8699,9 +8831,9 @@
 			)
 			(sheetpath
 				(names "/Connectors and Interfaces/")
-				(tstamps "/3847b165-0abd-4c84-9bbd-006612fb3cd1/")
+				(tstamps "/b587e48b-38a8-4037-9ade-e041cbc7b572/")
 			)
-			(tstamps "4306ca3f-66e7-4daa-b632-8ce2a9dc7cdb")
+			(tstamps "18ed6bef-744d-4cc8-b8e1-3343dc3b5655")
 			(units
 				(unit
 					(name "A")
@@ -8755,9 +8887,9 @@
 			)
 			(sheetpath
 				(names "/Connectors and Interfaces/")
-				(tstamps "/3847b165-0abd-4c84-9bbd-006612fb3cd1/")
+				(tstamps "/b587e48b-38a8-4037-9ade-e041cbc7b572/")
 			)
-			(tstamps "8d4e86af-3b79-41f3-9aba-46dcdd9454de")
+			(tstamps "d0d94f9f-7325-459a-80d7-3230fabbbb85")
 			(units
 				(unit
 					(name "A")
@@ -8811,9 +8943,9 @@
 			)
 			(sheetpath
 				(names "/Connectors and Interfaces/")
-				(tstamps "/3847b165-0abd-4c84-9bbd-006612fb3cd1/")
+				(tstamps "/b587e48b-38a8-4037-9ade-e041cbc7b572/")
 			)
-			(tstamps "eeecac6e-df8d-45c5-98b5-600f4c9e46e4")
+			(tstamps "39405b9b-613d-4a7d-bc58-5e2f0daefffe")
 			(units
 				(unit
 					(name "A")
@@ -8876,9 +9008,9 @@
 			)
 			(sheetpath
 				(names "/Connectors and Interfaces/")
-				(tstamps "/3847b165-0abd-4c84-9bbd-006612fb3cd1/")
+				(tstamps "/b587e48b-38a8-4037-9ade-e041cbc7b572/")
 			)
-			(tstamps "c7facc01-38cc-410a-a0f9-2d52bd791fe8")
+			(tstamps "69df397a-20de-4348-ad0b-a3bbf8b87ee3")
 			(units
 				(unit
 					(name "A")
@@ -8951,9 +9083,9 @@
 			)
 			(sheetpath
 				(names "/Connectors and Interfaces/")
-				(tstamps "/3847b165-0abd-4c84-9bbd-006612fb3cd1/")
+				(tstamps "/b587e48b-38a8-4037-9ade-e041cbc7b572/")
 			)
-			(tstamps "1233e300-39f4-4b75-8f6b-06827f8b6ab9")
+			(tstamps "d835098f-3333-408f-a494-5ee51ef50848")
 			(units
 				(unit
 					(name "A")
@@ -9029,9 +9161,9 @@
 			)
 			(sheetpath
 				(names "/Connectors and Interfaces/")
-				(tstamps "/3847b165-0abd-4c84-9bbd-006612fb3cd1/")
+				(tstamps "/b587e48b-38a8-4037-9ade-e041cbc7b572/")
 			)
-			(tstamps "8ee88e08-fdf6-4ee5-994b-4e871e550bdf")
+			(tstamps "0eb4250d-6545-4b15-8232-5e590ea084a9")
 			(units
 				(unit
 					(name "A")
@@ -9101,9 +9233,9 @@
 			)
 			(sheetpath
 				(names "/Connectors and Interfaces/")
-				(tstamps "/3847b165-0abd-4c84-9bbd-006612fb3cd1/")
+				(tstamps "/b587e48b-38a8-4037-9ade-e041cbc7b572/")
 			)
-			(tstamps "77f1571e-7caf-4479-8b48-5d710eacc0d4")
+			(tstamps "8867c031-5495-4d85-b032-377a22f66801")
 			(units
 				(unit
 					(name "A")
@@ -9167,9 +9299,9 @@
 			)
 			(sheetpath
 				(names "/Connectors and Interfaces/")
-				(tstamps "/3847b165-0abd-4c84-9bbd-006612fb3cd1/")
+				(tstamps "/b587e48b-38a8-4037-9ade-e041cbc7b572/")
 			)
-			(tstamps "ae3f7443-76ed-4833-879e-4275f9b7a273")
+			(tstamps "994b7ebc-b189-42bd-b737-5e75801336da")
 			(units
 				(unit
 					(name "A")
@@ -9233,9 +9365,9 @@
 			)
 			(sheetpath
 				(names "/Connectors and Interfaces/")
-				(tstamps "/3847b165-0abd-4c84-9bbd-006612fb3cd1/")
+				(tstamps "/b587e48b-38a8-4037-9ade-e041cbc7b572/")
 			)
-			(tstamps "8b01820e-bb67-4b04-8863-e3d353541a5e")
+			(tstamps "a9167a07-15ab-4abb-a37c-578482e83ea4")
 			(units
 				(unit
 					(name "A")
@@ -9299,9 +9431,9 @@
 			)
 			(sheetpath
 				(names "/Connectors and Interfaces/")
-				(tstamps "/3847b165-0abd-4c84-9bbd-006612fb3cd1/")
+				(tstamps "/b587e48b-38a8-4037-9ade-e041cbc7b572/")
 			)
-			(tstamps "efe28520-f729-4b2d-b673-4ec8b27f97da")
+			(tstamps "2ddf368d-d94e-44e1-92fe-f36abd2d2aa8")
 			(units
 				(unit
 					(name "A")
@@ -9365,9 +9497,9 @@
 			)
 			(sheetpath
 				(names "/Connectors and Interfaces/")
-				(tstamps "/3847b165-0abd-4c84-9bbd-006612fb3cd1/")
+				(tstamps "/b587e48b-38a8-4037-9ade-e041cbc7b572/")
 			)
-			(tstamps "3d622d4b-04ef-407c-98bf-2d74dfec42ff")
+			(tstamps "c1111a0f-7230-4d79-8cc8-88a5dc4432aa")
 			(units
 				(unit
 					(name "A")
@@ -9431,9 +9563,9 @@
 			)
 			(sheetpath
 				(names "/Connectors and Interfaces/")
-				(tstamps "/3847b165-0abd-4c84-9bbd-006612fb3cd1/")
+				(tstamps "/b587e48b-38a8-4037-9ade-e041cbc7b572/")
 			)
-			(tstamps "5c4eeb08-be32-479c-b725-fd3cf4fd506d")
+			(tstamps "4494380f-19cd-458a-9de7-986c8c0f1895")
 			(units
 				(unit
 					(name "A")
@@ -12900,8 +13032,8 @@
 			)
 			(node
 				(ref "U1")
-				(pin "8")
-				(pinfunction "IO15_8")
+				(pin "11")
+				(pinfunction "IO18_11")
 				(pintype "bidirectional")
 			)
 			(node
@@ -12949,8 +13081,8 @@
 			)
 			(node
 				(ref "U1")
-				(pin "11")
-				(pinfunction "IO18_11")
+				(pin "12")
+				(pinfunction "IO8_12")
 				(pintype "bidirectional")
 			)
 		)
@@ -13240,6 +13372,21 @@
 				(pintype "passive")
 			)
 			(node
+				(ref "R54")
+				(pin "2")
+				(pintype "passive")
+			)
+		)
+		(net
+			(code "72")
+			(name "UART_RX_MCU")
+			(class "Default")
+			(node
+				(ref "R54")
+				(pin "1")
+				(pintype "passive")
+			)
+			(node
 				(ref "U1")
 				(pin "36")
 				(pinfunction "RXD0_36")
@@ -13247,13 +13394,28 @@
 			)
 		)
 		(net
-			(code "72")
+			(code "73")
 			(name "UART_TX_DBG")
 			(class "Default")
 			(node
 				(ref "J22")
 				(pin "3")
 				(pinfunction "Pin_3_3")
+				(pintype "passive")
+			)
+			(node
+				(ref "R53")
+				(pin "2")
+				(pintype "passive")
+			)
+		)
+		(net
+			(code "74")
+			(name "UART_TX_MCU")
+			(class "Default")
+			(node
+				(ref "R53")
+				(pin "1")
 				(pintype "passive")
 			)
 			(node
@@ -13264,7 +13426,7 @@
 			)
 		)
 		(net
-			(code "73")
+			(code "75")
 			(name "USB_DM")
 			(class "Default")
 			(node
@@ -13299,7 +13461,7 @@
 			)
 		)
 		(net
-			(code "74")
+			(code "76")
 			(name "USB_DP")
 			(class "Default")
 			(node
@@ -13334,7 +13496,7 @@
 			)
 		)
 		(net
-			(code "75")
+			(code "77")
 			(name "USB_ILIM")
 			(class "Default")
 			(node
@@ -13350,7 +13512,7 @@
 			)
 		)
 		(net
-			(code "76")
+			(code "78")
 			(name "VBUS_PROTECTED")
 			(class "Default")
 			(node
@@ -13411,7 +13573,7 @@
 			)
 		)
 		(net
-			(code "77")
+			(code "79")
 			(name "VBUS_RAW")
 			(class "Default")
 			(node

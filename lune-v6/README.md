@@ -104,7 +104,7 @@ Authoritative source: [`hardware/lune-v6-rev3.2/design-contract.json`](hardware/
 | 2 | 38 | `ADC_CURRENT` | shared current sense, filtered (ADC1_CH1) |
 | 21 | 23 | `I2C_SDA` | I2C data, `J21` display pads, 4k7 pull-up `R16` |
 | 47 | 24 | `I2C_SCL` | I2C clock, `J21`, 4k7 pull-up `R17` |
-| 15 | 8 | `MOTOR_ENABLE` | drive enable (safe level = 0) |
+| 18 | 11 | `MOTOR_ENABLE` | drive enable (safe level = 0) |
 | 11 | 19 | `MOTOR_ADDR1` | decoder address bit 1 |
 | 12 | 20 | `MOTOR_ADDR0` | decoder address bit 0 |
 | 13 | 21 | `MOTOR_ADDR3` | decoder address bit 3 (was `MOTOR_TERM_DIR`) |
@@ -113,8 +113,8 @@ Authoritative source: [`hardware/lune-v6-rev3.2/design-contract.json`](hardware/
 | 17 | 10 | `LATCH_ARM` | edge-coupled arm clock |
 | 19 / 20 | 13 / 14 | `USB_DM` / `USB_DP` | native USB |
 | 38 | 31 | `COMM_TACHO_N` | commutation pulses, open-drain |
-| 18 | 11 | `ONEWIRE_MCU` | DS18B20 bus |
-| 43 / 44 | 37 / 36 | `UART_TX_DBG` / `UART_RX_DBG` | debug UART |
+| 8 | 12 | `ONEWIRE_MCU` | DS18B20 bus; declared ADC1 exception |
+| 43 / 44 | 37 / 36 | `UART_TX_MCU` / `UART_RX_MCU` | ROM console; 1 k `R53`/`R54` in series to `J22`, where the nets become `UART_TX_DBG` / `UART_RX_DBG` |
 | 4 | 4 | `STATUS_LED_N` | status LED, **active low**; declared ADC1 exception |
 
 GPIO 0, 3, 19, 20, 45 and 46 are contractually forbidden for motor control. Module pads
@@ -122,8 +122,11 @@ GPIO 0, 3, 19, 20, 45 and 46 are contractually forbidden for motor control. Modu
 
 The two ADCs sit on the module's **east** side because ADC1 is `GPIO1`–`GPIO10` and ADC2
 is unusable while WiFi runs — pads 38/39 are the only ADC-capable pins there. That leaves
-the west side to the USB pair. `GPIO5` (pad 5, ADC1) and `GPIO15` (pad 8) are now spare;
-`GPIO4` (pad 4) took `STATUS_LED_N` in rev3.2-G.
+the west side to the USB pair. `GPIO5`, `GPIO6`, `GPIO7`, `GPIO9` and `GPIO10` are the
+spare ADC1 channels, and `GPIO15` (pad 8) is free after rev3.2-H. Two ADC1 channels are
+deliberately spent on digital: `GPIO4` on `STATUS_LED_N` (rev3.2-G) and `GPIO8` on
+`ONEWIRE_MCU` (rev3.2-H). Both are declared in `adc1_digital_exceptions` and printed by
+`check_design.py` on every run.
 
 ### External connections
 
@@ -150,20 +153,24 @@ is the one-hot decoder. The pin map is partly migrated:
 | `pin_rgb_status_led` | 48 | `STATUS_LED_N` — **4** | ❌ **48 → 4** (rev3.2-G), and **not an RGB part** — active-low single LED. Note GPIO4 is still declared as `pin_nfault`, which this table already marks for deletion; delete it in the same edit or GPIO4 lands twice. |
 | `pin_adc_current` | 7 | `ADC_CURRENT` — **2** | ❌ **7 → 2** |
 | `pin_adc_bemf` | 5 | `ADC_TACHO` — **1** | ❌ **5 → 1**, and rename: BEMF frontend was removed |
-| `pin_onewire` | 12 | `ONEWIRE_MCU` — **18** | ❌ **12 → 18**; 12 is now `MOTOR_ADDR0` |
-| `pin_nsleep` | 6 | — | ❌ **delete**; replaced by `MOTOR_ENABLE` on **15** |
+| `pin_onewire` | 12 | `ONEWIRE_MCU` — **8** | ❌ **12 → 8** (rev3.2-H); 12 is now `MOTOR_ADDR0` |
+| `pin_nsleep` | 6 | — | ❌ **delete**; replaced by `MOTOR_ENABLE` on **18** |
 | `pin_nfault` | 4 | — | ❌ **delete**; rev3.2 exposes no raw-fault GPIO |
 | `motor_hardware_backend` | `drv8215_i2c` | one-hot decoder | ❌ **replace** |
 | `motor_addresses` | `[0x30 … 0x35]` | — | ❌ **delete**; no I2C motor driver exists |
-| — | not declared | `MOTOR_ENABLE` — **15** | ➕ **add** |
+| — | not declared | `MOTOR_ENABLE` — **18** | ➕ **add** |
 | — | not declared | `LATCH_STATE` — **16** | ➕ **add** |
 | — | not declared | `COMM_TACHO_N` — **38** | ➕ **add** (PCNT/RMT capture) |
 
-Three GPIOs are freed by the rev3.2 analog move and are now spare: **5** (ADC1, pad 5),
-**7** and **15**. GPIO **4** was also freed but is now taken by `STATUS_LED_N`.
+Spare after rev3.2-H: **5**, **6**, **7**, **9**, **10** (all ADC1) and **15**. GPIO **4**
+and **8** were freed by the analog move but are now spent on `STATUS_LED_N` and
+`ONEWIRE_MCU`, both declared exceptions.
 
 **GPIO 12 is assigned twice** in `lune.yaml` — to both `pin_onewire` and
-`pin_motor_addr2`. On rev3.2 GPIO 12 is `MOTOR_ADDR0` and 1-Wire moves to GPIO 18.
+`pin_motor_addr2`. On rev3.2 GPIO 12 is `MOTOR_ADDR0` and 1-Wire moves to GPIO 8.
+
+**GPIO 8 is also `pin_i2c_sda` today.** The row above marks I2C for a move to 21/47; that
+edit and the 1-Wire move must land together or GPIO 8 lands twice.
 
 ## Repository Layout
 

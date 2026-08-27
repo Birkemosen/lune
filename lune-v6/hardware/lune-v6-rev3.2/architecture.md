@@ -1,6 +1,6 @@
 # Rev 3.2 electrical architecture
 
-Schematic ECO level `rev3.2-B`. Every quantitative claim below is asserted by
+Schematic ECO level `rev3.2-H`. Every quantitative claim below is asserted by
 `check_design.py` against the generated sheets and the exported netlist.
 
 ## Safety and signal flow
@@ -513,7 +513,7 @@ copper-to-edge below 0.25 mm. Either the enclosure gives the west wall a deeper
 opening, or the outline gets a local notch at J1. This is an enclosure decision,
 not a placement one.
 
-### ESP32 antenna: a 21 x 7 mm cutout, not a 48 x 21 mm keepout
+### ESP32 antenna: a 22 x 7 mm cutout, not a 48 x 21 mm keepout
 
 The stock KiCad footprint carries one keepout zone - `x -24..24`,
 `y -27.75..-6.75` relative to the module origin, forbidding tracks, vias, pads,
@@ -535,8 +535,8 @@ What the board actually owes the antenna:
   length** at the antenna end - the northmost pad edge sits 5.71 mm from the
   origin against a body half-length of 12.75 mm.
 
-Rev3.2 therefore cuts a **21 x 7 mm notch** in the north edge, centred on the
-module: 7 mm is the pad-free length, 21 mm gives 1.5 mm either side of the
+Rev3.2 therefore cuts a **22 x 7 mm notch** in the north edge, centred on the
+module: 7 mm is the pad-free length, 22 mm gives 2.0 mm either side of the
 18 mm module. The module sits 0.5 mm inside the edge so the northmost pads keep
 0.54 mm to the cut. The board loses 147 mm2 and the antenna gets air under it,
 which is the recommended arrangement rather than a compromise.
@@ -554,7 +554,7 @@ invert the guideline. Espressif's wording is the opposite: *"Please note that
 sufficient ground copper and dense ground vias should be placed on the base
 board near the antenna."* What harms the antenna is the **dielectric** under
 it, which is why the instruction is to *"cut off the base board on both sides
-of the antenna and below it"* - and that is what the 21 x 7 mm notch does, 1.5
+of the antenna and below it"* - and that is what the 22 x 7 mm notch does, 2.0
 mm past each module edge and the full pad-free depth.
 
 So the rule beside the cutout is a positive one, not a prohibition:
@@ -636,9 +636,9 @@ aesthetics - is what fixes where the blocks go:
 | Module side | Nets |
 |---|---|
 | **West, north end** | `+3V3_LOGIC`, `STATUS_LED_N` (pad 4), `LATCH_STATE` (pad 9), `LATCH_ARM` (pad 10) |
-| **West, south end** | `USB_DM`, `USB_DP`, `I2C_SDA` |
-| **South row** | `MOTOR_ADDR0..3`, `MOTOR_ENABLE`, `I2C_SCL` |
-| **East** | `ADC_CURRENT`, `ADC_TACHO`, `COMM_TACHO_N`, `ONEWIRE_MCU`, `UART_TX_DBG`, `UART_RX_DBG`, `BOOT_N` |
+| **West, south end** | `MOTOR_ENABLE` (pad 11), `ONEWIRE_MCU` (pad 12), `USB_DM`, `USB_DP` |
+| **South row** | `MOTOR_ADDR0..3`, `I2C_SDA`, `I2C_SCL` |
+| **East** | `ADC_CURRENT`, `ADC_TACHO`, `COMM_TACHO_N`, `UART_TX_MCU`, `UART_RX_MCU`, `BOOT_N` |
 
 The analog signals were **moved** to the east side to get them off the west,
 where the USB pair lives - see the reassignment table below.

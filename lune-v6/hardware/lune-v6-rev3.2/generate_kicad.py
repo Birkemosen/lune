@@ -574,11 +574,15 @@ def add_esp32():
         # Digital functions are kept OFF ADC1 (GPIO1..10), which is the only ADC
         # usable while WiFi runs.  ADC2 (GPIO11..20) is unusable then anyway, so
         # it is where slow digital belongs.  MOTOR_ENABLE and ONEWIRE_MCU moved
-        # here from GPIO10 and GPIO42: pad 8 puts MOTOR_ENABLE on the west row
-        # beside the latch block it feeds, and pad 11 puts 1-wire on the west
-        # row now that its connector sits beside USB-C.
-        8: "MOTOR_ENABLE",       # GPIO15 / ADC2, worthless for analog
-        11: "ONEWIRE_MCU",       # GPIO18 / ADC2, worthless for analog
+        # here from GPIO10 and GPIO42, and both moved again in rev3.2-H to sit
+        # one pad further south on the west row.  MOTOR_ENABLE on pad 11 leaves
+        # at y = 49.19, which is 0.19 mm off the latitude of the safety cluster
+        # it feeds (U7 49.01, R30 48.90, Q1 49.04), so the run is a straight
+        # west line instead of a 4 mm drop across the LATCH_STATE/LATCH_ARM
+        # escapes.  ONEWIRE_MCU follows onto pad 12 and spends an ADC1 channel
+        # doing it - see adc1_digital_exceptions in the contract.
+        11: "MOTOR_ENABLE",      # GPIO18 / ADC2, worthless for analog
+        12: "ONEWIRE_MCU",       # GPIO8  / ADC1_CH7, spent on purpose
         # I2C moved off GPIO8/GPIO9 - two ADC1 channels - onto two unencumbered
         # pins that are adjacent on the module's south edge, east of centre, so
         # the display connector can sit in the east with SDA/SCL side by side.
@@ -591,7 +595,8 @@ def add_esp32():
         # free and is chosen to match how the four address lines and MOTOR_ENABLE
         # leave the module toward U24.  GPIO10 is an ADC1 channel spent on
         # digital, which costs little: pads 5-7 carry IO5-IO7, three more free
-        # ADC1 channels (pad 4 now carries STATUS_LED_N).  MOTOR_ENABLE cannot move to IO3 or IO46 - both are
+        # ADC1 channels (pad 4 carries STATUS_LED_N and pad 12 carries
+        # ONEWIRE_MCU, both declared exceptions).  MOTOR_ENABLE cannot move to IO3 or IO46 - both are
         # strapping pins, so its 100k safe-state pulldown would be sampled as
         # boot configuration at every reset, and that pulldown is what defines
         # coast when the GPIO is high-Z.
@@ -615,8 +620,11 @@ def add_esp32():
         # east side with the analog island.
         4: "STATUS_LED_N",       # GPIO4 / ADC1_CH3, spent on purpose
         27: "BOOT_N",            # GPIO0
-        36: "UART_RX_DBG",       # GPIO44
-        37: "UART_TX_DBG",       # GPIO43
+        # ECO rev3.2-H splits both console lines with a series resistor, so the
+        # module pins carry *_MCU and the header carries *_DBG.  The GPIO
+        # contract tracks the module-side names.
+        36: "UART_RX_MCU",       # GPIO44 (RXD0) -> R54 -> UART_RX_DBG at J22
+        37: "UART_TX_MCU",       # GPIO43 (TXD0) -> R53 -> UART_TX_DBG at J22
     }
     for pin, name in module_pin_nets.items():
         net(u1, pin, name)
@@ -624,6 +632,18 @@ def add_esp32():
     for pin in range(1, 42):
         if pin not in used:
             nc(u1, pin)
+
+    # Console edge damping, ECO rev3.2-H.  J22 sits 34 mm east of the module and
+    # the run crosses the analog island's south flank, while TXD0 is a full-speed
+    # CMOS output with roughly 2 ns edges.  1k against the ~40 pF the run
+    # presents stretches that to ~90 ns, which is 1% of a bit at 115200 and
+    # removes the harmonic content the ADC and tacho nodes would otherwise see.
+    # Both resistors sit at the module end so the whole run is damped; the RXD0
+    # one is pin protection rather than edge rate, since that edge is driven by
+    # whatever adapter is plugged into J22.  1k is already a BOM line six times
+    # over, so this adds no part number.
+    passive("R53", "1k", (500, 100), "UART_TX_MCU", "UART_TX_DBG")
+    passive("R54", "1k", (500, 140), "UART_RX_MCU", "UART_RX_DBG")
 
     # Reset and boot groups are local, so both are drawn: pull-up, filter and
     # button hanging off one node into the module pin.
