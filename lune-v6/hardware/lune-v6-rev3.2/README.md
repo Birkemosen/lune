@@ -1,7 +1,15 @@
 # Lune V6 Rev 3.2
 
-Status: multi-sheet schematic ECO at level **rev3.2-H**; PCB placed and routed,
-physical qualification pending.
+Status: ECO level **rev3.2-H**; PCB placed and routed; DRC, fabrication export
+and physical qualification pending.
+
+**Source of truth: `EasyEdaPro/lune-v6-rev3.2.eprj`, PCB document `pcb1_1`.**
+Rev 3.2 was authored in KiCad through ECO rev3.2-B and every ECO from rev3.2-C
+onward was done in EasyEDA Pro. The KiCad sheets, generator, exported netlist and
+ERC report were deleted once keeping both live produced a schematic/PCB
+divergence no gate could see; they remain in git history, and
+`design-contract.json` → `designator_history` maps every old reference to the
+designator the board carries.
 
 Rev 3.2 is the successor to Rev 3.1 Lean. It retains the compact, two-layer,
 six-channel manifold controller with an embedded `ESP32-S3-WROOM-1-N8R8`. The
@@ -21,11 +29,11 @@ landed since; each has its own section below, and the schematic is at
 - Six channels, because that is the actual product need. Channels seven and
   eight do not reduce feeder count enough to justify their connectors, driver,
   protection and board-edge area.
-- Three dual H-bridges. `DRV8411PWPR` is the population. `DRV8833PWPR` is a
-  TI-listed direct pin-to-pin replacement kept only as a shortage substitute:
-  six DNP capacitor pads make it a drop-in, but its datasheet specifies no
-  xISEN trip limits and derates on-resistance below `VM = 5 V`, so it is the
-  weaker part in the current-ceiling role on a 3.2 V motor rail.
+- Three dual H-bridges, `DRV8411PWPR`, with no DNP second-source pads: the
+  DRV8411 integrates its charge-pump and regulator capacitors, so pins 11 and 14
+  stay open. `DRV8410PWPR` is the nominated second source - pin-compatible
+  including those NC pins - but is not stocked at LCSC. DRV8833 was dropped in
+  ECO rev3.2-E; see `driver.alternatives_evaluated` in the contract.
 - One active-high 4-to-16 decoder gives a physically one-hot drive path:
   `Q0..Q5` drive one direction and `Q8..Q13` the opposite direction.
 - One calibrated, shared high-side current channel measures force. Its raw,
@@ -34,7 +42,8 @@ landed since; each has its own section below, and the schematic is at
   can be counted. The tacho function is 14 mounted parts: one single op-amp,
   nine resistors and four capacitors. It reuses the spare `LMV393` comparator
   channel and the existing shunt; there are no per-motor sensors or extra mux.
-- The amplified ripple is also brought to `GPIO5` through one resistor. That
+- The amplified ripple is also brought to `GPIO1` as `ADC_TACHO` through one
+  resistor. That
   makes the qualification programme practical - the § 2 and § 3 edge-rate
   measurements can be logged by the device itself instead of needing a scope on
   every board, actuator and temperature combination - and it gives firmware an
@@ -46,11 +55,14 @@ landed since; each has its own section below, and the schematic is at
   commutation count/plateau, and a learned-count endpoint window. Current
   alone is never accepted as an endpoint.
 - Fixed per-bridge current regulation, a fixed rail overcurrent comparator,
-  persistent hardware fault latch, firmware runtime limits, and an independent
-  hardware runtime timer form nested protection layers.
-- Base board has LED status and unpopulated `GND/3V3/SCL/SDA` display pads. A
-  fixed OLED is not populated: it costs board area and assembly money without
-  improving local heating safety. The pads carry no I2C bus pull-ups.
+  persistent hardware fault latch and firmware runtime limits form nested
+  protection layers. There is deliberately **no** hardware max-on-time; ECO
+  rev3.2-C removed it on a hazard assessment recorded as
+  `actuator_overrun_hazard`.
+- Base board has LED status and an unpopulated `GND/3V3/SCL/SDA` display header
+  (`J8`). A fixed OLED is not populated: it costs board area and assembly money
+  without improving local heating safety. The bus pull-ups **are** on the board
+  (ECO rev3.2-F) so SDA and SCL cannot float when no display is fitted.
 - A protected three-pin `3V3/1-WIRE/GND` service connector supports external
   supply and return temperature probes. Both the data line and the supply pin
   have a series resistor and a local 3.3 V TVS; temperature freshness remains a
@@ -63,29 +75,37 @@ reverted.
 
 | # | Change | Why |
 |---|---|---|
-| 1 | Tacho comparator hysteresis moved from the threshold input to the non-inverting input (`R50` now bridges `COMM_TACHO_N` to `TACHO_CMP`) | Feedback to the inverting input is negative feedback. As drawn it was a relaxation oscillator with a 144 mV chatter band, not a Schmitt trigger - and PCNT counts that chatter. |
+| 1 | Tacho comparator hysteresis moved from the threshold input to the non-inverting input (`R15` now bridges `COMM_TACHO_N` to `TACHO_CMP`) | Feedback to the inverting input is negative feedback. As drawn it was a relaxation oscillator with a 144 mV chatter band, not a Schmitt trigger - and PCNT counts that chatter. |
 | 2 | Tacho stage rebuilt as a band-pass: high-pass 1.6 Hz (was 15.9 Hz), in-band gain ~85 (was 11), new 339 Hz low-pass | Measured commutation is 20-40 Hz at 14-19 mA, i.e. 7-30 mV at `CURRENT_RAW`. The old corner sat inside the signal band, the old gain matched the hysteresis, and nothing rejected the 50 kHz current-regulation chop. Now -43 dB at the chop. |
 | 3 | `TACHO_REF` is a stiff 1k/1k mid-rail bypassed by 22 µF (was 47k/47k + 1 µF) | The gain-setting return used to see a 23.5 kΩ source impedance, so gain fell to ~6.6 at 20 Hz, and comparator transitions injected back into the reference. |
 | 4 | ~~74HC4060 master reset moved to `LATCH_STATE`~~ | **Superseded by ECO rev3.2-C** — the whole timer block is removed. |
 | 5 | ~~Timing set `Rt = 180k`, `Rs = 360k`, `Ct = 22 nF C0G` on `Q14`~~ | **Superseded by ECO rev3.2-C** — the C0G reasoning was right, but the oscillator was wired rotated one position around the star, so 71.4 s was never what the board would have made. |
 | 6 | Rail overcurrent comparator senses `CURRENT_RAW` instead of the filtered ADC node | An output-to-GND short bypasses the xISEN resistor and the DRV8411 OCP is 4 A, so this comparator is the only fast protection for that fault. The 1k/100n filter was adding 100 µs to it. |
-| 7 | `D1` BAT54S ADC clamp removed | The INA180 runs from `+3V3_ANALOG` and cannot drive the node outside 0-3V3, so the clamp protected nothing, while its reverse leakage through `R20` added a temperature-dependent offset that room-temperature calibration cannot remove. |
+| 7 | `D1` BAT54S ADC clamp removed | The INA180 runs from `+3V3_ANALOG` and cannot drive the node outside 0-3V3, so the clamp protected nothing, while its reverse leakage through `R1` added a temperature-dependent offset that room-temperature calibration cannot remove. |
 | 8 | `R3`/`R4` 22 Ω USB series resistors removed | ESP32-S3 native USB drives D+/D- directly in Espressif reference designs; 22 Ω moved the single-ended impedance away from the ~45 Ω target for no protection benefit. |
-| 9 | `C9` 220 µF electrolytic replaced by a second stocked 22 µF ceramic | The actuator draws 14-19 mA running and 23-50 mA stalled. This removes the only wet part, the tallest passive (7.7 mm) and one BOM line. |
-| 10 | `J20` supply pin fed through `R52` 33 Ω + `D7` TVS as `+3V3_EXT` | It used to be a bare tap on the ESP32's own rail, so a shorted or ESD-struck field wire hit the MCU supply directly - against S-06. |
+| 9 | `C41` 220 µF electrolytic replaced by a second stocked 22 µF ceramic | The actuator draws 14-19 mA running and 23-50 mA stalled. This removes the only wet part, the tallest passive (7.7 mm) and one BOM line. |
+| 10 | `J1` supply pin fed through `R22` 33 Ω + `D2` TVS as `+3V3_EXT` | It used to be a bare tap on the ESP32's own rail, so a shorted or ESD-struck field wire hit the MCU supply directly - against S-06. |
 | 11 | Native `(dnp yes)` / `(in_bom no)` attributes now emitted | DNP intent lived only in a text property, so a generated BOM/CPL would have ordered and placed the six second-source capacitors and tried to place twelve test pads. |
 | 12 | `check_design.py` added; `C46` DNP pad and ~130 lines of dead generator code removed | Rev 3.2 shipped without the Rev 3.1 audit scripts, which is why the placement counts in this file drifted by ten parts. |
 
 Feeder consolidation: the tacho rebuild uses only values already in the BOM, so
 the unsourced 47k and 2.2M values are gone. Net BOM lines are down by two
-(22 Ω, BAT54S and the electrolytic out; 22 nF C0G in). `C25` is the single
-remaining open sourcing item and `check_design.py` tracks it explicitly.
+(22 Ω, BAT54S and the electrolytic out; 22 nF C0G in). The C0G timing capacitor
+left again with the whole timer block in ECO rev3.2-C, so no open sourcing items
+remain; `check_design.py` fails if that declaration goes stale.
 
 ## ECO rev3.2-C - the runtime cutoff is removed
 
-`U36` (74HC4060), `R27`, `R28`, `C25`, `Q2` and `C24` are deleted: **6 parts, ~100 mm2**
-of courtyard out of the congested west block, plus the `TIMEOUT_Q14`, `TIMER_RTC`,
-`TIMER_RS`, `TIMER_CTC` and `TIMING_COMMON` nets and one characterization gate.
+The 74HC4060 timer block - six parts, **~100 mm2**
+of courtyard out of the congested west block - is deleted, plus the `TIMEOUT_Q14`,
+`TIMER_RTC`, `TIMER_RS`, `TIMER_CTC` and `TIMING_COMMON` nets and one
+characterization gate.
+
+> Its KiCad designators were `U36`, `R27`, `R28`, `C25`, `Q2` and `C24`. Do not
+> use those as a regression guard: the EasyEDA scheme reuses `R27`, `R28` and
+> `C25` for unrelated parts. `check_design.py` guards the removal by device
+> (`actuator_overrun_hazard.removed_devices`), which is what it should always
+> have been.
 
 This is a hazard-assessment result, recorded as `actuator_overrun_hazard` in the design
 contract. Two things drove it:
@@ -104,8 +124,8 @@ contract. Two things drove it:
   against a 56-86 s cutoff - so commissioning could latch a fault firmware cannot clear.
 
 Retained: the firmware runtime limit already in service, the commutation tacho as
-rotation/stall evidence, the ESP32 task watchdog, and `R10`-`R15` for a defined safe state
-when GPIOs go high-Z. The **fault latch stays** - `U35` pin 6 is the only consumer of
+rotation/stall evidence, the ESP32 task watchdog, and `R26`-`R31` for a defined safe state
+when GPIOs go high-Z. The **fault latch stays** - `U2` pin 6 is the only consumer of
 `FAULT_N_RAW`, which five sources feed, so `check_design.py` now asserts that consumer and
 those contributors as an invariant.
 
@@ -115,7 +135,7 @@ turns every output off regardless of `DRIVE_PERMIT`.
 
 ## ECO rev3.2-D - decoder package, placement and address map
 
-`U24` goes from `XL74HC4514D` in **SOIC-24W** to Nexperia **`74HC4514PW,118`** (`C58910`,
+`U28` goes from `XL74HC4514D` in **SOIC-24W** to Nexperia **`74HC4514PW,118`** (`C58910`,
 TSSOP-24). Same logic, same pin numbering, so the netlist is unaffected by the package
 change itself.
 
@@ -136,33 +156,41 @@ four long output runs for five long bus runs.
 
 ### Placement and remap
 
-`U24` moves from east of the module into the gap between `U20`'s and `U21`'s VM-cap
+`U28` moves from east of the module into the gap between `U9`'s and `U10`'s VM-cap
 clusters**, unrotated, at the driver row's latitude. Its pin rows then run north-south and
-each flank faces the drivers it serves - side A west to `U20`, side B east to `U21` then
-`U22` - so **no output crosses the package**. Output trace budget falls from ~540 mm spanning
+each flank faces the drivers it serves - side A west to `U9`, side B east to `U10` then
+`U11` - so **no output crosses the package**. Output trace budget falls from ~540 mm spanning
 the whole board to ~120 mm beside the drivers.
 
-The address-to-output assignment is remapped to suit that geometry, and the address space
-falls out unusually well:
+The address-to-output assignment is remapped to suit that geometry. `MOTOR_TERM_DIR` is
+renamed **`MOTOR_ADDR3`**: keeping bit 3 as the direction bit is exactly what forced every
+motor's forward/reverse pair to straddle the package, because Q0-Q7 all sit on side A and
+Q8-Q15 on side B. And addresses **0-3 are unreachable by design** - side A keeps four spare
+outputs rather than being packed, since packing them would move a driver's signals onto the
+flank facing away from it. `check_design.py` asserts that `Q0`-`Q3` reach no bridge input.
 
-| Channel | Code | Forward | Reverse |
-|---|---|---|---|
-| 1 | 2 | 4 | 5 |
-| 2 | 3 | 6 | 7 |
-| 3 | 5 | 10 | 11 |
-| 4 | 4 | 8 | 9 |
-| 5 | 7 | 14 | 15 |
-| 6 | 6 | 12 | 13 |
+> ~~`address = (channel_code << 1) | direction`, direction 0 = forward, so bit 0 is the
+> direction bit and firmware needs only a six-entry code table.~~ **Superseded by the
+> as-built assignment.** Routing `U28` north-around - outputs leave the flank, pass north of
+> the package, run along and drop south into the driver input row - puts the southernmost
+> decoder pin in the southernmost lane serving the *nearest* destination, which inverts the
+> order against a straight-across layout. Direction then tracks bit 0 only on odd channels
+> and inverts on even ones, because the mirrored bridge order swaps the FWD/REV sense
+> between motor A and motor B of each driver. **No bit encodes direction.**
 
-`address = (channel_code << 1) | direction`, direction 0 = forward. So **bit 0 is now the
-direction bit**, and firmware needs only the six-entry code table above.
+The as-built map is `decoder.channel_address_map` in `design-contract.json`, which
+`check_design.py` asserts against the schematic, and firmware uses those twelve entries
+rather than a formula (`REV32_FORWARD_ADDRESS` / `REV32_REVERSE_ADDRESS` in `rev32_logic.h`,
+asserted against this table by `make test-rev32-logic`):
 
-Two consequences. `MOTOR_TERM_DIR` is renamed **`MOTOR_ADDR3`**: keeping bit 3 as the
-direction bit is exactly what forced every motor's forward/reverse pair to straddle the
-package, because Q0-Q7 all sit on side A and Q8-Q15 on side B. And addresses **0-3 are
-unreachable by design** - side A keeps four spare outputs rather than being packed, since
-packing them would move a driver's signals onto the flank facing away from it.
-`check_design.py` asserts that `Q0`-`Q3` reach no bridge input.
+| Channel | Forward | Reverse |
+|---|---|---|
+| 1 | 7 | 6 |
+| 2 | 4 | 5 |
+| 3 | 13 | 12 |
+| 4 | 14 | 15 |
+| 5 | 9 | 8 |
+| 6 | 10 | 11 |
 
 ## ECO rev3.2-E - the six DNP second-source pads are removed
 
@@ -192,7 +220,7 @@ not stocked at LCSC today; that is the open item, not the pads.
 | Placements | 114 + 6 DNP | **114, no DNP** |
 | Nets | `VINT1-3`, `VCP1-3` | gone |
 | Decoder gap | 9.90 mm | **16.90 mm** |
-| Clearance each side of `U24` | 1.10 mm | **4.60 mm** |
+| Clearance each side of `U28` | 1.10 mm | **4.60 mm** |
 
 The two pads per driver at `dx ± 6.5` were what pinned the decoder gap. Removing them also
 clears the **y = 35.5 band**, so the `FWD`/`REV` fan-out heading east now crosses only
@@ -226,9 +254,9 @@ Two analog channels, two exceptions, five spare.
 
 ### I2C pull-ups added
 
-`R16`/`R17`, 4k7 to `+3V3_LOGIC`. The bus had none. They are not optional and not only for
+`R37`/`R38`, 4k7 to `+3V3_LOGIC`. The bus had none. They are not optional and not only for
 the bus to function: without them `SDA` and `SCL` float on the ESP32's inputs whenever no
-display is fitted, which is the failure `R10`–`R13` exist to prevent at the decoder — a
+display is fitted, which is the failure `R26`–`R29` exist to prevent at the decoder — a
 floating CMOS input sits near mid-rail with both transistors conducting. A display module
 carrying its own pull-ups gives 2k35 effective, still inside spec, and a 100 ns rise into
 50 pF against the 300 ns that 400 kHz allows.
@@ -239,8 +267,8 @@ carrying its own pull-ups gives 2k35 effective, still inside spec, and a 100 ns 
 
 | | Pins | Footprint |
 |---|---|---|
-| `J21` display I2C | GND, +3V3_LOGIC, SDA, SCL | `JST_PH_S4B-PH-SM4-TB_1x04-1MP_P2.00mm_Horizontal` |
-| `J22` UART console | GND, +3V3_LOGIC, TXD0, RXD0 | same |
+| `J8` display I2C | GND, +3V3_LOGIC, SDA, SCL | `JST_PH_S4B-PH-SM4-TB_1x04-1MP_P2.00mm_Horizontal` |
+| `J9` UART console | GND, +3V3_LOGIC, TXD0, RXD0 | same |
 
 Both are `COPPER_ONLY`: the pads exist, nothing is ordered or placed, and a connector gets
 soldered on only when a display or a console is actually wanted. Side-entry SMD so no drill
@@ -305,9 +333,9 @@ an ADC1 channel (15/17/18 = `IO3`/`IO9`/`IO10`) or a strapping pin (16/26 =
 analog island. The move is declared in `adc1_digital_exceptions`, so
 `check_design.py` prints it on every run and fails if it ever stops being true.
 
-### `R53`/`R54`, 1 kΩ in series with the console
+### `R39`/`R40`, 1 kΩ in series with the console
 
-`J22` sits 34 mm east of the module and the run crosses the analog island's
+`J9` sits 34 mm east of the module and the run crosses the analog island's
 south flank. `TXD0` is a full-speed CMOS output with roughly 2 ns edges; 1 kΩ
 against the ~40 pF the run presents stretches that to about 90 ns, which is 1 %
 of a bit at 115200 and removes the harmonic content the ADC and tacho nodes
@@ -319,7 +347,7 @@ driven by whatever adapter is plugged in.
 `R23`), so this adds no part number.
 
 **Consequence for net names:** `UART_TX_DBG` and `UART_RX_DBG` now name the
-**header** side. The module side is `UART_TX_MCU` and `UART_RX_MCU`, and that is
+**header** side. The module side is `UART_TX` and `UART_RX`, and that is
 what the `gpio` map tracks. Pads 36/37 are `RXD0`/`TXD0` - the ROM bootloader
 console - and cannot move.
 
@@ -359,15 +387,20 @@ drifted on five entries and is now generated from the same `gpio` map that
 
 Rev 3.2 is a schematic-only ECO. The Rev 3.1 routed PCB, Gerbers, BOM and CPL
 do not include the Rev 3.2 analog changes and must not be fabricated as
-Rev 3.2. The dedicated firmware must add PCNT/RMT capture before automatic
-calibration can be enabled, and the Rev 3.1 entrypoint must not be flashed onto
-Rev 3.2 hardware - `GPIO5` was a no-connect and is now an amplified analog
-input. Remaining release gates are:
+Rev 3.2.
 
-1. Lay out the analog ECO, route it away from the ADC and motor loops, then
-   pass ERC, DRC, placement and manufacturing audits.
-2. Source a 22 nF ±5% 50 V C0G/NP0 1206 capacitor for `C25` and record the
-   LCSC part number.
+Firmware exists: `lune-v6/configurations/lune-v6-rev32.yaml` selects the
+`rev32_gpio` backend, which owns the 4-bit decoder, the per-move latch arm, the
+6 dB `ADC_CURRENT` range and PCNT capture on `COMM_TACHO_N`. Automatic startup
+calibration stays off - the thresholds are bring-up values, and the tacho's
+missed/false-edge rate is unmeasured. Neither revision's entrypoint may be
+flashed on the other's hardware; see the collision table in
+`firmware-integration.md`. Remaining release gates are:
+
+1. ~~Close the open items `check_design.py` reports.~~ **Done** - the gate passes.
+2. Run DRC to zero errors and zero unrouted nets, then export Gerber, BOM and
+   CPL into this folder so the fabrication package is reviewable in git. These
+   are the three gates `check_design.py` deliberately does not claim to cover.
 3. Capture the raw shunt commutation spectrum on supported actuators and
    confirm the band-pass, hysteresis and counter pulse-rejection limits against
    measurement.
@@ -376,47 +409,47 @@ input. Remaining release gates are:
    cable-transient cases.
 5. Qualify the external 1-wire cable and supply/return probes for ESD, open,
    short, stale data and sensor substitution faults.
-6. Verify the independent hardware timeout across component and temperature
-   tolerance, and trim `Rt` from the first measurement, before production
-   release.
+6. Settle the deferred production decisions: the `xISEN` value once § 3 has the
+   current distributions, the TPS2553 fault-response variant, and a resettable
+   PTC on the 1-wire supply branch. The motor-output ferrite rating is settled -
+   200 mA is kept, see `motor_output_ferrites.derating_decision`.
+7. Add a copper-only pad on `FAULT_N_RAW`. It reaches no GPIO and, on the
+   as-built board, no test pad either, so neither firmware nor a scope can see
+   which source faulted.
 
 ## Verification
 
+EasyEDA Pro is the source of truth. `check_design.py` reads the project file
+directly - placements, net connectivity, BOM flags, symbol pinouts and the
+routed geometry - and asserts it against `design-contract.json`:
+
 ```sh
-kicad-cli sch erc --output erc.rpt --severity-error --severity-warning \
-    --exit-code-violations lune-v6-rev3.2.kicad_sch
-kicad-cli sch export netlist --format kicadsexpr \
-    --output lune-v6-rev3.2.net lune-v6-rev3.2.kicad_sch
 python3 check_design.py
 ```
 
-`netlist-golden.json` is a committed snapshot of every pin-to-net connection.
-`check_design.py` diffs the exported netlist against it, so any edit that alters
-connectivity fails loudly instead of passing as a drawing that merely looks
-plausible. Regenerate it only when a change is intended:
+It checks the **PCB** document rather than the schematic on purpose. The PCB is
+what becomes Gerbers, and every defect class this gate exists to catch is a
+property of what gets fabricated. Checking the schematic instead would let a
+schematic/PCB divergence pass, which is what happened while KiCad and EasyEDA
+were both live: 57 of 79 nets matched, and the differences included twelve
+undocumented series ferrites and a changed motor-connector pinout.
+
+`netlist-golden.json` is a committed snapshot of every pad-to-net connection.
+Any edit that alters connectivity fails loudly instead of passing as a layout
+that merely looks plausible. Regenerate it only when a change is intended:
 
 ```sh
 python3 check_design.py --update-golden
 ```
 
-Two `kicad-cli` behaviours the checks work around, both verified experimentally:
-it does not read the project's ERC severity overrides, and it **omits unnamed
-nets from the netlist entirely** — which is why every net carries exactly one
-label even when it never leaves its sheet, since a wired-but-unnamed net would
-be invisible to the golden-netlist guard.
+Three gates stay with the editor because the project file does not record them:
+**DRC to zero errors**, **zero unrouted nets**, and the **Gerber/BOM/CPL
+export**. `validation-plan.md` § 1 owns them; `check_design.py` prints a
+reminder rather than pretending to cover them.
 
-`erc.rpt` currently reports 0 errors and 0 warnings. Note that its "Ignored
-checks" list includes *Global label only appears once* and that `kicad-cli`
-does not read the project's ERC severity overrides - in a design where all
-connectivity is carried by global labels that is the one class that would catch
-a typo'd net, so `check_design.py`, not the ERC run, is the gate for label
-integrity.
-
-Regenerate the schematic from the editable source with:
-
-```sh
-python3 generate_kicad.py   # needs kicad-sch-api 0.5.6 and the KiCad 10 symbols
-```
+Designators were renumbered when the source of truth moved. Documentation
+written before ECO rev3.2-G may still use the KiCad names;
+`design-contract.json` → `designator_history` maps all 118 of them.
 
 See [rev2-review-addendum.md](rev2-review-addendum.md),
 [architecture.md](architecture.md), [design-review.md](design-review.md),
@@ -426,62 +459,45 @@ See [rev2-review-addendum.md](rev2-review-addendum.md),
 sheets. `layout-audit.md` is retained as Rev3.1 historical evidence only; it
 does not validate the Rev3.2 analog ECO.
 
-## Drawing convention
+## Drawing convention, and why two findings stayed invisible
 
-Rev 3.2-A carried 100% of its connectivity on global labels attached to pins:
-zero wires, zero junctions, zero hierarchical sheet pins. That is electrically
-valid but it is a netlist rendered as text, and it is why the tacho hysteresis
-error (B1) survived review — with nothing drawn, there was no way to see that
-the feedback resistor had landed on the threshold input.
+Rev 3.2-A was authored in KiCad and carried 100% of its connectivity on global
+labels attached to pins: zero wires, zero junctions, zero hierarchical sheet
+pins. That is electrically valid but it is a netlist rendered as text, and it is
+why two findings survived review. B1 - the tacho hysteresis resistor landing on
+the comparator's threshold input instead of its signal input - is something a
+drawn feedback loop shows at a glance and a label cannot show at all. B6 - the
+amplifier drawn with the wrong TLV9001 pinout variant - is the same class: it
+made a wrong drawing look right, and pointed ERC at the wrong pins.
 
-The sheets are now drawn hybrid, which is the ordinary convention:
+Two rules came out of that and both outlived the tool:
 
-- **Local sub-circuit topology is wired** with orthogonal segments and junctions
-  — dividers, RC networks, the amplifier feedback loop, the comparator
-  hysteresis, the arm path, the oscillator, the sense resistors, the USB data
-  pairs, the reset/boot groups, the inhibit node.
-- **Rails keep per-pin labels** (`GND`, `+3V3_LOGIC`, `+3V3_ANALOG`,
-  `+3V3_MOTOR`, `+3V3_MOTOR_REG`, `VBUS_RAW`, `VBUS_PROTECTED`), as does
-  `TACHO_REF`, which is a local reference rail feeding six points.
-- **Nets that fan out across a sheet or leave it are named**, not dragged across
-  the page: the MCU's GPIO fan-out, the motor outputs of the three repeated
-  driver blocks, and the shared `FAULT_N_RAW` / `DRIVE_PERMIT` / `LATCH_STATE`
-  nets. Where several of a named net's pins are adjacent, they are wired
-  together and the net is named once instead of once per pin.
+- **Local sub-circuit topology gets drawn**, not labelled. Dividers, RC
+  networks, the amplifier feedback loop, the comparator hysteresis, the arm
+  path, the sense resistors, the USB data pairs, the inhibit node. Rails and
+  cross-sheet fan-out keep names.
+- **Every net carries a name.** A wired-but-unnamed net is invisible to
+  documentation and to the golden-netlist guard, and it cannot be discussed in
+  a review. `check_design.py` asserts this; seven nets arrived from the KiCad
+  import without labels and are still open.
 
-| Sheet | wires | junctions | labels |
-|---|---:|---:|---:|
-| analog | 49 | 24 | 75 |
-| power | 16 | 6 | 62 |
-| controller | 13 | 8 | 74 |
-| motors | 12 | 0 | 105 |
-| connectors | 8 | 5 | 25 |
-| **total** | **98** | **43** | **341** (was 406) |
-
-Three `kicad-sch-api` / KiCad behaviours the generator works around, all found
-by experiment and all documented at the point of use:
-
-1. **Rotated symbols resolve pins wrongly** — a label requested on a rot-90
-   resistor's pin 1 lands on pin 2, and one on a rot-90 op-amp pin does not
-   connect at all. Every symbol is therefore placed at rotation 0 and routes are
-   built from queried pin coordinates.
-2. **`get_component_pin_position` is not unit-aware** — for the three-unit `U34`
-   it returns the same coordinate for pins 1/7, 2/6 and 3/5, so routing by
-   reference would wire the wrong comparator. Pins are resolved through the
-   component instance instead.
-3. **A `wire` element takes exactly two points, and a pin lying mid-wire does
-   not connect.** A three-point polyline still parses — symbols are enumerated —
-   but KiCad then forms *no nets at all* on that sheet, so ERC stays silent
-   while every pin drops out of the netlist. Runs are emitted as consecutive
-   two-point segments, and pins sitting on a spine get an explicit junction.
-
-The golden netlist is what makes this safe: the conversion changed the drawing
-of all five sheets and left all 400 pin-to-net connections byte-identical.
+The mechanical guard against the B6 class is now `pcb.symbol_pinouts` in the
+contract, asserted against the project's own symbol library. It covers the two
+5-pin amplifiers, the comparator and the status LED - the LED because pin 1 is
+the anode in this library and the cathode in KiCad's, so the two schematics
+disagreed on paper while both boards were in fact correct.
 
 ## Schematic sheets
 
-- `lune-v6-rev3.2-power.kicad_sch` — USB input protection and the power rails.
-- `lune-v6-rev3.2-controller.kicad_sch` — ESP32, one-hot decoder and safety logic.
-- `lune-v6-rev3.2-motors.kicad_sch` — the three dual H-bridges and six outputs.
-- `lune-v6-rev3.2-analog.kicad_sch` — current sensing, safety latch and commutation tacho.
-- `lune-v6-rev3.2-connectors.kicad_sch` — actuators, sensors, service and test points.
+Five sheets in `EasyEdaPro/lune-v6-rev3.2.eprj`, asserted by
+`pcb.schematic_sheets`:
+
+- `power` — USB input protection and the power rails.
+- `controller` — ESP32, one-hot decoder and safety logic.
+- `motors` — the three dual H-bridges, six outputs, ferrites and TVS clamps.
+- `analog` — current sensing, safety latch and commutation tacho.
+- `connectors` — actuators, sensors, service header and test pads.
+
+The board is the `pcb1_1` document. A second document, `pcb1`, is a near
+identical earlier copy and must be deleted: two PCB documents in one project is
+a Gerber-export hazard, and `check_design.py` fails while both exist.

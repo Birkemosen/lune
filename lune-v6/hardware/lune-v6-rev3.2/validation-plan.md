@@ -3,48 +3,65 @@
 The design target is low risk, not a claim that schematic analysis can make an
 endpoint impossible to overrun. Fabrication release requires measured evidence.
 
-Schematic ECO level `rev3.2-B`.
+ECO level `rev3.2-H`. Source of truth is `EasyEdaPro/lune-v6-rev3.2.eprj`,
+PCB document `pcb1_1`.
 
 ## 1. Electrical design gates
 
-Available now, run on every change:
+Automated, run on every change:
 
-- `python3 check_design.py` passes. It re-derives the netlist from the
-  generated sheets and asserts label integrity, the placement count against
-  `design-contract.json`, native DNP/BOM attributes, LCSC coverage, the ESP32
-  GPIO map read from the KiCad module symbol, the decoder `Q`-pin mapping, the
-  safety-net topology invariants, and every derived analog and timing number.
-- KiCad ERC: zero unexplained errors and warnings via
-  `kicad-cli sch erc --severity-error --severity-warning --exit-code-violations`.
-  Note that `kicad-cli` does **not** read the project's ERC severity overrides,
-  so *Global label only appears once* stays in the ignored list; in a design
-  where all connectivity is global labels that class is gated by
-  `check_design.py` instead, not by the ERC report.
-- `lune-v6-rev3.2.net` is regenerated whenever a sheet changes, otherwise
-  `check_design.py` is auditing a stale netlist.
+- `python3 check_design.py` passes. It reads the EasyEDA Pro project directly and
+  asserts net integrity and named nets, declared no-connects, the placement and
+  copper-only counts against `design-contract.json`, BOM exclusion of the
+  copper-only pads, designator hygiene, MPN/LCSC coverage, the ESP32 GPIO map,
+  the decoder `Q`-pin mapping, the safety-net topology invariants, the connector
+  pinouts, every derived analog and timing number, the ordered packages' symbol
+  pinouts, the routed geometry, and the golden netlist.
+- `netlist-golden.json` is regenerated only when a connectivity change is
+  intended (`--update-golden`). Otherwise any edit that moves a pad to another
+  net fails the gate.
 - Manual pin-by-pin audit against current manufacturer data sheets, recorded in
   a `pinout-audit.md` for this revision. The Rev 3.0 audit does not cover the
-  Rev 3.2 analog chain or the `+3V3_EXT` branch.
-- No open sourcing items remain: `C25` was the last one and left with the
-  runtime-cutoff block. `check_design.py` fails if that declaration goes stale.
+  Rev 3.2 analog chain, the `+3V3_EXT` branch or the motor-output ferrites.
+- No open sourcing items remain. `check_design.py` fails if that declaration
+  goes stale.
 
-Required once the PCB exists. These scripts are retained in
-`../lune-v6-rev3.1-lean/`, which holds nothing else. Each is hard-wired to Rev 3.1
-filenames, Rev 3.1 limits and a routed PCB that no longer exists, so every one
-must be ported rather than copied:
+Editor-owned, because the project file does not record them. These are the gates
+`check_design.py` deliberately does not claim to cover:
 
-- `audit_placement.py` proves the 90 x 75 mm outline, symmetric 82 x 67 mm
-  M3 pattern, centered RJ9 body row and 0-2 mm connector-face projection.
-- `audit_pcb.py` passes the physical driver-sense, shunt/INA180, hardware
-  safety-net and external 1-wire invariants.
-- `audit_layout_integrity.py` bounds path resistance, USB mismatch and analog
-  trace length; extend its ADC-length limits to cover `ADC_TACHO`.
-- PCB DRC: zero errors, zero unrouted nets.
-- Connectivity audit proves decoder `Q0..Q5/Q8..Q13` reach exactly one bridge
-  input and unused outputs reach none.
-- Bottom-layer ground continuity and every high-current return path are reviewed
-  from Gerber, not only the KiCad view.
-- ESP32 antenna keepout is copper-free on both layers.
+- **PCB DRC: zero errors.** Clearance, annular ring, silkscreen-over-pad and
+  acid-trap classes are the editor's, and 115 hand-drawn copper patches on the
+  top layer make clearance checking non-optional.
+- **Zero unrouted nets.**
+- **Gerber, BOM and CPL exported into this folder**, so the fabrication package
+  is reviewable in git rather than living only in the editor. The upload must
+  resolve every populated designator and rotation, and must exclude the twelve
+  copper-only pads.
+- **Bottom-layer ground continuity and every high-current return path reviewed
+  from Gerber**, not from the editor view. The bottom layer carries only 85
+  routed segments against 867 on top, so it is close to an intact plane; confirm
+  that from plotted copper.
+- **Silkscreen legibility**: zone labels unambiguously attached to their own
+  connector, and no rail label overlapping another. Two pairs currently sit
+  0.9-1.1 mm apart at 1.0 mm text height.
+
+Superseded: the Rev 3.1 `audit_placement.py`, `audit_pcb.py` and
+`audit_layout_integrity.py` scripts in `../lune-v6-rev3.1-lean/` are **not** being
+ported. They read KiCad files and Rev 3.1 limits, and `check_design.py` section
+11 now covers what they covered on this board - outline, mounting pattern, layer
+count, minimum track width, via geometry, ground pours and stitching, copper-to-
+edge clearance, the antenna cutout and the Kelvin pair. What they still hold that
+is not yet reimplemented is **path resistance and trace-length bounding**: USB
+DP/DM mismatch and the `ADC_CURRENT` / `ADC_TACHO` run lengths. Add those to
+section 11 before release.
+
+Open conflict to close before release: **the antenna keepout.** This plan has
+required it copper-free on both layers since Rev 3.0. The cutout itself is
+copper-free, but GND pour and stitching vias come to 0.64 mm of the cutout edge
+and roughly 2.7 mm of the module's 7 mm pad-free antenna length sits over solid
+ground copper, which `pcb.antenna_board_rule` states as a deliberate choice. The
+two documents contradict each other. Close it with an explicit decision plus a
+measured range or return-loss figure, not by deleting one of the two statements.
 
 ## 2. Analog fixture characterization
 
@@ -76,7 +93,8 @@ For each of five boards:
   margin and must not exceed the 250 ms already-at-stop decision point.
 - Verify active-drive and cable transients cannot force the INA180, tacho
   op-amp, comparator or ESP32 input beyond qualified limits.
-- Record `CURRENT_RAW` (`TP7`), `TACHO_AMP` (`TP6`) and `COMM_TACHO_N` (`TP5`)
+- Record `CURRENT_RAW`, `TACHO_AMP` and `COMM_TACHO_N` at their copper-only pads
+  (`commutation_tacho.test_points`)
   with a logic analyser and oscilloscope during free-run, valve engagement and
   both mechanical stops. Confirm the band-pass, hysteresis and PCNT/RMT
   pulse-width rejection against measured commutation spectra; do not release
@@ -195,22 +213,22 @@ Release criteria:
   topology.
 - Verify discovery, unique address binding, resolution, conversion time and
   update cadence with one and two probes attached.
-- Measure the `+3V3_EXT` drop across `R52` at the maximum probe count and
+- Measure the `+3V3_EXT` drop across `R22` at the maximum probe count and
   conversion duty. The design budget is 100 mV at 3 mA against a DS18B20
   minimum of 3.0 V; if the installed probe count or cable pushes it further,
-  lower `R52` or move to a resettable PTC.
+  lower `R22` or move to a resettable PTC.
 - Measure supply/return agreement in an isothermal fixture and characterize
   installed pipe-to-sensor lag and offset over the qualified temperature range.
 - Test open data wire, short to GND, short to 3.3 V, missing pull-up, swapped
   probes, duplicate/replacement addresses, CRC errors and a sensor frozen at a
   plausible value. Short the `+3V3_EXT` conductor to GND and confirm the ESP32
-  does not reset; note that `R52` is a one-shot fusible link at that current, so
+  does not reset; note that `R22` is a one-shot fusible link at that current, so
   record whether a PTC is required for production serviceability.
 - Enforce a bounded freshness timeout. Stale, missing or implausible
   temperatures must be reported explicitly and must not defeat local motor
   timeout, endstop or minimum-flow safety.
 - Apply cable ESD/EFT with the 33 ohm series resistors, 4.7k pull-up and both
-  `D5` and `D7` fitted. Confirm that the ESP32 pin and the logic rail remain
+  `D1` and `D2` fitted. Confirm that the ESP32 pin and the logic rail remain
   qualified and that faults on the external cable cannot energize a motor.
 - Verify operation at minimum/maximum 3.3 V and with the cable capacitance of
   the supported installation; lower the bus rate or cable limit if rise time
@@ -231,7 +249,7 @@ Release criteria:
   a physical re-plug. Decide before production whether to move to the
   auto-retry variant or keep the logic rail alive upstream.
 - JLCPCB Gerber/BOM/CPL upload resolves every populated designator and rotation.
-  Confirm the eight copper-only pads - including `J21`/`J22`, which are
+  Confirm the twelve copper-only pads - including `J8`/`J9`, which are
   unpopulated JST footprints and must not be ordered or placed -
   are excluded, which the native attributes now encode and `check_design.py`
   asserts.

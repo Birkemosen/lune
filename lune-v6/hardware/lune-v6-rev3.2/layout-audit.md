@@ -3,9 +3,12 @@
 > **Historical evidence only.** This file measures the Rev 3.1 Lean routed
 > candidate. It does not validate Rev 3.2: the BEMF frontend it audits no longer
 > exists, the commutation-tacho chain and `ADC_TACHO` route are not covered, and
-> `audit_layout_integrity.py` lives in `../lune-v6-rev3.1-lean/`. When the Rev 3.2
-> PCB exists, port that script forward and extend its ADC-length limits to cover
-> `ADC_TACHO` as well as `ADC_CURRENT`.
+> `audit_layout_integrity.py` lives in `../lune-v6-rev3.1-lean/` and reads KiCad
+> files, so it cannot run on the Rev 3.2 board. Designators and net names below are
+> Rev 3.1 and have **not** been renumbered - doing so would make this file claim to
+> have measured a board it never saw. What is still owed on Rev 3.2 is path
+> resistance and trace-length bounding, including `ADC_TACHO`; see
+> `validation-plan.md` section 1.
 
 This audit complements DRC. It checks whether the compact two-layer routing is
 electrically proportionate to the one-motor-at-a-time architecture instead of

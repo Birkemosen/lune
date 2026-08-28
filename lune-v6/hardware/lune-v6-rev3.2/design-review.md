@@ -1,5 +1,14 @@
 # Rev 3.2 design review
 
+> **Historical record.** This review was performed against the KiCad schematic,
+> which was the source of truth through ECO rev3.2-B. **Every designator below is
+> a KiCad-era reference and has been renumbered on the board** - `U20`/`U21`/`U22`
+> were the drivers and are now ESD diodes, `U24` was the decoder and is now the USB
+> current limiter, and `R27`/`R28`/`C25` name the deleted timer block here but live
+> parts on the board. Read it with `design-contract.json` ->
+> `designator_history` open. The findings and their dispositions stand; only the
+> names moved.
+
 Reviewed: the five generated schematic sheets, `generate_kicad.py`, `design-contract.json`,
 `README.md`, `architecture.md`, `validation-plan.md`, `firmware-integration.md`,
 `layout-audit.md`, `rev2-review-addendum.md`, `erc.rpt` and the project file — against
@@ -550,8 +559,18 @@ hack. See D7 for the caveat about the ignored global-label check.
 
 ## 5. What remains after ECO `rev3.2-B`
 
+> **Superseded.** This list was written at ECO rev3.2-B and six ECOs have landed
+> since. Items 1 and 2 are done or moot: the C0G timing capacitor left with the whole
+> timer block in rev3.2-C, and the Rev 3.2 firmware backend exists
+> (`rev32_motor_backend.cpp`, `rev32_logic.h`, `configurations/lune-v6-rev32.yaml`).
+> Item 4 is superseded: the Rev 3.1 audit scripts are **not** being ported - they read
+> KiCad files, and `check_design.py` section 11 now covers the layout invariants
+> directly against the EasyEDA project. For the live list read `README.md`
+> § *Remaining release gates*, `validation-plan.md` § 1, and the output of
+> `python3 check_design.py`.
+
 The schematic side is closed; see § 0 for the per-finding disposition. Outstanding work,
-in order:
+as assessed at rev3.2-B:
 
 1. Source `C25` (22 nF ±5 % 50 V C0G/NP0 1206) and record its LCSC number. It is the only
    open sourcing item and `check_design.py` tracks it.
@@ -564,7 +583,7 @@ in order:
 4. Lay out the board, then port `audit_placement.py`, `audit_pcb.py` and
    `audit_layout_integrity.py` forward from `../lune-v6-rev3.1-lean/` (retained for exactly
    this purpose) and extend the ADC-length limits to cover `ADC_TACHO` (D4).
-5. Reconcile `devices/lune-v6/docs/ARCHITECTURE.md` with Rev 3.x — it still documents the
+5. Reconcile `lune-v6/docs/ARCHITECTURE.md` with Rev 3.x — it still documents the
    DRV8215 I2C hardware layer and asserts that no analog comparator exists (D6).
 6. Carry the deferred production decisions into the Rev 3.2 to Rev 4 gate: the xISEN value
    once § 3 has the current distributions (O1), the TPS2553 fault-response variant (O6),

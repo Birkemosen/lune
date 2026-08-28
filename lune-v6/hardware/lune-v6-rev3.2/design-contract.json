@@ -1,12 +1,12 @@
 {
   "hardware_revision": "lune-v6-rev3.2",
-  "eco": "rev3.2-B",
+  "eco": "rev3.2-H",
   "eco_summary": "Commutation-tacho correction (hysteresis to the comparator non-inverting input, band-pass matched to the measured 20-40 Hz commutation, 8x gain), runtime cutoff referenced to armed time instead of decoder inhibit, C0G timing capacitor, unfiltered rail-overcurrent sense, protected 1-wire supply branch, native DNP attributes, and removal of the ADC clamp, USB series resistors and motor-rail electrolytic.",
-  "fabrication_status": "SCHEMATIC_ECO_PENDING_PCB_PLACEMENT_ROUTING_AND_PHYSICAL_VALIDATION",
+  "fabrication_status": "PCB_ROUTED_PENDING_DRC_FAB_EXPORT_AND_PHYSICAL_VALIDATION",
   "layers": 2,
   "target_outline_mm": {
-    "width": 100,
-    "height": 70
+    "width": 90,
+    "height": 72
   },
   "maximum_outline_mm": {
     "width": 100,
@@ -17,116 +17,100 @@
   "psram_mb": 8,
   "motor_channels": 6,
   "firmware": {
-    "rev32_entrypoint": "PENDING_REV3.2_BACKEND",
-    "rev31_reference_entrypoint": "devices/lune-v6/configurations/lune-v6-rev31.yaml",
-    "backend": "rev31_gpio",
+    "rev32_entrypoint": "lune-v6/configurations/lune-v6-rev32.yaml",
+    "rev31_reference_entrypoint": "lune-v6/configurations/lune-v6-rev31.yaml",
+    "backend": "rev32_gpio",
     "rev31_backend_compiles": true,
-    "rev32_backend_complete": false,
+    "rev32_backend_complete": true,
     "flash_mode_verified": "8MB",
     "psram_mode_verified": "octal",
     "automatic_startup_calibration": false,
     "physical_endpoint_validation_complete": false,
-    "commutation_counter_firmware_complete": false,
+    "commutation_counter_firmware_complete": true,
     "adc_current_attenuation": "6dB",
     "required_rev3.2_changes": [
-      "REMOVE_REV31_BEMF_COAST_SAMPLING_ADC_BEMF_IS_NOW_ADC_TACHO_ON_GPIO5",
-      "ADD_PCNT_OR_RMT_CAPTURE_ON_COMM_TACHO_N_GPIO15",
-      "LATCH_STATE_GPIO17_IS_ACTIVE_HIGH_FAULT_NOT_ACTIVE_LOW_NFAULT",
-      "ARM_THE_FAULT_LATCH_PER_MOVE_THE_HARDWARE_CUTOFF_BOUNDS_ARMED_TIME",
-      "BLANK_TACHO_EDGES_FOR_AT_LEAST_250_MS_AFTER_DRIVE_START"
+      "REMOVE_REV31_BEMF_COAST_SAMPLING_ADC_BEMF_IS_NOW_ADC_TACHO_ON_GPIO1",
+      "ADD_PCNT_OR_RMT_CAPTURE_ON_COMM_TACHO_N_GPIO38",
+      "LATCH_STATE_GPIO16_IS_ACTIVE_HIGH_FAULT_NOT_ACTIVE_LOW_NFAULT",
+      "ARM_THE_FAULT_LATCH_PER_MOVE_LATCH_ARM_GPIO17_IS_EDGE_COUPLED_AND_CLAMPED_WHILE_MOTOR_ENABLE_IS_HIGH",
+      "BLANK_TACHO_EDGES_FOR_AT_LEAST_250_MS_AFTER_DRIVE_START",
+      "USE_THE_12_ENTRY_CHANNEL_ADDRESS_MAP_NOT_A_DIRECTION_BIT_FORMULA"
     ],
-    "rev31_entrypoint_is_unsafe_on_rev32_hardware": "GPIO5_WAS_A_NO_CONNECT_IN_REV3.2A_AND_IS_NOW_AN_AMPLIFIED_ANALOG_INPUT"
+    "rev31_entrypoint_is_unsafe_on_rev32_hardware": "REV3.1 PIN MAP COLLIDES WITH REV3.2 THROUGHOUT: ADC_CURRENT MOVED 4->2, ADC_BEMF GPIO5 NO LONGER EXISTS, GPIO4 IS NOW STATUS_LED_N, NFAULT GPIO17 IS NOW LATCH_ARM AND LATCH_STATE IS ACTIVE-HIGH ON GPIO16",
+    "no_hardware_max_on_time": true,
+    "runtime_limit_ms": {
+      "hmip_vdmot": 40000,
+      "generic": 45000
+    },
+    "commutation_counter_capture": "PCNT_FALLING_EDGE_ACCUM_COUNT_POLLED_FROM_THE_FSM_TICK, CROSS-CHECKED BY A SECOND RippleCounter ON ADC_TACHO IN THE SAME 10KHZ DMA STREAM",
+    "commutation_counter_open_items": [
+      "PCNT_GLITCH_FILTER_TOPS_OUT_NEAR_12US_SO_THE_200US_MINIMUM_WIDTH_REJECTION_IS_NOT_IMPLEMENTED_RMT_WOULD_BE_NEEDED_BUT_THE_10KHZ_ADC_TACHO_STREAM_NOW_MAKES_THE_QUESTION_MEASURABLE",
+      "PERIOD_REJECTION_IS_ON_THE_IMPLIED_CADENCE_OF_A_COUNT_DELTA_NOT_PER_EDGE"
+    ],
+    "endpoint_classifier": "classify_rev32_endpoint IN rev32_logic.h, HOST-TESTED BY make test-rev32-logic",
+    "analog_frontend": "ONE ADC1 CONTINUOUS DMA STREAM, 20KHZ AGGREGATE: ADC_CURRENT AT 6DB AND ADC_TACHO AT 12DB, 10KHZ EACH IN 512-BYTE FRAMES. THE ONESHOT AND CONTINUOUS DRIVERS CANNOT SHARE AN ADC UNIT, SO THE BACKEND DOES NOT READ ITS OWN ADC.",
+    "absolute_current_cap_latency_ms": 1,
+    "absolute_current_cap_path": "EVALUATED IN THE DMA TASK ON A FRAME PEAK, CONSUMED BY motor_loop_ AT 1MS",
+    "duty_cycle_control": "NONE - CONTINUOUS DRIVE, NO SOFT-APPROACH",
+    "stroke_phase_model": "Rev32StrokeTracker IN rev32_logic.h: FREE_TRAVEL / CONTACT / UNDER_LOAD / STOPPING. PHASE 2 AND PHASE 4 ARE SEPARATED ON CADENCE RECOVERY, NOT ON CURRENT MAGNITUDE.",
+    "stall_debounce": "CADENCE x 3.0, CLAMPED 150-750MS; 750MS WHEN NO CADENCE IS ESTABLISHED",
+    "endpoint_window": "IMPLEMENTED. CLOSING USES contact_to_stop_close_ripples FROM THE OBSERVED PIN CONTACT; OPENING USES THE TRAVEL ESTIMATED FOR THE MOVE. LOWER BOUND ONLY."
   },
-  "populated_placement_projection": 118,
-  "populated_placement_schematic_count": 118,
+  "populated_placement_projection": 130,
   "second_source_dnp_placements": 0,
-  "copper_only_pads": 8,
+  "copper_only_pads": 12,
   "mechanical_items": 4,
   "open_sourcing_items": [],
   "current_sense_v_per_a": 10.0,
   "mechanical_placement": {
-    "candidate": "PENDING_REV3.2_PCB",
-    "status": "REV3.1_PLACEMENT_DOES_NOT_COVER_REV3.2_ANALOG_ECO",
-    "mounting_holes": {
-      "type": "M3_NPTH_3.2MM",
-      "centres_mm": [
-        [
-          4,
-          4
-        ],
-        [
-          86,
-          4
-        ],
-        [
-          4,
-          71
-        ],
-        [
-          86,
-          71
-        ]
-      ],
-      "rectangular_spacing_mm": {
-        "width": 82,
-        "height": 67
-      },
-      "minimum_pair_spacing_mm": 67
-    },
-    "connector_projection_mm": {
-      "usb_c": 1.0,
-      "rj9": 1.0,
-      "one_wire": 1.75,
-      "allowed_min": 0.0,
-      "allowed_max": 2.0
-    },
+    "superseded_by": "pcb.mounting_hole_positions_mm and pcb.outline_mm, which are read from the routed board by check_design.py",
+    "note": "This block previously carried an 82 x 67 mm M3 pattern at y = 4/71 on a 70 mm board and called the holes NPTH. Both were wrong. As built: 82 x 62 mm, plated, GND-bonded.",
     "rj9_pitch_mm": 12.25,
     "rj9_body_row_centered": true,
     "tallest_passive_mm": 1.45,
     "electrolytic_capacitors": 0
   },
   "pcb": {
-    "routing_candidate": "PENDING_REV3.2_PCB",
-    "routing_status": "REV3.1_ROUTING_DOES_NOT_COVER_REV3.2_ANALOG_ECO",
-    "footprints_total_including_dnp_and_mechanical": null,
-    "tracks": null,
-    "vias": null,
-    "minimum_track_width_mm": null,
+    "routing_candidate": "EASYEDA_PRO_pcb1_1",
+    "routing_status": "PLACED_AND_ROUTED",
+    "footprints_total_including_dnp_and_mechanical": 146,
+    "tracks": 976,
+    "vias": 350,
+    "minimum_track_width_mm": 0.254,
     "minimum_via_diameter_mm": null,
     "minimum_via_drill_mm": null,
-    "front_ground_zone": null,
-    "bottom_ground_zone": null,
-    "ground_stitching_vias": null,
+    "front_ground_zone": true,
+    "bottom_ground_zone": true,
+    "ground_stitching_vias": 241,
     "drc_violations": null,
     "unconnected_items": null,
     "layout_integrity": null,
     "physical_validation_complete": false,
-    "outline_rationale": "Width 100 mm is set by the all-south connector edge (99.35 mm with corner M3) and by the flat sub-100x100 fab price class. Height 70 mm gives 38% free-area fill; 68 mm still passes DRC, 80 mm gives 26%.",
+    "outline_rationale": "90 x 70 mm as built, inside the flat sub-100x100 fab price class. Six 4P4C jacks on the south edge at 12.25 mm pitch span 61.25 mm centre to centre; the two JST headers moved to the east edge, so the south edge is no longer the width constraint.",
     "connector_edge": "SOUTH_PLUS_USBC_WEST",
     "mounting_hole_positions_mm": [
       [
-        4.5,
-        4.5
+        4.0,
+        2.0
       ],
       [
-        94.85,
-        4.5
+        4.0,
+        66.0
       ],
       [
-        4.5,
-        65.5
+        86.0,
+        2.0
       ],
       [
-        94.85,
-        65.5
+        86.0,
+        66.0
       ]
     ],
-    "mounting_hole_note": "Corner holes require the ESP32 at the north centre and USB-C off the south edge; the inherited 82x67 rectangle does not fit.",
-    "south_edge_budget_mm": 99.35,
+    "mounting_hole_note": "Plated and GND-bonded, not the NPTH the pre-move contract described. A 6 mm annulus under an ISO14580 head means the enclosure screw contacts ground copper.",
     "mounting_hole_footprint": "MountingHole:MountingHole_3.2mm_M3_ISO14580_Pad",
     "mounting_rectangle_mm": {
-      "width": 90.35,
-      "height": 61.0
+      "width": 82.0,
+      "height": 64.0
     },
     "connector_projection_mm": {
       "rj9": 1.03,
@@ -139,12 +123,12 @@
       "width": 22.0,
       "depth": 7.0,
       "edge": "NORTH",
-      "centred_on": "U1"
+      "centred_on": "U6"
     },
     "antenna_cutout_rationale": "7 mm is the module's pad-free length at the antenna end (northmost pad edge 5.71 mm from origin vs 12.75 mm body half-length); 22 mm gives 2.0 mm either side of the 18 mm module (the cut was widened from the specified 21 mm during layout; the extra 0.5 mm per side is margin, not a defect). Replaces the stock 48x21 footprint keepout, which encodes Espressif's 15 mm housing clearance rather than a board copper rule.",
     "antenna_housing_clearance_mm": 15,
     "antenna_housing_clearance_note": "No metal within 15 mm of the antenna in any direction. Enclosure constraint, verified on the mechanical design, not on the PCB.",
-    "board_area_mm2": 6853,
+    "board_area_mm2": 6326.0,
     "antenna_board_rule": "GROUND_COPPER_AND_DENSE_STITCHING_UP_TO_THE_CUTOUT_EDGE",
     "antenna_board_rule_note": "Espressif requires sufficient ground copper and dense ground vias on the base board near the antenna. The 15 mm figure is a housing clearance and must NOT be applied as a copper keepout. Keep magnetics (SWPA4018S buck inductor) and the buck switch node away from the notch instead.",
     "block_placement_note": "Rewritten in rev3.2-H to as-built. The pre-H text still described the Rev3.1 arrangement, in which the analog block sat west; the rev3.2 pin reassignment moved ADC_CURRENT and ADC_TACHO to the module's east row (pads 38/39) and the block followed. Coordinates are from the routed layout, mm, origin south-west.",
@@ -155,7 +139,306 @@
       "buck_u3_l1": "NORTH_WEST - diagonally opposite the analog island, which is the separation the original rule was after. As built: buck (7.62, 60.58), L1 (12.06, 60.83), switch node 2.2 mm.",
       "decoder_u24": "SOUTH_CENTRE, in the gap between the driver VM-cap clusters - keeps the twelve outputs in a band beside the drivers instead of 540 mm crossing the board. As built (31.75, 29.46).",
       "one_wire_terminal": "WEST edge beside USB-C - ONEWIRE_MCU sits on the module west row (pad 12) so the run stays west. As built (3.10, 33.14)."
-    }
+    },
+    "easyeda_project": "EasyEdaPro/lune-v6-rev3.2.eprj",
+    "document": "pcb1_1",
+    "schematic_sheets": [
+      "analog",
+      "connectors",
+      "controller",
+      "motors",
+      "power"
+    ],
+    "outline_mm": {
+      "width": 90.0,
+      "height": 72.0
+    },
+    "via_drill_mm": 0.305,
+    "via_diameter_mm": 0.61,
+    "ground_stitching_vias_min": 200,
+    "minimum_copper_to_edge_mm": 0.3,
+    "measured_minimum_copper_to_edge_mm": 0.338,
+    "single_sided_assembly": true,
+    "kelvin_pair_max_mm": 3.0,
+    "measured_kelvin_pair_mm": 2.75,
+    "top_routing_segments": 887,
+    "bottom_routing_segments": 89,
+    "bottom_layer_is_mostly_intact_plane": true,
+    "mounting_hole_type": "M3_3.2MM_PLATED_6MM_ANNULUS_ON_GND",
+    "antenna_cutout_x_mm": [
+      33.0,
+      55.0
+    ],
+    "antenna_cutout_inner_corner_radius_mm": 1.0,
+    "antenna_keepout_conflict": "UNRESOLVED. validation-plan.md section 1 requires the antenna keepout to be copper-free on BOTH layers. The cutout itself is copper-free, but GND pour and stitching vias come to 0.64 mm of the cutout edge and roughly 2.7 mm of the module's 7 mm pad-free antenna length sits over solid ground copper, per antenna_board_rule below. The two documents contradict each other and no range measurement exists. Close it with a decision plus a measurement.",
+    "designator_exceptions": [
+      "RESET",
+      "BOOT"
+    ],
+    "designator_exception_rationale": "Both switches are labelled by function rather than numbered. Unique and space-free, so BOM/CPL matching is unaffected.",
+    "required_net_names": {
+      "$2N1603": "ONEWIRE_BUS"
+    },
+    "required_net_names_note": "One net still reaches the board without a label. The other six were named in the editor: USB_CC1, USB_CC2, USB_DP_IN, USB_DN_IN on the connector side of U27, and UART_TX / UART_RX on the module side of the console series resistors. Those names are now the contract's; USB_DP/USB_DM keep naming the MCU side of U27, so the pass-through stays visible as two nets per line.",
+    "header_pinouts": {
+      "display_connector": [
+        "GND",
+        "3V3_LOGIC",
+        "I2C_SCL",
+        "I2C_SDA"
+      ],
+      "uart_connector": [
+        "GND",
+        "3V3_LOGIC",
+        "UART_TX_DBG",
+        "UART_RX_DBG"
+      ]
+    },
+    "symbol_pinouts": {
+      "U1": {
+        "1": "OUT",
+        "2": "GND",
+        "3": "IN+",
+        "4": "IN-",
+        "5": "VS"
+      },
+      "U5": {
+        "1": "OUT",
+        "2": "V-",
+        "3": "IN+",
+        "4": "IN-",
+        "5": "V+"
+      },
+      "U3": {
+        "1": "1OUT",
+        "2": "1IN-",
+        "3": "1IN+",
+        "4": "GND",
+        "5": "2IN+",
+        "6": "2IN-",
+        "7": "2OUT",
+        "8": "VCC+"
+      },
+      "D3": {
+        "1": "A",
+        "2": "K"
+      }
+    },
+    "symbol_pinouts_rationale": "TLV9001 ships two pinouts (SBOS833R Table 6-1): DBV SOT-23 and T-DCK put OUT on pin 1, DCK SC70, DRL and U-DBV put IN+ there. Rev 3.2-A drew the wrong variant and ERC validated the wrong pins (design-review B6). The LED is here for the same reason: pin 1 is the anode in this library and the cathode in KiCad's, so the two schematics disagreed on paper while both boards were correct.",
+    "editor_owned_gates": [
+      "DRC to zero errors",
+      "zero unrouted nets",
+      "Gerber/BOM/CPL export committed to this folder"
+    ],
+    "declared_no_connect_pads": [
+      [
+        "J2",
+        "2"
+      ],
+      [
+        "J2",
+        "4"
+      ],
+      [
+        "J3",
+        "2"
+      ],
+      [
+        "J3",
+        "4"
+      ],
+      [
+        "J4",
+        "2"
+      ],
+      [
+        "J4",
+        "4"
+      ],
+      [
+        "J5",
+        "2"
+      ],
+      [
+        "J5",
+        "4"
+      ],
+      [
+        "J6",
+        "2"
+      ],
+      [
+        "J6",
+        "4"
+      ],
+      [
+        "J7",
+        "2"
+      ],
+      [
+        "J7",
+        "4"
+      ],
+      [
+        "U10",
+        "11"
+      ],
+      [
+        "U10",
+        "14"
+      ],
+      [
+        "U11",
+        "11"
+      ],
+      [
+        "U11",
+        "14"
+      ],
+      [
+        "U26",
+        "4"
+      ],
+      [
+        "U28",
+        "10"
+      ],
+      [
+        "U28",
+        "11"
+      ],
+      [
+        "U28",
+        "8"
+      ],
+      [
+        "U28",
+        "9"
+      ],
+      [
+        "U6",
+        "15"
+      ],
+      [
+        "U6",
+        "16"
+      ],
+      [
+        "U6",
+        "17"
+      ],
+      [
+        "U6",
+        "18"
+      ],
+      [
+        "U6",
+        "25"
+      ],
+      [
+        "U6",
+        "26"
+      ],
+      [
+        "U6",
+        "28"
+      ],
+      [
+        "U6",
+        "29"
+      ],
+      [
+        "U6",
+        "30"
+      ],
+      [
+        "U6",
+        "32"
+      ],
+      [
+        "U6",
+        "33"
+      ],
+      [
+        "U6",
+        "34"
+      ],
+      [
+        "U6",
+        "35"
+      ],
+      [
+        "U6",
+        "5"
+      ],
+      [
+        "U6",
+        "6"
+      ],
+      [
+        "U6",
+        "7"
+      ],
+      [
+        "U6",
+        "8"
+      ],
+      [
+        "U9",
+        "11"
+      ],
+      [
+        "U9",
+        "14"
+      ],
+      [
+        "USBC1",
+        "A8"
+      ],
+      [
+        "USBC1",
+        "B8"
+      ]
+    ],
+    "declared_no_connect_pads_rationale": {
+      "J2-J7 pins 2,4": "The 4P4C jacks use pins 1 and 3; see motor_connector.",
+      "U9-U11 pins 11,14": "DRV8411 integrates its charge-pump and regulator capacitors, so VCP and VINT are NC and must stay open (driver.pins_11_and_14_must_stay_open).",
+      "U26 pin 4": "AP2112K SOT-25 pin 4 is NC.",
+      "U28 pins 8,9,10,11": "74HC4514 Q3/Q1/Q2/Q0 - the four unreachable addresses, left unconnected so addresses 0-3 cannot energize a bridge (decoder.unreachable_addresses).",
+      "U6 pads 28,29,30": "Consumed by the N8R8 octal PSRAM; must not be used.",
+      "U6 other pads": "Unused module GPIOs and strapping pins. See adc1_reserved_for_analog for why the ADC1 channels among them are held in reserve.",
+      "USBC1 A8,B8": "SBU1/SBU2, unused on a device-only Type-C sink."
+    },
+    "as_built_metrics_are_informational": "tracks, vias, ground_stitching_vias and the segment counts are a snapshot of the routed board, not gated values. check_design.py asserts the bounded ones: minimum_track_width_mm, via_drill_mm, via_diameter_mm, ground_stitching_vias_min and minimum_copper_to_edge_mm.",
+    "designator_convention": {
+      "rule": "SEMANTIC_NAMES_ALLOWED_NO_SERIAL_NUMBER_REQUIRED",
+      "hard_constraints": [
+        "no whitespace",
+        "no comma or semicolon",
+        "letters, digits, hyphen and underscore only",
+        "unique"
+      ],
+      "rationale": "JLCPCB matches BOM to CPL on the designator string and a BOM line is a comma-separated designator list, so whitespace and commas are fabrication-breaking. Nothing else about the string is. A test point named TP-VBUS_PROTECTED is more use on the silkscreen and in a test procedure than a serial number, so semantic names are the convention for test pads.",
+      "test_pads": "Named for the net they expose. TP1/TP2/TP4/TP5 are numbered survivors of the KiCad scheme and are not being renamed; TP3 was the FAULT_N_RAW pad, which does not exist on the as-built board. The two conventions coexist deliberately - nothing in the documentation refers to a test pad by designator, only by net (see commutation_tacho.test_points).",
+      "exceptions": [
+        "RESET",
+        "BOOT"
+      ],
+      "superseded_rule": "An earlier version of check_design.py required every designator to end in a digit. That was a heuristic for catching an unfinished bare prefix, not a fabrication requirement, and it is replaced by the four hard constraints above plus a bare-prefix check."
+    },
+    "outline_bounds_mm": {
+      "x": [
+        0.0,
+        90.0
+      ],
+      "y": [
+        -2.0,
+        70.0
+      ]
+    },
+    "outline_origin_note": "The origin is NOT the south-west corner. The south edge was extended outward in rev3.2 layout and y_min went to -2.0 while every other feature kept its coordinate. Anything deriving an edge distance must use outline_bounds_mm, not width/height.",
+    "mounting_hole_inset_mm": 4.0,
+    "south_edge_extension_note": "The south edge grew 2.0 mm during layout and the two southern mounting holes followed, keeping the 4.0 mm inset. Confirm against the enclosure and against mechanical_placement.connector_projection_mm - the 4P4C jack faces are dimensioned from the south edge, so their projection changed with it."
   },
   "driver": {
     "primary_part": "DRV8411PWPR",
@@ -178,7 +461,7 @@
       "TC78H660FNG": "Toshiba dual bridge, VM 2.5-16 V, 0.48 ohm, TSSOP16, with an error-flag output. Uses sense-resistor-less internal current detection, so the ceiling is a fixed ~2 A overcurrent protection with no programmable trip and no specified threshold - it removes the 1.5 ohm retune path and the specified-ceiling argument. VM floor is also 2.5 V against DRV8411's 1.65 V."
     },
     "selection_conclusion": "DRV8411 retained. It is simultaneously the cheapest, best-stocked and most capable part that meets the constraint set, so the original cost-down framing was inverted. Driver cost is 3.54 USD of a roughly 43 USD per-board budget, so chasing a cheaper bridge is not where prototype cost lives.",
-    "drv8411_populated_placements": 118,
+    "drv8411_populated_placements": 130,
     "devices": 3,
     "bridges_per_device": 2,
     "bridge_current_limit_ohm": 1.0,
@@ -353,9 +636,9 @@
     "analog_monitor_series_ohm": 1000,
     "analog_monitor_purpose": "QUALIFICATION_WAVEFORM_CAPTURE_AND_DIGITAL_CROSS_CHECK_ON_COMM_TACHO_N",
     "test_points": [
-      "TP5",
-      "TP6",
-      "TP7"
+      "COMM_TACHO_N",
+      "TACHO_AMP",
+      "CURRENT_RAW"
     ],
     "qualification_required": [
       "commutation_spectrum_and_amplitude_per_supported_actuator",
@@ -373,7 +656,8 @@
     "enhancement_rationale": "Commutation counting is resolution above what the application needs - a heating valve wants 'roughly 40 percent open', not micron precision. The load-bearing pair is the DC current step (140-190 mV running against 230-500 mV stalled, a 50 LSB floor at 12 bit) plus the firmware runtime limit. Nothing may be built that assumes the tacho is reliable.",
     "degradation_path": "If qualified commutation proves unreliable in the field, firmware degrades to stall-and-time: find both end stops from the DC current step, then position by elapsed time calibrated against the measured stroke. That needs NO hardware change - ADC_CURRENT on GPIO2 already carries it - which is what makes the sophisticated path safe to depend on provisionally.",
     "cannot_distinguish": "Rotation from brush chatter or rotor buzz against a hard stop. Both produce in-band current ripple and are indistinguishable in the current domain. The chopper (engages only at 178-232 mA against a 23-50 mA measured stall), the buck at 1.5 MHz and supply ripple at 100 Hz through the LDO's PSRR are all excluded quantitatively; mechanical chatter is not. A false-edge stall therefore reads as 'elevated current, still moving' - a heavy move continuing - and is caught by the runtime limit, not by the endpoint classifier.",
-    "only_discriminator_would_be": "Back-EMF measured during a coast interruption: a turning rotor generates it, a stalled one does not. Rev3.1 carried that frontend and it was removed for ten parts, an ADC GPIO and the coast interruption. See architecture.md - the removal note claimed the ripple gives the same evidence less directly, which is not true on this one point."
+    "only_discriminator_would_be": "Back-EMF measured during a coast interruption: a turning rotor generates it, a stalled one does not. Rev3.1 carried that frontend and it was removed for ten parts, an ADC GPIO and the coast interruption. See architecture.md - the removal note claimed the ripple gives the same evidence less directly, which is not true on this one point.",
+    "test_points_are_nets_not_designators": true
   },
   "actuator_overrun_hazard": {
     "supersedes": "hardware_runtime_cutoff_74HC4060_ECO_rev3.2-B",
@@ -428,7 +712,12 @@
       "A_SYSTEM_WITHOUT_SUPPLY_TEMPERATURE_LIMITING",
       "AN_ACTUATOR_WHOSE_HEAD_CARRIES_THE_HYDRAULIC_SEAL"
     ],
-    "open_measurement": "STALL_SURVIVAL_TIME_OF_THE_SUPPORTED_ACTUATOR_GEAR_TRAIN"
+    "open_measurement": "STALL_SURVIVAL_TIME_OF_THE_SUPPORTED_ACTUATOR_GEAR_TRAIN",
+    "removed_devices": [
+      "74HC4060",
+      "4060"
+    ],
+    "removed_parts_note": "The old designator list (U36, R27, R28, C25, Q2, C24) is not usable as a guard on this side: the EasyEDA scheme reuses R27, R28 and C25 for unrelated parts. The guard is by device instead, which is what it should always have been."
   },
   "fault_latch": {
     "part": "74LVC1G74DP,125",
@@ -444,7 +733,15 @@
     "arm_clock_pulldown_ohm": 100000,
     "power_on_state": "DISARMED",
     "firmware_cannot_clear_a_fault": true,
-    "raw_fault_has_no_gpio": "LATCH_STATE_ONLY_DISTINGUISHES_ARMED_FROM_NOT_ARMED"
+    "raw_fault_has_no_gpio": "LATCH_STATE_ONLY_DISTINGUISHES_ARMED_FROM_NOT_ARMED",
+    "fault_source_refs": [
+      "U3",
+      "U9",
+      "U10",
+      "U11",
+      "U24"
+    ],
+    "fault_consumer_ref": "U2"
   },
   "usb_input": {
     "part": "TPS2553DBVR-1",
@@ -453,11 +750,61 @@
     "latch_off_consequence": "AN_INPUT_FAULT_REMOVES_POWER_FROM_THE_ESP32_TOO_SO_THE_FAILURE_IS_SILENT_AND_NEEDS_A_PHYSICAL_REPLUG",
     "ilim_ohm": 23700,
     "current_limit_window_a": [
-      1.0,
+      1.012,
       1.172
     ],
     "downstream_capacitance_uf": 84,
-    "data_series_resistors": "REMOVED_ESP32S3_NATIVE_USB_DRIVES_D_LINES_DIRECTLY"
+    "data_series_resistors": "REMOVED_ESP32S3_NATIVE_USB_DRIVES_D_LINES_DIRECTLY",
+    "ilim_ref": "R34",
+    "ilim_tolerance_percent": 1.0,
+    "ilim_datasheet_range_kohm": [
+      15,
+      232
+    ],
+    "ilim_equations": {
+      "source": "TI SLVS841F (TPS2552/TPS2553/-1), Nov 2008 rev Aug 2016, section 9.5.1 equation (1)",
+      "units": "I_OS in mA, R_ILIM in kOhm",
+      "max": {
+        "k": 22980,
+        "exponent": 0.94
+      },
+      "nom": {
+        "k": 23950,
+        "exponent": 0.977
+      },
+      "min": {
+        "k": 25230,
+        "exponent": 1.016
+      },
+      "note": "The equations do not account for resistor tolerance; the contracted window below is at nominal R. Including +-1% on R34 widens it to 1002-1184 mA."
+    },
+    "current_limit_window_with_resistor_tolerance_a": [
+      1.002,
+      1.184
+    ],
+    "ilim_sourcing": {
+      "interchangeable_parts": [
+        {
+          "lcsc": "C165751",
+          "mpn": "RC0603FR-0723K7L",
+          "manufacturer": "Yageo",
+          "footprint": "R0603"
+        },
+        {
+          "lcsc": "C22912",
+          "mpn": "0603WAF2372T5E",
+          "manufacturer": "UNI-ROYAL",
+          "footprint": "R0603"
+        }
+      ],
+      "equivalence_basis": "23.7 kOhm, +-1%, 0603, 100 mW, +-100 ppm/degC on both. Identical on every parameter the current-limit equation depends on, so the 1012-1172 mA window is unchanged.",
+      "both_are_extended_parts": true,
+      "warning": "R34 is not a generic passive. It programs the TPS2553-1 current limit, and the part is LATCH-OFF: a trip removes power from the ESP32 with no status LED and no API, recoverable only by unplugging USB. A substitution that changes the VALUE changes that trip point. check_design.py now asserts R34's value against ilim_ohm and re-derives the window from the datasheet equations, so a sourcing swap that moves the value fails the gate.",
+      "footprint_must_not_change": "R0603",
+      "footprint_rationale": "A supplier swap changes the BOM only, and leaves the Gerbers, drill and CPL untouched - but ONLY if the footprint is unchanged. Swapping by picking a different library device rather than editing the supplier part brings that device's own footprint with it, and a different pad geometry changes copper, paste and mask. R0603 is shared here by ten MPNs across Yageo, UNI-ROYAL and Vishay, so this swap moved nothing; check_design.py asserts it so a future one cannot move something quietly.",
+      "fitted": "C22912"
+    },
+    "auto_retry_option": "SLVS841F section 10.2.2.2 documents auto-retry built from the latching part: feed FAULT back to EN through R_FAULT with C_RETRY to GND, so a trip self-clears after R_FAULT x C_RETRY. On this board EN is tied to VBUS_RAW (permanently enabled), so taking this option is a schematic change, not a part change. It is the third answer to the deferred latch-off decision, alongside the auto-retry part variant and keeping the logic rail alive upstream."
   },
   "display": {
     "default_population": false,
@@ -472,7 +819,7 @@
     "on_board_bus_pullups": false
   },
   "one_wire": {
-    "connector": "J20",
+    "connector": "J1",
     "connector_signals": [
       "+3V3_EXT",
       "ONEWIRE_BUS",
@@ -510,10 +857,10 @@
     "USB_DP": 20,
     "COMM_TACHO_N": 38,
     "ONEWIRE_MCU": 8,
-    "UART_TX_MCU": 43,
-    "UART_RX_MCU": 44,
     "STATUS_LED_N": 4,
-    "MOTOR_ADDR3": 13
+    "MOTOR_ADDR3": 13,
+    "UART_TX": 43,
+    "UART_RX": 44
   },
   "forbidden_motor_control_gpio": [
     0,
@@ -540,18 +887,19 @@
     "live_jlcpcb_quote_required_before_release": true
   },
   "motor_esd": {
-    "part": "TPD1E10B06DYAR",
-    "lcsc_part": "C3712135",
-    "package": "SOD-523",
+    "part": "TPD1E10B06DPYR",
+    "lcsc_part": "C48260",
+    "package": "X1SON-2 (1.0 x 0.6 mm)",
     "topology": "GND_REFERENCED_SINGLE_LINE_ONE_PER_MOTOR_WIRE",
     "count": 12,
     "replaces": "USBLC6-4SC6_x3_RAIL_CLAMP_WITH_VBUS_ON_3V3_MOTOR",
     "rejection_rationale": "A rail-clamp array steers a positive strike through a steering diode into its VBUS pin before ground. VBUS was +3V3_MOTOR, which carries DRV8411 VM and INA180 IN-, so the fast edge landed on the rail the current sense and commutation tacho depend on. ST's own 8 kV worked example gives VCL+ = +31.2 V against a DRV8411 output rated -V_SD..VM+V_SD and a 2 V/us VM ramp limit.",
-    "clamp_v_at_1a": 10,
+    "clamp_v_at_1a": 14,
     "dynamic_resistance_ohm": 0.4,
     "iec_61000_4_2_contact_kv": 30,
     "bidirectional_cannot_be_reversed": true,
-    "placement_rule": "TVS_AT_CONNECTOR_PIN_OWN_GND_VIA_TRACE_LENGTH_IS_THE_CLAMP"
+    "placement_rule": "TVS_AT_CONNECTOR_PIN_OWN_GND_VIA_TRACE_LENGTH_IS_THE_CLAMP",
+    "package_changed_from": "SOD-523 (TPD1E10B06DYAR) in the KiCad schematic; the change is as-built on the EasyEDA side and its ECO is not documented. Same TI family and clamp behaviour, but a 0402-footprint package is harder to inspect after assembly."
   },
   "module_variant_rationale": "N8R8 chosen over N8R2 on price: $3.63 vs $3.83 at 100+, $3.41 vs $3.57 at 1300+ (LCSC C2913201 / C2913204). The 8 MB octal PSRAM is surplus - measured use is ~75 kB plus the NimBLE host - and octal PSRAM consumes IO33..IO37, so module pads 28/29/30 are unavailable. Neither cost mattered for this design: the pin budget is not tight and 2 MB was never the constraint.",
   "module_temperature_rating": {
@@ -564,13 +912,16 @@
   },
   "uart_console_series_resistors": {
     "eco": "rev3.2-H",
-    "refs": ["R53", "R54"],
+    "refs": [
+      "R39",
+      "R40"
+    ],
     "value_ohm": 1000,
     "lcsc": "C22548",
     "placement": "MODULE_END_SO_THE_WHOLE_RUN_IS_DAMPED",
-    "nets": "U1.37 UART_TX_MCU -> R53 -> UART_TX_DBG at J22; U1.36 UART_RX_MCU -> R54 -> UART_RX_DBG at J22",
+    "nets": "U6.37 UART_TX -> R39 -> UART_TX_DBG at J9; U6.36 UART_RX -> R40 -> UART_RX_DBG at J9",
     "rationale": "J22 sits 34 mm east of the module and the run crosses the analog island's south flank. TXD0 is a full-speed CMOS output with ~2 ns edges; 1k against the ~40 pF the run presents stretches that to ~90 ns, which is 1 percent of a bit at 115200 and removes the harmonic content the ADC and tacho nodes would otherwise see. The RXD0 resistor is pin protection rather than edge rate, since that edge is driven by whatever adapter is plugged in. 1k is already a BOM line six times over, so no part number is added.",
-    "consequence": "UART_TX_DBG and UART_RX_DBG now name the header side. The gpio map tracks the module side as UART_TX_MCU and UART_RX_MCU."
+    "consequence": "UART_TX_DBG and UART_RX_DBG name the header side; the bare UART_TX and UART_RX name the module side, which is what the gpio map tracks."
   },
   "adc1_reserved_for_analog": true,
   "adc1_reserved_rationale": "ADC1 is GPIO1-10 and is the only ADC usable while WiFi runs; ADC2 (GPIO11-20) is not. ADC_TACHO (GPIO1) and ADC_CURRENT (GPIO2) hold it, and every digital function was moved off: MOTOR_ENABLE 10 -> 15, I2C_SDA 8 -> 21, I2C_SCL 9 -> 47. One channel is spent back on purpose - see adc1_digital_exceptions - leaving five spare against two analog and two exceptions. check_design asserts the rule and prints the exceptions on every run, so a future pin move still cannot quietly eat a channel.",
@@ -582,18 +933,285 @@
     "pull_up_ohm": 4700,
     "pull_up_rail": "+3V3_LOGIC",
     "pull_up_refs": [
-      "R16",
-      "R17"
+      "R37",
+      "R38"
     ],
     "pull_ups_are_mandatory": true,
     "pull_up_rationale": "Not only for the bus to function: without them SDA and SCL float on the ESP32 inputs whenever no display is fitted, which is the failure R10-R13 exist to prevent at the decoder. A display module carrying its own pull-ups gives 2k35 effective - inside spec, and a 100 ns rise into 50 pF against the 300 ns that 400 kHz allows.",
-    "connector": "J21"
+    "connector": "J8"
   },
   "unpopulated_connectors": {
-    "J21": "DISPLAY_I2C: GND, +3V3_LOGIC, SDA, SCL",
-    "J22": "UART_CONSOLE: GND, +3V3_LOGIC, TXD0, RXD0",
-    "footprint": "JST_XH_B4B-XH-A_1x04_P2.50mm_Vertical",
+    "J8": "DISPLAY_I2C: GND, 3V3_LOGIC, I2C_SCL, I2C_SDA",
+    "J9": "UART_CONSOLE: GND, 3V3_LOGIC, UART_TX_DBG, UART_RX_DBG",
+    "footprint": "CONN-TH_B4B-XH-A-LF-SN",
     "assembly": "COPPER_ONLY",
     "series_rationale": "JST XH, already in stock, so nothing new is bought. Note it is 2.50 mm pitch, not the 2.54 it is often sold as. Through-hole only: eight drills total, all at x 77-91, over 4 mm east of the analog island where the pour is reference plane rather than a return path. Vertical entry suits a lid-mounted display, and the B4B body is 13.40 x 6.75 mm - smaller than the PH SMD part it replaces."
+  },
+  "source_of_truth": {
+    "tool": "EasyEDA Pro",
+    "project": "EasyEdaPro/lune-v6-rev3.2.eprj",
+    "pcb_document": "pcb1_1",
+    "kicad_removed": true,
+    "rationale": "Rev 3.2 was authored in KiCad through ECO rev3.2-B and every ECO from rev3.2-C onward was done in EasyEDA Pro, where the board is placed and routed. Keeping both live produced a schematic/PCB divergence that no gate could see, because check_design.py and netlist-golden.json read the KiCad side while the EasyEDA side is what becomes Gerbers. The KiCad sheets, generator, exported netlist and ERC report were deleted; they remain in git history.",
+    "designators_were_renumbered": true,
+    "designator_history_is_for": "reading documentation and git history written before the move"
+  },
+  "designator_history": {
+    "C1": "C31",
+    "C10": "C35",
+    "C11": "C2",
+    "C12": "C16",
+    "C13": "C14",
+    "C14": "C5",
+    "C15": "C15",
+    "C16": "C17",
+    "C17": "C7",
+    "C18": "C1",
+    "C19": "C6",
+    "C2": "C32",
+    "C20": "C3",
+    "C21": "C33",
+    "C22": "C18",
+    "C23": "C4",
+    "C3": "C11",
+    "C30": "C22",
+    "C31": "C21",
+    "C32": "C26",
+    "C33": "C25",
+    "C34": "C30",
+    "C35": "C29",
+    "C4": "C34",
+    "C43": "C9",
+    "C44": "C8",
+    "C45": "C36",
+    "C47": "C10",
+    "C5": "C37",
+    "C6": "C38",
+    "C7": "C39",
+    "C8": "C40",
+    "C9": "C41",
+    "D40": "U12",
+    "D41": "U13",
+    "D42": "U14",
+    "D43": "U15",
+    "D44": "U16",
+    "D45": "U17",
+    "D46": "U18",
+    "D47": "U19",
+    "D48": "U20",
+    "D49": "U21",
+    "D5": "D1",
+    "D50": "U22",
+    "D51": "U23",
+    "D6": "D3",
+    "D7": "D2",
+    "FB1": "L2",
+    "J1": "USBC1",
+    "J11": "J2",
+    "J12": "J3",
+    "J13": "J4",
+    "J14": "J5",
+    "J15": "J6",
+    "J16": "J7",
+    "J20": "J1",
+    "L1": "L1",
+    "Q1": "Q1",
+    "R1": "R33",
+    "R10": "R26",
+    "R104": "R35",
+    "R105": "R36",
+    "R11": "R27",
+    "R12": "R28",
+    "R13": "R29",
+    "R14": "R30",
+    "R15": "R31",
+    "R16": "R38",
+    "R17": "R37",
+    "R2": "R32",
+    "R20": "R1",
+    "R21": "R6",
+    "R22": "R7",
+    "R23": "R3",
+    "R24": "R4",
+    "R25": "R5",
+    "R40": "R20",
+    "R41": "R21",
+    "R42": "R23",
+    "R43": "R11",
+    "R44": "R12",
+    "R45": "R9",
+    "R46": "R10",
+    "R47": "R8",
+    "R48": "R16",
+    "R49": "R14",
+    "R5": "R34",
+    "R50": "R15",
+    "R51": "R13",
+    "R52": "R22",
+    "R53": "R39",
+    "R54": "R40",
+    "R8": "R24",
+    "R9": "R25",
+    "RSA1": "RSA1",
+    "RSA2": "RSA2",
+    "RSA3": "RSA3",
+    "RSB1": "RSB1",
+    "RSB2": "RSB2",
+    "RSB3": "RSB3",
+    "RSH1": "R2",
+    "SW1": "RESET",
+    "SW2": "BOOT",
+    "U1": "U6",
+    "U2": "U24",
+    "U20": "U9",
+    "U21": "U10",
+    "U22": "U11",
+    "U24": "U28",
+    "U25": "U7",
+    "U3": "U25",
+    "U32": "U1",
+    "U34": "U3",
+    "U35": "U2",
+    "U37": "U5",
+    "U4": "U26",
+    "U5": "U27"
+  },
+  "designators": {
+    "module": "U6",
+    "drivers": [
+      "U9",
+      "U10",
+      "U11"
+    ],
+    "decoder": "U28",
+    "fault_latch": "U2",
+    "permit_nand": "U7",
+    "arm_clamp": "Q1",
+    "shunt_amplifier": "U1",
+    "tacho_amplifier": "U5",
+    "comparator": "U3",
+    "rail_shunt": "R2",
+    "bridge_sense_resistors": [
+      "RSA1",
+      "RSA2",
+      "RSA3",
+      "RSB1",
+      "RSB2",
+      "RSB3"
+    ],
+    "usb_current_switch": "U24",
+    "logic_buck": "U25",
+    "motor_ldo": "U26",
+    "usb_tvs": "U27",
+    "usb_connector": "USBC1",
+    "onewire_connector": "J1",
+    "motor_connectors": [
+      "J2",
+      "J3",
+      "J4",
+      "J5",
+      "J6",
+      "J7"
+    ],
+    "motor_esd": [
+      "U12",
+      "U13",
+      "U14",
+      "U15",
+      "U16",
+      "U17",
+      "U18",
+      "U19",
+      "U20",
+      "U21",
+      "U22",
+      "U23"
+    ],
+    "display_connector": "J8",
+    "uart_connector": "J9",
+    "status_led": "D3",
+    "reset_switch": "RESET",
+    "boot_switch": "BOOT",
+    "test_point_device": "Test-Point"
+  },
+  "populated_placement_board_count": 130,
+  "motor_output_ferrites": {
+    "part": "GZ1608D601TF",
+    "lcsc_part": "C1002",
+    "package": "0603",
+    "impedance_at_100mhz_ohm": 600,
+    "dc_resistance_ohm": 0.45,
+    "saturation_current_ma": 200,
+    "count": 12,
+    "refs": [
+      "L3",
+      "L4",
+      "L5",
+      "L6",
+      "L7",
+      "L8",
+      "L9",
+      "L10",
+      "L11",
+      "L12",
+      "L13",
+      "L14"
+    ],
+    "rail_filter_refs": [
+      "L2"
+    ],
+    "topology": "ONE_BEAD_PER_MOTOR_TERMINAL_INBOARD_OF_THE_TVS",
+    "max_loop_drop_mv": 50,
+    "origin": "PRESENT_ON_THE_BOARD_FROM_THE_EASYEDA_SIDE_ONLY",
+    "origin_note": "These twelve beads do not exist in the KiCad schematic the Rev 3.2 design review examined, and were not recorded in this contract until the source of truth moved. They are the entire 118 -> 130 placement delta. The ECO that added them is not documented.",
+    "open_decision": "The 200 mA rating is BELOW the 232.3 mA worst-case bridge ceiling, so on a wiring fault the bridge regulates above the rating of a series part. Either raise the bead rating, lower the xISEN ceiling (the 1.5 ohm retune option gives 118.8-154.9 mA and clears it), or record a derating decision with the fault duration bounded.",
+    "loop_cost_note": "2 x 450 mOhm adds 0.9 ohm to a motor loop that already carries 0.5 ohm shunt, 1.0 ohm xISEN and ~0.4 ohm RDS(on). That is 8-17 mV at the running current and 45 mV at the 50 mA endstop peak. It does not move the bridge trip point - the sense resistor is in the bridge's own low-side return, so regulation is on current - and it slightly reduces the current a dead short would draw.",
+    "package_power_mw": 100,
+    "operating_margin": 1.5,
+    "fault_overcurrent_ratio_max": 1.25,
+    "energised_beads_at_once": 2,
+    "energised_beads_rationale": "Hardware one-hot selection means exactly one channel is ever driven, so only two beads carry current at a time. There is no aggregate self-heating across the twelve.",
+    "derating_decision": "KEEP_200MA_RATING_FAULT_ONLY_EXCURSION_ACCEPTED",
+    "derating_rationale": "The operating envelope is 14-19 mA running, 23-50 mA at a hard mechanical stop and 30-40 mA opening inrush - 7-25% of the rating - with the firmware hard cap at 100 mA, i.e. 2x margin. Exceeding 200 mA requires a wiring fault that drives a bridge into current regulation at 178-232 mA, which is at most 1.16x the rating. A ferrite's rated current is a thermal figure (a stated temperature rise), not a breakdown limit, and one bead dissipates 24 mW at 232 mA against the 100 mW the 0603 package carries as a resistor - so the excursion is a temperature rise, not a failure. It is also bounded in time by the 40-45 s firmware runtime limit, and its only consequence is loss of HF impedance, i.e. degraded EMI filtering during a wiring fault, which nothing safety-bearing or functional depends on. A part change would buy nothing.",
+    "derating_open_items": [
+      "Confirm the 200 mA figure and its temperature-rise basis against the Sunlord datasheet; the value here is from the EasyEDA library attribute.",
+      "If the xISEN retune to 1.5 ohm happens for its own reasons (driver.production_retune_option_ohm, window 118.8-154.9 mA), the ceiling drops below the bead rating and this decision becomes moot. Do not pre-empt it.",
+      "The measurement that actually matters is not the bead but the actuator voltage in validation-plan section 3: 0.9 ohm of added loop resistance sits in the loop the endstop current signature is measured through."
+    ]
+  },
+  "motor_connector": {
+    "part": "5301-4P4C",
+    "lcsc_part": "C3097715",
+    "count": 6,
+    "pitch_mm": 12.25,
+    "centre_span_mm": 61.25,
+    "terminal_a_pin": 1,
+    "terminal_b_pin": 3,
+    "unused_pins": [
+      2,
+      4
+    ],
+    "changed_from": "PINS_2_AND_3_IN_THE_KICAD_SCHEMATIC",
+    "cable_must_be_straight_through": true,
+    "cable_rationale": "Standard 4P4C handset cords are reversing (1<->4, 2<->3). On the centre pair a reversing cord only swaps polarity, which a bidirectional actuator tolerates. On pins 1 and 3 the conductors land on pins 4 and 2 instead, both of which are unconnected, so the actuator receives nothing. Cables must therefore be crimped straight-through, or the pinout must move back to pins 2 and 3.",
+    "open_decision": "Confirm the pinout against the cables that will actually be built."
+  },
+  "gpio_untracked_nets": [
+    "BOOT_N"
+  ],
+  "gpio_untracked_nets_rationale": "BOOT_N is the strapping pin on GPIO0 driven by the BOOT switch. It is not a design signal, so it is not in the gpio map, but it does land on a module GPIO pad and the stray-signal check has to be told that is intended.",
+  "copper_only_devices": [
+    "Test-Point"
+  ],
+  "copper_only_refs": [
+    "J8",
+    "J9"
+  ],
+  "copper_only_classification_note": "Classified by library device plus an explicit ref list, never by a designator list: test-point designators get renamed and a list turns every rename into a false failure on the placement count, sourcing and BOM checks at once.",
+  "copper_only_bom_exclusion": {
+    "mechanism": "PER_INSTANCE_SCHEMATIC_OVERRIDE_NOT_THE_LIBRARY_DEVICE",
+    "note": "The 'Add into BOM = no' flag is set per schematic instance, on each of the ten test points and both JST headers. The shared library devices ('Test-Point' and 'B4B-XH-A(LF)(SN)') still read 'yes', which is correct - the device is generic and its BOM status belongs to the placement.",
+    "consequence": "A NEW test point added later inherits 'yes' from the device and needs its own override. check_design.py reads the instance override with the device attribute as fallback, so a missing override fails the gate rather than silently shipping an orderable line.",
+    "why_it_is_recorded": "Reading only the device attribute reports all twelve as BOM-included when the schematic excludes them individually - the exact opposite of the truth. This gate got that wrong once."
   }
 }

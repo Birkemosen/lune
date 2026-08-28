@@ -1,5 +1,8 @@
 # Rev 2.1 review addendum for the Lean target
 
+> **Historical record**, written against the Rev 3.1/KiCad designator scheme. See
+> `design-contract.json` -> `designator_history` for the as-built names.
+
 This addendum supersedes the channel-count and driver recommendation in
 `../lune-v6-rev3.0/rev2-review.md`. The electrical findings in that review
 remain valid; the product constraints are now explicitly six channels, two
