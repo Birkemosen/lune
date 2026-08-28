@@ -1,8 +1,59 @@
 # Endstop Detection Algorithms
 
-## Hardware Context
+## The mechanics being detected
 
-Lune V6 uses DRV8215 H-bridge drivers with the built-in IPROPI current mirror
+Closing a manifold valve is four mechanically distinct phases, and **phases 2 and 4
+look nearly identical in the current domain** — both are a rise under load. Separating
+them is the whole problem:
+
+| Phase | What is happening | Current | Rotation |
+|---|---|---|---|
+| 1 Free travel | The actuator plunger has not reached the valve pin | flat, ~14 mA | steady |
+| 2 **Pin contact** | An initial resistance to overcome, **after which the resistance falls again** | steps up ~5 mA, then partly back | slows, then **recovers** |
+| 3 Pressure | Pressing the pin down against the valve spring | elevated, slowly rising | slowly stretching |
+| 4 **Hard stop** | The pin cannot be pressed further | sharp rise, 33–50 mA | stops and **does not recover** |
+
+Opening mirrors it, **with no pressure phase**: free travel back toward the housing,
+then the motor's own gear train bottoming out because the plunger cannot be drawn any
+further into the housing.
+
+Two consequences drive everything below.
+
+**Missing phase 4 while closing is pop-off.** The stop is rigid and the motor keeps
+pressing, so the actuator socket pops off the pin. It is a high-current, abrupt stop —
+easy to see, expensive to miss, and every millisecond of latency is force into it.
+
+**The opening stop is a smaller resistance than pop-off.** The gear train bottoming out
+is gentle: 23–27 mA against 14–15 mA running, where closing gives 33–50 mA against
+19 mA. Current magnitude barely separates it from normal travel. Overrunning it strips
+the gear train over tens of seconds, which is the direction the design contract names
+as the damaging one (`actuator_overrun_hazard.damaging_direction: OPENING_ONLY`).
+
+**Rotation is the discriminator, and it is magnitude-independent.** At pin contact the
+motor slows and picks its speed back up; at either physical stop it slows and does not.
+That test works equally well on the gentle opening stop where the current hardly moves,
+which is exactly where the current-domain tests are weakest.
+
+## Hardware generations
+
+The detection paths are shared; what differs is where the signals come from and whether
+the drive can be modulated at all.
+
+| | Rev 3.0 / 3.1 (DRV8215) | Rev 3.1 Lean | **Rev 3.2** |
+|---|---|---|---|
+| Current | IPROPI current mirror, DMA @ 15 kHz | IPROPI, oneshot | Shunt → INA180A1 @ 10 V/A, **DMA @ 10 kHz** |
+| Rotation | current-ripple zero crossings | BEMF differential across a coast | **`COMM_TACHO_N` counted by PCNT** |
+| Cross-check | — | — | **`ADC_TACHO` in the same DMA stream** |
+| Drive | boost 350 ms → 70 % hold, soft-approach | same | **continuous, no duty control** |
+| Stall debounce | fixed 750 ms | fixed 750 ms | **scaled to observed cadence, ~150 ms** |
+| Timing anchors | `pwm_boost_ms` | `pwm_boost_ms` | **derived from the tacho contract** |
+
+Everything in the *Detection Paths*, *Pin Engagement* and *Calibration* sections below
+describes the shared algorithm; the **Rev 3.2** section states where it differs.
+
+## Hardware Context (Rev 3.0 / 3.1)
+
+Lune V6 rev3.0/3.1 uses DRV8215 H-bridge drivers with the built-in IPROPI current-mirror
 output as the **only analog feedback signal**. All 6 IPROPI outputs are wire-ORed to a
 single 5.1 kΩ sense resistor read by the ESP32-S3 ADC (GPIO7). Only one motor runs at
 a time (firmware invariant), so the active motor's current appears cleanly on the bus.
@@ -23,6 +74,11 @@ Key implications of the single-signal design:
   5-tick PWM debounce) works, but is noisy.
 - **No independent stall signal**: LV6 cannot cleanly separate high current and ripple
   cessation, since both come from IPROPI.
+
+> The current figures throughout this document were measured on Rev 3.1 under the
+> 70 % hold duty. Rev 3.2 drives at full rail continuously, so **every threshold,
+> stroke time and commutation count here is invalid on it until re-measured** — see
+> `hardware/lune-v6-rev3.2/design-contract.json`.
 
 ## Detection Overview
 
@@ -245,6 +301,183 @@ breakaway short. This is why VdMot-style close-first needs no separate homing pa
 > calibration fails ("travel too short") — which is recoverable, unlike a pop-off — so the
 > value is biased toward hardware safety.
 
+## Rev 3.2
+
+Rev 3.2 replaced the DRV8215s with three DRV8411 dual bridges behind a hardware one-hot
+`74HC4514` decoder, added a dedicated commutation tacho, and removed duty-cycle control.
+The detection paths above still apply; these are the differences.
+
+### The drive is continuous
+
+The 4514 feeds the driver inputs static logic, so the only way to modulate motor voltage
+would be to chop `MOTOR_ENABLE` — and that is actively harmful here. The 40 ms chop
+period sits *inside* the 25–50 ms commutation period the tacho counts, and every off-edge
+is a fresh drive-start step into an AC-coupled front end with a 100 ms settling time.
+
+`effective_hold_duty_()` therefore returns 100 % on Rev 3.2, which also means
+**soft-approach does not exist there**. The pop-off defence is fast detection instead —
+see *No hardware runtime cutoff* in `hardware/lune-v6-rev3.2/architecture.md` for why a
+timer was judged the wrong instrument.
+
+### One DMA stream, two channels
+
+`ADC_CURRENT` (GPIO2, 6 dB) and `ADC_TACHO` (GPIO1, 12 dB) share one continuous ADC1
+pattern at 20 kHz aggregate, 10 kHz each, in 512-byte frames (6.4 ms). The oneshot and
+continuous drivers cannot share an ADC unit, so the backend does not read its own ADC:
+it is told the current by the ripple task.
+
+This replaced two blocking oneshot reads per 10 ms FSM tick — 200 conversions a second,
+each taking the ADC lock, with `ADC_TACHO` sampled at Nyquist against its own 20–40 Hz
+band and therefore unable to cross-check anything.
+
+Three things fall out of it:
+
+- **The absolute current cap is evaluated in the ripple task**, on each frame's peak,
+  and consumed by `motor_loop_()` at 1 ms. That is ~1 ms to take the drive off instead
+  of 20 ms (10 ms tick × 2-tick debounce). On the closing hard stop that difference is
+  stall torque into a rigid stop, and torque × duration is the damage mechanism.
+- **`ADC_TACHO` gets a real cross-check.** A second `RippleCounter` runs on the analog
+  waveform at 10 kHz, and its count is published beside the PCNT count so the hardware
+  counter's missed- and false-edge rate can be computed *on the device*. That rate is
+  § 2 of the validation plan's release gate. `COMM_TACHO_N` through PCNT remains the
+  authority for position; the analog count never reaches the endpoint decision.
+- **Blanking became structural.** The DMA path already blanks after each drive-on
+  transition; with continuous drive that happens exactly once per move, so it is the
+  contract's mandatory 250 ms tacho blanking, sized from the stream's sample rate.
+
+### Timing anchors come from the tacho, not the PWM profile
+
+There is no boost phase, so `pwm_boost_ms` is meaningless. One derived anchor replaces
+it everywhere:
+
+```
+motion_decision_ms = BLANKING_MS + 2 × (tacho_max_period_us / 1000)   // 250 + 400 = 650 ms
+```
+
+It self-adjusts with the tacho configuration and by construction cannot land inside the
+blanking window. That last property is not cosmetic: `EARLY_STALL_MS` was 250 ms and so
+is the blanking, so on Rev 3.2 the early already-at-stop path saw a zero commutation
+count *by construction* and raised `BLOCKED` on a healthy move. That path is skipped on
+Rev 3.2; `already_at_stop` in `detect_endstop_()` covers the same condition, anchored
+here and routed through the endpoint classifier.
+
+`detect_pin_engagement_()` is likewise anchored on commutation count rather than on
+`ENDSTOP_MIN_RUNTIME_MS`, and simply reads the stroke tracker's answer.
+
+### The stall debounce scales with cadence
+
+A fixed debounce has to be sized for the slowest case; 750 ms on this actuator is 15–30
+missed commutations. `Rev32TachoQualifier` keeps an EMA of the commutation period and
+scales the debounce to it:
+
+```
+debounce = clamp(cadence × stall_plateau_factor, floor, ceiling)     // ×3.0, 150 ms, 750 ms
+```
+
+At the measured 20–40 Hz that lands on the 150 ms floor — inside Rev 3.0 requirement
+E-08's 250 ms bound, which `firmware-integration.md` previously recorded as unmet. With
+no cadence established yet the ceiling stands, which is the old behaviour.
+
+One trap worth naming: the *first* credited count advance after a move starts spans from
+drive start and therefore carries the whole blanking window. Feeding it to the EMA would
+set the cadence to ~250 ms. It is taken as the origin and the average starts from the
+second.
+
+### The stroke phase model
+
+`Rev32StrokeTracker` (in `rev32_logic.h`, host-tested by `make test-rev32-logic`) tracks
+which of the four phases the stroke is in, from `(count, current, cadence stretch)`:
+
+| Transition | Condition |
+|---|---|
+| free travel → contact | current steps up **and** the rotor slows |
+| contact → free travel | current falls back **and** the rotor recovers — *phase 2 completing* |
+| contact → under load | the bump outlasts `contact_recovery_ripples` (15) — *real seating* |
+| any → stopping | the silence exceeds `stall_plateau_factor` × cadence |
+
+Two rules follow, both in `classify_rev32_endpoint()`:
+
+- **No endpoint is accepted while the phase is `CONTACT`.** At that instant phase 2 and
+  phase 4 are genuinely indistinguishable, however strong the load evidence is. The
+  tracker leaves `CONTACT` by recovering, by outlasting the window, or by the rotor
+  actually stopping — and only then is the question answered.
+- **Closing: a stop in free travel is a `JAM`, not an endpoint.** The valve seat is only
+  reachable through phases 2 and 3. Opening has no contact phase, so this rule is
+  closing-only.
+
+This generalises what `detect_pin_engagement_()` already did during calibration — it
+re-baselined detection to the seating onset precisely so the phase-2 bump would not stop
+the valve "barely seated" — to every move, and onto a discriminator that does not depend
+on current magnitude.
+
+### Direction-specific thresholds
+
+| | Closing | Opening |
+|---|---|---|
+| The stop is | a pin in a seat, rigid | the gear train bottoming out |
+| Current factor | `close_current_factor` 1.7× | **`open_endstop_current_factor` 1.25×** |
+| Missing it costs | pop-off | a stripped gear train over tens of seconds |
+
+The load-evidence requirement is *not* relaxed in either direction: the contract records
+the tacho as `is_load_bearing: false`, so cadence alone may never establish an endpoint.
+Only the threshold moves, to match the mechanics.
+
+### The learned-count endpoint window
+
+Endpoint condition 6 — "a direction-specific learned-count endpoint window" — is now
+real. Closing measures from the contact the tracker observed, using the learned seating
+depth, which is far more repeatable than the full stroke because it does not depend on
+where the move started:
+
+```
+closing:  count ≥ contact_count + contact_to_stop_close_ripples × (1 − tolerance)
+opening:  count ≥ approach_stroke_ripples × (1 − tolerance)          // no contact phase
+unknown:  satisfied                                                  // may not withhold
+```
+
+Only a lower bound. Stopping late is covered by `open_ripple_limit_factor` and the
+runtime cap.
+
+### Rev 3.2 configuration
+
+Hardware facts (pins, tacho qualification limits) live in
+`configurations/lune-v6-rev32.yaml`. Endstop *policy* lives in `MotorConfig` in NVS, so
+it is tunable during bring-up without a reflash:
+
+| Field | Default | Purpose |
+|---|---|---|
+| `rev32_motion_decision_ms` | 0 | 0 derives it from the tacho contract |
+| `stall_plateau_factor_x10` | 30 | cadence multiplier for the stall verdict |
+| `stall_plateau_floor_ms` | 150 | ...and its floor |
+| `stall_plateau_ceiling_ms` | 750 | ...and its ceiling, also the no-cadence answer |
+| `endpoint_window_tolerance_pct` | 25 | how far short of the learned count still counts |
+| `open_endstop_current_factor` | 1.25 | the gear-train stop is softer than the seat |
+| `contact_recovery_ripples` | 15 | commutations the rotor has to recover within |
+
+`MOTOR_CONFIG_VERSION` is 2; v1 blobs are invalidated rather than reinterpreted.
+
+### Rev 3.2 timing sequence
+
+```
+Motor start
+    │
+    ├── 0 ms:     continuous drive (no boost, no hold, no soft-approach)
+    │
+    ├── 250 ms:   tacho blanking ends — the AC-coupled front end has settled
+    │
+    ├── 500 ms:   DEBOUNCE_TICKS elapsed; detect_endstop_() begins
+    │
+    ├── 650 ms:   motion_decision_ms — a zero commutation count now means
+    │               "it never turned", and already_at_stop can fire
+    │
+    ├── travel:   stroke tracker advances free travel → contact → under load
+    │               (closing), or stays in free travel (opening)
+    │
+    └── stop:     rotor silence past ~150 ms (cadence × 3) with load evidence,
+                    a commanded endpoint and the learned count → ENDPOINT
+                  ...or the absolute cap, caught within ~1 ms by the DMA path
+```
+
 ## Signal Processing
 
 ### Current Filtering
@@ -461,6 +694,13 @@ tuning, capping full-force time to roughly VdMot's 250 ms. This is also why no s
 of over-driving. The blind window for the *current*-based paths is `pwm_boost_ms +
 ENDSTOP_SETTLE_MS` (~650 ms).
 
+On **Rev 3.2** this path is disabled — `EARLY_STALL_MS` and the tacho blanking are both
+250 ms, so it would see a zero count by construction. The same protection comes from
+`already_at_stop` at `motion_decision_ms` (~650 ms), the cadence-scaled stall verdict
+(~150 ms once turning) and the 1 ms DMA current cap. Rev 3.2 also drives at full rail
+throughout, so there is no reduced-duty hold to fall back on: detection speed *is* the
+protection.
+
 Validation: each pass must exceed `calibration_min_travel_ms = 3000 ms`.
 Up to `calibration_max_retries = 2` retry attempts. On failure, zone is marked blocked.
 
@@ -487,7 +727,11 @@ blocked, not present, or never learned are skipped.
 | `ENDSTOP_SETTLE_MS`          | 300      | ms      | Post-boost settle; guard = boost + this (~650 ms) |
 | `ENDSTOP_MIN_RUNTIME_MS`     | 1200     | ms      | Pin-engagement baseline settle (not the endstop guard) |
 | `ALREADY_AT_STOP_MS`         | 100      | ms      | Post-boost margin for already-at-stop (fires ~450 ms) |
-| `RIPPLE_STALL_MS`            | 750      | ms      | Rotation-stall plateau window             |
+| `RIPPLE_STALL_MS`            | 750      | ms      | Rotation-stall plateau window (Rev 3.0/3.1; Rev 3.2 scales it — see above) |
+| `Rev32TachoQualifier::BLANKING_MS` | 250 | ms   | Rev 3.2 tacho blanking after drive start  |
+| `REV32_ADC_SAMPLE_RATE_HZ`   | 10000    | Hz      | Rev 3.2 per-channel DMA rate (20 kHz aggregate) |
+| `REV32_DMA_FRAME_BYTES`      | 512      | bytes   | Rev 3.2 DMA frame — 6.4 ms, halved for hard-cap latency |
+| `REV32_TACHO_GATE_HZ`        | 100      | Hz      | Minimum-period gate for the analog cross-check counter |
 | `ENDSTOP_HIGH_TICKS`         | 6        | ticks   | Sustained threshold debounce (60 ms)      |
 | `ENDSTOP_HARD_CAP_MA`        | 100.0    | mA      | Emergency safety cap                      |
 | `SLOPE_WINDOW_TICKS`         | 50       | ticks   | Slope evaluation window (500 ms)          |

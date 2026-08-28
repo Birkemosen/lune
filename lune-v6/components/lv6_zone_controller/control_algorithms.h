@@ -7,7 +7,7 @@
 
 #pragma once
 
-#include "../lv6_config_store/hv6_types.h"
+#include "../lv6_config_store/lv6_types.h"
 #include <cmath>
 #include <algorithm>
 

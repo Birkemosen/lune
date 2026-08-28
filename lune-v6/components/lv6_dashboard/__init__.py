@@ -34,11 +34,11 @@ CONF_ZONE_STATE_IDS = "zone_state_ids"
 CONF_MOTOR_FAULT_IDS = "motor_fault_ids"
 
 lv6_dashboard_ns = cg.esphome_ns.namespace("lv6_dashboard")
-hv6_ns = cg.esphome_ns.namespace("hv6")
+lv6_ns = cg.esphome_ns.namespace("lv6")
 LV6Dashboard = lv6_dashboard_ns.class_("LV6Dashboard", cg.Component)
-Lv6ZoneController = hv6_ns.class_("Lv6ZoneController", cg.Component)
-Lv6ValveController = hv6_ns.class_("Lv6ValveController", cg.Component)
-Lv6ConfigStore = hv6_ns.class_("Lv6ConfigStore", cg.Component)
+Lv6ZoneController = lv6_ns.class_("Lv6ZoneController", cg.Component)
+Lv6ValveController = lv6_ns.class_("Lv6ValveController", cg.Component)
+Lv6ConfigStore = lv6_ns.class_("Lv6ConfigStore", cg.Component)
 
 CONFIG_SCHEMA = cv.Schema(
     {
@@ -108,8 +108,8 @@ async def to_code(config):
     # margin without a fragile path in platformio_options.
     add_extra_script(
         "pre",
-        "hv6_patch_httpd_stack.py",
-        Path(__file__).parent / "hv6_patch_httpd_stack.py",
+        "lv6_patch_httpd_stack.py",
+        Path(__file__).parent / "lv6_patch_httpd_stack.py",
     )
     var = cg.new_Pvariable(config[CONF_ID])
     await cg.register_component(var, config)

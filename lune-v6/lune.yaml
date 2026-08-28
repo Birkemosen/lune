@@ -25,16 +25,16 @@ substitutions:
   pin_onewire: GPIO12
   pin_nsleep: "6"
   pin_nfault: "4"
-  pin_rgb_status_led: GPIO48
+  pin_status_led: GPIO48
   pin_adc_current: "7"
   motor_hardware_backend: drv8215_i2c
-  pin_adc_bemf: "5"
   pin_motor_addr0: "10"
   pin_motor_addr1: "11"
   pin_motor_addr2: "12"
-  pin_motor_direction: "14"
+  pin_motor_addr3: "13"
   pin_latch_arm: "16"
-  bemf_threshold_raw: "40"
+  pin_comm_tacho: "38"
+  pin_adc_tacho: "1"
   motor_auto_start_calibration: "true"
 
   # Network — fallback AP name when WiFi is unreachable
@@ -107,7 +107,8 @@ packages:
   i2c:          !include packages/hardware/i2c.yaml
   onewire:      !include packages/hardware/onewire.yaml
   motors:       !include packages/hardware/motors.yaml
-  led:          !include packages/hardware/led.yaml
+  # The status LED package is chosen by the entrypoint: Rev 3.0/3.1 carry a
+  # WS2812, Rev 3.2 a single green LED on an active-low GPIO.
   display:      !include packages/hardware/display.yaml
   hw_sensors:   !include packages/hardware/sensors.yaml
   # Zones
@@ -332,14 +333,16 @@ lv6_valve_controller:
   current_sense: motor_current_adc
   motor_addresses: [0x30, 0x31, 0x32, 0x33, 0x34, 0x35]
   hardware_backend: ${motor_hardware_backend}
-  adc_bemf_pin: ${pin_adc_bemf}
   address0_pin: ${pin_motor_addr0}
   address1_pin: ${pin_motor_addr1}
   address2_pin: ${pin_motor_addr2}
-  direction_pin: ${pin_motor_direction}
+  address3_pin: ${pin_motor_addr3}
   latch_arm_pin: ${pin_latch_arm}
-  bemf_threshold_raw: ${bemf_threshold_raw}
+  comm_tacho_pin: ${pin_comm_tacho}
+  adc_tacho_pin: ${pin_adc_tacho}
   auto_start_calibration: ${motor_auto_start_calibration}
+  # adc_bemf_pin, direction_pin and bemf_threshold_raw are Rev 3.1 only and
+  # come from packages/hardware/motors-rev31.yaml.
 
 # Zone controller
 lv6_zone_controller:

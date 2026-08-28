@@ -16,3 +16,4 @@ substitutions:
 packages:
   base: !include ../lune.yaml
   ble:  !include ../packages/hardware/ble.yaml
+  led:  !include ../packages/hardware/led.yaml

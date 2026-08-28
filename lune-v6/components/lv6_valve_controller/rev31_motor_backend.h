@@ -1,5 +1,6 @@
 #pragma once
 
+#include "gpio_motor_backend.h"
 #include "rev31_logic.h"
 
 #include "driver/gpio.h"
@@ -31,25 +32,29 @@ struct Rev31BemfReading {
 // Low-level owner of the Rev 3.1 GPIO decoder, fault latch and ADC channels.
 // All address transitions are forced through coast; the class never exposes a
 // raw GPIO write that could select two motors or reverse a live bridge.
-class Rev31MotorBackend {
+class Rev31MotorBackend : public GpioMotorBackend {
  public:
   explicit Rev31MotorBackend(const Rev31PinConfig &pins,
                              uint16_t bemf_threshold_raw = 40)
       : pins_(pins), motion_tracker_(bemf_threshold_raw, 50) {}
 
-  bool setup();
-  bool arm_latch();
+  bool setup() override;
+  bool arm_latch() override;
+  bool select_zone(uint8_t zone, bool reverse) override {
+    return select(zone, reverse ? Rev31Direction::REVERSE : Rev31Direction::FORWARD);
+  }
   bool select(uint8_t zone, Rev31Direction direction);
-  bool drive();
-  void coast();
-  bool fault_latched() const;
+  bool drive() override;
+  void coast() override;
+  bool fault_latched() const override;
+  const char *backend_name() const override { return "rev31_gpio"; }
 
-  float read_current_ma();
+  float read_current_ma() override;
   Rev31BemfReading sample_bemf(uint32_t now_ms, bool restore_drive);
-  void reset_motion();
-  uint32_t motion_evidence_count() const { return motion_tracker_.evidence_count(); }
-  bool motion_observed() const { return motion_tracker_.ever_moved(); }
-  bool motion_stopped_for(uint32_t now_ms, uint32_t debounce_ms) const {
+  void reset_motion() override;
+  uint32_t motion_evidence_count() const override { return motion_tracker_.evidence_count(); }
+  bool motion_observed() const override { return motion_tracker_.ever_moved(); }
+  bool motion_stopped_for(uint32_t now_ms, uint32_t debounce_ms) const override {
     return motion_tracker_.stopped_for(now_ms, debounce_ms);
   }
   uint16_t last_sample_separation_us() const { return last_sample_separation_us_; }

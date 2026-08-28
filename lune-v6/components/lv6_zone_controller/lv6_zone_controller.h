@@ -11,7 +11,7 @@
 #include "esphome/core/component.h"
 #include "esphome/components/sensor/sensor.h"
 #include "../lv6_config_store/lv6_config_store.h"
-#include "../lv6_config_store/hv6_types.h"
+#include "../lv6_config_store/lv6_types.h"
 #include "../lv6_valve_controller/lv6_valve_controller.h"
 #include "control_algorithms.h"
 #include "adaptive_balance.h"

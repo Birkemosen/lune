@@ -363,7 +363,7 @@ void LV6Dashboard::update_snapshot_() {
       this->zone_controller_->set_touch_authority_active(this->authority_.snapshot(millis()).touch_lease_active);
   }
   const auto authority_snapshot = this->authority_.snapshot(millis());
-  strncpy(s.authority_state, hv6_authority::state_name(authority_snapshot.state), sizeof(s.authority_state) - 1);
+  strncpy(s.authority_state, lv6_authority::state_name(authority_snapshot.state), sizeof(s.authority_state) - 1);
   strncpy(s.authority_reason, authority_snapshot.last_reason, sizeof(s.authority_reason) - 1);
   s.authority_lease_remaining_s = authority_snapshot.remaining_ms / 1000UL;
   s.authority_generation = authority_snapshot.lease_generation;
@@ -1283,9 +1283,9 @@ void LV6Dashboard::handle_diagnostics_(AsyncWebServerRequest *request) {
   xSemaphoreGive(snapshot_lock_);
 
   const DashboardSnapshot *snap = &this->state_snap_buf_;
-  const lv6::Rev31Diagnostics motor_diag = this->valve_controller_
-      ? this->valve_controller_->get_rev31_diagnostics()
-      : lv6::Rev31Diagnostics{};
+  const lv6::MotorSafetyDiagnostics motor_diag = this->valve_controller_
+      ? this->valve_controller_->get_motor_safety_diagnostics()
+      : lv6::MotorSafetyDiagnostics{};
   char cpu0[24], cpu1[24], flow[24], ret[24];
   format_float_token(cpu0, sizeof(cpu0), snap->cpu0_pct, 1);
   format_float_token(cpu1, sizeof(cpu1), snap->cpu1_pct, 1);
@@ -1334,13 +1334,17 @@ void LV6Dashboard::handle_diagnostics_(AsyncWebServerRequest *request) {
            "\"bemf_raw_a\":%u,\"bemf_raw_b\":%u,\"bemf_differential_raw\":%d,"
            "\"sample_separation_us\":%u,\"bemf_threshold_raw\":%u,"
            "\"sample_valid\":%s,\"sample_moving\":%s,\"invalid_samples\":%u,"
+           "\"armed\":%s,\"decoder_address\":%u,\"stroke_phase\":%u,"
+           "\"tacho_period_us\":%lu,\"tacho_cadence_us\":%lu,"
+           "\"tacho_rejected\":%lu,\"tacho_hardware_count\":%lu,"
+           "\"tacho_adc_count\":%lu,\"tacho_amp_raw\":%u,"
            "\"motion_evidence_count\":%lu,\"sample_sequence\":%lu,\"motor_runtime_ms\":%lu},"
            "\"authority\":{\"state\":\"%s\",\"reason\":\"%s\",\"lease_remaining_s\":%lu,\"generation\":%lu,\"v6_write_allowed\":%s},"
            "%s,\"logs_endpoint\":\"/api/hv6/v1/logs\"}}",
            static_cast<unsigned long>(snap->free_internal_kb),
            static_cast<unsigned long>(snap->free_psram_kb), cpu0, cpu1, flow, ret,
            snap->drivers_enabled ? "true" : "false",
-           motor_diag.backend_enabled ? "rev31_gpio" : "drv8215_i2c",
+           motor_diag.backend,
            motor_diag.motor_busy ? "true" : "false",
            motor_diag.drive_on ? "true" : "false",
            motor_diag.latch_faulted ? "true" : "false",
@@ -1353,6 +1357,15 @@ void LV6Dashboard::handle_diagnostics_(AsyncWebServerRequest *request) {
            motor_diag.sample_valid ? "true" : "false",
            motor_diag.sample_moving ? "true" : "false",
            static_cast<unsigned>(motor_diag.consecutive_invalid_samples),
+           motor_diag.armed ? "true" : "false",
+           static_cast<unsigned>(motor_diag.decoder_address),
+           static_cast<unsigned>(motor_diag.stroke_phase),
+           static_cast<unsigned long>(motor_diag.tacho_period_us),
+           static_cast<unsigned long>(motor_diag.tacho_cadence_us),
+           static_cast<unsigned long>(motor_diag.tacho_rejected),
+           static_cast<unsigned long>(motor_diag.tacho_hardware_count),
+           static_cast<unsigned long>(motor_diag.tacho_adc_count),
+           static_cast<unsigned>(motor_diag.tacho_amp_raw),
            static_cast<unsigned long>(motor_diag.motion_evidence_count),
            static_cast<unsigned long>(motor_diag.sample_sequence),
            static_cast<unsigned long>(motor_diag.motor_runtime_ms),
@@ -1387,24 +1400,31 @@ void LV6Dashboard::handle_motor_trace_(AsyncWebServerRequest *request) {
   httpd_resp_set_hdr(req, "Connection", "close");
 
   static constexpr char HEADER[] =
-      "t_ms,motion_count,current_ma,adc_current_raw,drive_on,bemf_raw_a,bemf_raw_b,"
-      "bemf_differential_raw,bemf_separation_us,bemf_valid,bemf_moving,invalid_bemf_samples\n";
+      "t_ms,motion_count,current_ma,adc_current_raw,drive_on,direction_open,armed,"
+      "stroke_phase,tacho_period_us,tacho_amp_raw,"
+      "bemf_raw_a,bemf_raw_b,bemf_differential_raw,bemf_separation_us,"
+      "bemf_valid,bemf_moving,invalid_bemf_samples\n";
   if (httpd_resp_send_chunk(req, HEADER, sizeof(HEADER) - 1) != ESP_OK)
     return;
 
   const uint16_t count = this->valve_controller_->get_motor_trace_sample_count();
-  char line[176];
+  char line[224];
   for (uint16_t index = 0; index < count; index++) {
     lv6::MotorTraceSample sample{};
     if (!this->valve_controller_->get_motor_trace_sample(index, &sample))
       break;
     const int length = snprintf(
-        line, sizeof(line), "%lu,%lu,%.1f,%u,%u,%u,%u,%d,%u,%u,%u,%u\n",
+        line, sizeof(line), "%lu,%lu,%.1f,%u,%u,%u,%u,%u,%lu,%u,%u,%u,%d,%u,%u,%u,%u\n",
         static_cast<unsigned long>(sample.t_ms),
         static_cast<unsigned long>(sample.ripple_count),
         static_cast<float>(sample.current_ma_x10) / 10.0f,
         static_cast<unsigned>(sample.adc_raw),
         static_cast<unsigned>(sample.drive_on),
+        static_cast<unsigned>(sample.direction_open),
+        static_cast<unsigned>(sample.armed),
+        static_cast<unsigned>(sample.stroke_phase),
+        static_cast<unsigned long>(sample.tacho_period_us),
+        static_cast<unsigned>(sample.tacho_amp_raw),
         static_cast<unsigned>(sample.bemf_raw_a),
         static_cast<unsigned>(sample.bemf_raw_b),
         static_cast<int>(sample.bemf_differential_raw),
@@ -1972,13 +1992,13 @@ void LV6Dashboard::handle_authority_lease_(AsyncWebServerRequest *request, const
   parse_text_param(request, body, "lease_id", "", lease_id, sizeof(lease_id));
   float sequence = 0.0f;
   float issued_ms = 0.0f;
-  float duration_ms = static_cast<float>(hv6_authority::DEFAULT_LEASE_MS);
+  float duration_ms = static_cast<float>(lv6_authority::DEFAULT_LEASE_MS);
   bool degraded = false;
   parse_num_param(request, body, "sequence", &sequence);
   parse_num_param(request, body, "issued_ms", &issued_ms);
   parse_num_param(request, body, "duration_ms", &duration_ms);
   parse_bool_param(request, body, "degraded", &degraded);
-  hv6_authority::Request lease_request{installation_id, coordinator_id, lease_id,
+  lv6_authority::Request lease_request{installation_id, coordinator_id, lease_id,
                                         static_cast<uint32_t>(sequence),
                                         static_cast<uint32_t>(issued_ms),
                                         static_cast<uint32_t>(duration_ms), degraded};
@@ -1987,15 +2007,15 @@ void LV6Dashboard::handle_authority_lease_(AsyncWebServerRequest *request, const
   const auto snapshot = this->authority_.snapshot(millis());
   if (this->zone_controller_)
     this->zone_controller_->set_touch_authority_active(snapshot.touch_lease_active);
-  const int status = (result == hv6_authority::Result::GRANTED || result == hv6_authority::Result::RENEWED) ? 200 :
-                     (result == hv6_authority::Result::AUTH_REQUIRED ? 401 : 409);
+  const int status = (result == lv6_authority::Result::GRANTED || result == lv6_authority::Result::RENEWED) ? 200 :
+                     (result == lv6_authority::Result::AUTH_REQUIRED ? 401 : 409);
   char response[512];
   snprintf(response, sizeof(response),
            "{\"ok\":%s,\"version\":\"v1\",\"data\":{\"result\":\"%s\",\"state\":\"%s\","
            "\"generation\":%lu,\"lease_remaining_s\":%lu,\"reason\":\"%s\","
            "\"authority_only\":true}}",
-           status == 200 ? "true" : "false", hv6_authority::result_name(result),
-           hv6_authority::state_name(snapshot.state), static_cast<unsigned long>(snapshot.lease_generation),
+           status == 200 ? "true" : "false", lv6_authority::result_name(result),
+           lv6_authority::state_name(snapshot.state), static_cast<unsigned long>(snapshot.lease_generation),
            static_cast<unsigned long>(snapshot.remaining_ms / 1000UL), snapshot.last_reason);
   send_text_(request, status, "application/json", response, true, "no-cache");
 }

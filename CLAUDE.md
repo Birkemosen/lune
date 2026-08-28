@@ -6,7 +6,7 @@ This repository now uses the same hardware-per-folder structure described in
 Quick map:
 
 ```text
-devices/lune-v6/       Lune V6 ESPHome firmware and local dashboard
+lune-v6/       Lune V6 ESPHome firmware and local dashboard
 Lune Touch / Mini       Private repository: Birkemosen/lune-coordinator
 docs/                  Product-level notes
 shared/                Shared contracts/design notes only

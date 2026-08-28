@@ -19,13 +19,15 @@ substitutions:
   pin_motor_addr2: "12"
   pin_motor_direction: "14"
   pin_latch_arm: "16"
-  pin_rgb_status_led: GPIO48
+  pin_status_led: GPIO48
   bemf_threshold_raw: "40"
   motor_auto_start_calibration: "false"
 
 packages:
-  base: !include ../lune.yaml
-  ble: !include ../packages/hardware/ble.yaml
+  base:     !include ../lune.yaml
+  ble:      !include ../packages/hardware/ble.yaml
+  led:      !include ../packages/hardware/led.yaml
+  motors31: !include ../packages/hardware/motors-rev31.yaml
 
 # The production-intent module is ESP32-S3-WROOM-1-N8R8, not the 4 MB module
 # used by the current development board profile.

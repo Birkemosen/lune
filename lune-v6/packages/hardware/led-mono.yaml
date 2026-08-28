@@ -1,17 +1,24 @@
-# ============================================
-# Status LED (WS2812 RGB with status colors)
-# ============================================
-# Color codes:
-#   GREEN (solid)     = Normal, connected to Home Assistant
-#   GREEN (breathing) = Normal, standalone mode
-#   BLUE (flashing)   = Booting / WiFi connecting
-#   CYAN (solid)      = Motor running
-#   YELLOW (solid)    = Warning (temp sensor offline)
-#   ORANGE (flashing) = No 1-Wire sensors found
-#   RED (solid)       = Error (API disconnected + standalone off)
-#   RED (flashing)    = Critical error (motor stall/overcurrent)
-#   PURPLE (solid)    = Calibration in progress
-#   WHITE (flash)     = Command received
+# =============================================================================
+# Status LED — single green LED (Rev 3.2)
+# =============================================================================
+# Rev 3.2 replaced the WS2812 with `D3`, a plain KT-0805G green LED driven
+# through `R23` (1 kOhm) from `STATUS_LED_N`, which is **active low**.  One
+# colour cannot carry the nine states the RGB vocabulary did, so the states are
+# collapsed onto blink *rate*, which a person reads far more reliably than
+# brightness:
+#
+#   solid dim       = normal, connected to Home Assistant     (code 1)
+#   breathing       = normal, standalone mode                 (code 2)
+#   solid bright    = motor running                           (code 3)
+#   fast blink      = booting / WiFi connecting                (code 0)
+#   slow blink      = warning, or no 1-Wire sensors found     (codes 4, 5)
+#   heartbeat       = calibration in progress                 (code 8)
+#   double blink    = error or critical fault                 (codes 6, 7)
+#   brief flash     = command received
+#
+# `led_status_code` still carries the exact state for the dashboard and the API,
+# so nothing downstream loses resolution - only the LED does.
+# =============================================================================
 
 globals:
   - id: led_status_code
@@ -19,15 +26,23 @@ globals:
     restore_value: no
     initial_value: '0'
 
+output:
+  # STATUS_LED_N sinks the LED, so the pin is inverted: logic "on" is a low
+  # level.  R10-R15's pulldown convention does not apply here - the pin idles
+  # high-Z at boot and the external pull-up keeps the LED dark.
+  - platform: ledc
+    id: status_led_out
+    pin:
+      number: ${pin_status_led}
+      inverted: true
+    frequency: 1000Hz
+
 light:
-  - platform: esp32_rmt_led_strip
+  - platform: monochromatic
     name: "Status LED"
     id: rgb_status_led
+    output: status_led_out
     internal: true
-    chipset: WS2812
-    rgb_order: GRB
-    pin: ${pin_status_led}
-    num_leds: 1
     restore_mode: ALWAYS_OFF
     default_transition_length: 200ms
     effects:
@@ -37,40 +52,48 @@ light:
           update_interval: 2s
           min_brightness: 10%
           max_brightness: 40%
-      # Explicit-color strobe effects avoids using undefined "current state"
       - strobe:
-          name: "Blue Fast Blink"
+          name: "Fast Blink"
           colors:
             - state: true
-              brightness: 15%
-              red: 0%
-              green: 0%
-              blue: 100%
-              duration: 200ms
+              brightness: 30%
+              duration: 250ms
             - state: false
-              duration: 200ms
+              duration: 250ms
       - strobe:
-          name: "Red Fast Blink"
+          name: "Slow Blink"
           colors:
             - state: true
-              brightness: 80%
-              red: 100%
-              green: 0%
-              blue: 0%
-              duration: 200ms
+              brightness: 45%
+              duration: 800ms
             - state: false
-              duration: 200ms
+              duration: 800ms
       - strobe:
-          name: "Orange Slow Blink"
+          name: "Double Blink"
           colors:
             - state: true
-              brightness: 50%
-              red: 100%
-              green: 25%
-              blue: 0%
-              duration: 500ms
+              brightness: 100%
+              duration: 120ms
             - state: false
-              duration: 500ms
+              duration: 150ms
+            - state: true
+              brightness: 100%
+              duration: 120ms
+            - state: false
+              duration: 900ms
+      - strobe:
+          name: "Heartbeat"
+          colors:
+            - state: true
+              brightness: 70%
+              duration: 120ms
+            - state: false
+              duration: 200ms
+            - state: true
+              brightness: 25%
+              duration: 120ms
+            - state: false
+              duration: 1200ms
 
 script:
   - id: led_status_boot
@@ -78,9 +101,8 @@ script:
       - lambda: id(led_status_code) = 0;
       - lambda: |-
           auto call = id(rgb_status_led).turn_on();
-          call.set_brightness(0.15f);
-          call.set_rgb(0.0f, 0.0f, 1.0f);
-          call.set_effect("Blue Fast Blink");
+          call.set_brightness(0.3f);
+          call.set_effect("Fast Blink");
           call.perform();
 
   - id: led_status_ok
@@ -88,8 +110,7 @@ script:
       - lambda: id(led_status_code) = 1;
       - lambda: |-
           auto call = id(rgb_status_led).turn_on();
-          call.set_brightness(0.3f);
-          call.set_rgb(0.0f, 1.0f, 0.0f);
+          call.set_brightness(0.2f);
           call.set_effect("None");
           call.perform();
 
@@ -99,7 +120,6 @@ script:
       - lambda: |-
           auto call = id(rgb_status_led).turn_on();
           call.set_brightness(0.3f);
-          call.set_rgb(0.0f, 1.0f, 0.0f);
           call.set_effect("Breathing");
           call.perform();
 
@@ -108,8 +128,7 @@ script:
       - lambda: id(led_status_code) = 3;
       - lambda: |-
           auto call = id(rgb_status_led).turn_on();
-          call.set_brightness(0.5f);
-          call.set_rgb(0.0f, 1.0f, 1.0f);
+          call.set_brightness(0.8f);
           call.set_effect("None");
           call.perform();
 
@@ -118,9 +137,8 @@ script:
       - lambda: id(led_status_code) = 4;
       - lambda: |-
           auto call = id(rgb_status_led).turn_on();
-          call.set_brightness(0.4f);
-          call.set_rgb(1.0f, 0.7f, 0.0f);
-          call.set_effect("None");
+          call.set_brightness(0.45f);
+          call.set_effect("Slow Blink");
           call.perform();
 
   - id: led_status_no_sensors
@@ -128,9 +146,8 @@ script:
       - lambda: id(led_status_code) = 5;
       - lambda: |-
           auto call = id(rgb_status_led).turn_on();
-          call.set_brightness(0.5f);
-          call.set_rgb(1.0f, 0.4f, 0.0f);
-          call.set_effect("Orange Slow Blink");
+          call.set_brightness(0.45f);
+          call.set_effect("Slow Blink");
           call.perform();
 
   - id: led_status_error
@@ -138,9 +155,8 @@ script:
       - lambda: id(led_status_code) = 6;
       - lambda: |-
           auto call = id(rgb_status_led).turn_on();
-          call.set_brightness(0.5f);
-          call.set_rgb(1.0f, 0.0f, 0.0f);
-          call.set_effect("None");
+          call.set_brightness(1.0f);
+          call.set_effect("Double Blink");
           call.perform();
 
   - id: led_status_critical
@@ -148,9 +164,8 @@ script:
       - lambda: id(led_status_code) = 7;
       - lambda: |-
           auto call = id(rgb_status_led).turn_on();
-          call.set_brightness(0.8f);
-          call.set_rgb(1.0f, 0.0f, 0.0f);
-          call.set_effect("Red Fast Blink");
+          call.set_brightness(1.0f);
+          call.set_effect("Double Blink");
           call.perform();
 
   - id: led_status_calibrating
@@ -158,19 +173,15 @@ script:
       - lambda: id(led_status_code) = 8;
       - lambda: |-
           auto call = id(rgb_status_led).turn_on();
-          call.set_brightness(0.5f);
-          call.set_rgb(0.8f, 0.0f, 1.0f);
-          call.set_effect("None");
+          call.set_brightness(0.7f);
+          call.set_effect("Heartbeat");
           call.perform();
 
   - id: led_flash_command
     then:
       - light.turn_on:
           id: rgb_status_led
-          brightness: 2%
-          red: 100%
-          green: 100%
-          blue: 100%
+          brightness: 100%
           transition_length: 0ms
       - delay: 100ms
       - script.execute: led_update_status

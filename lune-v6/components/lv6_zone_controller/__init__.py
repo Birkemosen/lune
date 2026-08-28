@@ -21,10 +21,10 @@ CONF_VALVE_CONTROLLER_ID = "valve_controller_id"
 CONF_CYCLE_INTERVAL = "cycle_interval"
 CONF_PROBE_SENSORS = "probe_sensors"
 
-hv6_ns = cg.esphome_ns.namespace("hv6")
-Lv6ZoneController = hv6_ns.class_("Lv6ZoneController", cg.Component)
-Lv6ConfigStore = hv6_ns.class_("Lv6ConfigStore", cg.Component)
-Lv6ValveController = hv6_ns.class_("Lv6ValveController", cg.Component)
+lv6_ns = cg.esphome_ns.namespace("lv6")
+Lv6ZoneController = lv6_ns.class_("Lv6ZoneController", cg.Component)
+Lv6ConfigStore = lv6_ns.class_("Lv6ConfigStore", cg.Component)
+Lv6ValveController = lv6_ns.class_("Lv6ValveController", cg.Component)
 
 CONFIG_SCHEMA = cv.Schema(
     {

@@ -1615,12 +1615,12 @@ void Lv6ZoneController::update_adaptive_balance_(const DeviceConfig &cfg) {
   // Need ≥2 loops to define a common-mode mean to redistribute around.
   if (contrib >= 2) {
     float e_mean = sum_e / static_cast<float>(contrib);
-    hv6ab::AdaptParams p{cfg.balancing.adapt_step, cfg.balancing.adapt_min, cfg.balancing.adapt_max};
+    lv6ab::AdaptParams p{cfg.balancing.adapt_step, cfg.balancing.adapt_min, cfg.balancing.adapt_max};
     for (uint8_t i = 0; i < NUM_ZONES; i++) {
       if (!contributes[i])
         continue;
       float old_a = cfg.zones[i].balance_adapt;
-      float new_a = hv6ab::next_adapt(old_a, adapt_err_ema_[i], e_mean, p);
+      float new_a = lv6ab::next_adapt(old_a, adapt_err_ema_[i], e_mean, p);
       // Persist only on a meaningful move (NVS write ≈ a few/day, not per cycle).
       if (std::fabs(new_a - old_a) >= 0.01f) {
         ZoneConfig zc = config_store_->get_zone_config(i);

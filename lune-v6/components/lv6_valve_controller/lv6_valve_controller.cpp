@@ -17,6 +17,7 @@
 #include "esp_adc/adc_cali.h"
 #include "esp_adc/adc_cali_scheme.h"
 #include <algorithm>
+#include <utility>
 #include <cstdio>
 #include <cmath>
 #include <cstdarg>
@@ -82,20 +83,31 @@ void Lv6ValveController::setup() {
   // Load motor config from config store
   if (config_store_) {
     motor_cfg_ = config_store_->get_config().motor;
+    sanitize_motor_cfg_();
   }
 
-  if (rev31_backend_enabled_) {
-    rev31_pins_.adc_current = ipropi_pin_;
-    rev31_pins_.motor_enable = nsleep_pin_;
-    rev31_pins_.latch_state = nfault_pin_;
-    rev31_backend_ = new Rev31MotorBackend(rev31_pins_, bemf_threshold_raw_);
-    if (!rev31_backend_->setup()) {
-      ESP_LOGE(TAG, "Rev 3.1 GPIO/ADC backend setup failed; motors remain inhibited");
+  if (gpio_backend_enabled_) {
+    if (backend_kind_ == MotorBackendKind::REV32_GPIO) {
+      rev32_pins_.adc_current = ipropi_pin_;
+      rev32_pins_.motor_enable = nsleep_pin_;
+      rev32_pins_.latch_state = nfault_pin_;
+      rev32_backend_ = new Rev32MotorBackend(rev32_pins_, rev32_tacho_);
+      gpio_backend_ = rev32_backend_;
+    } else {
+      rev31_pins_.adc_current = ipropi_pin_;
+      rev31_pins_.motor_enable = nsleep_pin_;
+      rev31_pins_.latch_state = nfault_pin_;
+      rev31_backend_ = new Rev31MotorBackend(rev31_pins_, bemf_threshold_raw_);
+      gpio_backend_ = rev31_backend_;
+    }
+    if (!gpio_backend_->setup()) {
+      ESP_LOGE(TAG, "%s GPIO/ADC backend setup failed; motors remain inhibited",
+               gpio_backend_->backend_name());
       this->mark_failed();
       return;
     }
 
-    const bool armed = rev31_backend_->arm_latch();
+    const bool armed = gpio_backend_->arm_latch();
     any_driver_present_ = true;  // Three populated dual bridges; actuator presence is learned on first move.
     for (uint8_t i = 0; i < NUM_ZONES; ++i) {
       telemetry_[i].present = true;
@@ -103,14 +115,31 @@ void Lv6ValveController::setup() {
     }
     drivers_enabled_ = armed && auto_start_calibration_;
     auto_start_done_ = !auto_start_calibration_;
-    ripple_enabled_ = true;  // For this backend the existing motion counter is fed by BEMF coast samples.
+    // The motion counter is fed by the backend, not by the DMA ripple task:
+    // BEMF coast samples on Rev 3.1, the hardware commutation count on Rev 3.2.
+    ripple_enabled_ = true;
+    // Rev 3.2 still needs the ADC stream — for the current itself, and for the
+    // analog cross-check on the commutation count. Rev 3.1 reads its ADC through
+    // the backend's oneshot driver, so it must not open a continuous one.
+    if (rev32_backend_ != nullptr)
+      start_adc_stream_();
     if (!drivers_enabled_)
-      rev31_backend_->coast();
-    ESP_LOGI(TAG,
-             "Rev 3.1 backend ready: latch=%s, automatic motion=%s, BEMF threshold=%u raw",
-             armed ? "armed" : "faulted",
-             auto_start_calibration_ ? "enabled" : "disabled pending manual enable",
-             bemf_threshold_raw_);
+      gpio_backend_->coast();
+    if (rev32_backend_) {
+      ESP_LOGI(TAG,
+               "%s backend ready: latch=%s, automatic motion=%s, tacho qualification "
+               "%u us min pulse / %" PRIu32 "-%" PRIu32 " us period",
+               gpio_backend_->backend_name(), armed ? "armed" : "faulted",
+               auto_start_calibration_ ? "enabled" : "disabled pending manual enable",
+               rev32_tacho_.min_pulse_us, rev32_tacho_.min_period_us,
+               rev32_tacho_.max_period_us);
+    } else {
+      ESP_LOGI(TAG,
+               "%s backend ready: latch=%s, automatic motion=%s, BEMF threshold=%u raw",
+               gpio_backend_->backend_name(), armed ? "armed" : "faulted",
+               auto_start_calibration_ ? "enabled" : "disabled pending manual enable",
+               bemf_threshold_raw_);
+    }
   } else {
 
   // Configure nSLEEP (output, default LOW = sleep)
@@ -130,75 +159,7 @@ void Lv6ValveController::setup() {
   nfault_cfg.pull_down_en = GPIO_PULLDOWN_DISABLE;
   gpio_config(&nfault_cfg);
 
-  // Initialize IPROPI ADC in continuous (DMA) mode for ripple counting @ 15 kHz.
-  // adc_oneshot_io_to_channel() is a pure utility that maps GPIO → (unit, channel)
-  // without allocating any oneshot handle — safe to call alongside continuous mode.
-  adc_unit_t adc_unit;
-  adc_channel_t adc_chan;
-  esp_err_t adc_err = adc_oneshot_io_to_channel(static_cast<int>(ipropi_pin_),
-                                                 &adc_unit, &adc_chan);
-  if (adc_err == ESP_OK) {
-    ipropi_channel_ = static_cast<int>(adc_chan);
-
-    adc_continuous_handle_cfg_t cont_handle_cfg = {};
-    cont_handle_cfg.max_store_buf_size = RIPPLE_DMA_STORE_BYTES;
-    cont_handle_cfg.conv_frame_size    = RIPPLE_DMA_FRAME_BYTES;
-    adc_continuous_handle_t adc_cont_h = nullptr;
-    adc_err = adc_continuous_new_handle(&cont_handle_cfg, &adc_cont_h);
-    adc_continuous_handle_ = adc_cont_h;
-  }
-  if (adc_err == ESP_OK) {
-    adc_digi_pattern_config_t pattern = {};
-    pattern.atten     = ADC_ATTEN_DB_12;
-    pattern.channel   = static_cast<adc_channel_t>(ipropi_channel_);
-    pattern.unit      = adc_unit;
-    pattern.bit_width = ADC_BITWIDTH_12;
-
-    adc_continuous_config_t cont_cfg = {};
-    cont_cfg.sample_freq_hz = RIPPLE_SAMPLE_RATE_HZ;
-    cont_cfg.conv_mode      = ADC_CONV_SINGLE_UNIT_1;
-    cont_cfg.format         = ADC_DIGI_OUTPUT_FORMAT_TYPE2;
-    cont_cfg.pattern_num    = 1;
-    cont_cfg.adc_pattern    = &pattern;
-    adc_err = adc_continuous_config(
-        static_cast<adc_continuous_handle_t>(adc_continuous_handle_), &cont_cfg);
-  }
-  if (adc_err == ESP_OK) {
-    adc_continuous_evt_cbs_t cbs = {};
-    cbs.on_conv_done = ripple_adc_conv_done_;
-    adc_err = adc_continuous_register_event_callbacks(
-        static_cast<adc_continuous_handle_t>(adc_continuous_handle_), &cbs, &ripple_task_handle_);
-  }
-  if (adc_err == ESP_OK) {
-    adc_cali_curve_fitting_config_t cali_cfg = {};
-    cali_cfg.unit_id  = adc_unit;
-    cali_cfg.chan     = static_cast<adc_channel_t>(ipropi_channel_);
-    cali_cfg.atten    = ADC_ATTEN_DB_12;
-    cali_cfg.bitwidth = ADC_BITWIDTH_12;
-    adc_cali_handle_t cali_h = nullptr;
-    esp_err_t cali_err = adc_cali_create_scheme_curve_fitting(&cali_cfg, &cali_h);
-    if (cali_err != ESP_OK) {
-      ESP_LOGW(TAG, "ADC calibration init failed, using uncalibrated");
-      cali_h = nullptr;
-    }
-    adc_cali_handle_ = cali_h;
-  }
-  if (adc_err == ESP_OK) {
-    BaseType_t task_ok = xTaskCreatePinnedToCore(
-        ripple_task_func_, "hv6_ripple", 4096, this,
-        PRIORITY - 1, &ripple_task_handle_, CORE);
-    if (task_ok == pdPASS) {
-      ripple_enabled_ = true;
-      ESP_LOGI(TAG, "IPROPI ADC continuous @ %" PRIu32 "Hz (GPIO%d), ripple counting enabled",
-               RIPPLE_SAMPLE_RATE_HZ, ipropi_pin_);
-    } else {
-      ESP_LOGE(TAG, "Failed to create ripple processor task");
-      ripple_enabled_ = false;
-    }
-  } else {
-    ESP_LOGW(TAG, "IPROPI ADC init failed (err=%d), ripple counting disabled", adc_err);
-    ripple_enabled_ = false;
-  }
+  start_adc_stream_();
 
   // Wake DRV8215 chips for initial probe/setup only.  Keep the bus asleep
   // after probing if this PCB has no matching drivers; otherwise a pinout or
@@ -296,8 +257,21 @@ void Lv6ValveController::setup() {
 
 void Lv6ValveController::dump_config() {
   ESP_LOGCONFIG(TAG, "LV6 Valve Controller:");
-  ESP_LOGCONFIG(TAG, "  backend: %s", rev31_backend_enabled_ ? "rev31_gpio" : "drv8215_i2c");
-  if (rev31_backend_enabled_) {
+  ESP_LOGCONFIG(TAG, "  backend: %s",
+                gpio_backend_ ? gpio_backend_->backend_name()
+                              : (gpio_backend_enabled_ ? "gpio (not built)" : "drv8215_i2c"));
+  if (rev32_backend_) {
+    ESP_LOGCONFIG(TAG, "  MOTOR_ENABLE GPIO%d, LATCH_STATE GPIO%d (high = faulted or unarmed), LATCH_ARM GPIO%d",
+                  nsleep_pin_, nfault_pin_, rev32_pins_.latch_arm);
+    ESP_LOGCONFIG(TAG, "  ADDR GPIO%d/%d/%d/%d (4-bit, 12-entry map; no direction bit)",
+                  rev32_pins_.address0, rev32_pins_.address1,
+                  rev32_pins_.address2, rev32_pins_.address3);
+    ESP_LOGCONFIG(TAG, "  ADC_CURRENT GPIO%d @6dB, ADC_TACHO GPIO%d, COMM_TACHO_N GPIO%d, auto-calibration=%s",
+                  ipropi_pin_, rev32_pins_.adc_tacho, rev32_pins_.comm_tacho,
+                  auto_start_calibration_ ? "yes" : "no");
+    return;
+  }
+  if (gpio_backend_enabled_) {
     ESP_LOGCONFIG(TAG, "  MOTOR_ENABLE GPIO%d, LATCH_STATE GPIO%d, ADC_CURRENT GPIO%d, ADC_BEMF GPIO%d",
                   nsleep_pin_, nfault_pin_, ipropi_pin_, rev31_pins_.adc_bemf);
     ESP_LOGCONFIG(TAG, "  ADDR GPIO%d/%d/%d, DIR GPIO%d, LATCH_ARM GPIO%d, auto-calibration=%s",
@@ -384,25 +358,27 @@ void Lv6ValveController::set_drivers_enabled(bool enabled) {
     return;
   }
 
-  if (rev31_backend_enabled_) {
-    if (!rev31_backend_)
+  if (gpio_backend_enabled_) {
+    if (!gpio_backend_)
       return;
     if (!enabled) {
       if (motor_turning_)
         stop_motor_(false);
-      rev31_backend_->coast();
+      gpio_backend_->coast();
       drivers_enabled_ = false;
-      ESP_LOGI(TAG, "Rev 3.1 motor path DISABLED");
+      ESP_LOGI(TAG, "%s motor path DISABLED", gpio_backend_->backend_name());
       return;
     }
-    if (rev31_backend_->fault_latched() && !rev31_backend_->arm_latch()) {
+    if (gpio_backend_->fault_latched() && !gpio_backend_->arm_latch()) {
       drivers_enabled_ = false;
-      ESP_LOGE(TAG, "Rev 3.1 motor enable rejected: hardware fault remains latched");
+      ESP_LOGE(TAG, "%s motor enable rejected: hardware fault remains latched",
+               gpio_backend_->backend_name());
       return;
     }
-    rev31_backend_->coast();
+    gpio_backend_->coast();
     drivers_enabled_ = true;
-    ESP_LOGI(TAG, "Rev 3.1 motor path ENABLED (decoder remains inhibited until a move)");
+    ESP_LOGI(TAG, "%s motor path ENABLED (decoder remains inhibited until a move)",
+             gpio_backend_->backend_name());
     return;
   }
 
@@ -448,8 +424,10 @@ void Lv6ValveController::set_drivers_enabled(bool enabled) {
 }
 
 void Lv6ValveController::reload_motor_config() {
-  if (config_store_)
+  if (config_store_) {
     motor_cfg_ = config_store_->get_motor_config();
+    sanitize_motor_cfg_();
+  }
   ESP_LOGI(TAG, "Motor config: profile=%s runtime(user=%" PRIu32 "s generic=%" PRIu32 "s hmip=%" PRIu32 "s) close(%.2fx, slope %.2f mA/s, floor %.2fx) "
            "open(%.2fx, slope %.2f mA/s, floor %.2fx, ripple_lim %.2f) "
            "pin(step %.1f mA, margin %" PRIu16 ") learning(samples=%u, dev=%.0f%%, auto=%s)",
@@ -795,9 +773,9 @@ bool Lv6ValveController::reset_fault(uint8_t zone) {
     return false;
   }
 
-  if (rev31_backend_enabled_) {
-    if (!rev31_backend_ || !rev31_backend_->arm_latch()) {
-      ESP_LOGE(TAG, "Zone %d fault reset rejected: Rev 3.1 hardware fault remains active",
+  if (gpio_backend_enabled_) {
+    if (!gpio_backend_ || !gpio_backend_->arm_latch()) {
+      ESP_LOGE(TAG, "Zone %d fault reset rejected: hardware fault remains active",
                zone + 1);
       return false;
     }
@@ -1223,17 +1201,17 @@ bool Lv6ValveController::start_motor_(uint8_t zone, MotorDirection dir, bool ove
     return false;
 
   DRV8215 *driver = nullptr;
-  if (!rev31_backend_enabled_) {
+  if (!gpio_backend_enabled_) {
     driver = drivers_[zone];
     if (!driver)
       return false;
-  } else if (!rev31_backend_) {
+  } else if (!gpio_backend_) {
     return false;
   }
 
   // If drivers are physically asleep and we're overriding, temporarily wake nSLEEP
   nsleep_overridden_ = false;
-  if (!rev31_backend_enabled_ && override_drivers && !drivers_enabled_ && !DEVELOPMENT_KEEP_NSLEEP_AWAKE) {
+  if (!gpio_backend_enabled_ && override_drivers && !drivers_enabled_ && !DEVELOPMENT_KEEP_NSLEEP_AWAKE) {
     set_nsleep_(true);
     vTaskDelay(pdMS_TO_TICKS(5));  // DRV8215 wakeup time
     nsleep_overridden_ = true;
@@ -1290,8 +1268,17 @@ bool Lv6ValveController::start_motor_(uint8_t zone, MotorDirection dir, bool ove
   // Reset ripple counter and start ADC DMA
   ripple_counter_.reset();
   live_ripple_count_ = 0;
-  dma_debounce_remaining_ = RIPPLE_DMA_DEBOUNCE_SAMPLES;
+  dma_debounce_remaining_ = dma_debounce_samples_;
   ripple_drive_was_on_ = false;
+  hard_cap_tripped_.store(false, std::memory_order_relaxed);
+  if (tacho_adc_counter_ != nullptr) {
+    tacho_adc_counter_->reset();
+    tacho_adc_count_ = 0;
+    tacho_adc_raw_ = 0xFFFF;
+  }
+  // The stroke phase model restarts with the move: which direction it is, and
+  // therefore whether a pin-contact phase is expected at all, changes with it.
+  stroke_.reset(dir == MotorDirection::OPEN);
   fsm_tick_count_ = 0;
   trace_reset_();
   last_bemf_sample_ms_ = 0;
@@ -1303,24 +1290,29 @@ bool Lv6ValveController::start_motor_(uint8_t zone, MotorDirection dir, bool ove
   rev31_diag_sample_valid_ = 0;
   rev31_diag_sample_moving_ = 0;
   rev31_diag_invalid_samples_ = 0;
-  rev31_diag_evidence_count_ = 0;
-  rev31_diag_sample_sequence_ = 0;
-  rev31_diag_motor_runtime_ms_ = 0;
-  rev31_diag_current_ma_x10_ = 0;
-  if (rev31_backend_)
-    rev31_backend_->reset_motion();
+  motor_diag_evidence_count_ = 0;
+  motor_diag_sample_sequence_ = 0;
+  motor_diag_runtime_ms_ = 0;
+  motor_diag_current_ma_x10_ = 0;
+  if (gpio_backend_)
+    gpio_backend_->reset_motion();
 
   if (ripple_enabled_ && adc_continuous_handle_)
     adc_continuous_start(static_cast<adc_continuous_handle_t>(adc_continuous_handle_));
 
-  if (rev31_backend_enabled_) {
-    const Rev31Direction hw_dir = dir == MotorDirection::OPEN
-        ? Rev31Direction::REVERSE : Rev31Direction::FORWARD;
-    if (!rev31_backend_->select(zone, hw_dir) || !rev31_backend_->drive()) {
+  if (gpio_backend_enabled_) {
+    // Rev 3.2 arms the fault latch per move.  Nothing re-disarms it on its own
+    // since ECO rev3.2-C removed the 74HC4060, so the arm is both the drive
+    // precondition and the only test firmware has for a raw fault - FAULT_N_RAW
+    // reaches TP3 only.  Rev 3.1 keeps arming at boot and on enable.
+    const bool reverse = dir == MotorDirection::OPEN;
+    if ((rev32_backend_ && !rev32_backend_->arm_latch()) ||
+        !gpio_backend_->select_zone(zone, reverse) || !gpio_backend_->drive()) {
       motor_turning_ = false;
       fsm_state_ = MotorFsmState::IDLE;
       drive_output_enabled_ = false;
-      ESP_LOGE(TAG, "Motor %d start rejected by Rev 3.1 safety backend", zone + 1);
+      ESP_LOGE(TAG, "Motor %d start rejected by the %s safety backend", zone + 1,
+                gpio_backend_->backend_name());
       return false;
     }
   } else if (dir == MotorDirection::OPEN) {
@@ -1340,8 +1332,8 @@ void Lv6ValveController::stop_motor_(bool record_event) {
     return;
 
   DRV8215 *driver = drivers_[current_zone_];
-  if (rev31_backend_enabled_ && rev31_backend_)
-    rev31_backend_->coast();
+  if (gpio_backend_enabled_ && gpio_backend_)
+    gpio_backend_->coast();
   else if (driver)
     driver->coast();
   drive_output_enabled_ = false;
@@ -1420,7 +1412,7 @@ void Lv6ValveController::process_tick_() {
   // Check nFAULT — only react to thermal and overcurrent, not stall
   // (DRV8215 stall threshold ~500mA is too high for these valve motors)
   if (!read_nfault_()) {
-    if (rev31_backend_enabled_) {
+    if (gpio_backend_enabled_) {
       trigger_fault_(FaultCode::UNKNOWN_FAULT,
                      "persistent hardware fault latch asserted");
       drivers_enabled_ = false;
@@ -1506,11 +1498,52 @@ void Lv6ValveController::process_tick_() {
   if (debounce_count_ < 255)
     debounce_count_++;
 
+  // Rev 3.2 drains the hardware commutation counter every tick.  There is no
+  // coast interruption: the count is qualified against the commutation band and
+  // blanked for the first 250 ms, because the AC-coupled front end saturates on
+  // the drive-start step and emits spurious edges for about that long.
+  if (rev32_backend_) {
+    rev32_backend_->poll_motion(motor_run_time_ms_, drive_output_enabled_);
+    const uint32_t count = rev32_backend_->motion_evidence_count();
+    live_ripple_count_.store(count, std::memory_order_relaxed);
+    motor_diag_evidence_count_.store(count, std::memory_order_relaxed);
+    motor_diag_tacho_period_us_.store(rev32_backend_->tacho_period_us(),
+                                      std::memory_order_relaxed);
+    motor_diag_tacho_rejected_.store(rev32_backend_->tacho_rejected(),
+                                     std::memory_order_relaxed);
+    motor_diag_tacho_hardware_.store(rev32_backend_->tacho_hardware_count(),
+                                     std::memory_order_relaxed);
+    motor_diag_armed_.store(rev32_backend_->armed() ? 1 : 0,
+                            std::memory_order_relaxed);
+    motor_diag_decoder_address_.store(rev32_backend_->decoder_address(),
+                                      std::memory_order_relaxed);
+    motor_diag_runtime_ms_.store(motor_run_time_ms_, std::memory_order_relaxed);
+    motor_diag_sample_sequence_.fetch_add(1, std::memory_order_relaxed);
+    motor_diag_tacho_cadence_us_.store(rev32_backend_->tacho_cadence_us(),
+                                       std::memory_order_relaxed);
+    if (rev32_backend_->fault_latched()) {
+      drive_output_enabled_ = false;
+      trigger_fault_(FaultCode::UNKNOWN_FAULT,
+                     "hardware fault latch asserted mid-move");
+      return;
+    }
+
+    // Advance the stroke-phase model. The current bump at pin contact and the
+    // one at the hard stop are the same shape; what separates them is whether
+    // the rotor recovers, which is what stretch_x10 measures.
+    if (drive_output_enabled_ && !rev32_backend_->tacho_blanked(motor_run_time_ms_)) {
+      stroke_.observe(count, current_filtered_ma_,
+                      rev32_backend_->tacho_stretch_x10(motor_run_time_ms_));
+      motor_diag_stroke_phase_.store(static_cast<uint8_t>(stroke_.phase()),
+                                     std::memory_order_relaxed);
+    }
+  }
+
   // Rev 3.1 proves motion independently of current by briefly inhibiting the
   // decoder and sampling both motor terminals through the shared 4067.  The
   // backend restores the original latched direction only after the mandatory
   // 1 ms coast interval.
-  if (rev31_backend_enabled_ && rev31_backend_ && drive_output_enabled_ &&
+  if (rev31_backend_ && drive_output_enabled_ &&
       (last_bemf_sample_ms_ == 0 ||
        motor_run_time_ms_ - last_bemf_sample_ms_ >= REV31_BEMF_SAMPLE_PERIOD_MS)) {
     last_bemf_sample_ms_ = motor_run_time_ms_;
@@ -1527,11 +1560,11 @@ void Lv6ValveController::process_tick_() {
                                    std::memory_order_relaxed);
     rev31_diag_sample_moving_.store(sample.motion.moving ? 1 : 0,
                                     std::memory_order_relaxed);
-    rev31_diag_evidence_count_.store(rev31_backend_->motion_evidence_count(),
+    motor_diag_evidence_count_.store(rev31_backend_->motion_evidence_count(),
                                      std::memory_order_relaxed);
-    rev31_diag_motor_runtime_ms_.store(motor_run_time_ms_,
+    motor_diag_runtime_ms_.store(motor_run_time_ms_,
                                        std::memory_order_relaxed);
-    rev31_diag_sample_sequence_.fetch_add(1, std::memory_order_relaxed);
+    motor_diag_sample_sequence_.fetch_add(1, std::memory_order_relaxed);
     drive_output_enabled_ = !rev31_backend_->fault_latched();
     live_ripple_count_.store(rev31_backend_->motion_evidence_count(),
                              std::memory_order_relaxed);
@@ -1562,11 +1595,18 @@ void Lv6ValveController::process_tick_() {
   // zero ripples by EARLY_STALL_MS means it never moved → it is already against the stop
   // it was commanded toward. Current presence (boost current) confirms it is connected,
   // not missing. Gated to endstop-seeking moves; a moving motor (any ripples) is exempt.
+  //
+  // Rev 3.2 is excluded. EARLY_STALL_MS is 250 ms and so is the tacho blanking,
+  // so the commutation count is zero here BY CONSTRUCTION and this would fire on
+  // a healthy move. already_at_stop in detect_endstop_() covers the same
+  // condition, anchored to motion_decision_ms_() and routed through the endpoint
+  // classifier instead of stopping the move behind its back.
   if ((calibrating_ || drive_to_endstop_active_) && ripple_enabled_ &&
+      rev32_backend_ == nullptr &&
       motor_run_time_ms_ >= EARLY_STALL_MS &&
       live_ripple_count_.load(std::memory_order_relaxed) == 0 &&
       current_raw_ma_ >= motor_cfg_.low_current_threshold_ma) {
-    if (rev31_backend_enabled_) {
+    if (gpio_backend_enabled_) {
       // With no prior motion, current+BEMF cannot distinguish a genuine
       // already-at-stop condition from a pre-existing mechanical obstruction.
       // Stop early, but do not promote the ambiguous state to a known endpoint.
@@ -1601,14 +1641,14 @@ void Lv6ValveController::process_tick_() {
 
 void Lv6ValveController::apply_drive_output_() {
   DRV8215 *driver = drivers_[current_zone_];
-  if (rev31_backend_enabled_ && !rev31_backend_)
+  if (gpio_backend_enabled_ && !gpio_backend_)
     return;
-  if (!rev31_backend_enabled_ && !driver)
+  if (!gpio_backend_enabled_ && !driver)
     return;
 
   auto drive_selected = [&]() -> bool {
-    if (rev31_backend_enabled_)
-      return rev31_backend_->drive();
+    if (gpio_backend_enabled_)
+      return gpio_backend_->drive();
     if (current_dir_ == MotorDirection::OPEN)
       driver->reverse();
     else
@@ -1616,8 +1656,8 @@ void Lv6ValveController::apply_drive_output_() {
     return true;
   };
   auto coast_selected = [&]() {
-    if (rev31_backend_enabled_)
-      rev31_backend_->coast();
+    if (gpio_backend_enabled_)
+      gpio_backend_->coast();
     else
       driver->coast();
   };
@@ -1650,6 +1690,187 @@ void Lv6ValveController::apply_drive_output_() {
   }
 }
 
+void Lv6ValveController::sanitize_motor_cfg_() {
+  // NVS holds bring-up values that an operator can edit, so a nonsensical pair
+  // must not silently disable the stall verdict. A floor above the ceiling would
+  // make adaptive_plateau_ms() return the floor unconditionally, which is a
+  // longer debounce than either value asked for.
+  if (motor_cfg_.stall_plateau_floor_ms > motor_cfg_.stall_plateau_ceiling_ms) {
+    ESP_LOGW(TAG, "stall_plateau floor %" PRIu32 "ms exceeds ceiling %" PRIu32 "ms; swapping",
+             motor_cfg_.stall_plateau_floor_ms, motor_cfg_.stall_plateau_ceiling_ms);
+    std::swap(motor_cfg_.stall_plateau_floor_ms, motor_cfg_.stall_plateau_ceiling_ms);
+  }
+  if (motor_cfg_.endpoint_window_tolerance_pct > 100)
+    motor_cfg_.endpoint_window_tolerance_pct = 100;
+  // A motion decision inside the blanking window would see a zero commutation
+  // count by construction and read it as "never moved".
+  if (motor_cfg_.rev32_motion_decision_ms > 0 &&
+      motor_cfg_.rev32_motion_decision_ms <= Rev32TachoQualifier::BLANKING_MS) {
+    ESP_LOGW(TAG, "rev32_motion_decision_ms %" PRIu32 "ms is inside the %" PRIu32
+             "ms tacho blanking; deriving it instead",
+             motor_cfg_.rev32_motion_decision_ms, Rev32TachoQualifier::BLANKING_MS);
+    motor_cfg_.rev32_motion_decision_ms = 0;
+  }
+}
+
+bool Lv6ValveController::start_adc_stream_() {
+  // One continuous (DMA) stream owns the ADC unit. The oneshot and continuous
+  // drivers cannot share a unit, which is why Rev 3.2's backend does not read
+  // its own ADC: reading two channels from the motor task at 100 Hz cost 200
+  // blocking conversions a second and sampled TACHO_AMP at Nyquist against the
+  // 20-40 Hz commutation band, so it could never cross-check the count anyway.
+  //
+  // adc_oneshot_io_to_channel() is a pure GPIO -> (unit, channel) lookup and
+  // allocates no oneshot handle, so it is safe here.
+  const bool rev32 = rev32_backend_ != nullptr;
+
+  adc_unit_t current_unit;
+  adc_channel_t current_chan;
+  esp_err_t adc_err = adc_oneshot_io_to_channel(static_cast<int>(ipropi_pin_),
+                                                &current_unit, &current_chan);
+  if (adc_err != ESP_OK) {
+    ESP_LOGW(TAG, "ADC_CURRENT GPIO%d is not ADC-capable; current sensing disabled",
+             ipropi_pin_);
+    ripple_enabled_ = false;
+    return false;
+  }
+  ipropi_channel_ = static_cast<int>(current_chan);
+
+  // Rev 3.2 reads ADC_CURRENT at 6 dB — full scale lands near 175 mA at the
+  // INA180's 10 V/A, covering the whole operating range at ~1.8x the resolution
+  // of the 12 dB span. The DRV8215 current mirror needs the full 12 dB range.
+  const adc_atten_t current_atten = rev32 ? ADC_ATTEN_DB_6 : ADC_ATTEN_DB_12;
+  adc_current_atten_ = current_atten;
+
+  adc_digi_pattern_config_t pattern[2] = {};
+  uint8_t pattern_num = 1;
+  pattern[0].atten = current_atten;
+  pattern[0].channel = current_chan;
+  pattern[0].unit = current_unit;
+  pattern[0].bit_width = ADC_BITWIDTH_12;
+
+  if (rev32) {
+    adc_unit_t tacho_unit;
+    adc_channel_t tacho_chan;
+    if (adc_oneshot_io_to_channel(static_cast<int>(rev32_pins_.adc_tacho),
+                                  &tacho_unit, &tacho_chan) != ESP_OK ||
+        tacho_unit != current_unit) {
+      ESP_LOGE(TAG, "ADC_TACHO GPIO%d must be on the same ADC unit as ADC_CURRENT",
+               rev32_pins_.adc_tacho);
+      ripple_enabled_ = false;
+      return false;
+    }
+    tacho_adc_channel_ = static_cast<int>(tacho_chan);
+    // TACHO_AMP is an ~85x amplified ripple riding on the mid-rail reference,
+    // so it needs the full-scale range even though the ripple itself is small.
+    pattern[1].atten = ADC_ATTEN_DB_12;
+    pattern[1].channel = tacho_chan;
+    pattern[1].unit = tacho_unit;
+    pattern[1].bit_width = ADC_BITWIDTH_12;
+    pattern_num = 2;
+  }
+
+  // Two channels share the sample rate round-robin, so the aggregate is doubled
+  // to keep each channel at the per-channel rate the filters are derived for.
+  const uint32_t sample_rate = rev32 ? REV32_ADC_SAMPLE_RATE_HZ * 2
+                                     : RIPPLE_SAMPLE_RATE_HZ;
+  const uint32_t frame_bytes = rev32 ? REV32_DMA_FRAME_BYTES : RIPPLE_DMA_FRAME_BYTES;
+
+  adc_continuous_handle_cfg_t cont_handle_cfg = {};
+  cont_handle_cfg.max_store_buf_size = frame_bytes * 4;
+  cont_handle_cfg.conv_frame_size = frame_bytes;
+  adc_continuous_handle_t adc_cont_h = nullptr;
+  adc_err = adc_continuous_new_handle(&cont_handle_cfg, &adc_cont_h);
+  adc_continuous_handle_ = adc_cont_h;
+
+  if (adc_err == ESP_OK) {
+    adc_continuous_config_t cont_cfg = {};
+    cont_cfg.sample_freq_hz = sample_rate;
+    cont_cfg.conv_mode = ADC_CONV_SINGLE_UNIT_1;
+    cont_cfg.format = ADC_DIGI_OUTPUT_FORMAT_TYPE2;
+    cont_cfg.pattern_num = pattern_num;
+    cont_cfg.adc_pattern = pattern;
+    adc_err = adc_continuous_config(
+        static_cast<adc_continuous_handle_t>(adc_continuous_handle_), &cont_cfg);
+  }
+  if (adc_err == ESP_OK) {
+    adc_continuous_evt_cbs_t cbs = {};
+    cbs.on_conv_done = ripple_adc_conv_done_;
+    adc_err = adc_continuous_register_event_callbacks(
+        static_cast<adc_continuous_handle_t>(adc_continuous_handle_), &cbs,
+        &ripple_task_handle_);
+  }
+  if (adc_err == ESP_OK) {
+    adc_cali_curve_fitting_config_t cali_cfg = {};
+    cali_cfg.unit_id = current_unit;
+    cali_cfg.chan = current_chan;
+    cali_cfg.atten = current_atten;
+    cali_cfg.bitwidth = ADC_BITWIDTH_12;
+    adc_cali_handle_t cali_h = nullptr;
+    if (adc_cali_create_scheme_curve_fitting(&cali_cfg, &cali_h) != ESP_OK) {
+      ESP_LOGW(TAG, "ADC calibration init failed, using uncalibrated");
+      cali_h = nullptr;
+    }
+    adc_cali_handle_ = cali_h;
+  }
+  if (adc_err != ESP_OK) {
+    ESP_LOGW(TAG, "ADC continuous init failed (err=%d), ripple counting disabled", adc_err);
+    ripple_enabled_ = false;
+    return false;
+  }
+
+  if (rev32) {
+    // The RippleCounter constants were derived for 15 kHz on the DRV8215 current
+    // mirror. On Rev 3.2 it runs on the amplified tacho waveform at a different
+    // rate, so the sample-rate-dependent terms are re-derived here. Amplitude
+    // terms (threshold, hysteresis) are bring-up values and must be re-measured.
+    RippleCounter::Config cfg = kRippleConfig;
+    cfg.sampleRate = static_cast<float>(REV32_ADC_SAMPLE_RATE_HZ);
+    cfg.minPeriodSamples = REV32_ADC_SAMPLE_RATE_HZ / REV32_TACHO_GATE_HZ;
+    tacho_adc_counter_ = new RippleCounter(cfg);
+    // The contract's mandatory 250 ms blanking, expressed in samples of this
+    // stream. Rev 3.2 drives continuously, so this fires once per move.
+    dma_debounce_samples_ =
+        REV32_ADC_SAMPLE_RATE_HZ * Rev32TachoQualifier::BLANKING_MS / 1000;
+  }
+
+  BaseType_t task_ok = xTaskCreatePinnedToCore(
+      ripple_task_func_, "hv6_ripple", 4096, this, PRIORITY - 1,
+      &ripple_task_handle_, CORE);
+  if (task_ok != pdPASS) {
+    ESP_LOGE(TAG, "Failed to create ripple processor task");
+    ripple_enabled_ = false;
+    return false;
+  }
+
+  ripple_enabled_ = true;
+  if (rev32) {
+    ESP_LOGI(TAG,
+             "ADC continuous @ %" PRIu32 "Hz: ADC_CURRENT GPIO%d @6dB + ADC_TACHO GPIO%d @12dB "
+             "(%" PRIu32 "Hz each, %" PRIu32 " byte frames)",
+             sample_rate, ipropi_pin_, rev32_pins_.adc_tacho,
+             REV32_ADC_SAMPLE_RATE_HZ, frame_bytes);
+  } else {
+    ESP_LOGI(TAG, "IPROPI ADC continuous @ %" PRIu32 "Hz (GPIO%d), ripple counting enabled",
+             sample_rate, ipropi_pin_);
+  }
+  return true;
+}
+
+uint32_t Lv6ValveController::motion_decision_ms_() const {
+  if (rev32_backend_ == nullptr)
+    return motor_cfg_.pwm_boost_ms + ALREADY_AT_STOP_MS;
+
+  // Blanking discards every edge for the first 250 ms, and the qualifier needs a
+  // poll after that to credit the first one. Two worst-case commutation periods
+  // of headroom past blanking makes a zero count mean "it never turned" rather
+  // than "we have not looked yet".
+  const uint32_t configured = motor_cfg_.rev32_motion_decision_ms;
+  if (configured > 0)
+    return std::max(configured, Rev32TachoQualifier::BLANKING_MS + 1);
+  return Rev32TachoQualifier::BLANKING_MS + 2 * (rev32_tacho_.max_period_us / 1000);
+}
+
 uint8_t Lv6ValveController::effective_hold_duty_() {
   // Full-duty calibration: drive 100% (continuous, no coast off-phase) so the motor
   // makes full torque and IPROPI is never coast-zeroed. The 70% hold both weakens the
@@ -1659,6 +1880,18 @@ uint8_t Lv6ValveController::effective_hold_duty_() {
   if (calibrating_) {
     soft_approach_active_ = false;
     return CALIBRATION_DUTY_PCT;
+  }
+
+  // Rev 3.2 has no duty-cycle control at all: the 4514 feeds the driver inputs
+  // static logic, so the only way to modulate would be to chop MOTOR_ENABLE.
+  // That is actively harmful here — the 40 ms chop period sits *inside* the
+  // 25-50 ms commutation period the tacho counts, and every off-edge is a fresh
+  // drive-start step into an AC-coupled front end with a 100 ms settling time.
+  // Soft-approach therefore does not exist on Rev 3.2; fast endpoint detection
+  // is the pop-off defence instead (architecture.md, No hardware runtime cutoff).
+  if (rev32_backend_ != nullptr) {
+    soft_approach_active_ = false;
+    return 100;
   }
 
   uint8_t hold = motor_cfg_.pwm_hold_duty_pct;
@@ -1693,12 +1926,54 @@ uint8_t Lv6ValveController::effective_hold_duty_() {
   return active ? approach : hold;
 }
 
+bool Lv6ValveController::endpoint_window_reached_() const {
+  const uint32_t count = live_ripple_count_.load(std::memory_order_relaxed);
+  const float tolerance =
+      1.0f - static_cast<float>(motor_cfg_.endpoint_window_tolerance_pct) / 100.0f;
+
+  // Closing: the seat is a fixed depth past pin contact, and that depth is far
+  // more repeatable than the full stroke, which depends on where the move
+  // started. Measure from the contact the tracker actually observed.
+  if (current_dir_ == MotorDirection::CLOSE && stroke_.contact_seen()) {
+    xSemaphoreTake(telemetry_mutex_, portMAX_DELAY);
+    const uint32_t seating = telemetry_[current_zone_].contact_to_stop_close_ripples;
+    xSemaphoreGive(telemetry_mutex_);
+    if (seating > 0) {
+      const uint32_t expected =
+          stroke_.contact_count() + static_cast<uint32_t>(seating * tolerance);
+      return count >= expected;
+    }
+  }
+
+  // Otherwise fall back to the travel estimated for this move. Opening has no
+  // contact phase to measure from, so this is the only anchor it has.
+  if (approach_stroke_ripples_ == 0)
+    return true;  // uncalibrated: nothing to withhold an endpoint against
+  return count >= static_cast<uint32_t>(approach_stroke_ripples_ * tolerance);
+}
+
 void Lv6ValveController::detect_endstop_() {
-  bool past_boost = motor_run_time_ms_ >= motor_cfg_.pwm_boost_ms;
-  const bool rev31_motion_observed = rev31_backend_enabled_ && rev31_backend_ &&
-                                     rev31_backend_->motion_observed();
-  const bool rev31_motion_stopped = rev31_backend_enabled_ && rev31_backend_ &&
-      rev31_backend_->motion_stopped_for(motor_run_time_ms_, RIPPLE_STALL_MS);
+  // Rev 3.2 has no boost phase — it drives continuously — so the guard comes
+  // from the tacho contract instead of the PWM profile.
+  bool past_boost = motor_run_time_ms_ >= (rev32_backend_ != nullptr
+                                               ? motion_decision_ms_()
+                                               : motor_cfg_.pwm_boost_ms);
+  const bool gpio_motion_observed = gpio_backend_enabled_ && gpio_backend_ &&
+                                     gpio_backend_->motion_observed();
+
+  // How long silence has to last before it counts as a stall. Rev 3.1's fixed
+  // 750 ms has to be sized for the slowest case; Rev 3.2 scales it to the
+  // cadence this motor is actually turning at, which on the qualified actuator
+  // lands at the 150 ms floor — inside E-08's 250 ms bound and four times
+  // quicker to take the drive off a hard stop.
+  const uint32_t stall_debounce_ms =
+      rev32_backend_ != nullptr
+          ? rev32_backend_->stall_debounce_ms(motor_cfg_.stall_plateau_factor_x10,
+                                              motor_cfg_.stall_plateau_floor_ms,
+                                              motor_cfg_.stall_plateau_ceiling_ms)
+          : RIPPLE_STALL_MS;
+  const bool gpio_motion_stopped = gpio_backend_enabled_ && gpio_backend_ &&
+      gpio_backend_->motion_stopped_for(motor_run_time_ms_, stall_debounce_ms);
 
   // --- Fast hard safety cap (low latency) ---
   // Evaluate the absolute over-current cap against the *raw* per-frame current
@@ -1751,6 +2026,12 @@ void Lv6ValveController::detect_endstop_() {
   if (motor_run_time_ms_ >= endstop_guard_ms_) {
     bool is_opening = (current_dir_ == MotorDirection::OPEN);
     float cfg_current_factor = effective_current_factor_(current_zone_, current_dir_);
+    // On Rev 3.2 the opening endstop is the motor's own gear train bottoming
+    // out — a materially smaller resistance than the closing hard stop, which
+    // presses a pin into a seat. Reusing the closing factor barely reaches it,
+    // and opening is the direction where overrunning strips the gears.
+    if (is_opening && rev32_backend_ != nullptr)
+      cfg_current_factor = motor_cfg_.open_endstop_current_factor;
     float cfg_slope_thr      = is_opening ? motor_cfg_.open_slope_threshold_ma_per_s
                                           : motor_cfg_.close_slope_threshold_ma_per_s;
     float cfg_slope_cur_fac  = is_opening ? motor_cfg_.open_slope_current_factor
@@ -1854,7 +2135,7 @@ void Lv6ValveController::detect_endstop_() {
     }
     bool connected = rip >= RIPPLE_STALL_MIN_COUNT ||
                      current_filtered_ma_ >= motor_cfg_.low_current_threshold_ma;
-    if (connected && (motor_run_time_ms_ - stall_last_advance_ms_) >= RIPPLE_STALL_MS)
+    if (connected && (motor_run_time_ms_ - stall_last_advance_ms_) >= stall_debounce_ms)
       stall_endstop = true;
   }
 
@@ -1866,32 +2147,85 @@ void Lv6ValveController::detect_endstop_() {
   // blind window (the actuator pop-off), without trial-and-error current tuning. A
   // disconnected motor draws no current here, so it is left to the open-circuit path.
   bool already_at_stop = ripple_enabled_ && (calibrating_ || drive_to_endstop_active_) &&
-      motor_run_time_ms_ >= motor_cfg_.pwm_boost_ms + ALREADY_AT_STOP_MS &&
+      motor_run_time_ms_ >= motion_decision_ms_() &&
       live_ripple_count_.load(std::memory_order_relaxed) == 0 &&
       current_filtered_ma_ >= motor_cfg_.low_current_threshold_ma;
 
-  if (rev31_backend_enabled_) {
-    // Normal Rev 3.1 endpoint acceptance is two-factor: elevated force plus
-    // previously observed motion that has now ceased.  Current alone may stop
-    // the drive as a safety event, but cannot establish a position endpoint.
-    threshold_endstop = threshold_endstop && rev31_motion_observed && rev31_motion_stopped;
-    slope_endstop = slope_endstop && rev31_motion_observed && rev31_motion_stopped;
-    open_fast_endstop = open_fast_endstop && rev31_motion_observed && rev31_motion_stopped;
-    stall_endstop = stall_endstop && rev31_motion_observed && rev31_motion_stopped;
+  // Endpoint acceptance on both discrete revisions is two-factor: load evidence
+  // plus previously observed motion that has now ceased.  Current alone may stop
+  // the drive as a safety event, but cannot establish a position endpoint.  On
+  // Rev 3.2 the motion half is the commutation count, which cannot tell rotation
+  // from brush chatter against a hard stop - so it is only ever allowed to
+  // *withhold* an endpoint, never to assert one.
+  if (gpio_backend_enabled_) {
+    threshold_endstop = threshold_endstop && gpio_motion_observed && gpio_motion_stopped;
+    slope_endstop = slope_endstop && gpio_motion_observed && gpio_motion_stopped;
+    open_fast_endstop = open_fast_endstop && gpio_motion_observed && gpio_motion_stopped;
+    stall_endstop = stall_endstop && gpio_motion_observed && gpio_motion_stopped;
+  }
 
+  if (rev32_backend_) {
+    // Rev 3.2 runs the decision through the host-tested table in rev32_logic.h
+    // rather than a second copy of it here.  `make test-rev32-logic` is what
+    // proves the table; this block only supplies evidence.
+    Rev32EndpointEvidence evidence;
+    evidence.blanking_elapsed = motor_run_time_ms_ >= Rev32TachoQualifier::BLANKING_MS;
+    evidence.current_present = current_filtered_ma_ >= motor_cfg_.low_current_threshold_ma;
+    evidence.load_evidence = threshold_endstop || slope_endstop || open_fast_endstop ||
+                             hard_cap_endstop || stall_endstop;
+    evidence.current_over_cap = hard_cap_endstop;
+    // `already_at_stop` is the FSM's own "never commutated at the decision
+    // point" signal, and it carries the timing anchor that raw blanking does
+    // not.  Before that window opens, absence of a commutation count is not yet
+    // evidence of anything.
+    evidence.commutation_observed = gpio_motion_observed || !already_at_stop;
+    evidence.commutation_plateau = gpio_motion_stopped;
+    evidence.commanded_endpoint = calibrating_ || drive_to_endstop_active_;
+    evidence.direction_is_open = current_dir_ == MotorDirection::OPEN;
+    evidence.phase = stroke_.phase();
+    evidence.endpoint_window = endpoint_window_reached_();
+
+    switch (classify_rev32_endpoint(evidence)) {
+      case Rev32EndpointDecision::CONTINUE:
+        return;
+      case Rev32EndpointDecision::ENDPOINT:
+        break;  // falls through to the endpoint record below
+      case Rev32EndpointDecision::OVERCURRENT:
+        trigger_fault_(FaultCode::OVERCURRENT,
+                       "current safety cap reached without qualified stopped-motion endpoint");
+        return;
+      case Rev32EndpointDecision::JAM:
+        trigger_fault_(FaultCode::BLOCKED,
+                       "motion stopped under load outside a commanded endpoint window");
+        return;
+      case Rev32EndpointDecision::BLOCKED_OR_UNKNOWN:
+        trigger_fault_(FaultCode::BLOCKED,
+                       "no qualified motion under load; endpoint versus jam is ambiguous");
+        return;
+      case Rev32EndpointDecision::TACHO_FAULT:
+        trigger_fault_(FaultCode::UNKNOWN_FAULT,
+                       "commutation ceased while current vanished: tacho or current-sense fault");
+        return;
+      case Rev32EndpointDecision::DISCONNECTED:
+        // No current and no commutation.  detect_open_circuit_() owns this and
+        // has the debounce for it; stopping on a single tick would fire on a
+        // slow breakaway.
+        return;
+    }
+  } else if (gpio_backend_enabled_) {
     if (already_at_stop) {
       trigger_fault_(FaultCode::BLOCKED,
                      "no qualified motion; endpoint versus jam is ambiguous");
       return;
     }
 
-    if (hard_cap_endstop && !(rev31_motion_observed && rev31_motion_stopped)) {
+    if (hard_cap_endstop && !(gpio_motion_observed && gpio_motion_stopped)) {
       trigger_fault_(FaultCode::OVERCURRENT,
                      "current safety cap reached without qualified stopped-motion endpoint");
       return;
     }
 
-    const bool stopped_under_load = rev31_motion_observed && rev31_motion_stopped &&
+    const bool stopped_under_load = gpio_motion_observed && gpio_motion_stopped &&
         current_filtered_ma_ >= motor_cfg_.low_current_threshold_ma;
     if (stopped_under_load && !calibrating_ && !drive_to_endstop_active_) {
       trigger_fault_(FaultCode::BLOCKED,
@@ -1968,6 +2302,22 @@ void Lv6ValveController::detect_pin_engagement_() {
   // Only detect during close direction
   if (current_dir_ != MotorDirection::CLOSE)
     return;
+
+  // On Rev 3.2 the stroke tracker already separates pin contact from the seat,
+  // and it does so on cadence recovery rather than on current magnitude alone.
+  // Take its answer instead of running a second, weaker detector against a
+  // fixed time anchor that has no meaning without a boost phase.
+  if (rev32_backend_ != nullptr) {
+    if (!stroke_.contact_seen())
+      return;
+    pin_detected_ = true;
+    pin_detected_ripples_ = stroke_.contact_count();
+    ESP_LOGI(TAG, "Motor %d pin contact at commutation %" PRIu32
+             " (free travel %.1f mA, peak %.1f mA)",
+             current_zone_ + 1, pin_detected_ripples_, stroke_.baseline_ma(),
+             stroke_.peak_ma());
+    return;
+  }
 
   // Wait for current to settle after boost
   if (motor_run_time_ms_ < ENDSTOP_MIN_RUNTIME_MS)
@@ -2109,6 +2459,22 @@ void Lv6ValveController::motor_loop_() {
   if (!motor_turning_)
     return;
 
+  // 1 ms: the absolute current cap. The ripple task raises this from a DMA
+  // frame's peak, so the drive comes off within a millisecond instead of
+  // waiting out the 10 ms FSM tick and its 2-tick debounce. On the closing hard
+  // stop that difference is stall torque into a rigid stop, and the damage
+  // mechanism is torque times duration.
+  if (hard_cap_tripped_.exchange(false, std::memory_order_relaxed)) {
+    if (drive_output_enabled_) {
+      if (gpio_backend_)
+        gpio_backend_->coast();
+      drive_output_enabled_ = false;
+    }
+    trigger_fault_(FaultCode::OVERCURRENT,
+                   "absolute current cap reached (fast DMA path)");
+    return;
+  }
+
   // 10ms: run full FSM tick (endstop, fault detection, PWM cycling)
   fsm_tick_count_++;
   if (fsm_tick_count_ >= TICKS_PER_FSM) {
@@ -2147,10 +2513,29 @@ void Lv6ValveController::run_ripple_task_() {
     float sum_ma     = 0.0f;
     uint32_t n_valid = 0;
     int last_raw     = -1;
+    float peak_ma    = 0.0f;
 
     for (uint32_t i = 0; i < n_frames; ++i) {
       // ESP32-S3 TYPE2 output format
-      if (static_cast<int>(frames[i].type2.channel) != expected_chan)
+      const int chan = static_cast<int>(frames[i].type2.channel);
+
+      // Rev 3.2 interleaves TACHO_AMP into the same stream. It is the analog
+      // cross-check on the hardware commutation count and must never reach the
+      // endpoint decision, so it is counted separately and only published.
+      if (chan == tacho_adc_channel_) {
+        const uint16_t tacho_raw = frames[i].type2.data & 0x0FFFu;
+        tacho_adc_raw_.store(tacho_raw, std::memory_order_relaxed);
+        if (tacho_adc_counter_ != nullptr &&
+            drive_output_enabled_.load(std::memory_order_relaxed) &&
+            dma_debounce_remaining_ == 0) {
+          tacho_adc_counter_->update(tacho_raw);
+          tacho_adc_count_.store(tacho_adc_counter_->getRippleCount(),
+                                 std::memory_order_relaxed);
+        }
+        continue;
+      }
+
+      if (chan != expected_chan)
         continue;
 
       const uint16_t raw = frames[i].type2.data & 0x0FFFu;  // 12-bit value
@@ -2163,9 +2548,12 @@ void Lv6ValveController::run_ripple_task_() {
         continue;  // IPROPI reads zero during coast — skip to avoid corrupting filters
       }
       if (!ripple_drive_was_on_) {
-        // Drive just turned on — apply inrush debounce
+        // Drive just turned on — apply inrush debounce. On Rev 3.2 the drive is
+        // continuous, so this fires exactly once per move and becomes the
+        // mandatory 250 ms tacho blanking: the AC-coupled front end saturates on
+        // the drive-start step and emits spurious edges for about that long.
         ripple_drive_was_on_  = true;
-        dma_debounce_remaining_ = RIPPLE_DMA_DEBOUNCE_SAMPLES;
+        dma_debounce_remaining_ = dma_debounce_samples_;
       }
       if (dma_debounce_remaining_ > 0) {
         --dma_debounce_remaining_;
@@ -2173,16 +2561,34 @@ void Lv6ValveController::run_ripple_task_() {
       }
 
       // --- Feed sample to ripple counter ---
-      ripple_counter_.update(raw);
-      sum_ma  += adc_raw_to_ma_(static_cast<int>(raw));
+      // On Rev 3.2 the commutation count comes from PCNT on COMM_TACHO_N, not
+      // from this filter — the current ripple is at the ADC noise floor there,
+      // which is why the analog tacho chain exists at all.
+      const float sample_ma = adc_raw_to_ma_(static_cast<int>(raw));
+      if (rev32_backend_ == nullptr)
+        ripple_counter_.update(raw);
+      sum_ma  += sample_ma;
+      if (sample_ma > peak_ma)
+        peak_ma = sample_ma;
       last_raw = static_cast<int>(raw);
       ++n_valid;
     }
 
     if (n_valid > 0) {
       latest_current_ma_ = sum_ma / static_cast<float>(n_valid);
-      live_ripple_count_.store(ripple_counter_.getRippleCount(),
-                               std::memory_order_relaxed);
+      if (rev32_backend_ != nullptr) {
+        rev32_backend_->publish_current_ma(latest_current_ma_);
+        // The absolute cap decided here rather than at the 10 ms FSM tick with a
+        // 2-tick debounce: on the closing hard stop the 20 ms difference is
+        // stall torque into a rigid stop, and torque x duration is exactly the
+        // damage mechanism. The frame is already a ~64-sample average window, so
+        // a single noisy conversion cannot trip it.
+        if (peak_ma > ENDSTOP_HARD_CAP_MA)
+          hard_cap_tripped_.store(true, std::memory_order_relaxed);
+      } else {
+        live_ripple_count_.store(ripple_counter_.getRippleCount(),
+                                 std::memory_order_relaxed);
+      }
       if (last_raw >= 0)
         trace_sample_(last_raw, latest_current_ma_);
     }
@@ -2195,17 +2601,30 @@ float Lv6ValveController::adc_raw_to_ma_(int raw) {
     int voltage_mv = 0;
     auto ch = static_cast<adc_cali_handle_t>(adc_cali_handle_);
     if (adc_cali_raw_to_voltage(ch, raw, &voltage_mv) == ESP_OK)
-      return static_cast<float>(voltage_mv) / 1000.0f / IPROPI_DIVISOR;
+      return static_cast<float>(voltage_mv) / 1000.0f * volts_to_ma_();
   }
-  // Fallback: uncalibrated linear approximation (12-bit, 0-3.1V)
-  float voltage = (static_cast<float>(raw) / 4095.0f) * 3.1f;
-  return voltage / IPROPI_DIVISOR;
+  // Fallback: uncalibrated linear approximation against the channel's nominal
+  // full scale — 1.75 V at 6 dB, 3.1 V at 12 dB.
+  const float full_scale_v = adc_current_atten_ == ADC_ATTEN_DB_6 ? 1.75f : 3.1f;
+  const float voltage = (static_cast<float>(raw) / 4095.0f) * full_scale_v;
+  return voltage * volts_to_ma_();
+}
+
+float Lv6ValveController::volts_to_ma_() const {
+  // Rev 3.2: INA180A1 at gain 20 into a 0.5 ohm shunt is 10 V/A, so 1 V is
+  // 100 mA. The DRV8215 path divides by its IPROPI current-mirror constant
+  // instead — a different measurement entirely, on a different pin.
+  return rev32_backend_ != nullptr ? 100.0f : 1.0f / IPROPI_DIVISOR;
 }
 
 float Lv6ValveController::read_current_ma_() {
-  if (rev31_backend_enabled_ && rev31_backend_) {
-    latest_current_ma_ = rev31_backend_->read_current_ma();
-    rev31_diag_current_ma_x10_.store(
+  if (gpio_backend_enabled_ && gpio_backend_) {
+    // Rev 3.2's current already arrives from the DMA stream at frame rate, so
+    // there is nothing to read here — reading it back through the backend would
+    // just be a round trip. Rev 3.1 still owns its own oneshot ADC.
+    if (rev32_backend_ == nullptr)
+      latest_current_ma_ = gpio_backend_->read_current_ma();
+    motor_diag_current_ma_x10_.store(
         static_cast<int32_t>(std::lround(latest_current_ma_ * 10.0f)),
         std::memory_order_relaxed);
     return latest_current_ma_;
@@ -2223,25 +2642,25 @@ float Lv6ValveController::read_current_ma_() {
 }
 
 void Lv6ValveController::set_nsleep_(bool enabled) {
-  if (rev31_backend_enabled_) {
-    // Rev 3.1 MOTOR_ENABLE is a per-move decoder gate, not a global nSLEEP.
+  if (gpio_backend_enabled_) {
+    // MOTOR_ENABLE is a per-move decoder gate, not a global nSLEEP.
     // A generic enable request only arms policy; it must never energize a motor.
-    if (!enabled && rev31_backend_)
-      rev31_backend_->coast();
+    if (!enabled && gpio_backend_)
+      gpio_backend_->coast();
     return;
   }
   gpio_set_level(nsleep_pin_, enabled ? 1 : 0);
 }
 
 bool Lv6ValveController::read_nfault_() {
-  if (rev31_backend_enabled_ && rev31_backend_)
-    return !rev31_backend_->fault_latched();
+  if (gpio_backend_enabled_ && gpio_backend_)
+    return !gpio_backend_->fault_latched();
   return gpio_get_level(nfault_pin_) == 1;
 }
 
 uint32_t Lv6ValveController::get_motion_count_() const {
-  if (rev31_backend_enabled_ && rev31_backend_)
-    return rev31_backend_->motion_evidence_count();
+  if (gpio_backend_enabled_ && gpio_backend_)
+    return gpio_backend_->motion_evidence_count();
   return ripple_counter_.getRippleCount();
 }
 
@@ -2437,6 +2856,11 @@ void Lv6ValveController::run_calibration_(uint8_t zone) {
       // Store pin engagement from close2 pass (if detected)
       if (pin_detected_ && pin_detected_ripples_ > 0) {
         t.pin_engage_close_ripples = pin_detected_ripples_;
+        // Seating depth: commutations from pin contact to the hard stop. This is
+        // the tightest endpoint window closing has, because it does not depend
+        // on where the move started — unlike the full stroke.
+        if (close2_ripples > pin_detected_ripples_)
+          t.contact_to_stop_close_ripples = close2_ripples - pin_detected_ripples_;
       }
       xSemaphoreGive(telemetry_mutex_);
 
@@ -2512,7 +2936,28 @@ void Lv6ValveController::trace_sample_(int raw_adc, float current_ma) {
   sample.ripple_count = live_ripple_count_.load(std::memory_order_relaxed);
   sample.current_ma_x10 = static_cast<int16_t>(current_ma * 10.0f);
   sample.adc_raw = raw_adc < 0 ? 0xFFFF : static_cast<uint16_t>(raw_adc & 0x0FFF);
-  if (rev31_backend_enabled_) {
+  sample.armed = motor_diag_armed_.load(std::memory_order_relaxed);
+  sample.direction_open = current_dir_ == MotorDirection::OPEN ? 1 : 0;
+
+  // The buffer is reused, so every revision-specific column is reset to its
+  // unused sentinel before the active backend fills its own.  A stale BEMF
+  // reading carried into a Rev 3.2 trace would look like real data.
+  sample.bemf_raw_a = 0xFFFF;
+  sample.bemf_raw_b = 0xFFFF;
+  sample.bemf_differential_raw = 0;
+  sample.bemf_separation_us = 0xFFFF;
+  sample.bemf_valid = 0;
+  sample.bemf_moving = 0;
+  sample.invalid_bemf_samples = 0;
+  sample.tacho_period_us = 0;
+  sample.tacho_amp_raw = 0xFFFF;
+  sample.stroke_phase = 0;
+
+  if (rev32_backend_) {
+    sample.tacho_period_us = motor_diag_tacho_period_us_.load(std::memory_order_relaxed);
+    sample.tacho_amp_raw = tacho_adc_raw_.load(std::memory_order_relaxed);
+    sample.stroke_phase = motor_diag_stroke_phase_.load(std::memory_order_relaxed);
+  } else if (rev31_backend_) {
     sample.bemf_raw_a = rev31_diag_raw_a_.load(std::memory_order_relaxed);
     sample.bemf_raw_b = rev31_diag_raw_b_.load(std::memory_order_relaxed);
     sample.bemf_differential_raw =
@@ -2523,14 +2968,6 @@ void Lv6ValveController::trace_sample_(int raw_adc, float current_ma) {
     sample.bemf_moving = rev31_diag_sample_moving_.load(std::memory_order_relaxed);
     sample.invalid_bemf_samples =
         rev31_diag_invalid_samples_.load(std::memory_order_relaxed);
-  } else {
-    sample.bemf_raw_a = 0xFFFF;
-    sample.bemf_raw_b = 0xFFFF;
-    sample.bemf_differential_raw = 0;
-    sample.bemf_separation_us = 0xFFFF;
-    sample.bemf_valid = 0;
-    sample.bemf_moving = 0;
-    sample.invalid_bemf_samples = 0;
   }
   sample.drive_on = drive_output_enabled_ ? 1 : 0;
 
@@ -2584,14 +3021,15 @@ void Lv6ValveController::clear_motor_trace() {
   xSemaphoreGive(trace_mutex_);
 }
 
-Rev31Diagnostics Lv6ValveController::get_rev31_diagnostics() const {
-  Rev31Diagnostics result;
-  result.backend_enabled = rev31_backend_enabled_;
+MotorSafetyDiagnostics Lv6ValveController::get_motor_safety_diagnostics() const {
+  MotorSafetyDiagnostics result;
+  result.backend_enabled = gpio_backend_enabled_;
+  result.backend = gpio_backend_ ? gpio_backend_->backend_name() : "drv8215_i2c";
   result.motor_busy = motor_turning_.load(std::memory_order_acquire);
   result.drive_on = drive_output_enabled_.load(std::memory_order_acquire);
   result.drivers_enabled = drivers_enabled_.load(std::memory_order_acquire);
-  result.latch_faulted = rev31_backend_enabled_ &&
-      (!rev31_backend_ || rev31_backend_->fault_latched());
+  result.latch_faulted = gpio_backend_enabled_ &&
+      (!gpio_backend_ || gpio_backend_->fault_latched());
   result.sample_valid = rev31_diag_sample_valid_.load(std::memory_order_relaxed) != 0;
   result.sample_moving = rev31_diag_sample_moving_.load(std::memory_order_relaxed) != 0;
   result.bemf_raw_a = rev31_diag_raw_a_.load(std::memory_order_relaxed);
@@ -2602,11 +3040,20 @@ Rev31Diagnostics Lv6ValveController::get_rev31_diagnostics() const {
   result.consecutive_invalid_samples =
       rev31_diag_invalid_samples_.load(std::memory_order_relaxed);
   result.motion_evidence_count =
-      rev31_diag_evidence_count_.load(std::memory_order_relaxed);
-  result.sample_sequence = rev31_diag_sample_sequence_.load(std::memory_order_relaxed);
-  result.motor_runtime_ms = rev31_diag_motor_runtime_ms_.load(std::memory_order_relaxed);
+      motor_diag_evidence_count_.load(std::memory_order_relaxed);
+  result.sample_sequence = motor_diag_sample_sequence_.load(std::memory_order_relaxed);
+  result.motor_runtime_ms = motor_diag_runtime_ms_.load(std::memory_order_relaxed);
   result.current_ma = static_cast<float>(
-      rev31_diag_current_ma_x10_.load(std::memory_order_relaxed)) / 10.0f;
+      motor_diag_current_ma_x10_.load(std::memory_order_relaxed)) / 10.0f;
+  result.armed = motor_diag_armed_.load(std::memory_order_relaxed) != 0;
+  result.decoder_address = motor_diag_decoder_address_.load(std::memory_order_relaxed);
+  result.tacho_period_us = motor_diag_tacho_period_us_.load(std::memory_order_relaxed);
+  result.tacho_cadence_us = motor_diag_tacho_cadence_us_.load(std::memory_order_relaxed);
+  result.tacho_rejected = motor_diag_tacho_rejected_.load(std::memory_order_relaxed);
+  result.tacho_hardware_count = motor_diag_tacho_hardware_.load(std::memory_order_relaxed);
+  result.tacho_amp_raw = tacho_adc_raw_.load(std::memory_order_relaxed);
+  result.tacho_adc_count = tacho_adc_count_.load(std::memory_order_relaxed);
+  result.stroke_phase = motor_diag_stroke_phase_.load(std::memory_order_relaxed);
   result.fault = current_fault_code_.load(std::memory_order_acquire);
   return result;
 }

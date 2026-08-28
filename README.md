@@ -31,9 +31,11 @@ why no hardware max-on-time timer backs it up.
 
 Rev3.2 status: schematic and design contract complete and checked; **PCB not yet routed**.
 
-> The firmware still targets the rev3.1 `DRV8215` I2C backend. See
-> [`lune-v6/README.md`](lune-v6/README.md) for the migration status and the known GPIO
-> collision before flashing a rev3.2 board.
+Firmware for it is `lune-v6/configurations/lune-v6-rev32.yaml`, which selects the
+`rev32_gpio` backend. Each revision has its own entrypoint and **none may be flashed on
+another revision's board** - the pin maps collide throughout. See
+[`lune-v6/README.md`](lune-v6/README.md) for the table and for what is still open on
+rev3.2.
 
 ## Commands
 

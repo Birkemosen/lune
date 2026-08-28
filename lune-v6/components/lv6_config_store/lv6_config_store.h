@@ -8,7 +8,7 @@
 #pragma once
 
 #include "esphome/core/component.h"
-#include "hv6_types.h"
+#include "lv6_types.h"
 #include "nvs.h"
 #include "nvs_flash.h"
 #include "esp_timer.h"

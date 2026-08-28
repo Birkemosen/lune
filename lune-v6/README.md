@@ -15,11 +15,11 @@ compatibility; the Lune V6 component directories and internal names use the `lv6
 This folder is ESPHome-only. The legacy PlatformIO and ESP-IDF source tree has been
 removed.
 
-## Firmware and hardware are not yet aligned
+## One firmware, three boards
 
-**The current board is `rev3.2`. The firmware still targets the `rev3.1` DRV8215 I2C
-backend.** This is a live migration, not a documentation gap — see
-[Migration status](#migration-status) before flashing a rev3.2 board.
+Each hardware revision has its own entrypoint and its own motor backend, and **none of
+them may be flashed on another revision's board** — the pin maps collide throughout.
+See [Firmware entrypoints](#firmware-entrypoints).
 
 ## Hardware Revisions
 
@@ -34,7 +34,7 @@ schematic and design contract are complete and checked, but no `.kicad_pcb` exis
 
 ## Rev3.2 Board
 
-Two-layer board, outline **100 × 70 mm** with a 21 × 7 mm antenna cutout in the north
+Two-layer board, outline **100 × 70 mm** with a 22 × 7 mm antenna cutout in the north
 edge, ESP32-S3-WROOM-1-N8R8 (8 MB flash, 8 MB octal PSRAM), USB-C powered. All connectors
 except USB-C exit the south edge; USB-C is on the west, beside the module's USB pads.
 
@@ -138,39 +138,82 @@ deliberately spent on digital: `GPIO4` on `STATUS_LED_N` (rev3.2-G) and `GPIO8` 
 - **Display** — unpopulated I2C pads, no on-board bus pull-ups. Not populated by default.
 - **Status LED** — a single green LED, active low. It is *not* an RGB/WS2812 part.
 
-## Migration status
+## Firmware entrypoints
 
-`lune.yaml` still declares `motor_hardware_backend: drv8215_i2c` with
-`motor_addresses: [0x30 … 0x35]`. Rev3.2 has no I2C motor driver at all — channel select
-is the one-hot decoder. The pin map is partly migrated:
+| Entrypoint | Backend | Board |
+|---|---|---|
+| `configurations/lune-ble.yaml` | `drv8215_i2c` | rev3.0 / rev3.1 development profile |
+| `configurations/lune-v6-rev31.yaml` | `rev31_gpio` | rev3.1-lean |
+| `configurations/lune-v6-rev32.yaml` | `rev32_gpio` | **rev3.2** |
 
-| `lune.yaml` substitution | Declares | Rev3.2 target | Action |
-|---|---|---|---|
-| `pin_motor_addr0/1/2` | 10 / 11 / 12 | `MOTOR_ADDR0/1/2` — **12 / 11 / 14** | ❌ **reordered**: addr0 10→12, addr2 12→14 |
-| `pin_motor_direction` | 14 | `MOTOR_ADDR3` — **13** | ⚠️ **rename + move + re-encode**: bit 3 is no longer the direction, and no bit is — see `decoder.channel_address_map` for the 12-entry table. |
-| `pin_latch_arm` | 16 | `LATCH_ARM` — **17** | ❌ **16 → 17** (swapped with `LATCH_STATE`) |
-| `pin_i2c_sda` / `pin_i2c_scl` | 8 / 9 | `I2C_SDA` / `I2C_SCL` — 8 / 9 | ✅ keep |
-| `pin_rgb_status_led` | 48 | `STATUS_LED_N` — **4** | ❌ **48 → 4** (rev3.2-G), and **not an RGB part** — active-low single LED. Note GPIO4 is still declared as `pin_nfault`, which this table already marks for deletion; delete it in the same edit or GPIO4 lands twice. |
-| `pin_adc_current` | 7 | `ADC_CURRENT` — **2** | ❌ **7 → 2** |
-| `pin_adc_bemf` | 5 | `ADC_TACHO` — **1** | ❌ **5 → 1**, and rename: BEMF frontend was removed |
-| `pin_onewire` | 12 | `ONEWIRE_MCU` — **8** | ❌ **12 → 8** (rev3.2-H); 12 is now `MOTOR_ADDR0` |
-| `pin_nsleep` | 6 | — | ❌ **delete**; replaced by `MOTOR_ENABLE` on **18** |
-| `pin_nfault` | 4 | — | ❌ **delete**; rev3.2 exposes no raw-fault GPIO |
-| `motor_hardware_backend` | `drv8215_i2c` | one-hot decoder | ❌ **replace** |
-| `motor_addresses` | `[0x30 … 0x35]` | — | ❌ **delete**; no I2C motor driver exists |
-| — | not declared | `MOTOR_ENABLE` — **18** | ➕ **add** |
-| — | not declared | `LATCH_STATE` — **16** | ➕ **add** |
-| — | not declared | `COMM_TACHO_N` — **38** | ➕ **add** (PCNT/RMT capture) |
+```sh
+make config CONFIG=configurations/lune-v6-rev32.yaml BUILD_NAME=lune-v6-rev32
+make build  CONFIG=configurations/lune-v6-rev32.yaml BUILD_NAME=lune-v6-rev32
+```
+
+The pin map is set in each entrypoint's `substitutions:`; `lune.yaml` carries only
+defaults. Every rev3.2 number is the `gpio` map in
+[`hardware/lune-v6-rev3.2/design-contract.json`](hardware/lune-v6-rev3.2/design-contract.json),
+which `check_design.py` asserts against the schematic.
+
+### What differs on rev3.2
+
+| | rev3.1 | rev3.2 |
+|---|---:|---:|
+| `ADC_CURRENT` | 4 | **2** (6 dB attenuation) |
+| `ADC_BEMF` → `ADC_TACHO` | 5 | **1** |
+| `MOTOR_ENABLE` | 13 | **18** |
+| `MOTOR_ADDR0/1/2` | 10 / 11 / 12 | **12 / 11 / 14** |
+| direction pin → `MOTOR_ADDR3` | 14 | **13**, a plain address bit |
+| `LATCH_ARM` | 16, DC-coupled | **17**, edge-coupled |
+| latch readback | `nFAULT` 17, active low | `LATCH_STATE` **16**, active **high** |
+| `I2C_SDA` / `I2C_SCL` | 8 / 9 | **21 / 47** |
+| `ONEWIRE_MCU` | 42 | **8** (declared ADC1 exception) |
+| `STATUS_LED_N` | 48, WS2812 | **4**, a single active-low LED |
+| motion evidence | BEMF mux across a coast | `COMM_TACHO_N` on **38**, PCNT |
+| motor addressing | `(dir << 3) \| (ch - 1)` | 12-entry `decoder.channel_address_map` |
+
+There is no I2C motor driver on rev3.2 at all — channel select is the hardware one-hot
+decoder — so `motor_addresses` is inert under `rev32_gpio`. The component rejects
+`adc_bemf_pin`, `direction_pin` and `bemf_threshold_raw` under that backend, rejects
+duplicate or contractually forbidden motor GPIO, and requires `ipropi_pin` and
+`adc_tacho_pin` to be on ADC1.
 
 Spare after rev3.2-H: **5**, **6**, **7**, **9**, **10** (all ADC1) and **15**. GPIO **4**
 and **8** were freed by the analog move but are now spent on `STATUS_LED_N` and
 `ONEWIRE_MCU`, both declared exceptions.
 
-**GPIO 12 is assigned twice** in `lune.yaml` — to both `pin_onewire` and
-`pin_motor_addr2`. On rev3.2 GPIO 12 is `MOTOR_ADDR0` and 1-Wire moves to GPIO 8.
+### Endstop detection on rev3.2
 
-**GPIO 8 is also `pin_i2c_sda` today.** The row above marks I2C for a move to 21/47; that
-edit and the 1-Wire move must land together or GPIO 8 lands twice.
+Closing is four mechanical phases and two of them — pin contact and the hard stop — look
+nearly identical in the current domain. Rev3.2 separates them on **whether the rotor
+recovers**, which is magnitude-independent and therefore works just as well on the gentle
+opening stop where the current barely moves. Opening's endstop is the motor's own gear
+train bottoming out: a smaller resistance than pop-off, and the direction the contract
+names as the damaging one.
+
+- One ADC1 DMA stream carries `ADC_CURRENT` (6 dB) and `ADC_TACHO` (12 dB) at 10 kHz
+  each. It replaced two blocking oneshot reads per 10 ms tick.
+- The absolute current cap is evaluated on a DMA frame peak and acted on at 1 ms rather
+  than 20 ms — that margin is force into a rigid stop.
+- The stall verdict scales with the observed commutation cadence: ~150 ms instead of a
+  fixed 750 ms, inside E-08's 250 ms bound.
+- `ADC_TACHO` gets an independent `RippleCounter`, so PCNT's missed/false-edge rate is
+  computable on-device — § 2 of the validation plan's release gate.
+
+See [`docs/endstop_detection.md`](docs/endstop_detection.md) and
+[`hardware/lune-v6-rev3.2/firmware-integration.md`](hardware/lune-v6-rev3.2/firmware-integration.md).
+
+### Still open on rev3.2
+
+- Automatic startup calibration is **off**. Every current threshold, stroke time and
+  commutation count is a bring-up value; rev3.1's were measured under a 70 % hold duty
+  and rev3.2 drives at full rail.
+- PCNT's glitch filter tops out near 12 µs, so the contract's 200 µs minimum-width
+  rejection is not implemented. The 10 kHz `ADC_TACHO` stream now makes it measurable
+  whether that matters.
+- Soft-approach does not exist on rev3.2 — there is no duty control to reduce. Detection
+  speed is the pop-off protection.
 
 ## Repository Layout
 

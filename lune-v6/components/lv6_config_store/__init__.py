@@ -12,7 +12,7 @@ from esphome.const import CONF_ID
 CODEOWNERS = ["@birkemosen"]
 DEPENDENCIES = []
 
-lv6_config_store_ns = cg.esphome_ns.namespace("hv6")
+lv6_config_store_ns = cg.esphome_ns.namespace("lv6")
 Lv6ConfigStore = lv6_config_store_ns.class_("Lv6ConfigStore", cg.Component)
 
 CONFIG_SCHEMA = cv.Schema(

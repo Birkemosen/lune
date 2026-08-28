@@ -31,7 +31,7 @@ SECRETS_TARGET ?= ../../secrets.yaml
 LANG ?= en
 DASHBOARD_COMPILED_LANG := $(if $(filter en da,$(LANG)),$(LANG),en)
 
-.PHONY: help check ensure-secrets-link config build build-verify deploy ota logs discover monitor erase erase-nvs clean dashboard dashboard-tooling dashboard-build dashboard-watch test test-dashboard test-ripple test-rev31-logic test-rev31-trace test-balance test-authority-lease test-preheat-policy test-hydraulic-policy test-hydraulic-diagnostics test-commissioning-schema test-request-guard
+.PHONY: help check ensure-secrets-link config build build-verify deploy ota logs discover monitor erase erase-nvs clean dashboard dashboard-tooling dashboard-build dashboard-watch test test-dashboard test-ripple test-rev31-logic test-rev32-logic test-balance test-authority-lease test-preheat-policy test-hydraulic-policy test-hydraulic-diagnostics test-commissioning-schema test-request-guard
 
 help:
 	@echo "Lune V6 ESPHome tasks"
@@ -48,7 +48,7 @@ help:
 	@echo "  make test          Run all host unit tests"
 	@echo "  make test-ripple   Run ripple-counter unit tests (5 rates × 5 cases)"
 	@echo "  make test-rev31-logic  Run Rev 3.1 one-hot and endpoint-evidence tests"
-	@echo "  make test-rev31-trace  Run Rev 3.1 trace analyzer tests"
+	@echo "  make test-rev32-logic  Run Rev 3.2 decoder-map, latch and tacho tests"
 	@echo "  make test-balance  Run adaptive-balancing step-math unit tests"
 	@echo ""
 	@echo "Examples:"
@@ -127,6 +127,8 @@ RIPPLE_SRCS      = components/lv6_valve_controller/ripple_counter.cpp \
 RIPPLE_OUT       = /tmp/test_ripple_counter
 REV31_LOGIC_SRCS = test/rev31_logic/test_rev31_logic.cpp
 REV31_LOGIC_OUT  = /tmp/test_hv6_rev31_logic
+REV32_LOGIC_SRCS = test/rev32_logic/test_rev32_logic.cpp
+REV32_LOGIC_OUT  = /tmp/test_hv6_rev32_logic
 
 test-ripple:
 	$(RIPPLE_CXX) $(RIPPLE_CXXFLAGS) $(RIPPLE_SRCS) -o $(RIPPLE_OUT) -lm
@@ -136,8 +138,9 @@ test-rev31-logic:
 	$(RIPPLE_CXX) $(RIPPLE_CXXFLAGS) $(REV31_LOGIC_SRCS) -o $(REV31_LOGIC_OUT)
 	$(REV31_LOGIC_OUT)
 
-test-rev31-trace:
-	$(PYTHON) -m unittest discover -s test/rev31_trace -p 'test_*.py'
+test-rev32-logic:
+	$(RIPPLE_CXX) $(RIPPLE_CXXFLAGS) $(REV32_LOGIC_SRCS) -o $(REV32_LOGIC_OUT)
+	$(REV32_LOGIC_OUT)
 
 BALANCE_SRCS = test/adaptive_balance/test_adaptive_balance.cpp
 BALANCE_OUT  = /tmp/test_adaptive_balance
@@ -182,7 +185,7 @@ test-request-guard:
 test-dashboard:
 	sh test/dashboard/test_dashboard.sh
 
-test: test-dashboard test-ripple test-rev31-logic test-rev31-trace test-balance test-authority-lease test-preheat-policy test-hydraulic-policy test-hydraulic-diagnostics test-commissioning-schema test-request-guard
+test: test-dashboard test-ripple test-rev31-logic test-rev32-logic test-balance test-authority-lease test-preheat-policy test-hydraulic-policy test-hydraulic-diagnostics test-commissioning-schema test-request-guard
 
 ota: check
 	$(MAKE) build

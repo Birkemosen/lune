@@ -482,7 +482,7 @@ Motion explains change; it does not decorate the dashboard.
 ## Implementation ownership
 
 - `shared/dashboard/` contains this design contract and shared documentation only.
-- Lune V6 dashboard source remains under `devices/lune-v6/web/dashboard-src/`.
+- Lune V6 dashboard source remains under `lune-v6/web/dashboard-src/`.
 - Lune Touch dashboard source remains under `devices/lune-touch/web/dashboard-src/`.
 - Changes to this document do not implicitly authorize runtime sharing between devices.
 - When implementations diverge, record whether the difference is device capability, screen size, or migration debt.

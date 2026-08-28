@@ -12,10 +12,12 @@
 #include "esphome/components/i2c/i2c.h"
 #include "esphome/components/sensor/sensor.h"
 #include "../lv6_config_store/lv6_config_store.h"
-#include "../lv6_config_store/hv6_types.h"
+#include "../lv6_config_store/lv6_types.h"
 #include "drv8215.h"
 #include "ripple_counter.h"
+#include "gpio_motor_backend.h"
 #include "rev31_motor_backend.h"
+#include "rev32_motor_backend.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/queue.h"
@@ -45,17 +47,30 @@ struct MotorTraceSample {
   uint16_t bemf_raw_b = 0xFFFF;
   int16_t bemf_differential_raw = 0;
   uint16_t bemf_separation_us = 0xFFFF;
+  // Rev 3.2 columns.  The commutation count itself is `ripple_count`, which is
+  // the motion-evidence counter of whichever backend is active.
+  uint32_t tacho_period_us = 0;
+  uint16_t tacho_amp_raw = 0xFFFF;
   uint8_t drive_on = 0;
   uint8_t bemf_valid = 0;
   uint8_t bemf_moving = 0;
   uint8_t invalid_bemf_samples = 0;
+  uint8_t armed = 0;
+  uint8_t direction_open = 0;
+  /// Rev32StrokePhase. Reading a closing trace without it is guesswork: the pin
+  /// contact bump and the seat both show up as a current rise.
+  uint8_t stroke_phase = 0;
 };
 
-// Thread-safe, read-only bring-up snapshot for the Rev 3.1 analog/safety path.
-// Raw ADC values are intentionally exposed: production thresholds must be
-// derived from measured actuator populations rather than nominal assumptions.
-struct Rev31Diagnostics {
+// Thread-safe, read-only bring-up snapshot of the analog/safety path.  Raw ADC
+// values are intentionally exposed: production thresholds must be derived from
+// measured actuator populations rather than nominal assumptions.
+//
+// The bemf_* members are Rev 3.1 only and the tacho_* members Rev 3.2 only;
+// `backend` says which set is meaningful.
+struct MotorSafetyDiagnostics {
   bool backend_enabled{false};
+  const char *backend{"drv8215_i2c"};
   bool motor_busy{false};
   bool drive_on{false};
   bool drivers_enabled{false};
@@ -72,7 +87,30 @@ struct Rev31Diagnostics {
   uint32_t sample_sequence{0};
   uint32_t motor_runtime_ms{0};
   float current_ma{0.0f};
+  // Rev 3.2 commutation tacho.  `motion_evidence_count` carries the qualified
+  // count; these add the cadence, what was thrown away, and the analog
+  // cross-check that § 2 of the validation plan measures the count against.
+  bool armed{false};
+  uint8_t decoder_address{0};
+  uint32_t tacho_period_us{0};
+  uint32_t tacho_cadence_us{0};
+  uint32_t tacho_rejected{0};
+  uint32_t tacho_hardware_count{0};
+  uint16_t tacho_amp_raw{0xFFFF};
+  /// Independent count of the SAME waveform from the analog side. Comparing it
+  /// against tacho_hardware_count is how the missed- and false-edge rate is
+  /// measured, which is § 2 of the validation plan's release gate.
+  uint32_t tacho_adc_count{0};
+  /// Rev32StrokePhase as an integer: 0 free travel, 1 pin contact, 2 under
+  /// load, 3 stopping.
+  uint8_t stroke_phase{0};
   FaultCode fault{FaultCode::NONE};
+};
+
+enum class MotorBackendKind : uint8_t {
+  DRV8215_I2C = 0,
+  REV31_GPIO = 1,
+  REV32_GPIO = 2,
 };
 
 class Lv6ValveController : public esphome::Component {
@@ -88,13 +126,38 @@ class Lv6ValveController : public esphome::Component {
   void set_nsleep_pin(int pin) { nsleep_pin_ = static_cast<gpio_num_t>(pin); }
   void set_nfault_pin(int pin) { nfault_pin_ = static_cast<gpio_num_t>(pin); }
   void set_ipropi_pin(int pin) { ipropi_pin_ = static_cast<gpio_num_t>(pin); }
-  void set_rev31_backend(bool enabled) { rev31_backend_enabled_ = enabled; }
+  // 0 = drv8215_i2c, 1 = rev31_gpio, 2 = rev32_gpio.  Kept as an int so the
+  // Python codegen does not have to mirror the enum.
+  void set_backend_kind(int kind) {
+    backend_kind_ = static_cast<MotorBackendKind>(kind);
+    gpio_backend_enabled_ = backend_kind_ != MotorBackendKind::DRV8215_I2C;
+  }
+  // Address lines 0-2 and LATCH_ARM exist on both discrete revisions; the rest
+  // belong to one of them.
+  void set_address0_pin(int pin) {
+    rev31_pins_.address0 = static_cast<gpio_num_t>(pin);
+    rev32_pins_.address0 = static_cast<gpio_num_t>(pin);
+  }
+  void set_address1_pin(int pin) {
+    rev31_pins_.address1 = static_cast<gpio_num_t>(pin);
+    rev32_pins_.address1 = static_cast<gpio_num_t>(pin);
+  }
+  void set_address2_pin(int pin) {
+    rev31_pins_.address2 = static_cast<gpio_num_t>(pin);
+    rev32_pins_.address2 = static_cast<gpio_num_t>(pin);
+  }
+  void set_latch_arm_pin(int pin) {
+    rev31_pins_.latch_arm = static_cast<gpio_num_t>(pin);
+    rev32_pins_.latch_arm = static_cast<gpio_num_t>(pin);
+  }
   void set_adc_bemf_pin(int pin) { rev31_pins_.adc_bemf = static_cast<gpio_num_t>(pin); }
-  void set_address0_pin(int pin) { rev31_pins_.address0 = static_cast<gpio_num_t>(pin); }
-  void set_address1_pin(int pin) { rev31_pins_.address1 = static_cast<gpio_num_t>(pin); }
-  void set_address2_pin(int pin) { rev31_pins_.address2 = static_cast<gpio_num_t>(pin); }
   void set_direction_pin(int pin) { rev31_pins_.terminal_direction = static_cast<gpio_num_t>(pin); }
-  void set_latch_arm_pin(int pin) { rev31_pins_.latch_arm = static_cast<gpio_num_t>(pin); }
+  void set_address3_pin(int pin) { rev32_pins_.address3 = static_cast<gpio_num_t>(pin); }
+  void set_comm_tacho_pin(int pin) { rev32_pins_.comm_tacho = static_cast<gpio_num_t>(pin); }
+  void set_adc_tacho_pin(int pin) { rev32_pins_.adc_tacho = static_cast<gpio_num_t>(pin); }
+  void set_tacho_min_pulse_us(uint16_t us) { rev32_tacho_.min_pulse_us = us; }
+  void set_tacho_min_period_us(uint32_t us) { rev32_tacho_.min_period_us = us; }
+  void set_tacho_max_period_us(uint32_t us) { rev32_tacho_.max_period_us = us; }
   void set_bemf_threshold_raw(uint16_t threshold) { bemf_threshold_raw_ = threshold; }
   void set_auto_start_calibration(bool enabled) { auto_start_calibration_ = enabled; }
   void set_current_sensor(esphome::sensor::Sensor *sensor) { current_sensor_ = sensor; }
@@ -125,7 +188,7 @@ class Lv6ValveController : public esphome::Component {
   uint16_t get_motor_trace_sample_count() const;
   bool get_motor_trace_sample(uint16_t logical_index, MotorTraceSample *out) const;
   void clear_motor_trace();
-  Rev31Diagnostics get_rev31_diagnostics() const;
+  MotorSafetyDiagnostics get_motor_safety_diagnostics() const;
 
   /// Enable or disable all motor drivers (nSLEEP control).
   /// When disabled, all motors are put to sleep and commands are rejected.
@@ -195,6 +258,18 @@ class Lv6ValveController : public esphome::Component {
   };
   static constexpr uint8_t PIN_ENGAGE_DEBOUNCE_TICKS = 20;      ///< 200ms sustained current step for detection
 
+  // Rev 3.2 ADC stream. Two channels share one continuous unit, so the hardware
+  // sample rate is twice this and each channel lands here.
+  static constexpr uint32_t REV32_ADC_SAMPLE_RATE_HZ = 10000;
+  /// 128 samples = 64 per channel = 6.4 ms per frame. Half the DRV8215 frame:
+  /// the closing hard stop is where pop-off happens, so frame latency is force
+  /// into a rigid stop.
+  static constexpr uint32_t REV32_DMA_FRAME_BYTES = 512;
+  /// Minimum-period gate for the analog cross-check counter. The qualified
+  /// commutation band is 20-40 Hz, so 100 Hz rejects anything far above it while
+  /// leaving the band itself untouched.
+  static constexpr uint32_t REV32_TACHO_GATE_HZ = 100;
+
   // FreeRTOS task
   static void task_func_(void *arg);
   void run_();
@@ -211,8 +286,31 @@ class Lv6ValveController : public esphome::Component {
   void apply_drive_output_();
   uint8_t effective_hold_duty_();  ///< PWM hold duty for this tick (reduced during soft-approach)
 
+  /// The point in a move at which "no motion evidence yet" becomes evidence of
+  /// anything. On the DRV8215/Rev 3.1 path this is anchored to the PWM boost
+  /// phase; Rev 3.2 has no boost, so it is derived from the tacho contract
+  /// instead — blanking plus two worst-case commutation periods. Deriving it
+  /// means it can never land inside the blanking window, whatever the tacho is
+  /// configured to.
+  uint32_t motion_decision_ms_() const;
+
+  /// Open the ADC unit in continuous (DMA) mode. One stream owns the unit: the
+  /// oneshot and continuous drivers cannot share it. Rev 3.2 puts two channels
+  /// in the pattern (ADC_CURRENT and ADC_TACHO); everything else uses one.
+  bool start_adc_stream_();
+
+  /// Clamp motor config that came out of NVS. These are operator-editable
+  /// bring-up values, so a nonsensical pair must not silently weaken a safety
+  /// decision.
+  void sanitize_motor_cfg_();
+
   // Current sensing
   float read_current_ma_();
+  /// Rev 3.2 endpoint condition 6: has the move covered the commutation count a
+  /// real endpoint takes? Closing measures the learned seating depth from the
+  /// observed pin contact; opening has no contact phase, so it uses the travel
+  /// estimated for the move. Uncalibrated, it cannot withhold an endpoint.
+  bool endpoint_window_reached_() const;
   void detect_endstop_();
   void detect_open_circuit_();
   void detect_pin_engagement_();
@@ -228,6 +326,10 @@ class Lv6ValveController : public esphome::Component {
   void run_ripple_task_();
   static void ripple_task_func_(void *arg);
   float adc_raw_to_ma_(int raw);
+  /// Volts at the ADC pin to motor milliamps. The two hardware generations
+  /// measure entirely different things: a DRV8215 IPROPI current mirror versus
+  /// a shunt into an INA180A1 at 10 V/A.
+  float volts_to_ma_() const;
 
   // Fault handling
   void trigger_fault_(FaultCode code, const char *reason);
@@ -268,11 +370,20 @@ class Lv6ValveController : public esphome::Component {
   // different PCB must never raise nSLEEP and energise a floating motor bus.
   bool any_driver_present_{false};
 
-  // Rev 3.1 Lean backend.  Here nsleep_pin_ is MOTOR_ENABLE, nfault_pin_ is
-  // active-high LATCH_STATE, and ipropi_pin_ is the shared INA180 ADC_CURRENT.
-  bool rev31_backend_enabled_{false};
+  // Discrete-GPIO backends (Rev 3.1 Lean, Rev 3.2).  On both of them
+  // nsleep_pin_ is MOTOR_ENABLE, nfault_pin_ is the active-high LATCH_STATE and
+  // ipropi_pin_ is the shared INA180 ADC_CURRENT - the names are inherited from
+  // the DRV8215 path and the pins mean something else here.
+  MotorBackendKind backend_kind_{MotorBackendKind::DRV8215_I2C};
+  bool gpio_backend_enabled_{false};
   Rev31PinConfig rev31_pins_{};
+  Rev32PinConfig rev32_pins_{};
+  Rev32TachoConfig rev32_tacho_{};
+  // Owning pointer to whichever backend was built; the typed pointers below
+  // alias it and are non-null only for their own revision.
+  GpioMotorBackend *gpio_backend_{nullptr};
   Rev31MotorBackend *rev31_backend_{nullptr};
+  Rev32MotorBackend *rev32_backend_{nullptr};
   uint16_t bemf_threshold_raw_{40};
   bool auto_start_calibration_{true};
   uint32_t last_bemf_sample_ms_{0};
@@ -284,10 +395,17 @@ class Lv6ValveController : public esphome::Component {
   std::atomic<uint8_t> rev31_diag_sample_valid_{0};
   std::atomic<uint8_t> rev31_diag_sample_moving_{0};
   std::atomic<uint8_t> rev31_diag_invalid_samples_{0};
-  std::atomic<uint32_t> rev31_diag_evidence_count_{0};
-  std::atomic<uint32_t> rev31_diag_sample_sequence_{0};
-  std::atomic<uint32_t> rev31_diag_motor_runtime_ms_{0};
-  std::atomic<int32_t> rev31_diag_current_ma_x10_{0};
+  std::atomic<uint32_t> motor_diag_tacho_period_us_{0};
+  std::atomic<uint32_t> motor_diag_tacho_rejected_{0};
+  std::atomic<uint32_t> motor_diag_tacho_hardware_{0};
+  std::atomic<uint8_t> motor_diag_armed_{0};
+  std::atomic<uint8_t> motor_diag_decoder_address_{0};
+  std::atomic<uint32_t> motor_diag_tacho_cadence_us_{0};
+  std::atomic<uint8_t> motor_diag_stroke_phase_{0};
+  std::atomic<uint32_t> motor_diag_evidence_count_{0};
+  std::atomic<uint32_t> motor_diag_sample_sequence_{0};
+  std::atomic<uint32_t> motor_diag_runtime_ms_{0};
+  std::atomic<int32_t> motor_diag_current_ma_x10_{0};
   static constexpr uint32_t REV31_BEMF_SAMPLE_PERIOD_MS = 20;
   static constexpr uint8_t REV31_MAX_INVALID_BEMF_SAMPLES = 3;
 
@@ -347,6 +465,12 @@ class Lv6ValveController : public esphome::Component {
   bool slope_initialized_ = false;
   uint8_t slope_endstop_windows_ = 0;
 
+  // Rev 3.2 stroke-phase model. Closing is free travel, pin contact, pressure,
+  // hard stop; opening is free travel then the gear train bottoming out. Phases
+  // 2 and 4 are near-identical in the current domain, so the tracker separates
+  // them on whether the rotor recovers. See rev32_logic.h.
+  Rev32StrokeTracker stroke_{};
+
   // Pin engagement detection (calibration close passes)
   bool pin_detect_enabled_ = false;
   float pin_detect_baseline_ma_ = 0.0f;
@@ -392,14 +516,36 @@ class Lv6ValveController : public esphome::Component {
   void *adc_cali_handle_ = nullptr;
   int ipropi_channel_ = 0;
   bool ripple_enabled_ = false;
+  /// Attenuation the ADC_CURRENT channel is sampling at. Rev 3.2 uses 6 dB, so
+  /// the uncalibrated fallback conversion has a different full scale.
+  int adc_current_atten_ = 0;
+  /// Rev 3.2 only: TACHO_AMP's channel in the same DMA pattern, -1 when absent.
+  int tacho_adc_channel_ = -1;
 
   // Ripple counter (written by ripple task, count read via live_ripple_count_)
   RippleCounter ripple_counter_{kRippleConfig};
   std::atomic<uint32_t> live_ripple_count_{0};
 
+  // Rev 3.2 analog cross-check. COMM_TACHO_N through PCNT stays the authority
+  // for position; this counts the SAME waveform from the analog side, so the
+  // hardware counter's missed- and false-edge rate can be computed on-device.
+  // That rate is the release gate in § 2 of the validation plan.
+  RippleCounter *tacho_adc_counter_ = nullptr;
+  std::atomic<uint32_t> tacho_adc_count_{0};
+  std::atomic<uint16_t> tacho_adc_raw_{0xFFFF};
+
+  // Set by the ripple task from the per-frame current peak and consumed by
+  // motor_loop_() at 1 ms. On the closing hard stop every millisecond past the
+  // cap is force into a rigid stop, so this does not wait for the 10 ms FSM tick.
+  std::atomic<bool> hard_cap_tripped_{false};
+
   // DMA task state
   TaskHandle_t ripple_task_handle_ = nullptr;
   uint32_t dma_debounce_remaining_ = 0;
+  /// Samples blanked after each drive-on transition. 5 ms of inrush on the
+  /// DRV8215 path; on Rev 3.2 this is the contract's mandatory 250 ms tacho
+  /// blanking, set from the stream's per-channel rate in start_adc_stream_().
+  uint32_t dma_debounce_samples_ = RIPPLE_DMA_DEBOUNCE_SAMPLES;
   bool ripple_drive_was_on_ = false;
   alignas(32) uint8_t adc_frame_buf_[RIPPLE_DMA_FRAME_BYTES];
   uint8_t fsm_tick_count_ = 0;

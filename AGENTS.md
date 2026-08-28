@@ -39,16 +39,16 @@ make deploy-v6 HOST=192.168.x.x
 Device-local commands also work:
 
 ```bash
-make -C devices/lune-v6 config
-make -C devices/lune-v6 dashboard-build
-make -C devices/lune-v6 test
+make -C lune-v6 config
+make -C lune-v6 dashboard-build
+make -C lune-v6 test
 ```
 
 The Makefiles resolve `esphome`, `platformio`, and `python3` from the repo-root
 `.venv313/` -> `.venv/` -> PATH. The active Lune V6 ESPHome entrypoint is:
 
 ```text
-devices/lune-v6/configurations/lune-ble.yaml
+lune-v6/configurations/lune-ble.yaml
 ```
 
 `secrets.yaml` stays at the repository root and remains gitignored.
@@ -56,7 +56,7 @@ devices/lune-v6/configurations/lune-ble.yaml
 ## Lune V6
 
 Lune V6 is the local 6-zone hydronic manifold controller. Its code lives under
-`devices/lune-v6/`:
+`lune-v6/`:
 
 ```text
 lune.yaml
@@ -69,8 +69,8 @@ hardware/
 docs/
 ```
 
-Dashboard source is `devices/lune-v6/web/dashboard-src/` and the committed bundle is
-`devices/lune-v6/web/dashboard.js`. The dashboard must use `/api/hv6/v1`, not ESPHome
+Dashboard source is `lune-v6/web/dashboard-src/` and the committed bundle is
+`lune-v6/web/dashboard.js`. The dashboard must use `/api/hv6/v1`, not ESPHome
 entity REST routes.
 
 Important local ownership:
@@ -83,7 +83,7 @@ Important local ownership:
 - Snapshot / diagnostics API for local state
 
 When changing persisted config structs, increment the relevant version in
-`devices/lune-v6/components/lv6_config_store/lv6_types.h`.
+`lune-v6/components/lv6_config_store/lv6_types.h`.
 
 ## Lune Touch / Mini
 

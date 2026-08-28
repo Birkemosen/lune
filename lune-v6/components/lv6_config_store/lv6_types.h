@@ -290,7 +290,11 @@ static constexpr uint32_t SYSTEM_CONFIG_VERSION = 3;
 static constexpr uint32_t CONTROL_CONFIG_VERSION = 1;
 static constexpr uint32_t PROBE_CONFIG_VERSION = 1;
 static constexpr uint32_t PID_CONFIG_VERSION = 1;
-static constexpr uint32_t MOTOR_CONFIG_VERSION = 1;
+/// v2 adds the Rev 3.2 endstop policy (continuous drive, commutation-cadence
+/// stall debounce, learned-count endpoint window, phase-2 contact recovery) and
+/// drops open_hard_cap_factor / open_hard_cap_floor_ma, which were persisted but
+/// never read after that detection path was reverted.
+static constexpr uint32_t MOTOR_CONFIG_VERSION = 2;
 static constexpr uint32_t MANIFOLD_CONFIG_VERSION = 1;
 /// v2 replaces unsafe per-zone "modulating heat source" floors with an explicit
 /// secondary-loop commissioning floor. Old values are safely invalidated.
@@ -384,18 +388,37 @@ struct MotorConfig {
   float open_current_factor = 1.7f;
   float open_slope_threshold_ma_per_s = 0.15f;
   float open_slope_current_factor = 1.3f;
-  // Direction-aware fast hard cap: the gentle open stall (~25 mA) never reaches
-  // the fixed ENDSTOP_HARD_CAP_MA safety ceiling, so derive a lower open cap on
-  // the raw (low-latency) current as a fast belt for the open endstop.
-  float open_hard_cap_factor = 1.7f;     // open raw cap = max(floor, mean_open × factor)
-  float open_hard_cap_floor_ma = 20.0f;  // floor so a low/under-learned mean can't trip mid-travel
-                                         // (20 mA: low enough that low-current opens still get a fast belt;
-                                         //  detection only runs past the ~500 ms guard, clear of boost decay)
   // Ripple safety limit for opening: learned_open_ripples × factor (0 = disabled)
   float open_ripple_limit_factor = 1.10f;
   // Pin engagement detection (calibration)
   float pin_engage_step_ma = 3.0f;              // Current increase to detect pin contact
   uint16_t pin_engage_margin_ripples = 50;       // Offset toward open from detected point
+
+  // --- Rev 3.2 endstop policy -------------------------------------------------
+  // Rev 3.2 drives continuously and its motion evidence is the commutation
+  // tacho, so none of the PWM-anchored timing above applies. See
+  // hardware/lune-v6-rev3.2/firmware-integration.md. All of these are bring-up
+  // values derived from measured actuator data, not production constants.
+  //
+  // Point at which a zero commutation count means "it never turned". 0 derives
+  // it from the tacho contract (blanking + 2 × worst-case period).
+  uint32_t rev32_motion_decision_ms = 0;
+  // Stall verdict debounce = observed cadence × factor, clamped. Scaling with
+  // the motor's actual speed instead of a fixed 750 ms is what brings detection
+  // latency inside Rev 3.0 requirement E-08's 250 ms bound.
+  uint16_t stall_plateau_factor_x10 = 30;
+  uint32_t stall_plateau_floor_ms = 150;
+  uint32_t stall_plateau_ceiling_ms = 750;   // also the value used when cadence is unknown
+  // Lower bound on the learned commutation count before an endpoint is accepted.
+  uint8_t endpoint_window_tolerance_pct = 25;
+  // The opening endstop is the motor's own gear train bottoming out, which is a
+  // materially smaller resistance than the closing hard stop — reusing
+  // open_current_factor (1.7×) barely reaches it. Closing keeps the higher bar.
+  float open_endstop_current_factor = 1.25f;
+  // Phase 2 discriminator: at pin contact the motor slows and then RECOVERS, at
+  // a physical stop it does not. This is how many commutations the cadence has
+  // to recover within for the current bump to be read as contact, not an endstop.
+  uint16_t contact_recovery_ripples = 15;
   float low_current_threshold_ma = 5.0f;
   uint32_t low_current_window_ms = 1200;
   uint32_t calibration_min_travel_ms = 3000;
@@ -432,6 +455,13 @@ struct MotorTelemetry {
   float mean_close_current_ma = 20.0f;  ///< Running mean current, CLOSE moves (close endstop threshold base)
   float current_position_pct = 0.0f;
   uint32_t pin_engage_close_ripples = 0;  // Ripples from open end at pin contact (close pass)
+  // Rev 3.2 stroke-phase anchors. The blob is size-validated on load, so adding
+  // fields here invalidates old telemetry rather than misreading it.
+  uint32_t pin_engage_open_ripples = 0;    // Ripples from closed end at pin release (open pass)
+  // Seating depth: commutations from pin contact to the hard stop. Far more
+  // repeatable than the full stroke, so it is the tighter endpoint window for
+  // closing — the direction where missing the stop means pop-off.
+  uint32_t contact_to_stop_close_ripples = 0;
   float learned_open_current_factor = 0.0f;
   float learned_close_current_factor = 0.0f;
   uint8_t learned_open_confidence = 0;

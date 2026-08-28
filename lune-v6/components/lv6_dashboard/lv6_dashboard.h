@@ -225,7 +225,7 @@ class LV6Dashboard : public Component, public AsyncWebHandler {
   lv6::Lv6ZoneController *zone_controller_{nullptr};
   lv6::Lv6ValveController *valve_controller_{nullptr};
   lv6::Lv6ConfigStore *config_store_{nullptr};
-  hv6_authority::Lease authority_{};
+  lv6_authority::Lease authority_{};
   char authority_proposal_installation_id_[32]{};
   char authority_proposal_coordinator_id_[32]{};
   char authority_proposal_shared_key_[64]{};

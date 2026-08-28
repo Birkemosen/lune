@@ -1,0 +1,14 @@
+# =============================================================================
+# Rev 3.1 Lean motor extras
+# =============================================================================
+# The BEMF mux and its threshold, and MOTOR_TERM_DIR, exist only on Rev 3.1.
+# Rev 3.2 removed the mux (ten parts and an ADC GPIO) and turned the direction
+# line into MOTOR_ADDR3, a plain address bit - so these keys are kept out of the
+# shared base and the component rejects them under `rev32_gpio`.
+# =============================================================================
+
+lv6_valve_controller:
+  id: hv6_valves
+  adc_bemf_pin: ${pin_adc_bemf}
+  direction_pin: ${pin_motor_direction}
+  bemf_threshold_raw: ${bemf_threshold_raw}
