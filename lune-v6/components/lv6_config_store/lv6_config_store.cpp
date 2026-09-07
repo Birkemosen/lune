@@ -270,6 +270,16 @@ void Lv6ConfigStore::mark_dirty() {
   esp_timer_start_once(dirty_timer_, DIRTY_DELAY_US);
 }
 
+void Lv6ConfigStore::flush_now() {
+  if (!initialized_)
+    return;
+  // Drop any pending debounce so we do not double-save after this sync write.
+  if (dirty_timer_)
+    esp_timer_stop(dirty_timer_);
+  save_pending_ = false;
+  save_config_();
+}
+
 void Lv6ConfigStore::update_zone(uint8_t zone, const ZoneConfig &zone_cfg) {
   if (zone >= NUM_ZONES)
     return;
@@ -494,24 +504,32 @@ bool Lv6ConfigStore::load_sensor_config_(nvs_handle_t handle) {
   size_t size = 0;
   if (nvs_get_blob(handle, KEY_SENSORS, nullptr, &size) != ESP_OK)
     return false;  // no durable copy yet (first boot, or pre-upgrade firmware)
-  if (size != sizeof(uint32_t) + sizeof(SensorConfig))
-    return false;  // layout changed — fall back to whatever the main blob/defaults gave
+  if (size < sizeof(uint32_t))
+    return false;
 
-  uint8_t blob[sizeof(uint32_t) + sizeof(SensorConfig)];
+  std::vector<uint8_t> blob(size);
   size_t read_size = size;
-  if (nvs_get_blob(handle, KEY_SENSORS, blob, &read_size) != ESP_OK)
+  if (nvs_get_blob(handle, KEY_SENSORS, blob.data(), &read_size) != ESP_OK)
     return false;
 
   uint32_t version = 0;
-  memcpy(&version, blob, sizeof(uint32_t));
-  if (version != SENSOR_CONFIG_VERSION)
-    return false;
+  memcpy(&version, blob.data(), sizeof(uint32_t));
+  const size_t payload = read_size - sizeof(uint32_t);
 
   xSemaphoreTake(mutex_, portMAX_DELAY);
-  memcpy(&config_.sensor_config, blob + sizeof(uint32_t), sizeof(SensorConfig));
+  bool ok = false;
+  if (version == SENSOR_CONFIG_VERSION && payload == sizeof(SensorConfig)) {
+    memcpy(&config_.sensor_config, blob.data() + sizeof(uint32_t), sizeof(SensorConfig));
+    ok = true;
+  } else if (version == SENSOR_CONFIG_VERSION_V1 && payload == SENSOR_CONFIG_V1_SIZE) {
+    // Append-only growth: keep pairing, leave room-clock fields at defaults.
+    memcpy(&config_.sensor_config, blob.data() + sizeof(uint32_t), SENSOR_CONFIG_V1_SIZE);
+    ok = true;
+  }
   xSemaphoreGive(mutex_);
-  ESP_LOGI(TAG, "Sensor pairing restored from durable key");
-  return true;
+  if (ok)
+    ESP_LOGI(TAG, "Sensor pairing restored from durable key (v%" PRIu32 ")", version);
+  return ok;
 }
 
 // -----------------------------------------------------------------------------

@@ -316,9 +316,12 @@ erase-nvs: check
 		echo "No serial port detected. Use PORT=/dev/cu.usbmodemXXXX"; \
 		exit 1; \
 	fi
-	@echo "Erasing NVS partition on $(SERIAL_PORT)..."
-	python3 -m esptool --port $(SERIAL_PORT) erase_region 0x9000 0x6000
-	@echo "NVS erased. Calibration data cleared — device will need recalibration."
+	@# ESPHome 8MB dual-OTA layout (see packages/board/esp32-s3.yaml flash_size):
+	@# otadata@0x9000, app0@0x10000 (0x3C0000), app1@0x3D0000 (0x3C0000),
+	@# nvs@0x790000 (0x70000). The old 0x9000/0x6000 erase hit otadata, not NVS.
+	@echo "Erasing hv6 NVS partition on $(SERIAL_PORT) at 0x790000 (size 0x70000)..."
+	$(PYTHON) -m esptool --port $(SERIAL_PORT) erase_region 0x790000 0x70000
+	@echo "NVS erased. Zone settings and calibration cleared — device will use defaults."
 
 clean:
 	rm -rf configurations/.esphome/build

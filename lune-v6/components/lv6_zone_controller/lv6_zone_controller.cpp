@@ -75,21 +75,25 @@ void Lv6ZoneController::setup() {
   preheat_episode_min_temp_c_.fill(NAN);
   preheat_episode_max_temp_c_.fill(NAN);
   preheat_episode_setpoint_c_.fill(0.0f);
-  for (uint8_t i = 0; i < NUM_ZONES; i++) {
+  for (uint8_t i = 0; i < NUM_ZONES; i++)
     external_temperatures_[i] = NAN;
-    if (requested_setpoints_[i] < 5.0f || requested_setpoints_[i] > 35.0f)
-      requested_setpoints_[i] = FALLBACK_SETPOINT_C;
-  }
 
-  // Initialize algorithms
+  // Always seed runtime setpoints from durable NVS (or ZoneConfig defaults).
+  // Zero-initialized requested_setpoints_ used to be replaced with
+  // FALLBACK_SETPOINT_C first, which then skipped the config-store copy because
+  // 20 °C is already in-range — so every reboot ignored the user's setpoint.
   if (config_store_) {
     const auto &cfg = config_store_->get_config();
     for (uint8_t i = 0; i < NUM_ZONES; i++) {
       algorithms_[i].set_algorithm(cfg.zones[i].algorithm);
       algorithms_[i].set_pid_params(cfg.pid);
-      if (requested_setpoints_[i] < 5.0f || requested_setpoints_[i] > 35.0f)
-        requested_setpoints_[i] = cfg.zones[i].setpoint_c;
+      float sp = cfg.zones[i].setpoint_c;
+      if (sp < 5.0f || sp > 35.0f)
+        sp = FALLBACK_SETPOINT_C;
+      requested_setpoints_[i] = sp;
     }
+  } else {
+    requested_setpoints_.fill(FALLBACK_SETPOINT_C);
   }
 
   recalculate_balance_factors_();

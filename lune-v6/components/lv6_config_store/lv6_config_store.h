@@ -36,6 +36,9 @@ class Lv6ConfigStore : public esphome::Component {
   void get_zone_ble_mac_str(uint8_t zone, char *ble, size_t ble_len) const;
   void set_config(const DeviceConfig &config);
   void mark_dirty();
+  /// Cancel the debounce timer and commit the current config to NVS now.
+  /// Call before OTA / reboot so a pending 1s dirty write is not lost.
+  void flush_now();
 
   // Individual section updates
   void update_zone(uint8_t zone, const ZoneConfig &zone_cfg);

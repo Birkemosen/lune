@@ -266,7 +266,14 @@ struct SensorConfig {
 /// under its own key (separate from the main DeviceConfig blob) so BLE MAC
 /// pairings + temp sources survive legacy main-config resets on firmware update.
 /// Bump only when SensorConfig's layout changes.
-static constexpr uint32_t SENSOR_CONFIG_VERSION = 1;
+/// v1: zone_temp_source + zone_ble_mac
+/// v2: + ble_clock_sync_enabled / ble_clock_sync_interval_min (append-only)
+static constexpr uint32_t SENSOR_CONFIG_VERSION = 2;
+static constexpr uint32_t SENSOR_CONFIG_VERSION_V1 = 1;
+/// Byte length of the v1 SensorConfig payload (fields before the room-clock
+/// append). Used to migrate durable NVS blobs after the v2 layout growth.
+static constexpr size_t SENSOR_CONFIG_V1_SIZE =
+    offsetof(SensorConfig, ble_clock_sync_enabled);
 
 /// Version tag for the standalone zone-config NVS blob. Persisted under its own
 /// key (separate from the main DeviceConfig blob) so per-zone settings (area,

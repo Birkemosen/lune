@@ -1,6 +1,27 @@
-# Zone thermostat climate entities (one per zone)
-# set_zone_setpoint(zone_index, temperature) propagates to the zone controller
-# so Home Assistant climate entities, MQTT, and the hardware stay in sync.
+# Zone thermostat climate entities (one per zone).
+#
+# Valve control is owned by lv6_zone_controller. These climate entities are a
+# Home Assistant / API façade only.
+#
+# Persistence rules:
+# - Durable setpoints live in hv6 NVS (ZoneConfig), not in ESPHome climate prefs.
+# - heat_action / idle_action must stay no-ops. They run on every boot with the
+#   thermostat's own target (Home preset 21 °C after a flash wipes prefs) and
+#   previously overwrote NVS via set_zone_setpoint.
+# - target_temperature_change_action is also gated: ESPHome fires it from
+#   refresh() during climate setup when applying the default preset, which
+#   would otherwise write 21 °C into NVS before we can sync from config store.
+#
+# Setpoint sync once boot is ready:
+#   HA / climate UI → target_temperature_change_action → zone controller → NVS
+#   NVS → on_boot below → climate.control (display only; writes still gated)
+
+globals:
+  - id: climate_setpoint_sync_ready
+    type: bool
+    restore_value: false
+    initial_value: "false"
+
 climate:
   - platform: thermostat
     name: "Zone 1"
@@ -18,9 +39,20 @@ climate:
       - name: Sleep
         default_target_temperature_low: 19.0
     heat_action:
-      - lambda: id(hv6_zones).set_zone_setpoint(0, id(climate_zone_1).target_temperature);
+      - lambda: |-
+          // no-op: zone controller owns valve demand
     idle_action:
-      - lambda: id(hv6_zones).set_zone_setpoint(0, id(climate_zone_1).target_temperature);
+      - lambda: |-
+          // no-op: zone controller owns valve demand
+    target_temperature_change_action:
+      - lambda: |-
+          if (!id(climate_setpoint_sync_ready))
+            return;
+          float sp = id(climate_zone_1).target_temperature;
+          if (std::isnan(sp))
+            sp = id(climate_zone_1).target_temperature_low;
+          if (!std::isnan(sp))
+            id(hv6_zones).set_zone_setpoint(0, sp);
     visual:
       min_temperature: 15
       max_temperature: 30
@@ -42,9 +74,20 @@ climate:
       - name: Sleep
         default_target_temperature_low: 19.0
     heat_action:
-      - lambda: id(hv6_zones).set_zone_setpoint(1, id(climate_zone_2).target_temperature);
+      - lambda: |-
+          // no-op: zone controller owns valve demand
     idle_action:
-      - lambda: id(hv6_zones).set_zone_setpoint(1, id(climate_zone_2).target_temperature);
+      - lambda: |-
+          // no-op: zone controller owns valve demand
+    target_temperature_change_action:
+      - lambda: |-
+          if (!id(climate_setpoint_sync_ready))
+            return;
+          float sp = id(climate_zone_2).target_temperature;
+          if (std::isnan(sp))
+            sp = id(climate_zone_2).target_temperature_low;
+          if (!std::isnan(sp))
+            id(hv6_zones).set_zone_setpoint(1, sp);
     visual:
       min_temperature: 15
       max_temperature: 30
@@ -66,9 +109,20 @@ climate:
       - name: Sleep
         default_target_temperature_low: 19.0
     heat_action:
-      - lambda: id(hv6_zones).set_zone_setpoint(2, id(climate_zone_3).target_temperature);
+      - lambda: |-
+          // no-op: zone controller owns valve demand
     idle_action:
-      - lambda: id(hv6_zones).set_zone_setpoint(2, id(climate_zone_3).target_temperature);
+      - lambda: |-
+          // no-op: zone controller owns valve demand
+    target_temperature_change_action:
+      - lambda: |-
+          if (!id(climate_setpoint_sync_ready))
+            return;
+          float sp = id(climate_zone_3).target_temperature;
+          if (std::isnan(sp))
+            sp = id(climate_zone_3).target_temperature_low;
+          if (!std::isnan(sp))
+            id(hv6_zones).set_zone_setpoint(2, sp);
     visual:
       min_temperature: 15
       max_temperature: 30
@@ -90,9 +144,20 @@ climate:
       - name: Sleep
         default_target_temperature_low: 19.0
     heat_action:
-      - lambda: id(hv6_zones).set_zone_setpoint(3, id(climate_zone_4).target_temperature);
+      - lambda: |-
+          // no-op: zone controller owns valve demand
     idle_action:
-      - lambda: id(hv6_zones).set_zone_setpoint(3, id(climate_zone_4).target_temperature);
+      - lambda: |-
+          // no-op: zone controller owns valve demand
+    target_temperature_change_action:
+      - lambda: |-
+          if (!id(climate_setpoint_sync_ready))
+            return;
+          float sp = id(climate_zone_4).target_temperature;
+          if (std::isnan(sp))
+            sp = id(climate_zone_4).target_temperature_low;
+          if (!std::isnan(sp))
+            id(hv6_zones).set_zone_setpoint(3, sp);
     visual:
       min_temperature: 15
       max_temperature: 30
@@ -114,9 +179,20 @@ climate:
       - name: Sleep
         default_target_temperature_low: 19.0
     heat_action:
-      - lambda: id(hv6_zones).set_zone_setpoint(4, id(climate_zone_5).target_temperature);
+      - lambda: |-
+          // no-op: zone controller owns valve demand
     idle_action:
-      - lambda: id(hv6_zones).set_zone_setpoint(4, id(climate_zone_5).target_temperature);
+      - lambda: |-
+          // no-op: zone controller owns valve demand
+    target_temperature_change_action:
+      - lambda: |-
+          if (!id(climate_setpoint_sync_ready))
+            return;
+          float sp = id(climate_zone_5).target_temperature;
+          if (std::isnan(sp))
+            sp = id(climate_zone_5).target_temperature_low;
+          if (!std::isnan(sp))
+            id(hv6_zones).set_zone_setpoint(4, sp);
     visual:
       min_temperature: 15
       max_temperature: 30
@@ -138,10 +214,70 @@ climate:
       - name: Sleep
         default_target_temperature_low: 19.0
     heat_action:
-      - lambda: id(hv6_zones).set_zone_setpoint(5, id(climate_zone_6).target_temperature);
+      - lambda: |-
+          // no-op: zone controller owns valve demand
     idle_action:
-      - lambda: id(hv6_zones).set_zone_setpoint(5, id(climate_zone_6).target_temperature);
+      - lambda: |-
+          // no-op: zone controller owns valve demand
+    target_temperature_change_action:
+      - lambda: |-
+          if (!id(climate_setpoint_sync_ready))
+            return;
+          float sp = id(climate_zone_6).target_temperature;
+          if (std::isnan(sp))
+            sp = id(climate_zone_6).target_temperature_low;
+          if (!std::isnan(sp))
+            id(hv6_zones).set_zone_setpoint(5, sp);
     visual:
       min_temperature: 15
       max_temperature: 30
       temperature_step: 0.5
+
+# After NVS config and climate setup: push durable setpoints into the HA façade
+# so a flash that wiped ESPHome climate preferences does not leave the UI at 21.
+# Keep climate_setpoint_sync_ready false through this sync so the resulting
+# temperature_change triggers do not write back into NVS.
+esphome:
+  on_boot:
+    - priority: -100
+      then:
+        - lambda: |-
+            id(climate_setpoint_sync_ready) = false;
+            const auto cfg = id(hv6_config).get_config();
+            {
+              auto call = id(climate_zone_1).make_call();
+              call.set_target_temperature(cfg.zones[0].setpoint_c);
+              call.set_target_temperature_low(cfg.zones[0].setpoint_c);
+              call.perform();
+            }
+            {
+              auto call = id(climate_zone_2).make_call();
+              call.set_target_temperature(cfg.zones[1].setpoint_c);
+              call.set_target_temperature_low(cfg.zones[1].setpoint_c);
+              call.perform();
+            }
+            {
+              auto call = id(climate_zone_3).make_call();
+              call.set_target_temperature(cfg.zones[2].setpoint_c);
+              call.set_target_temperature_low(cfg.zones[2].setpoint_c);
+              call.perform();
+            }
+            {
+              auto call = id(climate_zone_4).make_call();
+              call.set_target_temperature(cfg.zones[3].setpoint_c);
+              call.set_target_temperature_low(cfg.zones[3].setpoint_c);
+              call.perform();
+            }
+            {
+              auto call = id(climate_zone_5).make_call();
+              call.set_target_temperature(cfg.zones[4].setpoint_c);
+              call.set_target_temperature_low(cfg.zones[4].setpoint_c);
+              call.perform();
+            }
+            {
+              auto call = id(climate_zone_6).make_call();
+              call.set_target_temperature(cfg.zones[5].setpoint_c);
+              call.set_target_temperature_low(cfg.zones[5].setpoint_c);
+              call.perform();
+            }
+            id(climate_setpoint_sync_ready) = true;

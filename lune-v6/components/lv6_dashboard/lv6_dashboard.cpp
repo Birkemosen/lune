@@ -1663,6 +1663,11 @@ bool LV6Dashboard::authorize_write_(AsyncWebServerRequest *request) {
 }
 
 void LV6Dashboard::prepare_motors_for_ota_() {
+  // Persist any debounced settings (setpoint etc.) before the OTA reboot so a
+  // change made within the last second is not lost with the dirty timer.
+  if (this->config_store_ != nullptr)
+    this->config_store_->flush_now();
+
   if (this->valve_controller_ == nullptr)
     return;
   // Cut drive first: a reboot mid-flash must not leave an H-bridge energised.
