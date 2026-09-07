@@ -5,6 +5,8 @@
 .esphome/
 traces/
 .cache/
+# Release bundle (binaries + manifest) produced by `make release-firmware`
+dist/
 # IDE
 .vscode/
 .idea/

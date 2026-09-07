@@ -140,21 +140,32 @@ deliberately spent on digital: `GPIO4` on `STATUS_LED_N` (rev3.2-G) and `GPIO8` 
 
 ## Firmware entrypoints
 
-| Entrypoint | Backend | Board |
-|---|---|---|
-| `configurations/lune-ble.yaml` | `drv8215_i2c` | rev3.0 / rev3.1 development profile |
-| `configurations/lune-v6-rev31.yaml` | `rev31_gpio` | rev3.1-lean |
-| `configurations/lune-v6-rev32.yaml` | `rev32_gpio` | **rev3.2** |
+The firmware identity is `lune-v6` (WiFi/DHCP/OTA hostname `lune-v6-<mac>`).
+Hardware revision 3.2 is the board package, not part of the device name.
+
+| File | Role |
+|---|---|
+| `configurations/lune-v6.yaml` | Firmware entrypoint (`device_name: lune-v6`) |
+| `configurations/lune-v6-release.yaml` | Public release entrypoint — same firmware, no WiFi credentials |
+| `packages/board/lune-v6-rev32.yaml` | Rev 3.2 PCB pins, motor backend, status LED |
+| `packages/board/esp32-s3.yaml` | ESP32-S3-WROOM-1-N8R8 (8 MB flash, octal PSRAM) |
 
 ```sh
-make config CONFIG=configurations/lune-v6-rev32.yaml BUILD_NAME=lune-v6-rev32
-make build  CONFIG=configurations/lune-v6-rev32.yaml BUILD_NAME=lune-v6-rev32
+make config
+make build
 ```
 
-The pin map is set in each entrypoint's `substitutions:`; `lune.yaml` carries only
-defaults. Every rev3.2 number is the `gpio` map in
-[`hardware/lune-v6-rev3.2/design-contract.json`](hardware/lune-v6-rev3.2/design-contract.json),
-which `check_design.py` asserts against the schematic.
+`make build` and `make deploy` auto-increment a development build suffix (`v1.0.0-1`,
+`v1.0.0-2`, …). A release binary drops that suffix:
+
+```sh
+make release
+make release VERSION=v1.1.0
+make release-deploy HOST=192.168.x.x
+```
+
+`make release-firmware VERSION=v1.1.0` builds the publishable bundle instead —
+see [Flashing and updates](#flashing-and-updates).
 
 ### What differs on rev3.2
 
@@ -244,7 +255,8 @@ lune-v6/
 
 ## Quick Start
 
-1. Edit the repo-root `secrets.yaml` with your WiFi, API, OTA and optional MQTT values.
+1. Copy the repo-root [`secrets.yaml.example`](../secrets.yaml.example) to
+   `secrets.yaml` and fill in your WiFi, API, OTA and optional MQTT values.
    The V6 Makefile creates an ignored `configurations/secrets.yaml` symlink automatically
    when the root secrets file exists.
 2. Replace the placeholder DS18B20 addresses in `lune.yaml` after first discovery.
@@ -274,14 +286,89 @@ root when present.
 Direct ESPHome commands still work:
 
 ```bash
-esphome run lune-v6/configurations/lune-ble.yaml
-esphome config lune-v6/configurations/lune-ble.yaml
+esphome run lune-v6/configurations/lune-v6.yaml
+esphome config lune-v6/configurations/lune-v6.yaml
 ```
+
+## Flashing And Updates
+
+Published binaries are attached to [GitHub Releases](https://github.com/birkemosen/lune/releases).
+Each release carries three assets:
+
+| Asset | Use |
+|---|---|
+| `lune-v6-<version>.factory.bin` | **First flash only**, over USB. Full image: bootloader, partition table and application. |
+| `lune-v6-<version>.ota.bin` | Every update after the first flash. Application image only. |
+| `manifest-lune-v6.json` | ESP-Web-Tools install manifest and the source for the device's own **Firmware Update** entity. |
+
+### First flash — USB
+
+A blank board needs the factory image, because the OTA image contains no
+bootloader or partition table:
+
+```bash
+esptool --port /dev/cu.usbmodemXXXX write_flash 0x0 lune-v6-<version>.factory.bin
+```
+
+Then join the **Lune V6 Setup** access point and enter WiFi credentials in the
+captive portal. Release images deliberately ship without WiFi credentials (see
+[Release builds](#release-builds)), so the device always starts in setup mode
+and never overwrites credentials you have already provisioned.
+
+### After the first flash — OTA
+
+Never re-flash the factory image over USB to update: it rewrites the whole
+flash and takes the stored WiFi credentials and NVS configuration with it. Use
+one of the OTA paths instead:
+
+- **Managed update (recommended).** The device polls
+  `releases/latest/download/manifest-lune-v6.json` and exposes a **Firmware
+  Update** entity; installing pulls the `.ota.bin` itself. The dashboard drives
+  the same flow through the `firmware_check` / `firmware_prepare` /
+  `firmware_install` commands.
+- **Manual upload.** `POST` the `.ota.bin` to `http://<device>/update` (the
+  `web_server` OTA platform on `web_server_base`; the stock ESPHome web UI is
+  not in the firmware).
+- **From this repository.** `make ota HOST=<device>` builds and uploads your own
+  firmware over the ESPHome native OTA transport.
+
+> Back up your settings before every update. Download
+> `http://<device>/api/hv6/v1/settings/export` and keep the file; it restores
+> through `POST /api/hv6/v1/settings/import` if a configuration migration goes
+> wrong. `http://<device>/api/hv6/v1/logs/download` captures the device log ring
+> for a bug report — it is RAM-only and lost on reboot.
+
+An OTA boot is only marked good after a 60 s settle window (`safe_mode`), so a
+firmware that crashes during startup rolls back to the previous image instead of
+leaving the manifold unattended. Check the **Reset Reason** diagnostic sensor
+afterwards to tell a clean OTA restart from a panic or brownout.
+
+### Release builds
+
+```bash
+make release-firmware VERSION=v1.2.3
+```
+
+This stamps `version.yaml`, compiles `configurations/lune-v6-release.yaml`, and
+writes the renamed images plus `manifest-lune-v6.json` to the gitignored
+`lune-v6/dist/`. `.github/workflows/build-release-firmware.yml` runs the same
+target when a GitHub release is created and uploads the three assets to it.
+
+The release entrypoint differs from `configurations/lune-v6.yaml` in one way: it
+uses `packages/network/wifi-release.yaml` and `!remove`s the `!secret`-backed
+station block, leaving the setup AP and captive portal. A public image therefore
+carries no build-host credentials and cannot overwrite a user's provisioned WiFi.
+
+Everything else still resolves from `secrets.yaml` at build time, and CI supplies
+placeholders. Consequently the published images carry a placeholder native-API
+encryption key and ESPHome OTA password: Home Assistant native-API pairing and
+`esphome upload` against a released binary require building the firmware
+yourself from this repository.
 
 ## Notes
 
-- `secrets.yaml` is kept at the repository root as a local template and remains
-  gitignored.
+- `secrets.yaml` lives at the repository root and is gitignored;
+  `secrets.yaml.example` is the committed template.
 - Device-local commands can be run with `make -C lune-v6 <target>`.
 - Only one motor may run at a time. On rev3.2 this is enforced in hardware by the one-hot
   decoder, not by firmware convention.

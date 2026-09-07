@@ -1,0 +1,101 @@
+name: Build release firmware
+
+# Publishing a GitHub release compiles the public Lune V6 images and attaches
+# them to that release. `update: platform: http_request` on the device polls
+# releases/latest/download/manifest-lune-v6.json, so the manifest asset name
+# must stay stable.
+on:
+  release:
+    types: [created]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to stamp (v1.2.3). Artifacts are not published."
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  firmware:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Cache PlatformIO and ESPHome toolchains
+        uses: actions/cache@v4
+        with:
+          path: |
+            .cache/platformio
+            ~/.espressif
+          key: pio-${{ runner.os }}-${{ hashFiles('requirements.txt') }}
+          restore-keys: pio-${{ runner.os }}-
+
+      - name: Create build venv
+        run: |
+          python3 -m venv .venv313
+          ./.venv313/bin/pip install --upgrade pip
+          ./.venv313/bin/pip install -r requirements.txt
+
+      # secrets.yaml is gitignored (secrets.yaml.example documents the keys), and
+      # the release build must not contain real credentials anyway: the release
+      # entrypoint removes the station block, so these placeholders only satisfy
+      # `!secret` resolution at config load. api_key must still be a valid
+      # 32-byte base64 encryption key.
+      - name: Write placeholder secrets.yaml
+        run: |
+          cat > secrets.yaml <<'EOF'
+          wifi_ssid: "ci-placeholder"
+          wifi_password: "ci-placeholder-password"
+          api_key: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+          ota_password: "ci-placeholder-ota-password"
+          mqtt_broker: "127.0.0.1"
+          mqtt_port: "1883"
+          mqtt_username: "ci"
+          mqtt_password: "ci-placeholder-mqtt-password"
+          EOF
+
+      # stamp_version.py only accepts v1.2.3, so a pre-release tag such as
+      # v1.2.3-rc1 is rejected here rather than deep inside the build.
+      - name: Resolve version
+        id: version
+        run: |
+          version="${{ github.event.release.tag_name || inputs.version }}"
+          case "$version" in
+            v*) ;;
+            *) version="v${version}" ;;
+          esac
+          if ! printf '%s' "$version" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::Release tag '$version' is not vMAJOR.MINOR.PATCH; firmware releases must use a plain semver tag."
+            exit 1
+          fi
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+      - name: Build release bundle
+        run: make -C lune-v6 release-firmware VERSION=${{ steps.version.outputs.version }}
+
+      - name: Show artifacts
+        run: ls -l lune-v6/dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: lune-v6-${{ steps.version.outputs.version }}
+          path: lune-v6/dist/*
+          if-no-files-found: error
+
+      - name: Upload release assets
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "${{ github.event.release.tag_name }}" \
+            lune-v6/dist/lune-v6-${{ steps.version.outputs.version }}.factory.bin \
+            lune-v6/dist/lune-v6-${{ steps.version.outputs.version }}.ota.bin \
+            lune-v6/dist/manifest-lune-v6.json \
+            --clobber

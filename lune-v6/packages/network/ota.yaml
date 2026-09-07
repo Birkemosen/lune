@@ -1,6 +1,31 @@
+# =============================================================================
+# OTA + managed firmware updates (GitHub Releases)
+# =============================================================================
+# - platform esphome: CLI / HA native OTA (password-protected)
+# - platform http_request: device pulls .ota.bin from a release manifest
+# - platform web_server: browser POST /update on web_server_base (no stock UI)
+# Managed update checks the ESP-Web-Tools manifest published with each release.
+# =============================================================================
+
+http_request:
+  timeout: 30s
+  # GitHub releases/latest/download redirects to long CDN URLs; keep TX buffer
+  # large enough to avoid "Out of buffer" on the Location header.
+  buffer_size_rx: 4096
+  buffer_size_tx: 20480
+
 ota:
   - platform: esphome
     password: !secret ota_password
+  - platform: http_request
+  - platform: web_server
+
+update:
+  - platform: http_request
+    id: firmware_update
+    name: Firmware Update
+    entity_category: diagnostic
+    source: https://github.com/birkemosen/lune/releases/latest/download/manifest-lune-v6.json
 
 safe_mode:
   # Mark OTA boots as successful only after a long settle window. Boot includes

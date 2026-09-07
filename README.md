@@ -31,9 +31,9 @@ why no hardware max-on-time timer backs it up.
 
 Rev3.2 status: schematic and design contract complete and checked; **PCB not yet routed**.
 
-Firmware for it is `lune-v6/configurations/lune-v6-rev32.yaml`, which selects the
-`rev32_gpio` backend. Each revision has its own entrypoint and **none may be flashed on
-another revision's board** - the pin maps collide throughout. See
+Firmware is `lune-v6/configurations/lune-v6.yaml` (`make build` / `make deploy`).
+The WiFi/OTA hostname is `lune-v6-<mac>`. Hardware revision 3.2 is
+`packages/board/lune-v6-rev32.yaml` (`rev32_gpio`). See
 [`lune-v6/README.md`](lune-v6/README.md) for the table and for what is still open on
 rev3.2.
 
