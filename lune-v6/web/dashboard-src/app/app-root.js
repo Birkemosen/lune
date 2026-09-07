@@ -5,6 +5,7 @@ import { localize, subscribeLanguage } from '../core/i18n.js';
 import { gkey, key } from '../utils/keys.js';
 import { fmtT } from '../utils/format.js';
 import { applyTheme } from '../core/theme.js';
+import { isDevBuild } from '../utils/dev-build.js';
 
 applyTheme();
 
@@ -54,6 +55,7 @@ const template = () => `
 <section class="sec" data-section="zones"><div class="zones-index"><div class="zones-index-head"><h2>Zones</h2><p class="zones-count">6 physical loops</p></div><section class="zones-summary" role="status" aria-live="polite"></section><div class="content-group"><div class="group-title"><div class="group-title-main"><h3>Local zones</h3><span>Temperature, applied target, valve and state</span></div></div><div class="zones-list"></div></div></div><section class="zone-detail-view zones-detail-pane" aria-labelledby="selected-zone-title" hidden><div class="zone-detail-toolbar"><button type="button" class="zone-back" data-zone-back>‹ All zones</button><div class="zone-tabstrip" role="tablist" aria-label="Select zone"></div></div><div class="zone-detail-heading" id="selected-zone-panel" role="tabpanel" aria-labelledby="selected-zone-tab"><span class="eyebrow">Zone details</span><h2 class="selected-zone-title" id="selected-zone-title">Zone details</h2><p>Applied target, sensor coverage and local safety.</p></div><div class="zone-detail-layout"><div class="zone-detail-slot"></div><section class="zone-configuration-group" aria-label="Zone configuration"><div class="zone-room-slot"></div><div class="zone-sensor-slot"></div></section><details class="disclosure zone-recovery-disclosure"><summary>Service and recovery<small>Only when this zone needs attention</small></summary><div class="disclosure-body zone-recovery-slot"></div></details></div></section></section>
 <section class="sec" data-section="settings"><div class="settings-readiness status-summary"></div><div class="settings-layout"><details class="disclosure settings-disclosure touch-settings" open><summary>Touch connection<small>Approval and coordinator identity</small></summary><div class="disclosure-body touch-slot"></div></details><details class="disclosure settings-disclosure"><summary>Manifold and probes<small>Valve type and temperature inputs</small></summary><div class="disclosure-body manifold-slot"></div></details><details class="disclosure settings-disclosure"><summary>Hydraulic safety<small>Minimum active-loop opening</small></summary><div class="disclosure-body minimum-flow-slot"></div></details><details class="disclosure settings-disclosure"><summary>Room clocks<small>Shelly BLU display time</small></summary><div class="disclosure-body ble-clock-slot"></div></details><details class="disclosure settings-disclosure"><summary>Preheat absorption<small>Local handling of external preload</small></summary><div class="disclosure-body preheat-slot"></div></details><details class="disclosure settings-disclosure"><summary>Motor configuration<small>Drivers, profile and learning limits</small></summary><div class="disclosure-body motor-slot"></div></details><details class="disclosure settings-disclosure"><summary>Firmware<small>Version, updates and manual upload</small></summary><div class="disclosure-body firmware-slot"></div></details><details class="disclosure settings-disclosure"><summary>Backup and restore<small>Save or reapply local configuration</small></summary><div class="disclosure-body backup-slot"></div></details><details class="disclosure settings-disclosure"><summary>Appearance<small>Accent colour in this browser</small></summary><div class="disclosure-body appearance-slot"></div></details></div></section>
 <section class="sec" data-section="diagnostics"><div class="diagnostics-readiness status-summary"></div><button type="button" class="diagnostics-attention attention" data-open-zones hidden></button><div class="diagnostics-layout"><details class="disclosure diagnostics-disclosure"><summary>Runtime health<small>Processor and memory</small></summary><div class="disclosure-body system-health-slot"></div></details><details class="disclosure diagnostics-disclosure"><summary>Hardware and connectivity<small>Network, firmware and I²C</small></summary><div class="disclosure-body diag-health-slot"></div></details><details class="disclosure diagnostics-disclosure"><summary>Device logs<small>Live firmware events</small></summary><div class="disclosure-body logs-main-col"></div></details><details class="disclosure diagnostics-disclosure"><summary>Manual motor control<small>Temporary service operation</small></summary><div class="disclosure-body manual-control-col"></div></details><details class="disclosure diagnostics-disclosure danger-zone"><summary>Recovery and restart<small>Actions that interrupt normal operation</small></summary><div class="disclosure-body diag-actions-slot"></div></details></div></section>
+<section class="sec" data-section="motorlab"><div class="motor-lab-slot"></div></section>
 <section class="sec" data-section="help"><div class="help-list"><a class="help-item" href="#zones" data-help-section="zones"><strong>Manifolds and zones</strong><p>How physical loops map to rooms and targets.</p></a><a class="help-item" href="#zones"><strong>Sensors</strong><p>Temperature freshness, BLE coverage and fallback behavior.</p></a><a class="help-item" href="#settings"><strong>Touch coordination</strong><p>What Touch controls and what V6 enforces locally.</p></a><a class="help-item" href="#settings"><strong>Hydraulic safety</strong><p>Minimum flow, valve protection and safe local operation.</p></a><a class="help-item" href="#diagnostics"><strong>Diagnostics and recovery</strong><p>Read health evidence before using recovery actions.</p></a></div></section>
 <div class="ftr">Lune V6 · Local manifold controller</div></main></div></div></div>`;
 
@@ -81,6 +83,20 @@ component({ tag:'app-root', render:template, onMount(ctx, el) {
   el.querySelector('.diag-actions-slot').appendChild(mountComponent('settings-control-card'));
   el.querySelector('.manual-control-col').appendChild(mountComponent('diag-manual-badge'));
   el.querySelector('.manual-control-col').appendChild(mountComponent('diag-zone-motor-card',{zone:getDashboardValue('selectedZone')||1}));
+  const labSlot=el.querySelector('.motor-lab-slot');
+  const labSection=el.querySelector('.sec[data-section="motorlab"]');
+  function updateMotorLab(){
+    const show=isDevBuild(es(gkey.firmware)||getDashboardValue('firmwareVersion'));
+    const navLink=el.querySelector('.v6-side-link[data-section="motorlab"]');
+    if(navLink) navLink.hidden=!show;
+    if(labSection) labSection.hidden=!show;
+    if(show&&labSlot&&!labSlot.firstChild) labSlot.appendChild(mountComponent('diag-motor-lab'));
+    if(!show&&getDashboardValue('section')==='motorlab') setSection('diagnostics');
+  }
+  subscribe(gkey.firmware,updateMotorLab);
+  subscribeDashboard('firmwareVersion',updateMotorLab);
+  subscribeDashboard('section',updateMotorLab);
+  updateMotorLab();
   el.querySelector('.logs-main-col').appendChild(mountComponent('logs-view'));
   el.querySelector('.system-health-slot').appendChild(mountComponent('diag-system-card'));
   el.querySelector('.diag-health-slot').appendChild(mountComponent('connectivity-card'));

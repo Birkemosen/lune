@@ -1,7 +1,7 @@
 // core/api.js
 
 import { beginPendingWrite, endPendingWrite, setEntity, es, ev, setI2cResult, setLive, addActivity, setDashboardValue, setZoneStateHistory, appendDeviceLog, getDeviceLogSeq, getDeviceLog } from './store.js';
-import { handleMockPost, mockLatestRelease, mockSettingsExport, mockSettingsImport } from './mock.js';
+import { handleMockPost, mockLatestRelease, mockSettingsExport, mockSettingsImport, mockDiagnosticsSnapshot, mockMotorTraceCsv } from './mock.js';
 import { saveBlob, saveText, stampedName } from '../utils/download.js';
 import { key, gkey } from '../utils/keys.js';
 
@@ -274,6 +274,34 @@ export function closeMotorTimed(zone, durationMs = 10000) {
 export function stopMotor(zone) {
   addActivity('Motor ' + zone + ' stopped', zone);
   return postV1(`/motors/${zone}/stop`, {}, { key: 'command', value: 'stop_motor', zone });
+}
+
+export function emergencyStopMotors() {
+  addActivity('Emergency stop — all motors halted');
+  const stops = [];
+  for (let zone = 1; zone <= 6; zone++) {
+    stops.push(postV1(`/motors/${zone}/stop`, {}, { key: 'command', value: 'stop_motor', zone }));
+  }
+  return Promise.all(stops).then((results) => setDriversEnabled(false).then(() => results));
+}
+
+export async function fetchDiagnostics() {
+  if (isMock()) return mockDiagnosticsSnapshot();
+  const response = await fetch(BASE + '/diagnostics', { cache: 'no-store' });
+  if (!response.ok) throw new Error('Diagnostics fetch failed: ' + response.status);
+  return response.json();
+}
+
+export async function fetchMotorTraceCsv() {
+  if (isMock()) return mockMotorTraceCsv();
+  const response = await fetch(BASE + '/motor-trace.csv', { cache: 'no-store' });
+  if (response.status === 409) {
+    const err = new Error('motor_busy');
+    err.code = 'motor_busy';
+    throw err;
+  }
+  if (!response.ok) throw new Error('Motor trace fetch failed: ' + response.status);
+  return response.text();
 }
 
 export function setManualMode(enabled) {

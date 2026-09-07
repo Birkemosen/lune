@@ -35,10 +35,13 @@ const css = `
   .v6-nav-group { display:contents; }
   .v6-nav-heading, .v6-side-utility { display:none; }
   .v6-side-link { justify-content:center; flex-direction:column; gap:2px; min-height:52px; padding:4px; font-size:.68rem; }
-  .v6-side-link[data-section="settings"] { display:none; }
+  .v6-side-link[data-section="settings"],
+  .v6-side-link[data-section="motorlab"] { display:none; }
   .v6-more-toggle { display:flex; }
   .v6-side-nav.more-open { grid-template-columns:repeat(3,1fr); }
-  .v6-side-nav.more-open .v6-side-link[data-section="settings"], .v6-side-nav.more-open .v6-side-utility { display:flex; }
+  .v6-side-nav.more-open .v6-side-link[data-section="settings"],
+  .v6-side-nav.more-open .v6-side-link[data-section="motorlab"],
+  .v6-side-nav.more-open .v6-side-utility { display:flex; }
   .v6-side-nav.more-open .v6-side-utility { grid-column:1/-1; border:0; padding:0; margin:0; display:contents; }
 }
 `;
@@ -60,13 +63,14 @@ const navTemplate = () => `
     </div>
     <div class="v6-nav-group"><div class="v6-nav-heading">System</div>
       <a href="#" class="v6-side-link" data-section="diagnostics">${icon('<path d="M4 19h16M6 16V8m4 8V4m4 12v-6m4 6V7"/><path d="m5 5 3 2 4-4 4 3 3-2"/>')}<span>Diagnostics</span></a>
+      <a href="#" class="v6-side-link" data-section="motorlab" hidden>${icon('<path d="M3 12h3l2-6 3 12 2-8 2 4h6"/><circle cx="19" cy="12" r="1.4"/>')}<span>Motor lab</span></a>
       <a href="#" class="v6-side-link" data-section="settings">${icon('<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-1.6v-.2h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1Z"/>')}<span>Settings</span></a>
     </div>
     <button type="button" class="v6-side-link v6-more-toggle" aria-expanded="false">${icon('<circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/>')}<span>More</span></button>
     <div class="v6-side-utility"><a href="#" class="v6-side-link" data-section="help">${icon('<circle cx="12" cy="12" r="9"/><path d="M9.8 9a2.4 2.4 0 1 1 3.7 2c-.9.6-1.5 1.1-1.5 2.3M12 17h.01"/>')}<span>Help</span></a></div>
   </nav>`;
 
-const titleMap = { overview:['Overview','Local heating status and current exceptions'], zones:['Zones','Physical loops, applied targets and valve state'], diagnostics:['Diagnostics','Health, evidence and recovery'], settings:['Settings','Device configuration and safety'], help:['Help','Guidance for operating Lune V6'] };
+const titleMap = { overview:['Overview','Local heating status and current exceptions'], zones:['Zones','Physical loops, applied targets and valve state'], diagnostics:['Diagnostics','Health, evidence and recovery'], motorlab:['Motor lab','Instrumented stroke capture and endstop thresholds'], settings:['Settings','Device configuration and safety'], help:['Help','Guidance for operating Lune V6'] };
 
 component({ tag:'hv6-header', render:toolbarTemplate, onMount(ctx, el) {
   const live = el.querySelector('#hdr-live'); const title = el.querySelector('#v6-view-title'); const subtitle = el.querySelector('#v6-view-subtitle'); const updateBadge = el.querySelector('#hdr-update');

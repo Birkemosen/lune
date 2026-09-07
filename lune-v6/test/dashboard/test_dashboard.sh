@@ -237,4 +237,63 @@ grep -qF 'firmware_suffix: ""' "$tmp" >/dev/null
 grep -qF 'firmware_build: "0"' "$tmp" >/dev/null
 rm -f "$tmp"
 
+grep -qF "'diagnostics.lab.estop': 'Emergency stop'" "$i18n" >/dev/null
+grep -qF "'diagnostics.lab.estop': 'Nødstop'" "$i18n" >/dev/null
+grep -qF 'data-section="motorlab"' "$app" >/dev/null
+grep -qF 'data-section="motorlab"' "$root/web/dashboard-src/app/header.js" >/dev/null
+grep -qF "mountComponent('diag-motor-lab')" "$app" >/dev/null
+grep -qF 'isDevBuild' "$app" >/dev/null
+grep -qF "setSection('diagnostics')" "$app" >/dev/null
+grep -qF "import './components/diagnostics/diag-motor-lab.js'" "$main" >/dev/null
+grep -qF 'export function isDevBuild' "$root/web/dashboard-src/utils/dev-build.js" >/dev/null
+grep -qF 'export function emergencyStopMotors' "$api" >/dev/null
+grep -qF 'export async function fetchMotorTraceCsv' "$api" >/dev/null
+grep -qF "BASE + '/motor-trace.csv'" "$api" >/dev/null
+grep -qF 'setDriversEnabled(false)' "$api" >/dev/null
+grep -qF 'class="lab-estop"' "$root/web/dashboard-src/components/diagnostics/diag-motor-lab.js" >/dev/null
+grep -qF 'class="lab-step-chip"' "$root/web/dashboard-src/components/diagnostics/diag-motor-lab.js" >/dev/null
+grep -qF 'class="lab-instruments"' "$root/web/dashboard-src/components/diagnostics/diag-motor-lab.js" >/dev/null
+grep -qF 'POLL_MS = 250' "$root/web/dashboard-src/components/diagnostics/diag-motor-lab.js" >/dev/null
+grep -qF "section') !== 'motorlab'" "$root/web/dashboard-src/components/diagnostics/diag-motor-lab.js" >/dev/null
+grep -qF 'renderMotorLabCharts' "$root/web/dashboard-src/components/diagnostics/motor-lab-charts.js" >/dev/null
+grep -qF 'diagnostics.lab.steps.setup' "$i18n" >/dev/null
+grep -qF 'diagnostics.lab.phase.running' "$i18n" >/dev/null
+grep -qF 'diagnostics.lab.cluster.motion' "$i18n" >/dev/null
+grep -qF 'diagnostics.lab.res.live' "$i18n" >/dev/null
+grep -qF "'diagnostics.lab.res.live': 'Live · ~250 ms poll'" "$i18n" >/dev/null
+grep -qF "'diagnostics.lab.res.live': 'Live · ca. 250 ms poll'" "$i18n" >/dev/null
+grep -qF "'diagnostics.lab.chart.cadence': 'Commutation cadence'" "$i18n" >/dev/null
+grep -qF "'diagnostics.lab.chart.cadence': 'Kommuteringskadence'" "$i18n" >/dev/null
+grep -qF 'Instrumented stroke capture and endstop thresholds' "$root/web/dashboard-src/app/header.js" >/dev/null
+grep -qF "event.key !== 'Escape'" "$root/web/dashboard-src/components/diagnostics/diag-motor-lab.js" >/dev/null
+grep -qF 'analyzeMotorTrace' "$root/web/dashboard-src/utils/motor-trace.js" >/dev/null
+grep -qF 'export function motorTraceSeries' "$root/web/dashboard-src/utils/motor-trace.js" >/dev/null
+grep -qF 'export function mockMotorTraceCsv' "$mock" >/dev/null
+grep -qF 'export function mockDiagnosticsSnapshot' "$mock" >/dev/null
+grep -qF 'MOCK_MOVE_MS = 4200' "$mock" >/dev/null
+grep -qF 'tacho_period_us' "$mock" >/dev/null
+grep -qF 'data-k="pin"' "$root/web/dashboard-src/components/diagnostics/diag-motor-lab.js" >/dev/null
+grep -qF 'diagnostics.lab.stroke.contact' "$i18n" >/dev/null
+grep -qF 'export function pinContactSample' "$root/web/dashboard-src/utils/motor-trace.js" >/dev/null
+node --input-type=module <<EOF
+import { isDevBuild } from 'file://$root/web/dashboard-src/utils/dev-build.js';
+import { analyzeMotorTrace, motorTraceSeries, parseMotorTraceCsv } from 'file://$root/web/dashboard-src/utils/motor-trace.js';
+if (!isDevBuild('v1.0.0-7') || isDevBuild('v1.0.0') || isDevBuild('')) process.exit(1);
+const rows = ['t_ms,motion_count,current_ma,adc_current_raw,drive_on,direction_open,armed,stroke_phase,tacho_period_us,tacho_amp_raw,bemf_raw_a,bemf_raw_b,bemf_differential_raw,bemf_separation_us,bemf_valid,bemf_moving,invalid_bemf_samples'];
+for (let t = 0; t <= 4000; t += 20) {
+  const running = t < 3200;
+  const ma = t < 2200 ? 19.0 : (t < 2800 ? 24.0 : (running ? 22.0 : 19 + (t - 3200) * 0.03));
+  const phase = t < 2200 ? 0 : (t < 2800 ? 1 : (running ? 2 : 3));
+  const period = running ? 1800 : 0;
+  rows.push([t, Math.floor(t / 10), ma.toFixed(1), 0, 1, 0, 1, phase, period, 40, 0, 0, 0, 0, 0, 1, 0].join(','));
+}
+const samples = parseMotorTraceCsv(rows.join('\\n'));
+const analysis = analyzeMotorTrace(samples, 'close');
+if (!analysis.ok || analysis.suggested_factor < 1.25 || analysis.peak_ma < analysis.mean_ma) process.exit(1);
+if (!analysis.pin_seen || analysis.pin_t_ms < 2100 || analysis.pin_t_ms > 2300) process.exit(1);
+if (samples[10].tacho_period_us !== 1800 || samples[10].adc_current_raw !== 0) process.exit(1);
+const series = motorTraceSeries(samples);
+if (!series.cadence.length || series.cadence[10].rate_hz < 500 || !series.slopes.length) process.exit(1);
+EOF
+
 echo 'PASS V6 dashboard HIG source contracts'

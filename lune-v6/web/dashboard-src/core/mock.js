@@ -20,6 +20,7 @@ const MOCK_LOG_SAMPLES = [
 
 const MOCK_UPTIME_BASE = 18 * 3600 + 12 * 60;
 let mockBootMs = Date.now();
+const MOCK_MOVE_MS = 4200;
 
 const state = {
   temp: new Float32Array(ZONES),
@@ -29,6 +30,13 @@ const state = {
   driversEnabled: 1,
   fault: 0,
   manualMode: 0
+};
+
+const mockMotor = {
+  busy: false,
+  direction: 'open',
+  zone: 1,
+  startedAt: 0,
 };
 
 function seed() {
@@ -227,6 +235,117 @@ function simulate() {
   if (tick % 3 === 0) seedMockLogs(1);
 }
 
+function startMockMotor(zone, direction) {
+  mockMotor.busy = true;
+  mockMotor.direction = direction;
+  mockMotor.zone = zone;
+  mockMotor.startedAt = Date.now();
+}
+
+function mockElapsedMs() {
+  if (!mockMotor.startedAt) return 0;
+  return Date.now() - mockMotor.startedAt;
+}
+
+function mockCurrentMa(elapsed, direction, running) {
+  if (!running) return 0.4;
+  const open = direction === 'open';
+  if (elapsed < 180) return open ? 22 : 28;
+  if (elapsed < 500) return open ? 15.2 : 19.4;
+  if (elapsed < 2200) return open ? 14.6 : 19.1;
+  if (!open && elapsed < 2800) return 24.2;
+  if (!open && elapsed < 3400) return 20.4;
+  if (elapsed < MOCK_MOVE_MS - 300) return open ? 18.5 : 26.8;
+  return open ? 25.4 : 41.2;
+}
+
+function mockStrokePhase(elapsed, direction, running) {
+  if (!running) return 0;
+  if (direction === 'open') return elapsed > MOCK_MOVE_MS - 300 ? 3 : 0;
+  if (elapsed < 2200) return 0;
+  if (elapsed < 3000) return 1;
+  if (elapsed < MOCK_MOVE_MS - 300) return 2;
+  return 3;
+}
+
+function mockTachoPeriodUs(elapsed, running) {
+  if (!running) return 0;
+  if (elapsed < 200) return 3200;
+  if (elapsed < 2200) return 1800 + Math.round(Math.sin(elapsed / 140) * 80);
+  return 4200;
+}
+
+export function mockDiagnosticsSnapshot() {
+  const elapsed = mockElapsedMs();
+  const busy = mockMotor.busy && elapsed < MOCK_MOVE_MS;
+  if (mockMotor.busy && !busy) mockMotor.busy = false;
+  const current = mockCurrentMa(elapsed, mockMotor.direction, busy || elapsed < MOCK_MOVE_MS + 80);
+  return {
+    ok: true,
+    version: 'v1',
+    data: {
+      drivers_enabled: !!state.driversEnabled,
+      motor_safety: {
+        backend: 'mock',
+        motor_busy: busy,
+        drive_on: busy,
+        latch_faulted: false,
+        fault_code: 0,
+        current_ma: Number(current.toFixed(1)),
+        stroke_phase: mockStrokePhase(elapsed, mockMotor.direction, busy),
+        armed: !!state.driversEnabled,
+        tacho_period_us: mockTachoPeriodUs(elapsed, busy),
+        tacho_cadence_us: mockTachoPeriodUs(elapsed, busy),
+        tacho_rejected: busy ? Math.floor(elapsed / 900) : 0,
+        tacho_hardware_count: busy ? Math.floor(elapsed / 8) : 0,
+        tacho_adc_count: busy ? Math.floor(elapsed / 8) : 0,
+        tacho_amp_raw: busy ? 40 : 0,
+        invalid_samples: 0,
+        motion_evidence_count: busy ? Math.floor(elapsed / 8) : 0,
+        motor_runtime_ms: busy ? elapsed : 0,
+        sample_sequence: tick,
+      },
+    },
+  };
+}
+
+function mockTraceCurrent(t, direction) {
+  const open = direction === 'open';
+  if (t < 180) return open ? 22 - t * 0.03 : 28 - t * 0.04;
+  if (t < 650) return open ? 14.8 : 19.2;
+  if (t < 2200) return (open ? 14.5 : 19.0) + Math.sin(t / 90) * 0.35;
+  if (!open && t < 2600) return 19.0 + (t - 2200) * 0.012;
+  if (!open && t < 3000) return 23.8 - (t - 2600) * 0.008;
+  if (t < 3400) return open ? 16.2 + (t - 2200) * 0.004 : 22.5 + (t - 3000) * 0.01;
+  const stall = open ? 14.5 + (t - 3400) * 0.018 : 26 + (t - 3400) * 0.03;
+  return Math.min(open ? 26.4 : 44.5, stall);
+}
+
+export function mockMotorTraceCsv(direction) {
+  const dir = direction || mockMotor.direction || 'open';
+  const open = dir === 'open';
+  const duration = open ? 3900 : 4200;
+  const rows = [
+    't_ms,motion_count,current_ma,adc_current_raw,drive_on,direction_open,armed,stroke_phase,tacho_period_us,tacho_amp_raw,bemf_raw_a,bemf_raw_b,bemf_differential_raw,bemf_separation_us,bemf_valid,bemf_moving,invalid_bemf_samples',
+  ];
+  let ripples = 0;
+  for (let t = 0; t <= duration; t += 10) {
+    const current = mockTraceCurrent(t, dir);
+    if (t > 180 && t < duration - 80) ripples += t % 20 === 0 ? 1 : 0;
+    let phase = 0;
+    if (open) phase = t > duration - 400 ? 3 : 0;
+    else if (t >= 2200 && t < 3000) phase = 1;
+    else if (t >= 3000 && t < 3600) phase = 2;
+    else if (t >= 3600) phase = 3;
+    const period = t < 200 ? 3200 : (t < duration - 400 ? 1800 + Math.round(Math.sin(t / 140) * 80) : 4200);
+    rows.push([
+      t, ripples, current.toFixed(1), 1200, 1, open ? 1 : 0, 1, phase,
+      period, 40, 0, 0, 0, 0, 0, 1, 0,
+    ].join(','));
+  }
+  return rows.join('\n') + '\n';
+}
+
 export function startMock() {
   if (timer) return;
   seed();
@@ -262,6 +381,7 @@ export function handleMockPost(body) {
   if (k === 'drivers_enabled') {
     const enabled = v > 0.5;
     state.driversEnabled = enabled ? 1 : 0;
+    if (!enabled) mockMotor.busy = false;
     setEntity(gkey.drivers, { value: enabled, state: enabled ? 'on' : 'off' });
     addActivity(enabled ? 'Motor drivers enabled' : 'Motor drivers disabled');
     return;
@@ -306,14 +426,17 @@ export function handleMockPost(body) {
     }
 
     if (cmd === 'open_motor_timed' && zone >= 1 && zone <= ZONES) {
+      startMockMotor(zone, 'open');
       addActivity('Motor ' + zone + ' open timed', zone);
       return;
     }
     if (cmd === 'close_motor_timed' && zone >= 1 && zone <= ZONES) {
+      startMockMotor(zone, 'close');
       addActivity('Motor ' + zone + ' close timed', zone);
       return;
     }
     if (cmd === 'stop_motor' && zone >= 1 && zone <= ZONES) {
+      mockMotor.busy = false;
       addActivity('Motor ' + zone + ' stopped', zone);
       return;
     }

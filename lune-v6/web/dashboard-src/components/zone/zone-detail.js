@@ -270,11 +270,11 @@ const template = (ctx) => `
     </div>
     <div class="zd-body">
       <div>
-        <div class="zd-kicker">Applied target</div>
+        <div class="zd-kicker" data-i18n="zone.detail.setpoint">Setpoint</div>
         <div class="zd-target-row">
           <button type="button" class="spb btn-dec" data-i18n-label="common.decrease" aria-label="decrease">−</button>
           <label class="zd-setpoint-field">
-            <input class="zd-setpoint" type="text" inputmode="decimal" enterkeyhint="done" autocomplete="off" spellcheck="false" aria-label="Applied target" />
+            <input class="zd-setpoint" type="text" inputmode="decimal" enterkeyhint="done" autocomplete="off" spellcheck="false" data-i18n-label="zone.detail.setpoint" aria-label="Setpoint" />
             <span class="zd-setpoint-unit" aria-hidden="true">°C</span>
           </label>
           <button type="button" class="spb btn-inc" data-i18n-label="common.increase" aria-label="increase">+</button>

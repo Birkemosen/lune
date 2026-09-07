@@ -82,7 +82,9 @@ export default component({
 				nameEl.textContent = friendlyTag || 'Zone ' + zone;
 				friendlyEl.textContent = 'Zone ' + zone + ' · physical loop';
 				tempEl.textContent = fmtT(ev(tempKey));
-				targetEl.textContent = 'Applied ' + fmtT(ev(key.effectiveSetpoint(zone)) ?? ev(key.setpoint(zone)));
+				targetEl.textContent = t('zone.card.setpoint', {
+					value: fmtT(ev(key.effectiveSetpoint(zone)) ?? ev(key.setpoint(zone))),
+				});
 				valveEl.textContent = fmtV(ev(key.valve(zone)));
 				const displayState = enabled ? state : 'OFF';
 				stateEl.textContent =

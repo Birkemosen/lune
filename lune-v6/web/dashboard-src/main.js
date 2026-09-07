@@ -19,6 +19,7 @@ import './components/logs/logs-view.js';
 import './components/diagnostics/diag-i2c.js';
 import './components/diagnostics/diag-manual-badge.js';
 import './components/diagnostics/diag-zone-motor-card.js';
+import './components/diagnostics/diag-motor-lab.js';
 import './components/diagnostics/diag-zone-recovery-card.js';
 import './components/diagnostics/diag-system-card.js';
 import './components/settings/settings-manifold-card.js';
