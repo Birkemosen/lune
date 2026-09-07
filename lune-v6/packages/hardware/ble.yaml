@@ -4,6 +4,17 @@
 #
 # To use: set zone temp source to "BLE Sensor" and enter the device MAC address.
 # The MAC is printed on the device label (e.g. "AA:BB:CC:DD:EE:FF").
+#
+# Keep the BLE controller off until WiFi has associated. Sharing the 2.4 GHz
+# radio during the 4-way handshake is a common Auth Expired / Association
+# Expired failure on ESP32-S3 + UniFi.
+
+esp32_ble:
+  id: hv6_ble
+  enable_on_boot: false
+  # Offload Bluedroid GATT/GAP tables onto the PSRAM heap. ESPHome 2026.7.3
+  # has no NimBLE host for esp32_ble_tracker; this is the supported equivalent.
+  use_psram: true
 
 esp32_ble_tracker:
   id: hv6_ble_tracker
@@ -171,6 +182,15 @@ esp32_ble_tracker:
             }
           }
 
+lv6_ble_time_beacon:
+  id: hv6_ble_clock
+  time_id: sntp_time
+  config_store_id: hv6_config
+  ble_tracker_id: hv6_ble_tracker
+
+lv6_dashboard:
+  ble_time_beacon_id: hv6_ble_clock
+
 script:
   - id: hv6_ble_start_after_wifi
     mode: restart
@@ -181,6 +201,9 @@ script:
           condition:
             wifi.connected:
           then:
+            - logger.log: "BLE stack starting after stable WiFi"
+            - ble.enable:
+            - delay: 1s
             - logger.log: "BLE scan starting after stable WiFi"
             - esp32_ble_tracker.start_scan:
                 id: hv6_ble_tracker
@@ -191,9 +214,11 @@ wifi:
     - script.execute: hv6_ble_start_after_wifi
   on_disconnect:
     # Cancel a pending delayed start as well as stopping an active scan.
+    # Drop the BLE controller so a later reconnect gets the 2.4 GHz radio alone.
     - script.stop: hv6_ble_start_after_wifi
     - esp32_ble_tracker.stop_scan:
         id: hv6_ble_tracker
+    - ble.disable:
 
 sensor:
   - platform: template

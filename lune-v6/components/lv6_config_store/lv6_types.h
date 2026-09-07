@@ -257,6 +257,9 @@ struct SensorConfig {
       DEFAULT_ZONE_TEMP_SOURCE,
   };
   char zone_ble_mac[NUM_ZONES][BLE_MAC_LEN] = {};
+  // Room-clock Date/Time Broadcast for nearby Shelly BLU displays.
+  bool ble_clock_sync_enabled = true;
+  uint16_t ble_clock_sync_interval_min = 60;
 };
 
 /// Version tag for the standalone sensor-pairing NVS blob. This is persisted
