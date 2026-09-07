@@ -1,14 +1,23 @@
+# =============================================================================
+# ESP32-S3-WROOM-1-N8R8 — module used on Lune V6
+# =============================================================================
+# 8 MB quad flash, 8 MB octal PSRAM. ESPHome generates the OTA partition
+# table from `flash_size: 8MB` (two ~3.75 MB app slots + NVS to 0x800000).
+# A PlatformIO board line that says "No PSRAM" is generic metadata; octal
+# mode below is the effective sdkconfig.
+# =============================================================================
+
 esphome:
   min_version: 2026.7.3
   platformio_options:
     board_build.flash_mode: qio
-    board_build.psram_type: qio
+    board_build.psram_type: opi
     board_build.extra_flags:
       - -DBOARD_HAS_PSRAM
 
 esp32:
-  board: esp32-s3-devkitc-1
-  flash_size: 4MB
+  board: esp32-s3-devkitc1-n8r8
+  flash_size: 8MB
   # Keep the repository's established PlatformIO build/deploy path while
   # letting ESPHome select the platform and compiler that match ESP-IDF.
   toolchain: platformio
@@ -16,12 +25,20 @@ esp32:
     type: esp-idf
     version: recommended
     sdkconfig_options:
+      CONFIG_ESPTOOLPY_FLASHSIZE_8MB: "y"
       CONFIG_ESP32S3_DEFAULT_CPU_FREQ_240: "y"
+      # Prefer size over speed so dual-OTA app slots stay comfortably under 8 MB.
+      COMPILER_OPTIMIZATION_SIZE: "y"
       CONFIG_SPIRAM: "y"
+      CONFIG_SPIRAM_MODE_OCT: "y"
       # Prefer PSRAM for large networking/crypto/BLE allocations to keep
       # internal heap available for the dashboard and native API tasks.
       CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP: "y"
       CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC: "y"
+      # Bluedroid host (ESPHome 2026.7.3 has no NimBLE host for esp32_ble).
+      # DYNAMIC_ENV_MEMORY puts GATT/GAP tables on the heap so they can land
+      # in PSRAM; USE_PSRAM on esp32_ble turns this on as well.
+      CONFIG_BT_BLE_DYNAMIC_ENV_MEMORY: "y"
       CONFIG_BT_ALLOCATION_FROM_SPIRAM_FIRST: "y"
       # mDNS is disabled; Helios HTTP uses a 3s socket timeout so 15s is
       # sufficient headroom for DNS + connect + transfer on weak WiFi.
@@ -30,14 +47,14 @@ esp32:
       # Widen the BSD socket pool. The default of 10 is too tight: the dashboard
       # httpd can hold up to 7 connections and lwIP reserves 3, which leaves zero
       # for the native API and any optional outbound client — accept() then
-      # floods with ENFILE (errno 23) and forecast fetches fail
-      # fetches fail. 16 (the Kconfig max) covers httpd(7) + control(3) + API(1)
+      # floods with ENFILE (errno 23) and forecast fetches fail.
+      # 16 (the Kconfig max) covers httpd(7) + control(3) + API(1)
       # + client(2) + headroom. Costs ~2-3 KB internal RAM, freed by dropping the
       # stock web_server.
       CONFIG_LWIP_MAX_SOCKETS: "16"
       CONFIG_HTTPD_MAX_URI_LEN: "128"
-    # loopTask (ESPHome main loop) runs every component loop() plus the BLE
-      # advertise lambda. The dashboard/bridge setup path also copies the
+      # loopTask (ESPHome main loop) runs every component loop() plus the BLE
+      # advertise path. The dashboard/bridge setup path also copies the
       # ~1.9 KB DeviceConfig, and the 8 KB stack overflows before setup()
       # completes. Keep 16 KB headroom for those snapshots and BLE bursts.
       CONFIG_ESP_MAIN_TASK_STACK_SIZE: "16384"
@@ -53,9 +70,9 @@ esp32:
     advanced:
       loop_task_stack_size: 16384
 
-# Enable the ESPHome `psram:` component so the debug platform can expose a
-# Free PSRAM sensor. The IDF sdkconfig above already enables SPIRAM at the
-# kernel level; this block is purely for ESPHome runtime visibility.
+# Octal PSRAM on the N8R8. ignore_not_found must stay false: a missing PSRAM
+# is a hardware fault, not a config option.
 psram:
-  mode: quad
+  mode: octal
   speed: 80MHz
+  ignore_not_found: false

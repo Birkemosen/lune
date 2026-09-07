@@ -1,7 +1,7 @@
 # -----------------------------------------------------------------------------
 # Lune V6 firmware build (BLE BTHome sensors, ESPHome native API)
 # -----------------------------------------------------------------------------
-CONFIG ?= configurations/lune-ble.yaml
+CONFIG ?= configurations/lune-v6.yaml
 BUILD_NAME ?= lune-v6
 ROOT_DIR ?= ..
 ROOT_ABS := $(abspath $(ROOT_DIR))
@@ -31,15 +31,18 @@ SECRETS_TARGET ?= ../../secrets.yaml
 LANG ?= en
 DASHBOARD_COMPILED_LANG := $(if $(filter en da,$(LANG)),$(LANG),en)
 
-.PHONY: help check ensure-secrets-link config build build-verify deploy ota logs discover monitor erase erase-nvs clean dashboard dashboard-tooling dashboard-build dashboard-watch test test-dashboard test-ripple test-rev31-logic test-rev32-logic test-balance test-authority-lease test-preheat-policy test-hydraulic-policy test-hydraulic-diagnostics test-commissioning-schema test-request-guard
+.PHONY: help check ensure-secrets-link config compile build build-verify bump-build prepare-release release release-deploy release-firmware release-bundle upload deploy ota logs discover monitor erase erase-nvs clean dashboard dashboard-tooling dashboard-build dashboard-watch test test-dashboard test-ripple test-rev31-logic test-rev32-logic test-balance test-authority-lease test-preheat-policy test-hydraulic-policy test-hydraulic-diagnostics test-commissioning-schema test-request-guard test-ble-time-beacon test-settings-backup
 
 help:
 	@echo "Lune V6 ESPHome tasks"
 	@echo "  make config        Validate YAML"
-	@echo "  make build         Compile firmware (no version bump)"
-	@echo "  make build-verify  Alias for make build"
-	@echo "  make deploy        Build + upload (USB, OTA, or auto-discover)"
-	@echo "  make ota           Build + upload over network (auto-discover if HOST unset)"
+	@echo "  make build         Bump build number and compile (v1.0.0-N)"
+	@echo "  make build-verify  Compile without touching version.yaml"
+	@echo "  make release       Compile a release binary without build suffix (VERSION=v1.2.3 optional)"
+	@echo "  make release-firmware  Build the public release bundle in dist/ (no WiFi secrets baked in)"
+	@echo "  make deploy        Bump build + compile + upload (USB, OTA, or auto-discover)"
+	@echo "  make release-deploy  Release compile + upload"
+	@echo "  make ota           Bump build + compile + upload over network"
 	@echo "  make logs          Stream logs (auto-discover if HOST unset)"
 	@echo "  make discover      Scan network and list found devices"
 	@echo "  make monitor       Open serial monitor on PORT"
@@ -56,10 +59,13 @@ help:
 	@echo "  make deploy"
 	@echo "  make deploy PORT=/dev/cu.usbmodemXXXX"
 	@echo "  make deploy HOST=192.168.x.x"
+	@echo "  make release"
+	@echo "  make release VERSION=v1.1.0"
+	@echo "  make release-deploy HOST=192.168.x.x"
 	@echo "  make monitor PORT=/dev/cu.usbmodemXXXX"
 	@echo "  make erase PORT=/dev/cu.usbmodemXXXX"
 	@echo "  make ota HOST=192.168.x.x"
-	@echo "  make ota HOST=lune-v6-a1b2c3.local  # current internal hostname pattern"
+	@echo "  make ota HOST=lune-v6-a1b2c3.local"
 	@echo "  make discover"
 
 ensure-secrets-link:
@@ -84,16 +90,67 @@ check: ensure-secrets-link
 config: check
 	cd $(ROOT_ABS) && $(ESPHOME) config $(CONFIG_PATH)
 
-build: check dashboard-build
+VERSION_YAML := $(ROOT_ABS)/$(DEVICE_DIR)/version.yaml
+STAMP_VERSION := $(PYTHON) $(ROOT_ABS)/$(DEVICE_DIR)/stamp_version.py $(VERSION_YAML)
+
+compile: check dashboard-build
 	cd $(ROOT_ABS) && $(ESPHOME) compile --only-generate $(CONFIG_PATH)
 	perl -0pi -e 's/" ".join\(cmd\)/" ".join(map(str, cmd))/g' $(BUILD_ROOT)/post_build.py
 	PLATFORMIO_CORE_DIR=$(PLATFORMIO_CORE_DIR) $(PIO) run -d $(BUILD_ROOT)
 
-build-verify: check dashboard-build
-	$(MAKE) build
+build: check
+	$(MAKE) bump-build
+	$(MAKE) compile
+
+build-verify: check
+	$(MAKE) compile
+
+# Development builds append -N (v1.0.0-1, v1.0.0-2, …).
+bump-build:
+	@$(STAMP_VERSION) bump
+
+prepare-release:
+	@$(STAMP_VERSION) release $(VERSION)
+
+release: check
+	$(MAKE) prepare-release
+	$(MAKE) compile
+
+release-deploy: check
+	$(MAKE) prepare-release
+	$(MAKE) compile
+	$(MAKE) upload
+
+# =============================================================================
+# Public release bundle (GitHub Releases + ESP-Web-Tools)
+# =============================================================================
+# Built from the release entrypoint, which carries no station credentials, so
+# the published images never overwrite a user's provisioned WiFi.
+RELEASE_CONFIG ?= configurations/lune-v6-release.yaml
+DIST_DIR ?= $(ROOT_ABS)/$(DEVICE_DIR)/dist
+MANIFEST_SCRIPT := $(ROOT_ABS)/$(DEVICE_DIR)/scripts/generate_manifest.py
+# Recursive assignment: version.yaml is read after prepare-release stamps it.
+RELEASE_VERSION = $(shell sed -n 's/^[[:space:]]*firmware_version:[[:space:]]*"\([^"]*\)".*/\1/p' $(VERSION_YAML))
+
+release-firmware: check
+	$(MAKE) release CONFIG=$(RELEASE_CONFIG) VERSION=$(VERSION)
+	$(MAKE) release-bundle CONFIG=$(RELEASE_CONFIG)
+
+release-bundle:
+	@mkdir -p $(DIST_DIR)
+	cp $(PIO_BUILD_DIR)/firmware.ota.bin $(DIST_DIR)/$(BUILD_NAME)-$(RELEASE_VERSION).ota.bin
+	cp $(PIO_BUILD_DIR)/firmware.factory.bin $(DIST_DIR)/$(BUILD_NAME)-$(RELEASE_VERSION).factory.bin
+	$(PYTHON) $(MANIFEST_SCRIPT) \
+		--version $(RELEASE_VERSION) \
+		--ota-bin $(DIST_DIR)/$(BUILD_NAME)-$(RELEASE_VERSION).ota.bin \
+		--output $(DIST_DIR)/manifest-$(BUILD_NAME).json
+	@echo "Release artifacts in $(DIST_DIR)"
 
 deploy: check
 	$(MAKE) build
+	$(MAKE) upload
+
+upload:
 	@if [ -n "$(PORT)" ]; then \
 		echo "Flashing via serial port: $(PORT)"; \
 		PLATFORMIO_CORE_DIR=$(PLATFORMIO_CORE_DIR) $(PIO) run -d $(BUILD_ROOT) -t upload --upload-port $(PORT); \
@@ -154,6 +211,10 @@ HYDRAULIC_DIAGNOSTICS_SRCS = test/hydraulic_diagnostics/test_hydraulic_diagnosti
 HYDRAULIC_DIAGNOSTICS_OUT  = /tmp/test_hv6_hydraulic_diagnostics
 REQUEST_GUARD_SRCS = test/request_guard/test_request_guard.cpp
 REQUEST_GUARD_OUT  = /tmp/test_hv6_request_guard
+BLE_TIME_BEACON_SRCS = test/ble_time_beacon/test_ble_time_beacon.cpp
+BLE_TIME_BEACON_OUT  = /tmp/test_hv6_ble_time_beacon
+SETTINGS_BACKUP_SRCS = test/settings_backup/test_settings_backup.cpp components/lv6_dashboard/settings_backup.cpp
+SETTINGS_BACKUP_OUT  = /tmp/test_hv6_settings_backup
 
 test-balance:
 	$(RIPPLE_CXX) -std=c++17 -O2 -Wall -Wextra -I components/lv6_zone_controller $(BALANCE_SRCS) -o $(BALANCE_OUT) -lm
@@ -182,10 +243,18 @@ test-request-guard:
 	$(RIPPLE_CXX) -std=c++17 -O2 -Wall -Wextra -I components/lv6_dashboard $(REQUEST_GUARD_SRCS) -o $(REQUEST_GUARD_OUT)
 	$(REQUEST_GUARD_OUT)
 
+test-ble-time-beacon:
+	$(RIPPLE_CXX) -std=c++17 -O2 -Wall -Wextra -I components/lv6_ble_time_beacon $(BLE_TIME_BEACON_SRCS) -o $(BLE_TIME_BEACON_OUT)
+	$(BLE_TIME_BEACON_OUT)
+
+test-settings-backup:
+	$(RIPPLE_CXX) -std=c++17 -O2 -Wall -Wextra -I components/lv6_dashboard -I components/lv6_config_store $(SETTINGS_BACKUP_SRCS) -o $(SETTINGS_BACKUP_OUT) -lm
+	$(SETTINGS_BACKUP_OUT)
+
 test-dashboard:
 	sh test/dashboard/test_dashboard.sh
 
-test: test-dashboard test-ripple test-rev31-logic test-rev32-logic test-balance test-authority-lease test-preheat-policy test-hydraulic-policy test-hydraulic-diagnostics test-commissioning-schema test-request-guard
+test: test-dashboard test-ripple test-rev31-logic test-rev32-logic test-balance test-authority-lease test-preheat-policy test-hydraulic-policy test-hydraulic-diagnostics test-commissioning-schema test-request-guard test-ble-time-beacon test-settings-backup
 
 ota: check
 	$(MAKE) build
@@ -253,6 +322,7 @@ erase-nvs: check
 
 clean:
 	rm -rf configurations/.esphome/build
+	rm -rf $(DIST_DIR)
 
 # Dashboard build tasks
 dashboard: check

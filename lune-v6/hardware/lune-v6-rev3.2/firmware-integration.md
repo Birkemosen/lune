@@ -1,20 +1,19 @@
 # Rev 3.2 firmware integration
 
-The Rev 3.2 entrypoint is `lune-v6/configurations/lune-v6-rev32.yaml`.
-It selects the `rev32_gpio` motor backend
+The Lune V6 firmware entrypoint is `lune-v6/configurations/lune-v6.yaml`
+(hostname `lune-v6-<mac>`). The Rev 3.2 PCB lives in
+`packages/board/lune-v6-rev32.yaml` and selects the `rev32_gpio` motor backend
 (`components/lv6_valve_controller/rev32_motor_backend.{h,cpp}` over the pure
-contract in `rev32_logic.h`) and the single-LED status package.
+contract in `rev32_logic.h`) plus the single-LED status package.
 
 Build it from `lune-v6` with:
 
 ```sh
-make config CONFIG=configurations/lune-v6-rev32.yaml BUILD_NAME=lune-v6-rev32
-make build  CONFIG=configurations/lune-v6-rev32.yaml BUILD_NAME=lune-v6-rev32
+make config
+make build
 ```
 
-`lune-v6-rev31.yaml` remains for Rev 3.1 Lean and `lune-ble.yaml` keeps the
-`drv8215_i2c` backend. **Neither revision's firmware may be flashed on the
-other's hardware.** Every one of these collides:
+Rev 3.1 and Rev 3.2 pin maps collide. Do not flash this firmware on a Rev 3.1 board:
 
 | | Rev 3.1 | Rev 3.2 |
 |---|---:|---:|

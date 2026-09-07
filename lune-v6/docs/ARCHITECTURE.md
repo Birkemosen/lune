@@ -14,7 +14,7 @@ Public product references should use Lune V6.
 ```
 ┌──────────────────────────────────────────────────────────────┐
 │                     Config Composition                       │
-│  configurations/lune-ble.yaml → lune.yaml      │
+│  configurations/lune-v6.yaml → lune.yaml       │
 │  (substitutions + packages: board / hardware / network /     │
 │   zones)                                                     │
 └────────────────────────────┬─────────────────────────────────┘
@@ -29,11 +29,11 @@ Public product references should use Lune V6.
                              ▼
 ┌──────────────────────────────────────────────────────────────┐
 │                       Hardware Layer                         │
-│  • 6× DRV8215 I2C H-bridge motor drivers                     │
-│  • Shared IPROPI current-sense ADC (GPIO7)                   │
+│  • 3× DRV8411 dual H-bridges, 74HC4514 one-hot decoder      │
+│  • Shared INA180A1 current sense + COMM_TACHO_N              │
 │  • 1-Wire DS18B20 probes (8 slots)                           │
-│  • BLE (BTHome / Shelly BLU H&T)                             │
-│  • Status LED, display                                       │
+│  • BLE (BTHome / Shelly BLU H&T + clock beacon)              │
+│  • Status LED (active-low GPIO), display                     │
 └──────────────────────────────────────────────────────────────┘
 ```
 
@@ -43,7 +43,7 @@ Public product references should use Lune V6.
 lune/
 ├── lune.yaml          Shared base config (substitutions + packages)
 ├── configurations/
-│   └── lune-ble.yaml  Active build entrypoint (adds BLE package)
+│   └── lune-v6.yaml  Firmware entrypoint (hostname lune-v6-<mac>)
 ├── packages/
 │   ├── board/                ESP32-S3 board definition
 │   ├── hardware/             BLE, display, I2C, motors, LED, 1-Wire, sensors
@@ -53,6 +53,7 @@ lune/
 │   ├── lv6_config_store/     NVS persistence (DeviceConfig struct)
 │   ├── lv6_valve_controller/ Motor FSM, endstop detection, ripple counting
 │   ├── lv6_zone_controller/  Zone state machine, algorithms, hydraulic balance
+│   ├── lv6_ble_time_beacon/  Shelly Date/Time Broadcast for BLU display clocks
 │   └── lv6_dashboard/        HTTP API (/api/hv6/v1), dashboard asset serving
 ├── web/
 │   ├── dashboard-src/        Dashboard source (modular JS, esbuild)

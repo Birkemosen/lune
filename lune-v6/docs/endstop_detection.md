@@ -441,7 +441,7 @@ runtime cap.
 ### Rev 3.2 configuration
 
 Hardware facts (pins, tacho qualification limits) live in
-`configurations/lune-v6-rev32.yaml`. Endstop *policy* lives in `MotorConfig` in NVS, so
+`packages/board/lune-v6-rev32.yaml`. Endstop *policy* lives in `MotorConfig` in NVS, so
 it is tunable during bring-up without a reflash:
 
 | Field | Default | Purpose |

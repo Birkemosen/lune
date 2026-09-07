@@ -2,15 +2,16 @@ wifi:
   ssid: !secret wifi_ssid
   password: !secret wifi_password
 
-  # Preserve the known-good UniFi association from the pre-Lune firmware.
-  # AP selection is left to the station's saved BSSID; ESPHome roaming is
-  # disabled below so it will not perform disruptive off-channel scans.
-  fast_connect: true
+  # Scan first and pick the strongest BSSID. `fast_connect` skips that scan and
+  # was kept for a previous board's saved UniFi association; on a new Rev 3.2 it
+  # associated with the weakest AP first (Auth Expired / Association Expired).
+  fast_connect: false
   # UniFi performs AP steering itself. ESPHome's periodic off-channel roaming
   # scan can interrupt an otherwise healthy connection on this BLE+WiFi node.
   post_connect_roaming: false
   output_power: 20.5dB
   power_save_mode: none
+  use_psram: true
   ap:
     ssid: "${fallback_ap_ssid}"
     ap_timeout: 5min

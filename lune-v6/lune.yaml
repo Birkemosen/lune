@@ -1,41 +1,23 @@
 # =============================================================================
 # Lune V6 — Shared Base Configuration
 # =============================================================================
-# This file is the shared base configuration. The device entrypoint lives in
-# configurations/lune-ble.yaml and `!include`s this file plus the
-# BLE-specific packages.
+# This file is the shared firmware base. The device entrypoint is
+# configurations/lune-v6.yaml and `!include`s this file plus BLE.
+# PCB pins and the status LED come from packages/board/lune-v6-rev32.yaml;
+# the ESP32-S3-WROOM-1-N8R8 module comes from packages/board/esp32-s3.yaml.
 #
 # Build/deploy via the Makefile (`make build`). Do NOT add
-# `esp32_ble_tracker:` blocks here — they belong in the device entrypoint.
+# `esp32_ble_tracker:` blocks here — they belong in the BLE package.
 # =============================================================================
 
 # =============================================================================
 # Substitutions — All user-tunable settings in one place
 # =============================================================================
 substitutions:
-  # Device identity (overridden per variant in entrypoint)
   # Runtime identity. `name_add_mac_suffix` below produces
   # lune-v6-<six-hex-MAC> for the ESPHome/API hostname.
   device_name: lune-v6
-  friendly_name: "Lune V6 Controller"
-
-  # GPIO pins — change to match your PCB revision
-  pin_i2c_sda: GPIO8
-  pin_i2c_scl: GPIO9
-  pin_onewire: GPIO12
-  pin_nsleep: "6"
-  pin_nfault: "4"
-  pin_status_led: GPIO48
-  pin_adc_current: "7"
-  motor_hardware_backend: drv8215_i2c
-  pin_motor_addr0: "10"
-  pin_motor_addr1: "11"
-  pin_motor_addr2: "12"
-  pin_motor_addr3: "13"
-  pin_latch_arm: "16"
-  pin_comm_tacho: "38"
-  pin_adc_tacho: "1"
-  motor_auto_start_calibration: "true"
+  friendly_name: "Lune V6"
 
   # Network — fallback AP name when WiFi is unreachable
   fallback_ap_ssid: "Lune V6 Setup"
@@ -60,7 +42,7 @@ esphome:
   comment: "Lune V6 local 6-zone hydronic manifold controller"
   project:
     name: birkemosen.lune-v6
-    version: ${firmware_version}
+    version: ${firmware_version}${firmware_suffix}
   on_boot:
     - priority: 800
       then:
@@ -79,9 +61,9 @@ esphome:
 # WiFi provisioning over USB (Improv protocol) — works with ESPHome Web Installer
 improv_serial:
 
-# mDNS discovery is disabled in both variants. Repeated allocator failures
-# on ESP32-S3 N4R2 in this deployment make it unreliable; OTA/discovery uses
-# explicit hostnames or the discover_devices.py helper instead.
+# mDNS discovery is disabled. Repeated allocator failures on ESP32-S3 in this
+# deployment make it unreliable; OTA/discovery uses explicit hostnames or the
+# discover_devices.py helper instead.
 mdns:
   disabled: true
 
@@ -90,6 +72,7 @@ mdns:
 time:
   - platform: sntp
     id: sntp_time
+    timezone: Europe/Copenhagen
 
 # =============================================================================
 # Packages — Platform, network, hardware, zones (radio NOT included here)
@@ -97,8 +80,9 @@ time:
 packages:
   # Version
   version:      !include version.yaml
-  # Board
-  board:        !include packages/board/esp32-s3.yaml
+  # Module (N8R8) then PCB revision (pins + status LED)
+  mcu:          !include packages/board/esp32-s3.yaml
+  pcb:          !include packages/board/lune-v6-rev32.yaml
   # Network (radio-agnostic only — wifi/api/ota are in every variant)
   wifi:         !include packages/network/wifi.yaml
   api:          !include packages/network/api.yaml
@@ -107,8 +91,6 @@ packages:
   i2c:          !include packages/hardware/i2c.yaml
   onewire:      !include packages/hardware/onewire.yaml
   motors:       !include packages/hardware/motors.yaml
-  # The status LED package is chosen by the entrypoint: Rev 3.0/3.1 carry a
-  # WS2812, Rev 3.2 a single green LED on an active-low GPIO.
   display:      !include packages/hardware/display.yaml
   hw_sensors:   !include packages/hardware/sensors.yaml
   # Zones
@@ -129,6 +111,7 @@ external_components:
       - lv6_zone_controller
       - lv6_config_store
       - lv6_dashboard
+      - lv6_ble_time_beacon
 
 # =============================================================================
 # Logger
@@ -341,8 +324,6 @@ lv6_valve_controller:
   comm_tacho_pin: ${pin_comm_tacho}
   adc_tacho_pin: ${pin_adc_tacho}
   auto_start_calibration: ${motor_auto_start_calibration}
-  # adc_bemf_pin, direction_pin and bemf_threshold_raw are Rev 3.1 only and
-  # come from packages/hardware/motors-rev31.yaml.
 
 # Zone controller
 lv6_zone_controller:
@@ -380,3 +361,12 @@ sensor:
       name: "Loop time (max ms over interval)"
     psram:
       name: "Free PSRAM"
+
+# Reset cause of the last boot. Distinguishes a clean OTA/software restart from
+# a brownout, watchdog or panic, which is the first thing to check after an
+# unexplained reboot.
+text_sensor:
+  - platform: debug
+    reset_reason:
+      id: reset_reason_text
+      name: "Reset Reason"

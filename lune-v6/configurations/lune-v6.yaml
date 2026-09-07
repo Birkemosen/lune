@@ -1,19 +1,17 @@
 # =============================================================================
-# Lune V6 \u2014 BLE Configuration (BTHome temperature sensors)
+# Lune V6 firmware
 # =============================================================================
-# Build:   make build
-# Deploy:  make deploy
+# Device identity is `lune-v6` (MAC suffix at runtime). Hardware revision 3.2
+# lives in packages/board/, not in the hostname.
 #
-# Includes BLE passive scanning for BTHome temperature sensors (Shelly BLU
-# H&T, etc.). HA integration via the ESPHome native API.
-# Helios + custom dashboard are present.
+# Build:   make config
+# Deploy:  make deploy
 # =============================================================================
 
 substitutions:
   device_name: lune-v6
-  friendly_name: "Lune V6 Controller"
+  friendly_name: "Lune V6"
 
 packages:
   base: !include ../lune.yaml
   ble:  !include ../packages/hardware/ble.yaml
-  led:  !include ../packages/hardware/led.yaml

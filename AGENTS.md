@@ -34,7 +34,16 @@ make logs
 make test
 make test-v6
 make deploy-v6 HOST=192.168.x.x
+make release
+make release VERSION=v1.1.0
+make release-firmware VERSION=v1.1.0
 ```
+
+`make release-firmware` builds the publishable bundle (renamed `.factory.bin` /
+`.ota.bin` plus `manifest-lune-v6.json` in the gitignored `lune-v6/dist/`) from
+`lune-v6/configurations/lune-v6-release.yaml`, which carries no WiFi credentials.
+`.github/workflows/build-release-firmware.yml` runs the same target on release
+creation.
 
 Device-local commands also work:
 
@@ -45,11 +54,14 @@ make -C lune-v6 test
 ```
 
 The Makefiles resolve `esphome`, `platformio`, and `python3` from the repo-root
-`.venv313/` -> `.venv/` -> PATH. The active Lune V6 ESPHome entrypoint is:
+`.venv313/` -> `.venv/` -> PATH. The Lune V6 firmware entrypoint is:
 
 ```text
-lune-v6/configurations/lune-ble.yaml
+lune-v6/configurations/lune-v6.yaml
 ```
+
+The hostname is `lune-v6-<mac>`. Hardware revision 3.2 is a board package
+(`packages/board/lune-v6-rev32.yaml`), not part of the device name.
 
 `secrets.yaml` stays at the repository root and remains gitignored.
 

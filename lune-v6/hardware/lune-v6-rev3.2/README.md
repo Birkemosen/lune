@@ -389,9 +389,10 @@ Rev 3.2 is a schematic-only ECO. The Rev 3.1 routed PCB, Gerbers, BOM and CPL
 do not include the Rev 3.2 analog changes and must not be fabricated as
 Rev 3.2.
 
-Firmware exists: `lune-v6/configurations/lune-v6-rev32.yaml` selects the
-`rev32_gpio` backend, which owns the 4-bit decoder, the per-move latch arm, the
-6 dB `ADC_CURRENT` range and PCNT capture on `COMM_TACHO_N`. Automatic startup
+Firmware exists and is the default Lune V6 build: `configurations/lune-v6.yaml`
+(hostname `lune-v6-<mac>`). The board package `packages/board/lune-v6-rev32.yaml`
+selects the `rev32_gpio` backend, which owns the 4-bit decoder, the per-move latch arm,
+the 6 dB `ADC_CURRENT` range and PCNT capture on `COMM_TACHO_N`. Automatic startup
 calibration stays off - the thresholds are bring-up values, and the tacho's
 missed/false-edge rate is unmeasured. Neither revision's entrypoint may be
 flashed on the other's hardware; see the collision table in

@@ -1,2 +1,6 @@
 substitutions:
-  firmware_version: "v0.9.13"  # Keep this aligned with your git release tag/version.
+  # Product version. `make build` / `make deploy` append -<build>.
+  # `make release` (optional VERSION=v1.2.3) compiles without a build suffix.
+  firmware_version: "v1.0.0"
+  firmware_build: "5"
+  firmware_suffix: "-5"
