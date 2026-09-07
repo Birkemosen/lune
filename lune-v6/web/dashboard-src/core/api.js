@@ -1,10 +1,25 @@
 // core/api.js
 
-import { beginPendingWrite, endPendingWrite, setEntity, es, setI2cResult, setLive, addActivity, setDashboardValue, setZoneStateHistory, appendDeviceLog, getDeviceLogSeq } from './store.js';
-import { handleMockPost } from './mock.js';
+import { beginPendingWrite, endPendingWrite, setEntity, es, ev, setI2cResult, setLive, addActivity, setDashboardValue, setZoneStateHistory, appendDeviceLog, getDeviceLogSeq, getDeviceLog } from './store.js';
+import { handleMockPost, mockLatestRelease, mockSettingsExport, mockSettingsImport } from './mock.js';
+import { saveBlob, saveText, stampedName } from '../utils/download.js';
 import { key, gkey } from '../utils/keys.js';
 
 export const BASE = '/api/hv6/v1';
+
+// Firmware releases are published on GitHub. The browser asks GitHub directly
+// (on Settings open and on the explicit Check button) so the device never
+// needs outbound internet for the version comparison itself.
+export const RELEASE_LATEST_API = 'https://api.github.com/repos/birkemosen/lune/releases/latest';
+export const RELEASE_DOWNLOAD_BASE = 'https://github.com/birkemosen/lune/releases/latest/download/';
+
+// ESPHome's web_server OTA handler accepts a multipart POST on /update and
+// reboots the node once the image has been flashed.
+export const OTA_UPLOAD_PATH = '/update';
+
+// Backup files carry this marker so a foreign JSON file is rejected in the
+// browser instead of reaching the device.
+export const SETTINGS_BACKUP_TYPE = 'lune-v6-settings';
 
 function isMock() {
   return !!(window.LV6_DASHBOARD_CONFIG && window.LV6_DASHBOARD_CONFIG.mock);
@@ -71,9 +86,42 @@ function postV1(path, params, mockBody) {
   });
 }
 
+function localAccessKey() {
+  return sessionStorage.getItem('hv6_local_access_key') || '';
+}
+
+// POST a JSON document to a /api/hv6/v1 write endpoint. Only the settings
+// restore path uses this: a backup envelope is a nested document that does not
+// fit the flat form-urlencoded shape every other write endpoint uses. The
+// device reads the raw body from request->arg("plain").
+function postJsonV1(path, payload, params) {
+  beginPendingWrite();
+  const accessKey = localAccessKey();
+  return fetch(queryUrl(path, params), {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Lune-Local-Key': accessKey,
+      'X-Lune-CSRF': accessKey,
+      'Idempotency-Key': crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
+    },
+    body: JSON.stringify(payload),
+  }).finally(() => {
+    endPendingWrite();
+  });
+}
+
 export function setSetpoint(zone, value) {
-  setEntity(key.setpoint(zone), { value });
-  return postV1(`/zones/${zone}/setpoint`, { setpoint_c: value }, { key: 'zone_setpoint', value, zone });
+  // Zone detail paints Applied Target from effectiveSetpoint (falling back to
+  // setpoint). Keep all three in lockstep so +/- feels immediate and a state
+  // poll cannot leave the UI on a stale effective value.
+  const next = Number(value);
+  setEntity(key.setpoint(zone), { value: next });
+  setEntity(key.baseSetpoint(zone), { value: next });
+  const offset = Number(ev(key.coordinatorOffset(zone)));
+  const effective = Number.isFinite(offset) ? next + offset : next;
+  setEntity(key.effectiveSetpoint(zone), { value: effective });
+  return postV1(`/zones/${zone}/setpoint`, { setpoint_c: next }, { key: 'zone_setpoint', value: next, zone });
 }
 
 export function setEnabled(zone, enabled) {
@@ -112,7 +160,8 @@ const globalSelectMap = {
   manifold_flow_probe: gkey.manifoldFlowProbe,
   manifold_return_probe: gkey.manifoldReturnProbe,
   motor_profile_default: gkey.motorProfileDefault,
-  simple_preheat_enabled: gkey.simplePreheatEnabled
+  simple_preheat_enabled: gkey.simplePreheatEnabled,
+  ble_clock_sync_enabled: gkey.bleClockSyncEnabled
 };
 
 const globalNumberMap = {
@@ -129,6 +178,7 @@ const globalNumberMap = {
   relearn_after_hours: gkey.relearnAfterHours,
   learned_factor_min_samples: gkey.learnedFactorMinSamples,
   learned_factor_max_deviation_pct: gkey.learnedFactorMaxDeviationPct,
+  ble_clock_sync_interval_min: gkey.bleClockSyncIntervalMin,
 };
 
 export function setZoneSelect(zone, settingKey, value) {
@@ -259,6 +309,226 @@ export function fetchHistory() {
     .then((response) => response.ok ? response.json() : null)
     .then((data) => { if (data) setZoneStateHistory(data); })
     .catch(() => { /* history fetch errors are non-fatal */ });
+}
+
+// ---- firmware updates ----
+
+export function firmwareCheck() {
+  return command('firmware_check');
+}
+
+// Device-pulled update: V6 downloads the release asset itself, stops the
+// valves and reboots into the new image.
+export function firmwareInstall() {
+  addActivity('Firmware install requested');
+  return command('firmware_install');
+}
+
+// Quiesce motors and free RAM before a browser-pushed image lands on /update.
+export function firmwarePrepare() {
+  return command('firmware_prepare');
+}
+
+// Conventional asset name for a release tag, used when a release carries no
+// asset metadata or when only the device reported the newer version.
+export function releaseAssetFor(tag) {
+  const name = 'lune-v6-' + (tag || 'latest') + '.ota.bin';
+  return { name, url: RELEASE_DOWNLOAD_BASE + name };
+}
+
+// Pick the flashable asset from a GitHub release, preferring the Lune V6
+// `.ota.bin`.
+function pickReleaseAsset(assets, tag) {
+  const list = Array.isArray(assets) ? assets : [];
+  const named = (pattern) => list.find((asset) => pattern.test(String(asset && asset.name || '')));
+  const asset = named(/^lune-v6.*\.ota\.bin$/i) || named(/\.ota\.bin$/i) || named(/\.bin$/i);
+  if (asset && asset.browser_download_url) {
+    return { name: String(asset.name), url: String(asset.browser_download_url) };
+  }
+  return releaseAssetFor(tag);
+}
+
+export class ReleaseCheckError extends Error {
+  constructor(code, status, message) {
+    super(message || code);
+    this.name = 'ReleaseCheckError';
+    this.code = code;
+    this.status = status || 0;
+  }
+}
+
+// Read the newest published release. Called on Settings open and from the
+// Check button only — never from the 3 s state poll — to stay far inside
+// GitHub's unauthenticated rate limit.
+//
+// GitHub returns 404 for /releases/latest when the repo has no published
+// (non-draft) release yet — that is not a network failure.
+export async function fetchLatestRelease() {
+  if (isMock()) {
+    const payload = mockLatestRelease();
+    const tag = String(payload && payload.tag_name || '');
+    return {
+      tag,
+      notes: String(payload && payload.body || ''),
+      publishedAt: String(payload && payload.published_at || ''),
+      asset: pickReleaseAsset(payload && payload.assets, tag),
+    };
+  }
+
+  let response;
+  try {
+    response = await fetch(RELEASE_LATEST_API, {
+      cache: 'no-store',
+      headers: { Accept: 'application/vnd.github+json' },
+    });
+  } catch (err) {
+    throw new ReleaseCheckError('network', 0, err && err.message ? err.message : 'network');
+  }
+
+  if (response.status === 404) {
+    throw new ReleaseCheckError('no_releases', 404, 'No published GitHub release');
+  }
+  if (!response.ok) {
+    throw new ReleaseCheckError('http', response.status, 'Release check failed: ' + response.status);
+  }
+
+  const payload = await response.json();
+  const tag = String(payload && payload.tag_name || '');
+  if (!tag) {
+    throw new ReleaseCheckError('no_releases', 404, 'No published GitHub release');
+  }
+  return {
+    tag,
+    notes: String(payload && payload.body || ''),
+    publishedAt: String(payload && payload.published_at || ''),
+    asset: pickReleaseAsset(payload && payload.assets, tag),
+  };
+}
+
+// Push a local .bin to ESPHome's web_server OTA endpoint. `update` is the
+// multipart field name used by the stock ESPHome upload form.
+export function uploadFirmware(file, onProgress) {
+  if (isMock()) {
+    return new Promise((resolve) => {
+      let pct = 0;
+      const step = setInterval(() => {
+        pct = Math.min(100, pct + 20);
+        if (onProgress) onProgress(pct);
+        if (pct >= 100) {
+          clearInterval(step);
+          addActivity('Firmware image uploaded (mock)');
+          resolve('Update Successful!');
+        }
+      }, 220);
+    });
+  }
+
+  return new Promise((resolve, reject) => {
+    const body = new FormData();
+    body.append('update', file, file.name);
+    const request = new XMLHttpRequest();
+    request.open('POST', OTA_UPLOAD_PATH);
+    const accessKey = localAccessKey();
+    if (accessKey) {
+      request.setRequestHeader('X-Lune-Local-Key', accessKey);
+      request.setRequestHeader('X-Lune-CSRF', accessKey);
+    }
+    request.upload.onprogress = (event) => {
+      if (onProgress && event.lengthComputable) {
+        onProgress(Math.min(100, Math.round((event.loaded / event.total) * 100)));
+      }
+    };
+    request.onload = () => {
+      const text = String(request.responseText || '');
+      if (request.status >= 200 && request.status < 300 && !/fail/i.test(text)) {
+        resolve(text);
+        return;
+      }
+      reject(new Error('OTA upload rejected: ' + request.status + ' ' + text));
+    };
+    request.onerror = () => reject(new Error('OTA upload connection lost'));
+    request.send(body);
+  });
+}
+
+// ---- settings backup and restore ----
+
+// Accepts both the bare backup envelope and the v1 {ok, data} response wrapper.
+function unwrapBackup(payload) {
+  if (payload && payload._type) return payload;
+  if (payload && payload.data && payload.data._type) return payload.data;
+  return payload && payload.data ? payload.data : payload;
+}
+
+export async function exportSettings(includeLearned = true) {
+  if (isMock()) return unwrapBackup(mockSettingsExport(includeLearned));
+  const response = await fetch(queryUrl('/settings/export', { include_learned: includeLearned ? 1 : 0 }), {
+    cache: 'no-store',
+    headers: { 'X-Lune-Local-Key': localAccessKey() },
+  });
+  if (!response.ok) throw new Error('Settings export failed: ' + response.status);
+  return unwrapBackup(await response.json());
+}
+
+export function isSettingsBackup(payload) {
+  const envelope = unwrapBackup(payload);
+  return !!(envelope && envelope._type === SETTINGS_BACKUP_TYPE);
+}
+
+// Restore a backup file. `restore_learned` travels both in the JSON body and as
+// a query parameter so the device can read it from whichever it parses first.
+export async function importSettings(jsonText, restoreLearned = true) {
+  const parsed = typeof jsonText === 'string' ? JSON.parse(jsonText) : jsonText;
+  const envelope = unwrapBackup(parsed);
+  if (!isSettingsBackup(envelope)) {
+    throw new Error('not_a_lune_backup');
+  }
+
+  if (isMock()) return mockSettingsImport(envelope, restoreLearned);
+
+  const response = await postJsonV1(
+    '/settings/import',
+    Object.assign({}, envelope, { restore_learned: !!restoreLearned }),
+    { restore_learned: restoreLearned ? 1 : 0 }
+  );
+  if (!response.ok) throw new Error('Settings restore failed: ' + response.status);
+  const payload = await response.json().catch(() => ({}));
+  const data = payload && payload.data ? payload.data : payload || {};
+  addActivity('Settings restored from backup');
+  return {
+    applied: Number(data.applied || 0),
+    skipped: Number(data.skipped || 0),
+    ignored: Number(data.ignored || 0),
+  };
+}
+
+export function saveSettingsBackup(envelope) {
+  const filename = stampedName('lune-v6-settings', 'json');
+  saveText(filename, JSON.stringify(envelope, null, 2), 'application/json');
+  return filename;
+}
+
+// ---- device log export ----
+
+function localLogText() {
+  const levels = { 1: 'ERROR', 2: 'WARN', 3: 'INFO', 4: 'CONFIG', 5: 'DEBUG', 6: 'VERBOSE', 7: 'VERY_VERBOSE' };
+  return getDeviceLog()
+    .map((line) => '[' + (levels[line.level] || '?') + '] ' + (line.tag || '') + ': ' + (line.msg || ''))
+    .join('\n');
+}
+
+// Save the device-side log ring as a text file. In mock mode the in-browser
+// buffer is exported instead so the button behaves the same offline.
+export async function downloadDeviceLogs() {
+  const filename = stampedName('lune-v6-logs', 'txt');
+  if (isMock()) {
+    saveText(filename, localLogText() || 'No log lines buffered.');
+    return filename;
+  }
+  const response = await fetch(BASE + '/logs/download', { cache: 'no-store' });
+  if (!response.ok) throw new Error('Log download failed: ' + response.status);
+  saveBlob(filename, await response.blob());
+  return filename;
 }
 
 // Live device logs: only request lines newer than the last seq we've stored.

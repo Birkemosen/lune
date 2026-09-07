@@ -405,11 +405,18 @@ export default component({
     refs.toggle.onclick = () => ctx.toggleEnabled();
 
     const update = () => ctx.update(el, refs);
+    // Applied Target prefers effectiveSetpoint over base setpoint. State JSON
+    // writes setpoint first, then effective — if we only react to setpoint, the
+    // paint runs before effective is updated and the UI sticks on the old value
+    // until some unrelated field changes.
     const updateIfSelectedZone = (id) => {
       const zone = getDashboardValue('selectedZone');
       if (
         id === key.temp(zone) ||
         id === key.setpoint(zone) ||
+        id === key.baseSetpoint(zone) ||
+        id === key.effectiveSetpoint(zone) ||
+        id === key.coordinatorOffset(zone) ||
         id === key.valve(zone) ||
         id === key.state(zone) ||
         id === key.enabled(zone)

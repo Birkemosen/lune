@@ -18,6 +18,9 @@ const MOCK_LOG_SAMPLES = [
   [2, 'hv6_zone', 'Zone 5 disabled — skipping control'],
 ];
 
+const MOCK_UPTIME_BASE = 18 * 3600 + 12 * 60;
+let mockBootMs = Date.now();
+
 const state = {
   temp: new Float32Array(ZONES),
   setpoint: new Float32Array(ZONES),
@@ -30,6 +33,7 @@ const state = {
 
 function seed() {
   state.manualMode = 0;
+  mockBootMs = Date.now();
   setDashboardValue('manualMode', false);
   for (let index = 0; index < ZONES; index++) {
     state.temp[index] = 20.5 + index * 0.4;
@@ -63,14 +67,15 @@ function seed() {
 
   setEntity(gkey.flow, { value: 34.1 });
   setEntity(gkey.ret, { value: 30.4 });
-  setEntity(gkey.uptime, { value: 18 * 3600 + 12 * 60 });
+  setEntity(gkey.uptime, { value: MOCK_UPTIME_BASE });
   setEntity(gkey.wifi, { value: -57 });
   setEntity(gkey.drivers, { value: true, state: 'on' });
   setEntity(gkey.fault, { value: false, state: 'off' });
   setEntity(gkey.ip, { state: '192.168.1.86' });
   setEntity(gkey.ssid, { state: 'MockLab' });
   setEntity(gkey.mac, { state: 'D8:3B:DA:12:34:56' });
-  setEntity(gkey.firmware, { state: '0.5.x-mock' });
+  setEntity(gkey.firmware, { state: 'v1.0.0-1' });
+  setEntity(gkey.resetReason, { state: 'Software reset (esp_restart)' });
   setEntity(gkey.manifoldFlowProbe, { state: 'Probe 7' });
   setEntity(gkey.manifoldReturnProbe, { state: 'Probe 8' });
   setEntity(gkey.manifoldType, { state: 'NC (Normally Closed)' });
@@ -91,6 +96,11 @@ function seed() {
   setEntity(gkey.simplePreheatEnabled, { state: 'on' });
   setEntity(gkey.minZoneFlowPct, { value: 15 });
   setEntity(gkey.minimumFlowAlways, { state: 'off' });
+  setEntity(gkey.bleClockSyncEnabled, { state: 'on' });
+  setEntity(gkey.bleClockSyncIntervalMin, { value: 60 });
+  setEntity(gkey.bleClockSyncLastOkS, { value: (Number(Date.now() / 1000) | 0) - 900 });
+  setEntity(gkey.bleClockSyncLastError, { state: '' });
+  setEntity(gkey.bleClockSyncAdvertising, { state: 'off' });
   setEntity(gkey.authorityInstallationId, { state: 'house-main' });
   setEntity(gkey.authorityCoordinatorId, { state: 'lune-touch' });
   setEntity(gkey.authorityConfigured, { state: 'on', value: true });
@@ -158,7 +168,7 @@ function seedMockLogs(n) {
 
 function simulate() {
   tick += 1;
-  setEntity(gkey.uptime, { value: (Number(Date.now() / 1000) | 0) });
+  setEntity(gkey.uptime, { value: MOCK_UPTIME_BASE + Math.floor((Date.now() - mockBootMs) / 1000) });
   setEntity(gkey.wifi, { value: -55 - Math.round((1 + Math.sin(tick / 4)) * 6) });
 
   let openDemand = 0;
@@ -285,6 +295,16 @@ export function handleMockPost(body) {
       return;
     }
 
+    if (cmd === 'firmware_check' || cmd === 'firmware_prepare') {
+      addActivity('Command executed: ' + cmd);
+      return;
+    }
+
+    if (cmd === 'firmware_install') {
+      addActivity('Firmware install started (mock) — valves stop, device reboots');
+      return;
+    }
+
     if (cmd === 'open_motor_timed' && zone >= 1 && zone <= ZONES) {
       addActivity('Motor ' + zone + ' open timed', zone);
       return;
@@ -309,6 +329,16 @@ export function handleMockPost(body) {
       addActivity('Motor ' + zone + ' reset and relearn started', zone);
       return;
     }
+    if (cmd === 'ble_clock_sync_now') {
+      setEntity(gkey.bleClockSyncAdvertising, { state: 'on' });
+      setEntity(gkey.bleClockSyncLastError, { state: '' });
+      setTimeout(() => {
+        setEntity(gkey.bleClockSyncAdvertising, { state: 'off' });
+        setEntity(gkey.bleClockSyncLastOkS, { value: (Number(Date.now() / 1000) | 0) });
+      }, 400);
+      addActivity('Room clock broadcast started');
+      return;
+    }
     if (cmd === 'dump_task_stats') {
       addActivity('Task stats dumped to device log (mock)');
       return;
@@ -328,6 +358,7 @@ export function handleMockPost(body) {
   if (k === 'motor_profile_default') { setEntity(gkey.motorProfileDefault, { state: String(v) }); addActivity('Setting updated: ' + k + ' = ' + v); return; }
   if (k === 'simple_preheat_enabled') { setEntity(gkey.simplePreheatEnabled, { state: String(v) }); addActivity('Setting updated: ' + k + ' = ' + v); return; }
   if (k === 'minimum_flow_always') { setEntity(gkey.minimumFlowAlways, { state: String(v) }); addActivity('Setting updated: ' + k + ' = ' + v); return; }
+  if (k === 'ble_clock_sync_enabled') { setEntity(gkey.bleClockSyncEnabled, { state: String(v) }); addActivity('Setting updated: ' + k + ' = ' + v); return; }
   // Text settings
   if (k === 'zone_name' && zone >= 1) { setEntity(key.name(zone), { state: String(v) }); addActivity('Setting updated: ' + k + ' = ' + v, zone); return; }
   if (k === 'zone_ble_mac' && zone >= 1) { setEntity(key.ble(zone), { state: String(v) }); addActivity('Setting updated: ' + k + ' = ' + v, zone); return; }
@@ -363,7 +394,8 @@ export function handleMockPost(body) {
     relearn_after_hours: gkey.relearnAfterHours,
     learned_factor_min_samples: gkey.learnedFactorMinSamples,
     learned_factor_max_deviation_pct: gkey.learnedFactorMaxDeviationPct,
-    min_zone_flow_pct: gkey.minZoneFlowPct
+    min_zone_flow_pct: gkey.minZoneFlowPct,
+    ble_clock_sync_interval_min: gkey.bleClockSyncIntervalMin
   };
 
   if (numMap[k]) {
@@ -374,6 +406,74 @@ export function handleMockPost(body) {
     }
     return;
   }
+}
+
+// ---- firmware + settings backup mocks ----
+
+// Mock mode never touches GitHub: it answers with a release that is newer than
+// the mock firmware version so the update banner and header badge are visible.
+const MOCK_LATEST_TAG = 'v1.1.0';
+
+export function mockLatestRelease() {
+  return {
+    tag_name: MOCK_LATEST_TAG,
+    published_at: new Date(Date.now() - 36 * 3600 * 1000).toISOString(),
+    body: 'Faster endstop detection on HmIP valves.\n' +
+      'Room clock broadcasts now retry after a busy radio.\n' +
+      'Dashboard: firmware updates and settings backup.',
+    assets: [
+      { name: 'lune-v6-' + MOCK_LATEST_TAG + '.ota.bin', browser_download_url: 'https://github.com/birkemosen/lune/releases/latest/download/lune-v6-' + MOCK_LATEST_TAG + '.ota.bin' },
+      { name: 'manifest-lune-v6.json', browser_download_url: 'https://github.com/birkemosen/lune/releases/latest/download/manifest-lune-v6.json' },
+    ],
+  };
+}
+
+export function mockSettingsExport(includeLearned) {
+  const zones = [];
+  for (let zone = 1; zone <= ZONES; zone++) {
+    zones.push({
+      zone,
+      name: es(key.name(zone)),
+      enabled: es(key.enabled(zone)) === 'on',
+      setpoint_c: ev(key.setpoint(zone)),
+      probe: es(key.probe(zone)),
+      temp_source: es(key.tempSource(zone)),
+      ble_mac: es(key.ble(zone)),
+      sync_to: es(key.syncTo(zone)),
+    });
+  }
+  return {
+    _type: 'lune-v6-settings',
+    _version: 1,
+    exported_at: new Date().toISOString(),
+    firmware: es(gkey.firmware),
+    device: { mac: es(gkey.mac) },
+    settings: {
+      manifold_type: es(gkey.manifoldType),
+      manifold_flow_probe: es(gkey.manifoldFlowProbe),
+      manifold_return_probe: es(gkey.manifoldReturnProbe),
+      motor_profile_default: es(gkey.motorProfileDefault),
+      min_zone_flow_pct: ev(gkey.minZoneFlowPct),
+      minimum_flow_always: es(gkey.minimumFlowAlways) === 'on',
+      simple_preheat_enabled: es(gkey.simplePreheatEnabled) === 'on',
+      ble_clock_sync_enabled: es(gkey.bleClockSyncEnabled) === 'on',
+      ble_clock_sync_interval_min: ev(gkey.bleClockSyncIntervalMin),
+    },
+    zones,
+    learned: includeLearned ? { motors: zones.map((z) => ({ zone: z.zone, open_ripples: 400 + z.zone, close_ripples: 390 + z.zone })) } : null,
+  };
+}
+
+export function mockSettingsImport(envelope, restoreLearned) {
+  const settingsCount = Object.keys((envelope && envelope.settings) || {}).length;
+  const zoneCount = Array.isArray(envelope && envelope.zones) ? envelope.zones.length : 0;
+  const learnedCount = restoreLearned && envelope && envelope.learned ? ZONES : 0;
+  addActivity('Settings restored from backup (mock)');
+  return {
+    applied: settingsCount + zoneCount + learnedCount,
+    skipped: restoreLearned ? 0 : ZONES,
+    ignored: envelope && envelope._version === 1 ? 0 : 1,
+  };
 }
 
 window.__hv6_mock = {

@@ -1,6 +1,6 @@
 import { component, subscribe } from '../../core/component.js';
 import { injectStyle } from '../../core/style.js';
-import { ev } from '../../core/store.js';
+import { es, ev, getDashboardValue, subscribeDashboard } from '../../core/store.js';
 import { dumpTaskStats } from '../../core/api.js';
 import { gkey } from '../../utils/keys.js';
 import { localize, subscribeLanguage } from '../../core/i18n.js';
@@ -34,6 +34,8 @@ const css = `
   background:var(--accent);
   transition: width .4s ease;
 }
+.diag-system-card .sys-cell-wide { grid-column: 1 / -1; }
+.diag-system-card .sys-value-text { font-size: .95rem; font-weight: 700; line-height: 1.3; overflow-wrap: anywhere; }
 .diag-system-card .sys-dump { width: 100%; margin-top: 14px; }
 `;
 
@@ -64,6 +66,10 @@ const template = () => `
         <div class="sys-label" data-i18n="diagnostics.system.psram">Free PSRAM</div>
         <div class="sys-value" data-k="psram">—</div>
       </div>
+      <div class="sys-cell sys-cell-wide">
+        <div class="sys-label" data-i18n="diagnostics.system.resetReason">Last reset reason</div>
+        <div class="sys-value sys-value-text" data-k="reset">—</div>
+      </div>
     </div>
     <button class="ui-btn sys-dump" type="button" data-i18n="diagnostics.system.dump">Dump task stats to log</button>
     <div class="ui-note" data-i18n="diagnostics.system.note">Per-core load is sampled every 2 s. "Dump task stats" logs every task's CPU% and stack headroom to the device log above - use it to find what saturates a core.</div>
@@ -83,6 +89,7 @@ export default component({
     const psramEl = el.querySelector('[data-k="psram"]');
     const bar0 = el.querySelector('[data-bar="cpu0"]');
     const bar1 = el.querySelector('[data-bar="cpu1"]');
+    const resetEl = el.querySelector('[data-k="reset"]');
 
     const setCpu = (valEl, barEl, v) => {
       if (v == null || !Number.isFinite(Number(v))) {
@@ -108,6 +115,10 @@ export default component({
       setCpu(cpu1El, bar1, ev(gkey.cpuLoadCore1));
       setKb(heapEl, ev(gkey.freeInternalKb), 48);   // < 48 KB internal = tight for HTTPS/TLS tasks
       setKb(psramEl, ev(gkey.freePsramKb), null);
+      // Firmware publishes the boot cause as a text sensor in /state; a
+      // diagnostics fetch may fill the dashboard value instead.
+      const reason = String(es(gkey.resetReason) || getDashboardValue('resetReason') || '').trim();
+      resetEl.textContent = reason || '—';
     };
 
     el.querySelector('.sys-dump').addEventListener('click', () => {
@@ -118,6 +129,8 @@ export default component({
     subscribe(gkey.cpuLoadCore1, update);
     subscribe(gkey.freeInternalKb, update);
     subscribe(gkey.freePsramKb, update);
+    subscribe(gkey.resetReason, update);
+    subscribeDashboard('resetReason', update);
     subscribeLanguage(() => localize(el));
     localize(el);
     update();

@@ -51,6 +51,7 @@ const template = () => `
       <tr><td>SSID</td><td class="cc-ssid">---</td></tr>
       <tr><td data-i18n="overview.connectivity.mac">MAC Address</td><td class="cc-mac">---</td></tr>
       <tr><td data-i18n="meta.uptime">Uptime</td><td class="cc-up">---</td></tr>
+      <tr><td data-i18n="overview.connectivity.version">Version</td><td class="cc-ver">---</td></tr>
     </table>
   </div>
 `;
@@ -66,18 +67,45 @@ export default component({
     const ssidEl = el.querySelector('.cc-ssid');
     const macEl = el.querySelector('.cc-mac');
     const upEl = el.querySelector('.cc-up');
+    const verEl = el.querySelector('.cc-ver');
+    let uptimeBaseS = 0;
+    let uptimeBaseAt = Date.now();
+    let haveUptime = false;
+
+    function paintUptime() {
+      if (!haveUptime) {
+        upEl.textContent = '---';
+        return;
+      }
+      const elapsed = Math.max(0, Math.floor((Date.now() - uptimeBaseAt) / 1000));
+      const text = fmtUp(uptimeBaseS + elapsed);
+      if (upEl.textContent !== text) upEl.textContent = text;
+    }
 
     function update() {
       ipEl.textContent = es(gkey.ip) || '---';
       ssidEl.textContent = es(gkey.ssid) || '---';
       macEl.textContent = es(gkey.mac) || '---';
-      upEl.textContent = fmtUp(ev(gkey.uptime));
+      verEl.textContent = es(gkey.firmware) || '---';
+      const raw = ev(gkey.uptime);
+      if (raw != null && !isNaN(raw) && raw >= 0) {
+        const next = raw | 0;
+        if (!haveUptime || next !== uptimeBaseS) {
+          uptimeBaseS = next;
+          uptimeBaseAt = Date.now();
+          haveUptime = true;
+        }
+      }
+      paintUptime();
     }
 
     subscribe(gkey.ip, update);
     subscribe(gkey.ssid, update);
     subscribe(gkey.mac, update);
+    subscribe(gkey.firmware, update);
     subscribe(gkey.uptime, update);
+    const uptimeTick = setInterval(paintUptime, 1000);
+    el.addEventListener('hv6-unmount', () => clearInterval(uptimeTick), { once: true });
     subscribeLanguage(() => localize(el));
     localize(el);
     update();

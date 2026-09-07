@@ -3,6 +3,7 @@
 import { startMock } from './mock.js';
 import { setEntity, setLive, sampleHistory, addActivity, setI2cResult, shouldSuppressStateUpdate } from './store.js';
 import { fetchHistory, fetchLogs } from './api.js';
+import { gkey } from '../utils/keys.js';
 
 let pollAbortController = null;
 let historyRefreshTimer = null;
@@ -91,7 +92,13 @@ async function pollRevision() {
     const response = await fetch('/api/hv6/v1/revision', { cache: 'no-store' });
     if (!response.ok) throw new Error('Revision fetch failed');
     const payload = await response.json();
-    const revision = payload && payload.data && payload.data.data_revision;
+    const data = payload && payload.data;
+    const revision = data && data.data_revision;
+    // Uptime is not a config revision. Ship it on this cheap poll so the
+    // connectivity card can keep ticking without refetching the full snapshot.
+    if (data && data.uptime_s != null) {
+      setEntity(gkey.uptime, { value: Number(data.uptime_s) });
+    }
     if (lastRevision === null || revision !== lastRevision) {
       lastRevision = revision;
       pollStateCycle();

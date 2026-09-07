@@ -21,7 +21,7 @@ export function fmtV(v) {
 }
 
 export function fmtUp(s) {
-  if (!s || isNaN(s)) return "---";
+  if (s == null || isNaN(s) || s < 0) return "---";
 
   s = s | 0;
 
@@ -29,11 +29,9 @@ export function fmtUp(s) {
   var hr = ((s % 86400) / 3600) | 0;
   var m = ((s % 3600) / 60) | 0;
 
-  return d > 0
-    ? d + "d " + hr + "h " + m + "m"
-    : hr > 0
-    ? hr + "h " + m + "m"
-    : m + "m";
+  if (d > 0) return d + "d " + hr + "h " + m + "m";
+  if (hr > 0) return hr + "h " + m + "m";
+  return m + "m";
 }
 
 export function fmtWifi(v) {

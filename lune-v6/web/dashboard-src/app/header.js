@@ -1,11 +1,7 @@
 import { component } from '../core/component.js';
 import { injectStyle } from '../core/style.js';
 import { getDashboardValue, setSection, subscribeDashboard } from '../core/store.js';
-import { ev, es, subscribe } from '../core/store.js';
-import { fmtUp, fmtWifi } from '../utils/format.js';
-import { gkey } from '../utils/keys.js';
 import { localize, t } from '../core/i18n.js';
-import { getTheme, setTheme } from '../core/theme.js';
 
 const css = `
 .v6-toolbar { display:flex; align-items:center; justify-content:space-between; gap:24px; min-height:48px; }
@@ -18,9 +14,10 @@ const css = `
 .v6-live::before { content:''; width:7px; height:7px; border-radius:50%; background:var(--state-disabled); }
 .v6-live.is-live { color:var(--state-ok); }
 .v6-live.is-live::before { background:var(--state-ok); }
-.v6-appearance-label { color:var(--text-faint); font-size:.68rem; font-weight:700; letter-spacing:.12em; text-transform:uppercase; }
-.v6-theme-picker { min-height:44px; border:1px solid var(--control-border); border-radius:9px; background:var(--control-bg); color:var(--text-strong); padding:0 12px; font:inherit; font-size:.8rem; font-weight:650; }
-.v6-theme-picker:focus-visible { outline:3px solid var(--focus-ring); outline-offset:2px; }
+.v6-update-badge { display:inline-flex; align-items:center; gap:7px; min-height:36px; padding:0 12px; border:1px solid var(--accent-border); border-radius:999px; background:var(--accent-bg-soft); color:var(--accent); font:inherit; font-size:.78rem; font-weight:700; cursor:pointer; }
+.v6-update-badge[hidden] { display:none; }
+.v6-update-badge:hover { border-color:var(--accent-border-hover); background:rgba(var(--accent-rgb),.18); }
+.v6-update-badge::before { content:''; width:7px; height:7px; border-radius:50%; background:var(--accent); }
 .side-nav-slot hv6-sidebar { display:flex; flex:1; min-height:0; }
 .v6-side-nav { display:flex; flex:1; flex-direction:column; gap:3px; }
 .v6-nav-group { margin:0 0 20px; }
@@ -34,7 +31,6 @@ const css = `
 @media (max-width:900px) {
   .v6-toolbar { min-height:48px; }
   .v6-toolbar-trailing { gap:8px; }
-  .v6-appearance-label { display:none; }
   .v6-side-nav { display:grid; grid-template-columns:repeat(4,1fr); gap:4px; }
   .v6-nav-group { display:contents; }
   .v6-nav-heading, .v6-side-utility { display:none; }
@@ -51,7 +47,7 @@ injectStyle('hv6-header', css);
 const toolbarTemplate = () => `
   <header class="v6-toolbar" aria-label="View toolbar">
     <div class="v6-toolbar-leading"><span class="v6-toolbar-icon" aria-hidden="true"><svg class="menu-icon" viewBox="0 0 24 24"><path d="M4 5h16v14H4zM9 5v14"/></svg></span><div><h1 id="v6-view-title">Overview</h1><p id="v6-view-subtitle">Local heating status and current exceptions</p></div></div>
-    <div class="v6-toolbar-trailing"><span class="v6-live" id="hdr-live">Offline</span><span class="v6-appearance-label">Accent</span><select id="hdr-theme" class="v6-theme-picker" aria-label="Accent theme"><option value="refined-ember">Refined Ember</option><option value="deep-forest">Deep Forest</option></select></div>
+    <div class="v6-toolbar-trailing"><button type="button" class="v6-update-badge" id="hdr-update" hidden></button><span class="v6-live" id="hdr-live">Offline</span></div>
   </header>`;
 
 const icon = (content) => `<svg class="menu-icon" viewBox="0 0 24 24" aria-hidden="true">${content}</svg>`;
@@ -73,16 +69,19 @@ const navTemplate = () => `
 const titleMap = { overview:['Overview','Local heating status and current exceptions'], zones:['Zones','Physical loops, applied targets and valve state'], diagnostics:['Diagnostics','Health, evidence and recovery'], settings:['Settings','Device configuration and safety'], help:['Help','Guidance for operating Lune V6'] };
 
 component({ tag:'hv6-header', render:toolbarTemplate, onMount(ctx, el) {
-  const theme = el.querySelector('#hdr-theme'); const live = el.querySelector('#hdr-live'); const title = el.querySelector('#v6-view-title'); const subtitle = el.querySelector('#v6-view-subtitle');
-  theme.value = getTheme(); theme.addEventListener('change', () => setTheme(theme.value));
-  window.addEventListener('lune-theme-change', (event) => { if (event.detail) theme.value = event.detail; });
+  const live = el.querySelector('#hdr-live'); const title = el.querySelector('#v6-view-title'); const subtitle = el.querySelector('#v6-view-subtitle'); const updateBadge = el.querySelector('#hdr-update');
+  // The firmware card sets this flag after a GitHub release check; the badge is
+  // a shortcut to that card, never a second check of its own.
+  function paintUpdate() { const info=getDashboardValue('firmwareUpdateAvailable'); updateBadge.hidden=!info; if (info) { updateBadge.textContent=t('status.updateAvailable',{version:info.latest}); updateBadge.title=t('settings.firmware.badgeTitle'); } }
+  updateBadge.addEventListener('click', () => { setSection('settings'); const card=document.querySelector('.settings-firmware-card'); if (!card) return; const disclosure=card.closest('details'); if (disclosure) disclosure.open=true; card.scrollIntoView({behavior:'smooth',block:'center'}); });
   function update() { const section=getDashboardValue('section')||'overview'; const copy=titleMap[section]||titleMap.overview; title.textContent=copy[0]; subtitle.textContent=copy[1]; live.textContent=getDashboardValue('live') ? t('status.live') : t('status.offline'); live.classList.toggle('is-live',!!getDashboardValue('live')); }
-  subscribeDashboard('section', update); subscribeDashboard('live', update); localize(el); update();
+  subscribeDashboard('section', update); subscribeDashboard('live', update); subscribeDashboard('firmwareUpdateAvailable', paintUpdate); localize(el); update(); paintUpdate();
 }});
 
 component({ tag:'hv6-sidebar', render:navTemplate, onMount(ctx, el) {
   const nav=el.querySelector('.v6-side-nav'); const links=el.querySelectorAll('[data-section]'); const more=el.querySelector('.v6-more-toggle');
   function update(){ const section=getDashboardValue('section'); links.forEach((link)=>{ if (!link.dataset.section) return; if (link.dataset.section===section) link.classList.add('active'); else link.classList.remove('active'); link.setAttribute('aria-current',link.dataset.section===section?'page':'false'); }); }
-  links.forEach((link)=>link.addEventListener('click',(event)=>{event.preventDefault(); setSection(link.dataset.section); if (nav.classList.contains('more-open')) { nav.classList.remove('more-open'); more.setAttribute('aria-expanded','false'); } }));
-  more.addEventListener('click',()=>{ const open=nav.classList.toggle('more-open'); more.setAttribute('aria-expanded',String(open)); }); subscribeDashboard('section',update); localize(el); update();
+  links.forEach((link)=>link.addEventListener('click',(event)=>{event.preventDefault(); setSection(link.dataset.section); if (nav && nav.classList.contains('more-open')) { nav.classList.remove('more-open'); if (more) more.setAttribute('aria-expanded','false'); } }));
+  if (more && nav) more.addEventListener('click',()=>{ const open=nav.classList.toggle('more-open'); more.setAttribute('aria-expanded',String(open)); });
+  subscribeDashboard('section',update); localize(el); update();
 }});

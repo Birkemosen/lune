@@ -15,6 +15,9 @@ const D = {
   pendingWrites: 0,
   lastWriteAt: 0,
   firmwareVersion: '',
+  // { current, latest, url } once a newer GitHub release has been seen, else null.
+  firmwareUpdateAvailable: null,
+  resetReason: '',
   i2cResult: 'No scan has been run yet.',
   activityLog: [],
   zoneLog: createZoneLog(),

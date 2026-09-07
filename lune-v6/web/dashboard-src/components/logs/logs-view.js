@@ -1,6 +1,7 @@
 import { component } from '../../core/component.js';
 import { injectStyle } from '../../core/style.js';
 import { getDeviceLog, clearDeviceLog, subscribeDashboard } from '../../core/store.js';
+import { downloadDeviceLogs } from '../../core/api.js';
 import { localize, subscribeLanguage, t } from '../../core/i18n.js';
 
 // ========================================
@@ -103,6 +104,7 @@ const template = () => `
       <div class="actions">
         <button class="btn pause-btn" type="button" data-i18n="logs.pause">Pause</button>
         <button class="btn clear-btn" type="button" data-i18n="logs.clear">Clear</button>
+        <button class="btn download-btn" type="button" data-i18n="logs.download">Download</button>
       </div>
     </div>
     <div class="logs-stream"></div>
@@ -133,6 +135,7 @@ export default component({
     const streamEl = el.querySelector('.logs-stream');
     const pauseBtn = el.querySelector('.pause-btn');
     const clearBtn = el.querySelector('.clear-btn');
+    const downloadBtn = el.querySelector('.download-btn');
     let paused = false;
 
     function update() {
@@ -158,6 +161,16 @@ export default component({
     clearBtn.addEventListener('click', () => {
       // Visual clear only — keeps the seq cursor so the stream resumes cleanly.
       clearDeviceLog();
+    });
+
+    downloadBtn.addEventListener('click', () => {
+      downloadBtn.disabled = true;
+      downloadDeviceLogs()
+        .catch((err) => {
+          console.error('[Logs] download failed:', err);
+          window.alert(t('logs.downloadFailed'));
+        })
+        .finally(() => { downloadBtn.disabled = false; });
     });
 
     subscribeDashboard('deviceLog', update);
