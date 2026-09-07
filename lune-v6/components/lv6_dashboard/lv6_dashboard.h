@@ -6,8 +6,12 @@
 #include "esphome/components/text_sensor/text_sensor.h"
 #include "esphome/components/web_server_base/web_server_base.h"
 #include "request_guard.h"
+#include "smart_log.h"
 #include "touch_auth.h"
 #include "authority_lease.h"
+#ifdef LV6_HAS_UPDATE
+#include "esphome/components/update/update_entity.h"
+#endif
 #include "esphome/core/component.h"
 #include "esphome/core/progmem.h"
 #include <freertos/FreeRTOS.h>
@@ -20,6 +24,10 @@
 extern const uint8_t LV6_DASHBOARD_JS_DATA[] PROGMEM;
 extern const size_t LV6_DASHBOARD_JS_SIZE;
 #endif
+
+namespace lv6 {
+class Lv6BleTimeBeacon;
+}
 
 namespace esphome {
 namespace lv6_dashboard {
@@ -87,6 +95,18 @@ struct DashboardSnapshot {
 
   lv6::BalancingConfig balancing;       // retained for local secondary-flow commissioning settings
 
+  bool     ble_clock_sync_enabled{true};
+  uint16_t ble_clock_sync_interval_min{60};
+  uint32_t ble_clock_sync_last_ok_s{0};
+  char     ble_clock_sync_last_error[16]{};
+  bool     ble_clock_sync_advertising{false};
+
+  // --- managed firmware update (update: platform http_request) ---
+  char firmware_update_current[SNAPSHOT_TEXT_LEN]{};
+  char firmware_update_latest[SNAPSHOT_TEXT_LEN]{};
+  char firmware_update_status[32]{"unknown"};  // unknown|no_update|available|installing
+  bool firmware_update_available{false};
+  char reset_reason[SNAPSHOT_TEXT_LEN]{};
 };
 
 struct DashboardAction {
@@ -123,20 +143,11 @@ struct HistoryEntry {
 };
 
 // -----------------------------------------------------------------------
-// Live device-log ring buffer
-// Fed by the ESPHome logger callback (see LV6Dashboard::on_log_), served by
-// GET /api/hv6/v1/logs?since=<seq>. RAM-only; lost on reboot.
+// Device logs
+// LogLine and the dual live/smart PSRAM rings live in smart_log.h. The live
+// scratch backs GET /api/hv6/v1/logs?since=<seq>; the smart FIFO backs
+// GET /api/hv6/v1/logs/download. Both are RAM-only; lost on reboot.
 // -----------------------------------------------------------------------
-static constexpr uint16_t LOG_SLOTS   = 96;
-static constexpr size_t   LOG_TAG_LEN = 16;
-static constexpr size_t   LOG_MSG_LEN = 112;
-
-struct LogLine {
-  uint32_t seq;          ///< Monotonic; 0 = empty slot. Client passes ?since=<last seq>.
-  uint8_t  level;        ///< ESPHome log level (0=NONE..5=VERY_VERBOSE)
-  char     tag[LOG_TAG_LEN];
-  char     msg[LOG_MSG_LEN];
-};
 
 class LV6Dashboard : public Component, public AsyncWebHandler {
  public:
@@ -148,6 +159,7 @@ class LV6Dashboard : public Component, public AsyncWebHandler {
   void set_zone_controller(lv6::Lv6ZoneController *controller) { this->zone_controller_ = controller; }
   void set_valve_controller(lv6::Lv6ValveController *ctrl) { this->valve_controller_ = ctrl; }
   void set_config_store(lv6::Lv6ConfigStore *store) { this->config_store_ = store; }
+  void set_ble_time_beacon(lv6::Lv6BleTimeBeacon *beacon) { this->ble_time_beacon_ = beacon; }
   void set_wifi_signal_sensor(sensor::Sensor *sensor) { this->wifi_signal_sensor_ = sensor; }
   void set_manifold_flow_sensor(sensor::Sensor *s) { this->manifold_flow_sensor_ = s; }
   void set_manifold_return_sensor(sensor::Sensor *s) { this->manifold_return_sensor_ = s; }
@@ -185,6 +197,10 @@ class LV6Dashboard : public Component, public AsyncWebHandler {
   void set_motor_fault_sensor(uint8_t index, text_sensor::TextSensor *s) {
     if (index < 6) this->motor_fault_sensors_[index] = s;
   }
+  void set_reset_reason_text(text_sensor::TextSensor *t) { this->reset_reason_text_ = t; }
+#ifdef LV6_HAS_UPDATE
+  void set_firmware_update(update::UpdateEntity *u) { this->firmware_update_ = u; }
+#endif
 
   bool canHandle(AsyncWebServerRequest *request) const override;
   void handleRequest(AsyncWebServerRequest *request) override;
@@ -208,6 +224,9 @@ class LV6Dashboard : public Component, public AsyncWebHandler {
   void handle_events_(AsyncWebServerRequest *request);
   void handle_history_(AsyncWebServerRequest *request);
   void handle_logs_(AsyncWebServerRequest *request);
+  void handle_logs_download_(AsyncWebServerRequest *request);
+  void handle_settings_export_(AsyncWebServerRequest *request);
+  void handle_settings_import_(AsyncWebServerRequest *request, const char *body);
   void handle_v1_(AsyncWebServerRequest *request, const char *path);
   void handle_ble_scan_(AsyncWebServerRequest *request);
   void handle_authority_lease_(AsyncWebServerRequest *request, const char *body);
@@ -217,6 +236,13 @@ class LV6Dashboard : public Component, public AsyncWebHandler {
   void send_v1_(AsyncWebServerRequest *request, int code, const char *err_code = nullptr,
                 const char *err_message = nullptr);
   bool enqueue_action_(const DashboardAction &act);
+  /// Same local-credential + CSRF gate the generic write path applies. Sends the
+  /// 403 itself and returns false when the request must be refused.
+  bool authorize_write_(AsyncWebServerRequest *request);
+  /// Park the H-bridges before an OTA write: disable the drivers and wait for
+  /// any in-flight stroke or calibration to finish, so a reboot mid-flash can
+  /// never leave a motor energised.
+  void prepare_motors_for_ota_();
   void dispatch_set_(const DashboardAction &act);
   void expire_coordinator_commands_();
   void sample_history_();
@@ -225,6 +251,7 @@ class LV6Dashboard : public Component, public AsyncWebHandler {
   lv6::Lv6ZoneController *zone_controller_{nullptr};
   lv6::Lv6ValveController *valve_controller_{nullptr};
   lv6::Lv6ConfigStore *config_store_{nullptr};
+  lv6::Lv6BleTimeBeacon *ble_time_beacon_{nullptr};
   lv6_authority::Lease authority_{};
   char authority_proposal_installation_id_[32]{};
   char authority_proposal_coordinator_id_[32]{};
@@ -249,6 +276,10 @@ class LV6Dashboard : public Component, public AsyncWebHandler {
   text_sensor::TextSensor *mac_address_text_{nullptr};
   text_sensor::TextSensor *zone_state_sensors_[6]{};
   text_sensor::TextSensor *motor_fault_sensors_[6]{};
+  text_sensor::TextSensor *reset_reason_text_{nullptr};
+#ifdef LV6_HAS_UPDATE
+  update::UpdateEntity *firmware_update_{nullptr};
+#endif
 
   SemaphoreHandle_t action_lock_{nullptr};
   std::vector<DashboardAction> action_queue_;
@@ -296,16 +327,13 @@ class LV6Dashboard : public Component, public AsyncWebHandler {
   uint16_t history_count_{0};
   uint32_t history_last_sample_ms_{0};
 
-  // Live device-log ring (protected by log_lock_). Writer is the ESPHome logger
-  // callback (any task) — it takes the lock non-blocking and drops on contention
-  // so logging is never stalled. on_log_static_ is the C function-pointer trampoline.
+  // Device logs (see smart_log.h). The writer is the ESPHome logger callback on
+  // arbitrary tasks; it takes the ring lock non-blocking and drops on contention
+  // so logging is never stalled. on_log_static_ is the C trampoline.
   static void on_log_static_(void *self, uint8_t level, const char *tag,
                              const char *message, size_t message_len);
   void on_log_(uint8_t level, const char *tag, const char *message, size_t message_len);
-  SemaphoreHandle_t log_lock_{nullptr};
-  LogLine  log_ring_[LOG_SLOTS]{};
-  uint16_t log_head_{0};
-  uint32_t log_next_seq_{1};
+  SmartLogBuffer logs_{};
 };
 
 }  // namespace lv6_dashboard

@@ -83,4 +83,6 @@ lv6_dashboard:
     - motor_4_last_fault
     - motor_5_last_fault
     - motor_6_last_fault
+  reset_reason_id: reset_reason_text
+  firmware_update_id: firmware_update
   dashboard_js: ../web/dashboard.js

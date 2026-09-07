@@ -1,7 +1,7 @@
 import esphome.codegen as cg
 import esphome.config_validation as cv
 from esphome.components.esp32 import add_extra_script
-from esphome.components import web_server_base, sensor, text_sensor
+from esphome.components import web_server_base, sensor, text_sensor, update
 from esphome.const import CONF_ID
 import gzip
 from pathlib import Path
@@ -20,6 +20,7 @@ CONF_CONNECTED_SSID_ID = "connected_ssid_id"
 CONF_MAC_ADDRESS_ID = "mac_address_id"
 CONF_VALVE_CONTROLLER_ID = "valve_controller_id"
 CONF_CONFIG_STORE_ID = "config_store_id"
+CONF_BLE_TIME_BEACON_ID = "ble_time_beacon_id"
 CONF_MANIFOLD_FLOW_ID = "manifold_flow_id"
 CONF_MANIFOLD_RETURN_ID = "manifold_return_id"
 CONF_ZONE_TEMP_IDS = "zone_temp_ids"
@@ -32,6 +33,8 @@ CONF_MOTOR_CLOSE_FACTOR_IDS = "motor_close_factor_ids"
 CONF_PROBE_TEMP_IDS = "probe_temp_ids"
 CONF_ZONE_STATE_IDS = "zone_state_ids"
 CONF_MOTOR_FAULT_IDS = "motor_fault_ids"
+CONF_FIRMWARE_UPDATE_ID = "firmware_update_id"
+CONF_RESET_REASON_ID = "reset_reason_id"
 
 lv6_dashboard_ns = cg.esphome_ns.namespace("lv6_dashboard")
 lv6_ns = cg.esphome_ns.namespace("lv6")
@@ -39,6 +42,7 @@ LV6Dashboard = lv6_dashboard_ns.class_("LV6Dashboard", cg.Component)
 Lv6ZoneController = lv6_ns.class_("Lv6ZoneController", cg.Component)
 Lv6ValveController = lv6_ns.class_("Lv6ValveController", cg.Component)
 Lv6ConfigStore = lv6_ns.class_("Lv6ConfigStore", cg.Component)
+Lv6BleTimeBeacon = lv6_ns.class_("Lv6BleTimeBeacon", cg.Component)
 
 CONFIG_SCHEMA = cv.Schema(
     {
@@ -47,6 +51,7 @@ CONFIG_SCHEMA = cv.Schema(
         cv.Required(CONF_ZONE_CONTROLLER_ID): cv.use_id(Lv6ZoneController),
         cv.Optional(CONF_VALVE_CONTROLLER_ID): cv.use_id(Lv6ValveController),
         cv.Optional(CONF_CONFIG_STORE_ID): cv.use_id(Lv6ConfigStore),
+        cv.Optional(CONF_BLE_TIME_BEACON_ID): cv.use_id(Lv6BleTimeBeacon),
         cv.Optional(CONF_WIFI_SIGNAL_ID): cv.use_id(sensor.Sensor),
         cv.Optional(CONF_MANIFOLD_FLOW_ID): cv.use_id(sensor.Sensor),
         cv.Optional(CONF_MANIFOLD_RETURN_ID): cv.use_id(sensor.Sensor),
@@ -84,6 +89,11 @@ CONFIG_SCHEMA = cv.Schema(
         cv.Optional(CONF_MOTOR_FAULT_IDS): cv.All(
             cv.ensure_list(cv.use_id(text_sensor.TextSensor)), cv.Length(max=6)
         ),
+        cv.Optional(CONF_RESET_REASON_ID): cv.use_id(text_sensor.TextSensor),
+        # Managed firmware update entity (update: platform http_request). The
+        # dashboard drives check/install and parks the motors first. Optional so
+        # a build without an `update:` platform still compiles.
+        cv.Optional(CONF_FIRMWARE_UPDATE_ID): cv.use_id(update.UpdateEntity),
         cv.Optional(CONF_DASHBOARD_JS): cv.file_,
     }
 ).extend(cv.COMPONENT_SCHEMA)
@@ -127,6 +137,10 @@ async def to_code(config):
     if CONF_CONFIG_STORE_ID in config:
         cfg_store = await cg.get_variable(config[CONF_CONFIG_STORE_ID])
         cg.add(var.set_config_store(cfg_store))
+
+    if CONF_BLE_TIME_BEACON_ID in config:
+        beacon = await cg.get_variable(config[CONF_BLE_TIME_BEACON_ID])
+        cg.add(var.set_ble_time_beacon(beacon))
 
     if CONF_WIFI_SIGNAL_ID in config:
         wifi_signal = await cg.get_variable(config[CONF_WIFI_SIGNAL_ID])
@@ -205,6 +219,18 @@ async def to_code(config):
         for i, ts_id in enumerate(config[CONF_MOTOR_FAULT_IDS]):
             ts = await cg.get_variable(ts_id)
             cg.add(var.set_motor_fault_sensor(i, ts))
+
+    if CONF_RESET_REASON_ID in config:
+        reset_reason = await cg.get_variable(config[CONF_RESET_REASON_ID])
+        cg.add(var.set_reset_reason_text(reset_reason))
+
+    if CONF_FIRMWARE_UPDATE_ID in config:
+        # Gates the update/ include and the firmware_* commands: ESPHome only
+        # copies the update component's headers into the build when a platform
+        # is configured, so the C++ side must not reference them otherwise.
+        cg.add_define("LV6_HAS_UPDATE")
+        firmware_update = await cg.get_variable(config[CONF_FIRMWARE_UPDATE_ID])
+        cg.add(var.set_firmware_update(firmware_update))
 
     if CONF_DASHBOARD_JS in config:
         path = CORE.relative_config_path(config[CONF_DASHBOARD_JS])

@@ -30,7 +30,8 @@ legacy bookmarks that redirect to `/`.
   - `GET /api/hv6/v1/state` — full dashboard snapshot (entity-id → value map consumed by the frontend store)
   - `GET /api/hv6/v1/revision` — lightweight revision-polling resource. The dashboard polls
     this every three seconds and fetches the full state only when `data_revision` changes;
-    this intentionally replaces the unsafe one-shot pseudo-SSE route.
+    this intentionally replaces the unsafe one-shot pseudo-SSE route. The payload also
+    includes `uptime_s` so the UI can keep device uptime current without a full snapshot.
   - `GET /api/hv6/v1/history` — 24 h ring buffer (288 slots @ 5 min). Each entry is
     `[uptime_s, z0, z1, z2, z3, z4, z5, absorbing, flow_c, return_c, demand_pct]` where
     `z0..z5` are `ZoneDisplayState` codes (`0xFF` = unknown), `absorbing` is `1` when preheat
@@ -45,7 +46,11 @@ legacy bookmarks that redirect to `/`.
     newer than `<seq>`. Shape: `{"next_seq":N,"lines":[[seq,level,"tag","msg"],…]}` where `level`
     is the ESPHome log level (1=ERROR … 7=VERY_VERBOSE). Pass the previous `next_seq` (or the
     highest seen `seq`) back as `?since=` to append only new lines. RAM-only; reset on reboot.
+  - `GET /api/hv6/v1/logs/download` — the same log ring as a single `text/plain`
+    attachment for bug reports. See "Maintenance endpoints".
   - `GET /api/hv6/v1/ble-scan` — discovered BTHome sensors
+  - `GET /api/hv6/v1/settings/export[?include_learned=0|1]` — configuration backup as a
+    downloadable JSON document. See "Maintenance endpoints".
   - `POST /api/hv6/v1/authority/lease` — V6-A-only authenticated Touch lease acquisition
     and renewal. The URL-encoded form body contains `installation_id`, `coordinator_id`, `lease_id`,
     `sequence`, `issued_ms`, and a 30–120 second `duration_ms`; the request must supply the
@@ -75,6 +80,8 @@ legacy bookmarks that redirect to `/`.
   - `POST /api/hv6/v1/settings/select?key=<name>&value=<value>[&zone=1..6]`
   - `POST /api/hv6/v1/settings/number?key=<name>&value=<value>[&zone=1..6]`
   - `POST /api/hv6/v1/settings/text?key=<name>&value=<value>[&zone=1..6]`
+  - `POST /api/hv6/v1/settings/import[?restore_learned=0|1]` — restore a backup produced
+    by `GET /settings/export`; the body is the JSON document. See "Maintenance endpoints".
 - `POST /api/hv6/v1/manual_mode?enabled=true|false`
 
 Local dashboard writes remain available while a V6 is standalone and no
@@ -96,12 +103,17 @@ Implemented command names:
 - `motor_reset_and_relearn` (requires `zone`)
 - `motor_reset_learned_factors` (requires `zone`)
 - `open_motor_timed` / `close_motor_timed` / `stop_motor` (requires `zone`; also exposed as motor routes)
+- `ble_clock_sync_now` — start a Shelly Date/Time Broadcast burst so nearby BLU displays can resync
+- `firmware_check` / `firmware_prepare` / `firmware_install` — managed firmware update
+  from GitHub Releases. See "Firmware updates".
 
 Implemented global settings keys (legacy names retained for dashboard compatibility) relevant
 to secondary-flow commissioning:
 
 - `min_zone_flow_pct` (number) — minimum total valve opening across loops already accepting heat
 - `minimum_flow_always` (select: `on` | `off`) — explicit secondary-loop commissioning mode
+- `ble_clock_sync_enabled` (select: `on` | `off`) — emit Shelly Date/Time Broadcast advertisements
+- `ble_clock_sync_interval_min` (number, 15–1440) — minutes between broadcast bursts (default 60)
 
 These controls cannot guarantee primary-side heat delivery and never open a satisfied room merely
 to protect the primary circuit.
@@ -328,6 +340,13 @@ Returns dashboard-editable settings currently backed by config store and control
       "enabled": false,
       "min_zone_flow_pct": 15.0
     },
+    "ble_clock_sync": {
+      "enabled": true,
+      "interval_min": 60,
+      "last_ok_s": 1774746000,
+      "last_error": "",
+      "advertising": false
+    },
     "manifold": {
       "type": "NC",
       "flow_probe": 7,
@@ -443,6 +462,10 @@ Minimum command set:
 - `motor_reset_learned_factors`
 - `calibrate_all_motors`
 - `i2c_scan`
+- `ble_clock_sync_now`
+- `firmware_check`
+- `firmware_prepare`
+- `firmware_install`
 
 ### `POST /api/hv6/v1/settings`
 
@@ -452,6 +475,177 @@ Touch owns exterior-wall geometry and does not mirror it to V6. The remaining
 legacy weather-profile settings routes are `zone_wind_exposure`,
 `zone_solar_gain`, and `zone_thermal_lead_h` (`number`). All include the
 one-based `zone` field.
+
+## Maintenance Endpoints
+
+These exist so a user can take a settings backup before a firmware update and hand
+over a log capture with a bug report. Both are local-only surfaces.
+
+### `GET /api/hv6/v1/settings/export`
+
+Returns the user-owned configuration as a downloadable JSON document — a file, not
+the v1 envelope:
+
+```text
+Content-Type: application/json
+Content-Disposition: attachment; filename=lune-v6-settings.json
+```
+
+Parameters:
+
+- `include_learned=0|1` (default `1`) — include the learned motor timings block.
+
+The document is written by
+[`settings_backup`](../components/lv6_dashboard/settings_backup.cpp) as **named
+fields, not binary NVS blobs**, which is what lets a backup survive a per-section
+NVS version bump:
+
+```json
+{
+  "_type": "lune-v6-settings",
+  "_version": 1,
+  "firmware": "v1.2.3",
+  "config_versions": {
+    "zone": 4, "motor": 2, "sensor": 1, "system": 3, "control": 1,
+    "probe": 1, "pid": 1, "manifold": 1, "balancing": 2
+  },
+  "metadata": {
+    "authority": {
+      "installation_id": "house-1",
+      "coordinator_id": "lune-touch"
+    }
+  },
+  "settings": {
+    "manifold": {},
+    "motor": {},
+    "control": {},
+    "balancing": {},
+    "sensor": {},
+    "probes": {},
+    "zones": []
+  },
+  "learned": { "zones": [] }
+}
+```
+
+`_version` is the envelope schema version and is independent of the
+`config_versions` section numbers, which are recorded for diagnosis and migration.
+`metadata` is informational only and is never applied on import.
+
+Secrets are never exported: the authority shared key, local access keys and WiFi
+credentials are outside this document, so a backup file cannot grant control.
+
+Errors: `503 config_store_unavailable`, `503 out_of_memory` (the ~8 KB document is
+built in PSRAM scratch), `500 export_failed` if the document does not fit.
+
+### `POST /api/hv6/v1/settings/import`
+
+Restores a document produced by `GET /settings/export`. The request body **is** the
+JSON document. Requires the same write authorization as the other write endpoints.
+
+Parameters:
+
+- `restore_learned=0|1` (default `1`) — restoring learned motor timings onto
+  different hardware is wrong, so a caller can decline that part while still
+  restoring user settings.
+
+The document is validated and applied to an in-memory copy of the config first, so a
+rejected import changes nothing:
+
+```json
+{
+  "ok": true,
+  "version": "v1",
+  "data": {
+    "applied": 87,
+    "skipped": 0,
+    "ignored": 3,
+    "learned_restored": true,
+    "data_revision": 412
+  }
+}
+```
+
+`applied` counts fields taken from the file, `skipped` fields present but
+deliberately not applied, and `ignored` keys this firmware does not understand —
+that last one is how a backup from a newer minor version still restores cleanly.
+
+Rejections return `400` with the envelope's `error.code`:
+
+- `missing_body` — empty request body.
+- `bad_json` — not a JSON object, or unterminated.
+- `bad_type` — missing `_type`, or not a Lune V6 settings backup.
+- `unsupported_version` — `_version` is newer than this firmware understands.
+- `no_settings` — no `settings` object, or nothing in it this firmware recognizes.
+
+Import does not restore authority material and does not move motors; the next
+zone-controller cycle acts on the restored setpoints. A successful import bumps
+`data_revision`, so revision-polling clients refresh on their own.
+
+### `GET /api/hv6/v1/logs/download`
+
+Returns the same log ring as `GET /api/hv6/v1/logs` as a single `text/plain`
+attachment (`filename=lune-v6-logs.txt`), oldest line first, one
+`[<level>] <tag>: <message>` line each, where level is `E`, `W`, `I`, `C`, `D` or
+`V`. The ring is RAM-only, so capture it *before* restarting a device that
+misbehaved.
+
+## Firmware Updates
+
+Releases are published to
+[GitHub Releases](https://github.com/birkemosen/lune/releases) with an
+ESP-Web-Tools manifest (`manifest-lune-v6.json`). The device's own
+`update: platform: http_request` entity polls
+`releases/latest/download/manifest-lune-v6.json`, and the dashboard drives that same
+entity through `POST /api/hv6/v1/commands`:
+
+- `firmware_check` — re-fetch the manifest and refresh the fields below. It does not
+  download the image.
+- `firmware_prepare` — quiesce the motors before an image lands, used ahead of a
+  browser-pushed upload to `/update`. An OTA must not interrupt a stroke and leave a
+  valve at an unknown position.
+- `firmware_install` — prepare the motors, then install the manifest's `ota.path`,
+  verified against the published MD5. The device reboots into the new image on
+  success.
+
+`firmware_check` and `firmware_install` require the `update` entity to be wired into
+`lv6_dashboard` (`firmware_update_id`); without it they are accepted and ignored.
+`safe_mode` marks an OTA boot good only after 60 s, so an image that crashes during
+startup rolls back to the previous one.
+
+`GET /diagnostics` reports the update state and the last reset cause:
+
+```json
+{
+  "firmware": {
+    "update": {
+      "current": "v1.2.3",
+      "latest": "v1.3.0",
+      "available": true,
+      "status": "available"
+    }
+  },
+  "reset_reason": "Software Reset CPU",
+  "logs_endpoint": "/api/hv6/v1/logs",
+  "logs_download_endpoint": "/api/hv6/v1/logs/download"
+}
+```
+
+`status` is one of `unknown`, `no_update`, `available` or `installing`. The `state`
+snapshot carries the same values as `firmware_update` (`current`, `latest`,
+`available`, `status`) plus the `text_sensor-reset_reason` entity. `reset_reason`
+comes from the `debug` platform text sensor and is what separates a clean OTA
+restart from a panic, watchdog or brownout.
+
+Clients must treat `available` as advisory and never auto-install: installing is an
+explicit local action.
+
+Manual uploads bypass the manifest entirely — `POST` an `.ota.bin` to `/update`,
+which is the `web_server` OTA platform on `web_server_base`. The stock ESPHome web UI
+is not compiled into the firmware, so `/update` accepts the upload but serves no page
+of its own; the dashboard provides the form. A first flash of a blank board still
+needs the `.factory.bin` over USB, because the OTA image carries no bootloader or
+partition table.
 
 ## SSE Endpoint
 

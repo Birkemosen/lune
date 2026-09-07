@@ -1,5 +1,7 @@
 #include "lv6_dashboard.h"
 #include "../lv6_zone_controller/hydraulic_diagnostics.h"
+#include "esphome/components/lv6_ble_time_beacon/lv6_ble_time_beacon.h"
+#include "settings_backup.h"
 
 #include "esphome/core/log.h"
 #ifdef USE_LOGGER
@@ -12,6 +14,7 @@
 #include <cstring>
 #include <cstdarg>
 #include <ctime>
+#include <new>
 #include <esp_http_server.h>
 #include <esp_heap_caps.h>
 #include <esp_system.h>
@@ -345,6 +348,7 @@ void LV6Dashboard::update_snapshot_() {
   snap_text(this->ip_address_text_,       s.ip_address,       sizeof(s.ip_address));
   snap_text(this->connected_ssid_text_,   s.connected_ssid,   sizeof(s.connected_ssid));
   snap_text(this->mac_address_text_,      s.mac_address,      sizeof(s.mac_address));
+  snap_text(this->reset_reason_text_,     s.reset_reason,     sizeof(s.reset_reason));
   for (uint8_t i = 0; i < 6; i++) {
     snap_text(this->zone_state_sensors_[i],  s.zone_state[i],  sizeof(s.zone_state[i]));
     snap_text(this->motor_fault_sensors_[i], s.motor_fault[i], sizeof(s.motor_fault[i]));
@@ -393,6 +397,42 @@ void LV6Dashboard::update_snapshot_() {
     }
   }
 
+  if (this->ble_time_beacon_) {
+    s.ble_clock_sync_enabled = this->ble_time_beacon_->enabled();
+    s.ble_clock_sync_interval_min = this->ble_time_beacon_->interval_min();
+    s.ble_clock_sync_last_ok_s = this->ble_time_beacon_->last_ok_s();
+    strncpy(s.ble_clock_sync_last_error, this->ble_time_beacon_->last_error(),
+            sizeof(s.ble_clock_sync_last_error) - 1);
+    s.ble_clock_sync_last_error[sizeof(s.ble_clock_sync_last_error) - 1] = '\0';
+    s.ble_clock_sync_advertising = this->ble_time_beacon_->advertising();
+  } else if (this->config_store_) {
+    const auto sensors = this->config_store_->get_config().sensor_config;
+    s.ble_clock_sync_enabled = sensors.ble_clock_sync_enabled;
+    s.ble_clock_sync_interval_min = sensors.ble_clock_sync_interval_min;
+  }
+
+  // Managed firmware update. The snapshot was memset above, so the status
+  // string is always written here rather than relying on its member default.
+  strncpy(s.firmware_update_status, "unknown", sizeof(s.firmware_update_status) - 1);
+#ifdef LV6_HAS_UPDATE
+  if (this->firmware_update_ != nullptr) {
+    const char *status = "unknown";
+    switch (this->firmware_update_->state) {
+      case update::UPDATE_STATE_NO_UPDATE:  status = "no_update";  break;
+      case update::UPDATE_STATE_AVAILABLE:  status = "available";  break;
+      case update::UPDATE_STATE_INSTALLING: status = "installing"; break;
+      default:                              status = "unknown";    break;
+    }
+    strncpy(s.firmware_update_status, status, sizeof(s.firmware_update_status) - 1);
+    s.firmware_update_available = this->firmware_update_->state == update::UPDATE_STATE_AVAILABLE;
+    sanitize_text(this->firmware_update_->update_info.current_version, s.firmware_update_current,
+                  sizeof(s.firmware_update_current));
+    sanitize_text(this->firmware_update_->update_info.latest_version, s.firmware_update_latest,
+                  sizeof(s.firmware_update_latest));
+  }
+#endif
+  s.firmware_update_status[sizeof(s.firmware_update_status) - 1] = '\0';
+
   if (xSemaphoreTake(snapshot_lock_, pdMS_TO_TICKS(5)) == pdTRUE) {
     memcpy(&this->snapshot_, &s, sizeof(s));
     this->snapshot_ready_ = true;
@@ -409,7 +449,8 @@ void LV6Dashboard::setup() {
   this->action_lock_ = xSemaphoreCreateMutex();
   this->snapshot_lock_ = xSemaphoreCreateMutex();
   this->history_lock_ = xSemaphoreCreateMutex();
-  this->log_lock_ = xSemaphoreCreateMutex();
+  if (!this->logs_.init())
+    ESP_LOGW(TAG, "Log rings unavailable; /logs will be empty");
 
 #ifdef USE_LOGGER
   // Tap the ESPHome logger so the dashboard Logs view can stream device logs.
@@ -788,7 +829,12 @@ void LV6Dashboard::handle_state_(AsyncWebServerRequest *request) {
   appendf(buf, BUF_SIZE, offset, "\"text_sensor-ip_address\":{\"state\":\"%s\"},", snap->ip_address);
   appendf(buf, BUF_SIZE, offset, "\"text_sensor-connected_ssid\":{\"state\":\"%s\"},", snap->connected_ssid);
   appendf(buf, BUF_SIZE, offset, "\"text_sensor-mac_address\":{\"state\":\"%s\"},", snap->mac_address);
+  appendf(buf, BUF_SIZE, offset, "\"text_sensor-reset_reason\":{\"state\":\"%s\"},", snap->reset_reason);
   appendf(buf, BUF_SIZE, offset, "\"text-device_variant\":{\"state\":\"%s\"},", dashboard_variant_str());
+  appendf(buf, BUF_SIZE, offset,
+          "\"firmware_update\":{\"current\":\"%s\",\"latest\":\"%s\",\"available\":%s,\"status\":\"%s\"},",
+          snap->firmware_update_current, snap->firmware_update_latest,
+          snap->firmware_update_available ? "true" : "false", snap->firmware_update_status);
 
   for (uint8_t i = 0; i < 6; i++) {
     appendf(buf, BUF_SIZE, offset, "\"%s\":{\"state\":\"%s\"},", ZONE_STATE_KEYS[i], snap->zone_state[i]);
@@ -974,6 +1020,17 @@ void LV6Dashboard::handle_state_(AsyncWebServerRequest *request) {
       "\"number-min_zone_flow_pct\":{\"value\":%s},",
       snap->minimum_flow_always ? "on" : "off",
       num_buf);
+  appendf(buf, BUF_SIZE, offset,
+      "\"switch-ble_clock_sync_enabled\":{\"state\":\"%s\"},"
+      "\"number-ble_clock_sync_interval_min\":{\"value\":%u},"
+      "\"sensor-ble_clock_sync_last_ok_s\":{\"value\":%lu},"
+      "\"text-ble_clock_sync_last_error\":{\"state\":\"%s\"},"
+      "\"binary_sensor-ble_clock_sync_advertising\":{\"state\":\"%s\"},",
+      snap->ble_clock_sync_enabled ? "on" : "off",
+      static_cast<unsigned>(snap->ble_clock_sync_interval_min),
+      static_cast<unsigned long>(snap->ble_clock_sync_last_ok_s),
+      snap->ble_clock_sync_last_error,
+      snap->ble_clock_sync_advertising ? "on" : "off");
   // Sentinel field closes the JSON object and absorbs any trailing comma.
   appendf(buf, BUF_SIZE, offset, "\"_\":{}}");
   flush();
@@ -1208,6 +1265,8 @@ void LV6Dashboard::handle_settings_(AsyncWebServerRequest *request) {
           "\"simple_preheat_enabled\":%s,\"preheat_absorb_enabled\":%s,"
           "\"preheat_absorb_band_c\":%s,\"preheat_detect_delta_c\":%s},"
           "\"minimum_flow\":{\"enabled\":%s,\"min_zone_flow_pct\":%s},"
+          "\"ble_clock_sync\":{\"enabled\":%s,\"interval_min\":%u,\"last_ok_s\":%lu,"
+          "\"last_error\":\"%s\",\"advertising\":%s},"
           "\"manifold\":{\"type\":\"%s\",\"flow_probe\":%d,\"return_probe\":%d},"
           "\"motor\":{\"default_profile\":\"%s\",\"generic_runtime_limit_s\":%lu,"
           "\"hmip_runtime_limit_s\":%lu,\"relearn_after_movements\":%lu,"
@@ -1217,6 +1276,11 @@ void LV6Dashboard::handle_settings_(AsyncWebServerRequest *request) {
           snap->preheat_absorb_enabled ? "true" : "false",
           preheat_band, preheat_delta,
           snap->minimum_flow_always ? "true" : "false", min_flow,
+          snap->ble_clock_sync_enabled ? "true" : "false",
+          static_cast<unsigned>(snap->ble_clock_sync_interval_min),
+          static_cast<unsigned long>(snap->ble_clock_sync_last_ok_s),
+          snap->ble_clock_sync_last_error,
+          snap->ble_clock_sync_advertising ? "true" : "false",
           snap->manifold_type == lv6::ManifoldType::NC ? "NC" : "NO",
           static_cast<int>(snap->probes.manifold_flow_probe) + 1,
           static_cast<int>(snap->probes.manifold_return_probe) + 1,
@@ -1340,7 +1404,10 @@ void LV6Dashboard::handle_diagnostics_(AsyncWebServerRequest *request) {
            "\"tacho_adc_count\":%lu,\"tacho_amp_raw\":%u,"
            "\"motion_evidence_count\":%lu,\"sample_sequence\":%lu,\"motor_runtime_ms\":%lu},"
            "\"authority\":{\"state\":\"%s\",\"reason\":\"%s\",\"lease_remaining_s\":%lu,\"generation\":%lu,\"v6_write_allowed\":%s},"
-           "%s,\"logs_endpoint\":\"/api/hv6/v1/logs\"}}",
+           "\"firmware\":{\"update\":{\"current\":\"%s\",\"latest\":\"%s\",\"available\":%s,"
+           "\"status\":\"%s\"}},\"reset_reason\":\"%s\","
+           "%s,\"logs_endpoint\":\"/api/hv6/v1/logs\","
+           "\"logs_download_endpoint\":\"/api/hv6/v1/logs/download\"}}",
            static_cast<unsigned long>(snap->free_internal_kb),
            static_cast<unsigned long>(snap->free_psram_kb), cpu0, cpu1, flow, ret,
            snap->drivers_enabled ? "true" : "false",
@@ -1372,7 +1439,10 @@ void LV6Dashboard::handle_diagnostics_(AsyncWebServerRequest *request) {
            snap->authority_state,
            snap->authority_reason, static_cast<unsigned long>(snap->authority_lease_remaining_s),
            static_cast<unsigned long>(snap->authority_generation),
-           snap->authority_v6_write_allowed ? "true" : "false", hydraulic_json);
+           snap->authority_v6_write_allowed ? "true" : "false",
+           snap->firmware_update_current, snap->firmware_update_latest,
+           snap->firmware_update_available ? "true" : "false",
+           snap->firmware_update_status, snap->reset_reason, hydraulic_json);
   send_text_(request, 200, "application/json", this->json_buf_, true, "no-cache");
 }
 
@@ -1447,11 +1517,12 @@ void LV6Dashboard::handle_events_(AsyncWebServerRequest *request) {
 }
 
 void LV6Dashboard::handle_revision_(AsyncWebServerRequest *request) {
-  char response[192];
+  char response[256];
   snprintf(response, sizeof(response),
            "{\"ok\":true,\"version\":\"v1\",\"data\":{\"data_revision\":%lu,"
-           "\"poll_after_ms\":3000,\"freshness\":\"runtime\"}}",
-           static_cast<unsigned long>(data_revision_));
+           "\"uptime_s\":%lu,\"poll_after_ms\":3000,\"freshness\":\"runtime\"}}",
+           static_cast<unsigned long>(data_revision_),
+           static_cast<unsigned long>(millis() / 1000UL));
   send_text_(request, 200, "application/json", response, false, "no-cache");
 }
 
@@ -1567,6 +1638,46 @@ bool LV6Dashboard::enqueue_action_(const DashboardAction &act) {
   return true;
 }
 
+// Once Touch has provisioned an authority key, same-origin dashboard writes
+// require that key and a matching CSRF header. During standalone V6
+// commissioning the key is intentionally empty; keep local setup usable in that
+// state and let Touch provisioning close the write gate later. Cross-origin
+// forms cannot add these headers because wildcard CORS is removed.
+bool LV6Dashboard::authorize_write_(AsyncWebServerRequest *request) {
+  const auto local_key_header = request->get_header("X-Lune-Local-Key");
+  const auto csrf_header = request->get_header("X-Lune-CSRF");
+  const auto local_cfg = this->config_store_ ? this->config_store_->get_authority_config() : lv6::AuthorityConfig{};
+  const char *local_key = local_key_header.has_value() ? local_key_header->c_str() : "";
+  const char *csrf = csrf_header.has_value() ? csrf_header->c_str() : "";
+  const size_t local_len = strlen(local_cfg.shared_key);
+  const size_t supplied_len = strlen(local_key);
+  unsigned char local_diff = static_cast<unsigned char>(local_len ^ supplied_len);
+  for (size_t i = 0; i < std::max(local_len, supplied_len); i++)
+    local_diff |= static_cast<unsigned char>((i < local_len ? local_cfg.shared_key[i] : '\0') ^
+                                             (i < supplied_len ? local_key[i] : '\0'));
+  if (local_len != 0 && (local_diff != 0 || strcmp(local_key, csrf) != 0)) {
+    this->send_v1_(request, 403, "local_auth_failed", "Local credential and CSRF header required");
+    return false;
+  }
+  return true;
+}
+
+void LV6Dashboard::prepare_motors_for_ota_() {
+  if (this->valve_controller_ == nullptr)
+    return;
+  // Cut drive first: a reboot mid-flash must not leave an H-bridge energised.
+  this->valve_controller_->set_drivers_enabled(false);
+  const uint32_t deadline = millis() + 5000;
+  while (this->valve_controller_->is_motor_busy() || this->valve_controller_->is_calibrating()) {
+    if (static_cast<int32_t>(millis() - deadline) >= 0) {
+      ESP_LOGW(TAG, "Motors still busy after 5s; continuing OTA preparation");
+      break;
+    }
+    delay(20);
+  }
+  ESP_LOGI(TAG, "Motors parked for firmware update");
+}
+
 void LV6Dashboard::expire_coordinator_commands_() {
   if (this->zone_controller_ == nullptr)
     return;
@@ -1616,6 +1727,10 @@ void LV6Dashboard::handle_v1_(AsyncWebServerRequest *request, const char *path) 
     this->handle_settings_(request);
     return;
   }
+  if (strcmp(path, "/settings/export") == 0) {
+    this->handle_settings_export_(request);
+    return;
+  }
   if (strcmp(path, "/diagnostics") == 0) {
     this->handle_diagnostics_(request);
     return;
@@ -1636,6 +1751,10 @@ void LV6Dashboard::handle_v1_(AsyncWebServerRequest *request, const char *path) 
     this->handle_logs_(request);
     return;
   }
+  if (strcmp(path, "/logs/download") == 0) {
+    this->handle_logs_download_(request);
+    return;
+  }
   if (strcmp(path, "/ble-scan") == 0) {
     this->handle_ble_scan_(request);
     return;
@@ -1653,6 +1772,13 @@ void LV6Dashboard::handle_v1_(AsyncWebServerRequest *request, const char *path) 
   const std::string body_str = request->arg("plain");
   const char *body = body_str.c_str();
 
+  // Settings import replaces whole config sections at once, so it bypasses the
+  // single-key action queue and persists inline. Must be matched before the
+  // generic "/settings/<type>" branch below.
+  if (strcmp(path, "/settings/import") == 0) {
+    this->handle_settings_import_(request, body);
+    return;
+  }
   if (strcmp(path, "/authority/lease") == 0) {
     this->handle_authority_lease_(request, body);
     return;
@@ -1903,26 +2029,8 @@ void LV6Dashboard::handle_v1_(AsyncWebServerRequest *request, const char *path) 
     sanitize_text(idempotency_header->c_str(), idempotency_key, sizeof(idempotency_key));
   else
     parse_text_param(request, body, "idempotency_key", "", idempotency_key, sizeof(idempotency_key));
-  // Once Touch has provisioned an authority key, same-origin dashboard writes
-  // require that key and a matching CSRF header. During standalone V6
-  // commissioning the key is intentionally empty; keep local setup usable in
-  // that state and let Touch provisioning close the write gate later. Cross-
-  // origin forms cannot add these headers because wildcard CORS is removed.
-  const auto local_key_header = request->get_header("X-Lune-Local-Key");
-  const auto csrf_header = request->get_header("X-Lune-CSRF");
-  const auto local_cfg = this->config_store_ ? this->config_store_->get_authority_config() : lv6::AuthorityConfig{};
-  const char *local_key = local_key_header.has_value() ? local_key_header->c_str() : "";
-  const char *csrf = csrf_header.has_value() ? csrf_header->c_str() : "";
-  const size_t local_len = strlen(local_cfg.shared_key);
-  const size_t supplied_len = strlen(local_key);
-  unsigned char local_diff = static_cast<unsigned char>(local_len ^ supplied_len);
-  for (size_t i = 0; i < std::max(local_len, supplied_len); i++)
-    local_diff |= static_cast<unsigned char>((i < local_len ? local_cfg.shared_key[i] : '\0') ^
-                                             (i < supplied_len ? local_key[i] : '\0'));
-  if (local_len != 0 && (local_diff != 0 || strcmp(local_key, csrf) != 0)) {
-    this->send_v1_(request, 403, "local_auth_failed", "Local credential and CSRF header required");
+  if (!this->authorize_write_(request))
     return;
-  }
   const uint32_t now_ms = millis();
   if (static_cast<int32_t>(now_ms - write_rate_window_ms_) >= 60000) {
     write_rate_window_ms_ = now_ms;
@@ -2173,8 +2281,24 @@ void LV6Dashboard::dispatch_set_(const DashboardAction &act) {
       this->valve_controller_->reset_learned_factors(zi);
     } else if (strcmp(str_val, "motor_reset_and_relearn") == 0 && zone_valid && this->valve_controller_) {
       this->valve_controller_->reset_and_relearn(zi);
+    } else if (strcmp(str_val, "ble_clock_sync_now") == 0) {
+      if (this->ble_time_beacon_)
+        this->ble_time_beacon_->request_sync_now();
     } else if (strcmp(str_val, "dump_task_stats") == 0) {
       this->dump_task_stats_();
+    } else if (strcmp(str_val, "firmware_prepare") == 0) {
+      this->prepare_motors_for_ota_();
+#ifdef LV6_HAS_UPDATE
+    } else if (strcmp(str_val, "firmware_check") == 0) {
+      if (this->firmware_update_)
+        this->firmware_update_->check();
+    } else if (strcmp(str_val, "firmware_install") == 0) {
+      if (this->firmware_update_) {
+        // Park the motors before the flash write starts, not after.
+        this->prepare_motors_for_ota_();
+        this->firmware_update_->perform(false);
+      }
+#endif
     } else if (strcmp(str_val, "restart") == 0) {
       ESP_LOGW(TAG, "Restarting device on dashboard request");
       esp_restart();
@@ -2333,6 +2457,14 @@ void LV6Dashboard::dispatch_set_(const DashboardAction &act) {
   } else if (strcmp(key, "minimum_flow_always") == 0 && has_str && this->zone_controller_) {
     const bool enabled = (strcasecmp(str_val, "on") == 0 || strcmp(str_val, "1") == 0);
     this->zone_controller_->set_secondary_flow_commissioning(enabled);
+
+  } else if (strcmp(key, "ble_clock_sync_enabled") == 0 && has_str && this->ble_time_beacon_) {
+    const bool enabled = (strcasecmp(str_val, "on") == 0 || strcasecmp(str_val, "true") == 0 ||
+                          strcmp(str_val, "1") == 0);
+    this->ble_time_beacon_->set_enabled(enabled);
+
+  } else if (strcmp(key, "ble_clock_sync_interval_min") == 0 && has_num && this->ble_time_beacon_) {
+    this->ble_time_beacon_->set_interval_min(static_cast<uint16_t>(num_val));
 
   // ---- motor config numeric setters ----
   } else if (has_num && this->config_store_ && this->valve_controller_) {
@@ -2560,82 +2692,43 @@ void LV6Dashboard::on_log_static_(void *self, uint8_t level, const char *tag,
 }
 
 void LV6Dashboard::on_log_(uint8_t level, const char *tag, const char *message,
-                           size_t /*message_len*/) {
-  if (log_lock_ == nullptr || message == nullptr)
-    return;
-  // Never stall the logging path: skip ISR context and drop on contention.
-  if (xPortInIsrContext())
-    return;
-  if (xSemaphoreTake(log_lock_, 0) != pdTRUE)
-    return;
-
-  LogLine &slot = log_ring_[log_head_];
-  slot.seq = log_next_seq_++;
-  slot.level = level;
-
-  if (tag != nullptr) {
-    strncpy(slot.tag, tag, LOG_TAG_LEN - 1);
-    slot.tag[LOG_TAG_LEN - 1] = '\0';
-  } else {
-    slot.tag[0] = '\0';
-  }
-
-  // Copy the message, stripping ANSI color escapes (\x1b[ ... m) and flattening
-  // whitespace so each ring entry is a single clean line.
-  size_t o = 0;
-  for (const char *p = message; *p != '\0' && o < LOG_MSG_LEN - 1; ++p) {
-    if (*p == '\x1b') {
-      while (*p != '\0' && *p != 'm')
-        ++p;
-      if (*p == '\0')
-        break;
-      continue;  // also skip the terminating 'm'
-    }
-    char c = *p;
-    if (c == '\n' || c == '\r' || c == '\t')
-      c = ' ';
-    slot.msg[o++] = c;
-  }
-  slot.msg[o] = '\0';
-
-  log_head_ = static_cast<uint16_t>((log_head_ + 1) % LOG_SLOTS);
-  xSemaphoreGive(log_lock_);
+                           size_t message_len) {
+  this->logs_.on_log(level, tag, message, message_len);
 }
 
-// GET /api/hv6/v1/logs?since=<seq> — returns log lines newer than <seq>.
+namespace {
+
+/// Large per-request scratch: PSRAM first, internal heap as fallback. free()
+/// routes back to the correct heap for either allocation.
+void *alloc_scratch(size_t bytes) {
+  void *p = heap_caps_malloc(bytes, MALLOC_CAP_SPIRAM);
+  return p != nullptr ? p : malloc(bytes);
+}
+
+/// Lines staged per copy. The ring lock is held for the copy only, never for
+/// the network write, so a slow client cannot make the logger drop lines.
+constexpr uint16_t LIVE_COPY_SLOTS  = 128;
+constexpr uint16_t SMART_COPY_SLOTS = 32;
+
+}  // namespace
+
+// GET /api/hv6/v1/logs?since=<seq> — live scratch only, lines newer than <seq>.
 void LV6Dashboard::handle_logs_(AsyncWebServerRequest *request) {
   uint32_t since = 0;
   const std::string since_arg = request->arg("since");
   if (!since_arg.empty())
     since = static_cast<uint32_t>(strtoul(since_arg.c_str(), nullptr, 10));
 
-  // The ring copy is ~12.8 KB; take it from PSRAM so a busy /logs poll never
-  // spikes the (scarce) internal heap. Fall back to internal heap on no-PSRAM
-  // boards. free() routes back to the correct heap for either allocation.
-  auto *ring_copy = static_cast<LogLine *>(
-      heap_caps_malloc(sizeof(LogLine) * LOG_SLOTS, MALLOC_CAP_SPIRAM));
-  if (!ring_copy)
-    ring_copy = static_cast<LogLine *>(malloc(sizeof(LogLine) * LOG_SLOTS));
-  if (!ring_copy) {
-    httpd_req_t *req_err = *request;
-    httpd_resp_set_status(req_err, "503 Service Unavailable");
-    httpd_resp_set_type(req_err, "text/plain");
-    httpd_resp_set_hdr(req_err, "Connection", "close");
-    httpd_resp_send(req_err, "Out of memory", HTTPD_RESP_USE_STRLEN);
+  auto *staging = static_cast<LogLine *>(alloc_scratch(sizeof(LogLine) * LIVE_COPY_SLOTS));
+  if (staging == nullptr) {
+    this->send_v1_(request, 503, "out_of_memory", "Cannot allocate log buffer");
     return;
   }
-
-  uint16_t head = 0;
-  uint32_t next_seq = 1;
-  if (log_lock_ != nullptr &&
-      xSemaphoreTake(log_lock_, pdMS_TO_TICKS(50)) == pdTRUE) {
-    memcpy(ring_copy, log_ring_, sizeof(LogLine) * LOG_SLOTS);
-    head = log_head_;
-    next_seq = log_next_seq_;
-    xSemaphoreGive(log_lock_);
-  } else {
-    memset(ring_copy, 0, sizeof(LogLine) * LOG_SLOTS);
-  }
+  uint16_t count = 0;
+  uint32_t next_seq = this->logs_.next_seq();
+  // A truncated read reports the seq it actually reached, so the next poll picks
+  // up the remainder instead of skipping it.
+  this->logs_.copy_live_since(since, staging, LIVE_COPY_SLOTS, &count, &next_seq);
 
   httpd_req_t *req = *request;
   httpd_resp_set_status(req, "200 OK");
@@ -2656,22 +2749,18 @@ void LV6Dashboard::handle_logs_(AsyncWebServerRequest *request) {
   appendf(buf, BUF_SIZE, offset, "{\"next_seq\":%lu,\"lines\":[",
           static_cast<unsigned long>(next_seq));
 
-  bool first = true;
-  // Oldest-to-newest: chronological order is (head + i) around the ring.
-  for (uint16_t i = 0; i < LOG_SLOTS; i++) {
-    const LogLine &l = ring_copy[(head + i) % LOG_SLOTS];
-    if (l.seq == 0 || l.seq <= since)
-      continue;
-
+  for (uint16_t i = 0; i < count; i++) {
+    const LogLine &l = staging[i];
     // A full entry can approach LOG_TAG_LEN + LOG_MSG_LEN plus escaping; flush
     // whenever the remaining buffer can't safely hold one.
     if (offset + (LOG_TAG_LEN + LOG_MSG_LEN) * 2 + 32 >= BUF_SIZE) {
-      if (!flush()) { free(ring_copy); return; }
+      if (!flush()) {
+        free(staging);
+        return;
+      }
     }
-
-    if (!first)
+    if (i != 0)
       buf[offset++] = ',';
-    first = false;
 
     appendf(buf, BUF_SIZE, offset, "[%lu,%u,\"",
             static_cast<unsigned long>(l.seq), static_cast<unsigned>(l.level));
@@ -2684,7 +2773,187 @@ void LV6Dashboard::handle_logs_(AsyncWebServerRequest *request) {
   appendf(buf, BUF_SIZE, offset, "]}");
   flush();
   httpd_resp_send_chunk(req, nullptr, 0);
-  free(ring_copy);
+  free(staging);
+}
+
+// GET /api/hv6/v1/logs/download — the smart FIFO as a plain-text attachment.
+void LV6Dashboard::handle_logs_download_(AsyncWebServerRequest *request) {
+  httpd_req_t *req = *request;
+  httpd_resp_set_status(req, "200 OK");
+  httpd_resp_set_type(req, "text/plain; charset=utf-8");
+  httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+  httpd_resp_set_hdr(req, "Content-Disposition", "attachment; filename=lune-v6-logs.txt");
+  httpd_resp_set_hdr(req, "Connection", "close");
+
+  // Levels are ESPHOME_LOG_LEVEL_*; index 0 (NONE) never reaches the ring.
+  static const char LEVEL_CHAR[] = {'-', 'E', 'W', 'I', 'C', 'D', 'V', 'V'};
+  auto *staging = static_cast<LogLine *>(alloc_scratch(sizeof(LogLine) * SMART_COPY_SLOTS));
+  if (staging == nullptr) {
+    httpd_resp_send_chunk(req, "log buffer unavailable\n", HTTPD_RESP_USE_STRLEN);
+    httpd_resp_send_chunk(req, nullptr, 0);
+    return;
+  }
+
+  SmartLogCursor cursor{};
+  this->logs_.smart_begin(&cursor);
+  char line[LOG_TAG_LEN + LOG_MSG_LEN + 32];
+  while (!cursor.done()) {
+    const uint16_t n = this->logs_.smart_next_chunk(&cursor, staging, SMART_COPY_SLOTS);
+    if (n == 0)
+      break;  // lock unavailable or nothing left; end the body cleanly
+    for (uint16_t i = 0; i < n; i++) {
+      const LogLine &l = staging[i];
+      const char level = l.level < sizeof(LEVEL_CHAR) ? LEVEL_CHAR[l.level] : '?';
+      const int length = snprintf(line, sizeof(line), "[%c] %s: %s\n", level, l.tag, l.msg);
+      if (length <= 0 || httpd_resp_send_chunk(req, line, static_cast<size_t>(length)) != ESP_OK) {
+        free(staging);
+        return;
+      }
+    }
+  }
+  free(staging);
+  httpd_resp_send_chunk(req, nullptr, 0);
+}
+
+// =============================================================================
+// Settings backup — export / import
+// =============================================================================
+
+// GET /api/hv6/v1/settings/export[?include_learned=0|1]
+void LV6Dashboard::handle_settings_export_(AsyncWebServerRequest *request) {
+  if (this->config_store_ == nullptr) {
+    this->send_v1_(request, 503, "config_store_unavailable", "No config store");
+    return;
+  }
+  bool include_learned = true;
+  parse_bool_arg(request, "include_learned", &include_learned);
+
+  // ~8 KB of document plus a DeviceConfig copy and six telemetry structs is far
+  // more than the httpd worker stack allows; take the scratch from PSRAM.
+  static constexpr size_t EXPORT_CAP = 8192;
+  struct ExportScratch {
+    lv6::DeviceConfig cfg;
+    lv6::MotorTelemetry learned[lv6::NUM_ZONES];
+    char json[EXPORT_CAP];
+  };
+  void *raw = alloc_scratch(sizeof(ExportScratch));
+  if (raw == nullptr) {
+    this->send_v1_(request, 503, "out_of_memory", "Cannot allocate export buffer");
+    return;
+  }
+  auto *scratch = new (raw) ExportScratch{};
+
+  // The firmware version lives in the published snapshot; read it under the
+  // snapshot lock rather than from the HTTP scratch copy, which another handler
+  // may have left stale.
+  char firmware_version[SNAPSHOT_TEXT_LEN]{};
+  if (snapshot_lock_ != nullptr && xSemaphoreTake(snapshot_lock_, pdMS_TO_TICKS(50)) == pdTRUE) {
+    strncpy(firmware_version, this->snapshot_.firmware_version, sizeof(firmware_version) - 1);
+    xSemaphoreGive(snapshot_lock_);
+  }
+
+  scratch->cfg = this->config_store_->get_config();
+  bool has_learned = false;
+  if (include_learned) {
+    for (uint8_t i = 0; i < lv6::NUM_ZONES; i++) {
+      scratch->learned[i] = lv6::MotorTelemetry{};
+      if (this->config_store_->load_motor_telemetry(i, scratch->learned[i]))
+        has_learned = true;
+    }
+  }
+
+  settings_backup::ExportOptions opt{};
+  opt.include_learned = include_learned;
+  // probe_addrs: the 1-Wire ROM map lives in ESPHome globals, not the config
+  // store, so it is omitted until the dashboard can read it back.
+  const size_t written = settings_backup::write_export_json(
+      scratch->json, EXPORT_CAP, scratch->cfg, firmware_version,
+      scratch->learned, has_learned, nullptr, opt);
+  if (written == 0) {
+    free(scratch);
+    this->send_v1_(request, 500, "export_failed", "Export document did not fit");
+    return;
+  }
+
+  httpd_req_t *req = *request;
+  httpd_resp_set_status(req, "200 OK");
+  httpd_resp_set_type(req, "application/json");
+  httpd_resp_set_hdr(req, "Cache-Control", "no-store");
+  httpd_resp_set_hdr(req, "Content-Disposition", "attachment; filename=lune-v6-settings.json");
+  httpd_resp_set_hdr(req, "Connection", "close");
+  httpd_resp_send(req, scratch->json, static_cast<ssize_t>(written));
+  free(scratch);
+}
+
+// POST /api/hv6/v1/settings/import — body is an export document.
+void LV6Dashboard::handle_settings_import_(AsyncWebServerRequest *request, const char *body) {
+  if (!this->authorize_write_(request))
+    return;
+  if (this->config_store_ == nullptr) {
+    this->send_v1_(request, 503, "config_store_unavailable", "No config store");
+    return;
+  }
+  if (body == nullptr || body[0] == '\0') {
+    this->send_v1_(request, 400, "missing_body", "Import document is required");
+    return;
+  }
+  // Restoring learned motor timings onto different hardware is wrong, so the
+  // caller can decline that part while still restoring user settings.
+  bool restore_learned = true;
+  parse_bool_param(request, body, "restore_learned", &restore_learned);
+
+  struct ImportScratch {
+    lv6::DeviceConfig cfg;
+    lv6::MotorTelemetry learned[lv6::NUM_ZONES];
+  };
+  void *raw = alloc_scratch(sizeof(ImportScratch));
+  if (raw == nullptr) {
+    this->send_v1_(request, 503, "out_of_memory", "Cannot allocate import buffer");
+    return;
+  }
+  auto *scratch = new (raw) ImportScratch{};
+
+  scratch->cfg = this->config_store_->get_config();
+  for (uint8_t i = 0; i < lv6::NUM_ZONES; i++) {
+    scratch->learned[i] = lv6::MotorTelemetry{};
+    this->config_store_->load_motor_telemetry(i, scratch->learned[i]);
+  }
+
+  bool learned_applied = false;
+  const auto result = settings_backup::apply_import_json(body, scratch->cfg, restore_learned,
+                                                         scratch->learned, &learned_applied,
+                                                         nullptr, nullptr);
+  if (!result.ok) {
+    char response[224];
+    snprintf(response, sizeof(response),
+             "{\"ok\":false,\"version\":\"v1\",\"error\":{\"code\":\"%s\",\"message\":\"%s\"}}",
+             result.error_code, result.error_message);
+    free(scratch);
+    send_text_(request, 400, "application/json", response, false, "no-cache");
+    return;
+  }
+
+  this->config_store_->set_config(scratch->cfg);
+  if (learned_applied) {
+    for (uint8_t i = 0; i < lv6::NUM_ZONES; i++)
+      this->config_store_->save_motor_telemetry(i, scratch->learned[i]);
+  }
+  free(scratch);
+
+  if (data_revision_ != UINT32_MAX)
+    data_revision_++;
+  ESP_LOGI(TAG, "Settings import applied: %u fields (%u skipped, %u ignored), learned=%s",
+           static_cast<unsigned>(result.applied), static_cast<unsigned>(result.skipped),
+           static_cast<unsigned>(result.ignored), learned_applied ? "yes" : "no");
+
+  char response[224];
+  snprintf(response, sizeof(response),
+           "{\"ok\":true,\"version\":\"v1\",\"data\":{\"applied\":%u,\"skipped\":%u,"
+           "\"ignored\":%u,\"learned_restored\":%s,\"data_revision\":%lu}}",
+           static_cast<unsigned>(result.applied), static_cast<unsigned>(result.skipped),
+           static_cast<unsigned>(result.ignored), learned_applied ? "true" : "false",
+           static_cast<unsigned long>(data_revision_));
+  send_text_(request, 200, "application/json", response, false, "no-cache");
 }
 
 void LV6Dashboard::handle_ble_scan_(AsyncWebServerRequest *request) {
