@@ -241,8 +241,13 @@ const higCss = `
 .zone-detail .zd-badge.badge-heating{background:rgba(var(--accent-rgb),.12);color:var(--accent)}.zone-detail .zd-badge.badge-idle{background:rgba(139,148,163,.12);color:var(--text-muted)}.zone-detail .zd-badge.badge-fault{background:rgba(239,68,68,.12);color:var(--state-danger)}
 .zone-detail .zd-body>div:first-child{padding:18px 16px}
 .zone-detail .zd-kicker{margin:0 0 7px;color:var(--text-muted);font-size:.76rem;font-weight:600}
-.zone-detail .zd-target-row{display:flex;align-items:center;gap:10px}.zone-detail .zd-setpoint{color:var(--text-strong);font-family:var(--font-display);font-size:1.75rem;font-weight:700;font-variant-numeric:tabular-nums}
-.zone-detail .spb{display:grid;width:44px;height:44px;place-items:center;border:1px solid var(--separator);border-radius:8px;background:var(--control-bg);color:var(--text-strong);font-size:1.15rem;cursor:pointer}.zone-detail .spb:hover,.zone-detail .spb:active{background:rgba(var(--accent-rgb),.12);color:var(--accent)}
+.zone-detail .zd-target-row{display:grid;grid-template-columns:44px 7.5rem 44px;align-items:center;gap:10px;width:max-content}
+.zone-detail .zd-setpoint-field{display:flex;align-items:baseline;justify-content:center;gap:2px;min-width:0}
+.zone-detail .zd-setpoint{box-sizing:border-box;width:5.2ch;margin:0;padding:0;border:0;border-radius:0;background:transparent;color:var(--text-strong);font-family:var(--font-display);font-size:1.75rem;font-weight:700;font-variant-numeric:tabular-nums;line-height:1;text-align:right;caret-color:var(--accent);outline:none;-moz-appearance:textfield}
+.zone-detail .zd-setpoint::-webkit-outer-spin-button,.zone-detail .zd-setpoint::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+.zone-detail .zd-setpoint:focus{box-shadow:inset 0 -2px 0 var(--accent)}
+.zone-detail .zd-setpoint-unit{color:var(--text-strong);font-family:var(--font-display);font-size:1.75rem;font-weight:700;line-height:1;pointer-events:none;user-select:none}
+.zone-detail .spb{display:grid;width:44px;height:44px;place-items:center;border:1px solid var(--separator);border-radius:8px;background:var(--control-bg);color:var(--text-strong);font-size:1.15rem;cursor:pointer;flex:none}.zone-detail .spb:hover,.zone-detail .spb:active{background:rgba(var(--accent-rgb),.12);color:var(--accent)}
 .zone-detail .zd-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(112px,1fr));gap:0;padding:0 16px 18px}.zone-detail .zd-stat{min-width:0;padding:0 12px;border-left:1px solid var(--separator)}.zone-detail .zd-stat:first-child{padding-left:0;border-left:0}.zone-detail .zd-stat-label{color:var(--text-faint);font-size:.7rem;font-weight:600}.zone-detail .zd-stat-value{margin-top:4px;color:var(--text-strong);font-family:var(--font-display);font-size:1.08rem;font-weight:650;font-variant-numeric:tabular-nums}
 .zone-detail .zd-motor{margin:0;border-top:1px solid var(--separator)}.zone-detail .zd-motor>summary{display:flex;align-items:center;min-height:52px;padding:0 16px;color:var(--text-strong);font-size:.86rem;font-weight:650;cursor:pointer;list-style:none}.zone-detail .zd-motor>summary::-webkit-details-marker{display:none}.zone-detail .zd-motor>summary::after{content:'›';margin-left:auto;color:var(--text-muted);font-size:1.2rem;transition:transform .16s ease}.zone-detail .zd-motor[open]>summary::after{transform:rotate(90deg)}.zone-detail .zd-motor>summary small{margin-left:auto;margin-right:14px;color:var(--text-muted);font-size:.74rem;font-weight:400}.zone-detail .zd-motor-body{padding:16px;border-top:1px solid var(--separator)}.zone-detail .zd-motor-body .zd-stats{padding:0}
 .zone-detail .zd-fault{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:14px 0 0;padding:9px 10px;border-left:3px solid var(--state-danger);background:rgba(239,68,68,.06);font-size:.76rem}.zone-detail .zd-fault[hidden]{display:none}.zone-detail .zd-fault-label{color:var(--text-muted)}.zone-detail .zd-fault-val{color:var(--state-danger);font-weight:650}
@@ -267,9 +272,12 @@ const template = (ctx) => `
       <div>
         <div class="zd-kicker">Applied target</div>
         <div class="zd-target-row">
-          <button class="spb btn-dec" data-i18n-label="common.decrease" aria-label="decrease">−</button>
-          <div class="zd-setpoint">---</div>
-          <button class="spb btn-inc" data-i18n-label="common.increase" aria-label="increase">+</button>
+          <button type="button" class="spb btn-dec" data-i18n-label="common.decrease" aria-label="decrease">−</button>
+          <label class="zd-setpoint-field">
+            <input class="zd-setpoint" type="text" inputmode="decimal" enterkeyhint="done" autocomplete="off" spellcheck="false" aria-label="Applied target" />
+            <span class="zd-setpoint-unit" aria-hidden="true">°C</span>
+          </label>
+          <button type="button" class="spb btn-inc" data-i18n-label="common.increase" aria-label="increase">+</button>
         </div>
       </div>
       <div class="zd-stats">
@@ -293,9 +301,44 @@ const template = (ctx) => `
   </div>
 `;
 
+const SETPOINT_MIN_C = 5;
+const SETPOINT_MAX_C = 35;
+const SETPOINT_STEP_C = 0.5;
+
 function fmtFactor(v) { return v != null ? Number(v).toFixed(2) + 'x' : '---'; }
 function fmtRipples(v) { return v != null ? Number(v).toFixed(0) : '---'; }
 function fmtPreheat(v) { return v != null ? Number(v).toFixed(2) + 'C' : '---'; }
+function fmtSetpointInput(v) {
+  if (v == null || Number.isNaN(Number(v))) return '';
+  return (Math.round(Number(v) * 10) / 10).toFixed(1);
+}
+function parseSetpointInput(raw) {
+  if (raw == null) return null;
+  const cleaned = String(raw).trim().replace(',', '.').replace(/[^\d.+-]/g, '');
+  if (!cleaned) return null;
+  const n = Number(cleaned);
+  if (!Number.isFinite(n)) return null;
+  const stepped = Math.round(n / SETPOINT_STEP_C) * SETPOINT_STEP_C;
+  return Math.min(SETPOINT_MAX_C, Math.max(SETPOINT_MIN_C, Number(stepped.toFixed(1))));
+}
+function zoneBaseSetpoint(zone) {
+  const v = Number(ev(key.setpoint(zone)));
+  return Number.isFinite(v) ? v : null;
+}
+function zoneOffsetC(zone) {
+  const v = Number(ev(key.coordinatorOffset(zone)));
+  return Number.isFinite(v) ? v : 0;
+}
+function zoneAppliedSetpoint(zone) {
+  const effective = Number(ev(key.effectiveSetpoint(zone)));
+  if (Number.isFinite(effective)) return effective;
+  const base = zoneBaseSetpoint(zone);
+  if (base == null) return null;
+  return Number((base + zoneOffsetC(zone)).toFixed(1));
+}
+function clampSetpoint(v) {
+  return Math.min(SETPOINT_MAX_C, Math.max(SETPOINT_MIN_C, Number(Number(v).toFixed(1))));
+}
 function stateLabel(state, enabled) {
   if (!enabled) return t('common.disabled');
   const s = String(state || 'IDLE').toUpperCase();
@@ -334,7 +377,10 @@ export default component({
       this.zone = zone;
       el.dataset.zone = String(zone);
       refs.title.textContent = zoneLabel(zone);
-      refs.setpoint.textContent = fmtT(ev(key.effectiveSetpoint(zone)) ?? ev(key.setpoint(zone)));
+      // Paint Applied target (effective). Skip while typing so focus/caret stay put.
+      if (document.activeElement !== refs.setpoint) {
+        refs.setpoint.value = fmtSetpointInput(zoneAppliedSetpoint(zone));
+      }
       refs.base.textContent = fmtT(ev(key.baseSetpoint(zone)) ?? ev(key.setpoint(zone)));
       const offset = ev(key.coordinatorOffset(zone));
       refs.offset.textContent = offset == null ? '---' : (offset > 0 ? '+' : '') + Number(offset).toFixed(1) + '°C';
@@ -359,16 +405,28 @@ export default component({
       if (hasFault) refs.faultVal.textContent = fault;
     },
 
+    commitSetpoint(raw) {
+      const z = this.zone;
+      const desiredApplied = parseSetpointInput(raw);
+      if (desiredApplied == null) return null;
+      // Persist the local base so Applied = base + Touch offset.
+      const nextBase = clampSetpoint(desiredApplied - zoneOffsetC(z));
+      setSetpoint(z, nextBase);
+      return zoneAppliedSetpoint(z);
+    },
+
     incSetpoint() {
       const z = this.zone;
-      const current = ev(key.setpoint(z)) || 20;
-      setSetpoint(z, Number((current + 0.5).toFixed(1)));
+      const applied = zoneAppliedSetpoint(z);
+      const nextApplied = clampSetpoint((applied == null ? 20 : applied) + SETPOINT_STEP_C);
+      setSetpoint(z, clampSetpoint(nextApplied - zoneOffsetC(z)));
     },
 
     decSetpoint() {
       const z = this.zone;
-      const current = ev(key.setpoint(z)) || 20;
-      setSetpoint(z, Number((current - 0.5).toFixed(1)));
+      const applied = zoneAppliedSetpoint(z);
+      const nextApplied = clampSetpoint((applied == null ? 20 : applied) - SETPOINT_STEP_C);
+      setSetpoint(z, clampSetpoint(nextApplied - zoneOffsetC(z)));
     },
 
     toggleEnabled() {
@@ -403,6 +461,36 @@ export default component({
     refs.inc.onclick = () => ctx.incSetpoint();
     refs.dec.onclick = () => ctx.decSetpoint();
     refs.toggle.onclick = () => ctx.toggleEnabled();
+
+    const finishSetpointEdit = () => {
+      const committed = ctx.commitSetpoint(refs.setpoint.value);
+      refs.setpoint.value = committed != null
+        ? fmtSetpointInput(committed)
+        : fmtSetpointInput(zoneAppliedSetpoint(ctx.zone));
+    };
+    refs.setpoint.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        refs.setpoint.blur();
+      } else if (event.key === 'Escape') {
+        event.preventDefault();
+        refs.setpoint.value = fmtSetpointInput(zoneAppliedSetpoint(ctx.zone));
+        refs.setpoint.blur();
+      } else if (event.key === 'ArrowUp') {
+        event.preventDefault();
+        ctx.incSetpoint();
+        refs.setpoint.value = fmtSetpointInput(zoneAppliedSetpoint(ctx.zone));
+      } else if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        ctx.decSetpoint();
+        refs.setpoint.value = fmtSetpointInput(zoneAppliedSetpoint(ctx.zone));
+      }
+    });
+    refs.setpoint.addEventListener('blur', finishSetpointEdit);
+    // Select all on focus so a tap replaces the value quickly on touch devices.
+    refs.setpoint.addEventListener('focus', () => {
+      requestAnimationFrame(() => refs.setpoint.select());
+    });
 
     const update = () => ctx.update(el, refs);
     // Applied Target prefers effectiveSetpoint over base setpoint. State JSON
