@@ -61,9 +61,8 @@ esphome:
 # WiFi provisioning over USB (Improv protocol) — works with ESPHome Web Installer
 improv_serial:
 
-# mDNS discovery is disabled. Repeated allocator failures on ESP32-S3 in this
-# deployment make it unreliable; OTA/discovery uses explicit hostnames or the
-# discover_devices.py helper instead.
+# mDNS stays off. The S3 build hits allocator failures when the responder is
+# enabled; Touch finds V6 nodes with a LAN HTTP probe, not .local names.
 mdns:
   disabled: true
 

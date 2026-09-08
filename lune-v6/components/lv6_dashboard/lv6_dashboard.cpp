@@ -291,6 +291,10 @@ static bool parse_motor_profile(const char *raw, lv6::MotorProfile *out) {
 
 }  // namespace
 
+#ifndef LV6_DASHBOARD_ASSET_V
+#define LV6_DASHBOARD_ASSET_V "dev"
+#endif
+
 static const char DASHBOARD_HTML[] =
     "<!doctype html><html><head>"
     "<meta charset=\"utf-8\">"
@@ -300,7 +304,7 @@ static const char DASHBOARD_HTML[] =
     "<title>Lune V6</title>"
     "</head><body>"
     "<div id=\"app\">Loading dashboard...</div>"
-    "<script src=\"/dashboard.js?v=v6-zone-identity-20260815\"></script>"
+    "<script src=\"/dashboard.js?v=" LV6_DASHBOARD_ASSET_V "\"></script>"
     "</body></html>";
 
 void LV6Dashboard::update_snapshot_() {

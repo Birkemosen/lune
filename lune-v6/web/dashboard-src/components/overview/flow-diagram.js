@@ -22,19 +22,19 @@ const COLOR_DT_OK = '#66BB6A';
 const COLOR_DT_HIGH = '#FF6361';
 
 const DESKTOP = {
-  w: 1160, h: 310,
-  boxX: 452, boxY: 34, boxW: 256, boxH: 68,
-  srcY: 102, fanY: 158, zoneY: 232,
+  w: 1160, h: 372,
+  boxX: 440, boxY: 26, boxW: 280, boxH: 90,
+  srcY: 116, fanY: 168, zoneY: 262,
   zoneXs: [92, 286, 480, 674, 868, 1062],
   srcSpread: 15, bgDstHW: 28, srcHW: 7,
 };
 
 const MOBILE = {
-  w: 760, h: 340,
-  boxX: 38, boxY: 132, boxW: 142, boxH: 72,
-  srcX: 180, endX: 386, nameX: 446, midY: 168,
-  zoneYs: [58, 104, 150, 196, 242, 288],
-  spread: 8, bgDstHW: 15, srcHW: 4,
+  w: 760, h: 424,
+  boxX: 26, boxY: 148, boxW: 168, boxH: 92,
+  srcX: 196, endX: 386, nameX: 446, midY: 190,
+  zoneYs: [56, 120, 184, 248, 312, 376],
+  spread: 10, bgDstHW: 15, srcHW: 4,
 };
 
 const css = `
@@ -169,11 +169,11 @@ function background(w, h, layout) {
 
 function sourceBox(layout) {
   const g = layout === 'desktop' ? DESKTOP : MOBILE;
-  const labelY = layout === 'desktop' ? g.boxY + 27 : g.boxY + 29;
-  const valueY = layout === 'desktop' ? g.boxY + 56 : g.boxY + 58;
+  const labelY = layout === 'desktop' ? g.boxY + 34 : g.boxY + 36;
+  const valueY = layout === 'desktop' ? g.boxY + 74 : g.boxY + 76;
   return '<rect x="' + g.boxX + '" y="' + g.boxY + '" width="' + g.boxW + '" height="' + g.boxH + '" rx="7" fill="var(--flow-source-bg)" stroke="var(--accent)" stroke-width="2"/>' +
-    '<text id="' + layout + '-fd-flow-label" x="' + (g.boxX + g.boxW / 2) + '" y="' + labelY + '" text-anchor="middle" font-size="' + (layout === 'desktop' ? 20 : 19) + '" font-weight="800" fill="var(--accent)" letter-spacing="2">' + t('overview.flowDiagram.flow') + '</text>' +
-    '<text id="' + layout + '-fd-flow-temp" class="flow-metric" x="' + (g.boxX + g.boxW / 2) + '" y="' + valueY + '" text-anchor="middle" font-size="' + (layout === 'desktop' ? 29 : 27) + '" fill="var(--text-strong)">---</text>';
+    '<text id="' + layout + '-fd-flow-label" x="' + (g.boxX + g.boxW / 2) + '" y="' + labelY + '" text-anchor="middle" font-size="' + (layout === 'desktop' ? 28 : 27) + '" font-weight="800" fill="var(--accent)" letter-spacing="2">' + t('overview.flowDiagram.flow') + '</text>' +
+    '<text id="' + layout + '-fd-flow-temp" class="flow-metric" x="' + (g.boxX + g.boxW / 2) + '" y="' + valueY + '" text-anchor="middle" font-size="' + (layout === 'desktop' ? 40 : 37) + '" fill="var(--text-strong)">---</text>';
 }
 
 function desktopSvg() {
@@ -184,9 +184,9 @@ function desktopSvg() {
   p.push(bgDefs('desktop'));
   p.push(background(W, H, 'desktop'));
   p.push(sourceBox('desktop'));
-  p.push('<text id="desktop-fd-ret-temp" x="' + (DESKTOP.boxX + DESKTOP.boxW + 24) + '" y="' + (DESKTOP.boxY + 20) + '" font-size="17" font-weight="800" fill="' + COLOR_RETURN + '" font-family="var(--mono)">' + t('overview.flowDiagram.returnShort') + ' ---</text>');
-  p.push('<text id="desktop-fd-dt-label" x="' + (DESKTOP.boxX + DESKTOP.boxW + 24) + '" y="' + (DESKTOP.boxY + 42) + '" font-size="13" font-weight="800" fill="' + COLOR_DT_LABEL + '" letter-spacing="2">' + t('overview.flowDiagram.dt') + '</text>');
-  p.push('<text id="desktop-fd-dt" x="' + (DESKTOP.boxX + DESKTOP.boxW + 24) + '" y="' + (DESKTOP.boxY + 66) + '" class="flow-metric" font-size="24" fill="var(--accent)">---</text>');
+  p.push('<text id="desktop-fd-ret-temp" x="' + (DESKTOP.boxX + DESKTOP.boxW + 24) + '" y="' + (DESKTOP.boxY + 28) + '" font-size="24" font-weight="800" fill="' + COLOR_RETURN + '" font-family="var(--mono)">' + t('overview.flowDiagram.returnShort') + ' ---</text>');
+  p.push('<text id="desktop-fd-dt-label" x="' + (DESKTOP.boxX + DESKTOP.boxW + 24) + '" y="' + (DESKTOP.boxY + 54) + '" font-size="19" font-weight="800" fill="' + COLOR_DT_LABEL + '" letter-spacing="1.4">' + t('overview.flowDiagram.dt') + '</text>');
+  p.push('<text id="desktop-fd-dt" x="' + (DESKTOP.boxX + DESKTOP.boxW + 24) + '" y="' + (DESKTOP.boxY + 86) + '" class="flow-metric" font-size="34" fill="var(--accent)">---</text>');
 
   for (let z = 1; z <= ZONES; z++) p.push('<path id="desktop-fd-track-' + z + '" class="flow-track" d="' + desktopRoute(z - 1) + '" opacity=".7"/>');
   for (let z = 1; z <= ZONES; z++) p.push('<path id="desktop-fd-path-' + z + '" class="flow-ribbon" d="' + desktopRibbon(z - 1, DESKTOP.srcHW, DESKTOP.bgDstHW) + '" fill="url(#desktop-rg' + z + ')" opacity="1"/>');
@@ -195,13 +195,13 @@ function desktopSvg() {
   for (let z = 1; z <= ZONES; z++) {
     const x = DESKTOP.zoneXs[z - 1];
     p.push('<g class="flow-zone-hit">');
-    p.push('<line id="desktop-fd-tick-' + z + '" x1="' + x + '" y1="' + (lineY - 8) + '" x2="' + x + '" y2="' + (lineY + 8) + '" stroke="var(--flow-track)" stroke-width="2"/>');
-    p.push('<text id="desktop-fd-zn' + z + '" x="' + x + '" y="' + (lineY - 13) + '" text-anchor="middle" font-size="15" fill="' + COLOR_ZONE_ON + '" font-weight="800" letter-spacing="1.5">Z' + z + '</text>');
-    p.push('<text id="desktop-fd-zf' + z + '" x="' + x + '" y="' + (lineY + 21) + '" text-anchor="middle" font-size="11.5" fill="' + COLOR_FRIENDLY_ON + '" font-weight="700" letter-spacing=".55">---</text>');
-    p.push('<text id="desktop-fd-zsp' + z + '" x="' + x + '" y="' + (lineY + 21) + '" text-anchor="middle" font-size="10.5" fill="' + COLOR_FRIENDLY_OFF + '" font-weight="600" font-family="var(--mono)"></text>');
-    p.push('<text id="desktop-fd-zt' + z + '" x="' + x + '" y="' + (lineY + 44) + '" text-anchor="middle" class="flow-metric" font-size="17" fill="var(--text-strong)">---°C</text>');
-    p.push('<text id="desktop-fd-zv' + z + '" x="' + (x - 30) + '" y="' + (lineY + 64) + '" text-anchor="middle" class="flow-metric" font-size="14" fill="' + COLOR_FRIENDLY_ON + '">---%</text>');
-    p.push('<text id="desktop-fd-zr' + z + '" x="' + (x + 30) + '" y="' + (lineY + 64) + '" text-anchor="middle" class="flow-metric" font-size="14" fill="' + COLOR_RETURN + '">---</text>');
+    p.push('<line id="desktop-fd-tick-' + z + '" x1="' + x + '" y1="' + (lineY - 10) + '" x2="' + x + '" y2="' + (lineY + 10) + '" stroke="var(--flow-track)" stroke-width="2"/>');
+    p.push('<text id="desktop-fd-zn' + z + '" x="' + x + '" y="' + (lineY - 18) + '" text-anchor="middle" font-size="22" fill="' + COLOR_ZONE_ON + '" font-weight="800" letter-spacing="1.5">Z' + z + '</text>');
+    p.push('<text id="desktop-fd-zf' + z + '" x="' + x + '" y="' + (lineY + 30) + '" text-anchor="middle" font-size="17.5" fill="' + COLOR_FRIENDLY_ON + '" font-weight="700" letter-spacing=".35">---</text>');
+    p.push('<text id="desktop-fd-zsp' + z + '" x="' + x + '" y="' + (lineY + 30) + '" text-anchor="middle" font-size="15.5" fill="' + COLOR_FRIENDLY_OFF + '" font-weight="600" font-family="var(--mono)"></text>');
+    p.push('<text id="desktop-fd-zt' + z + '" x="' + x + '" y="' + (lineY + 60) + '" text-anchor="middle" class="flow-metric" font-size="24" fill="var(--text-strong)">---°C</text>');
+    p.push('<text id="desktop-fd-zv' + z + '" x="' + (x - 40) + '" y="' + (lineY + 90) + '" text-anchor="middle" class="flow-metric" font-size="20" fill="' + COLOR_FRIENDLY_ON + '">---%</text>');
+    p.push('<text id="desktop-fd-zr' + z + '" x="' + (x + 40) + '" y="' + (lineY + 90) + '" text-anchor="middle" class="flow-metric" font-size="20" fill="' + COLOR_RETURN + '">---</text>');
     p.push('</g>');
   }
   p.push('</svg>');
@@ -218,24 +218,24 @@ function mobileSvg() {
 
   for (let z = 1; z <= ZONES; z++) p.push('<path id="mobile-fd-track-' + z + '" class="flow-track" d="' + mobileRoute(z - 1) + '" opacity=".7"/>');
   for (let z = 1; z <= ZONES; z++) p.push('<path id="mobile-fd-path-' + z + '" class="flow-ribbon" d="' + mobileRibbon(z - 1, MOBILE.srcHW, MOBILE.bgDstHW) + '" fill="url(#mobile-rg' + z + ')" opacity="1"/>');
-  p.push('<rect x="' + (MOBILE.boxX + 9) + '" y="' + (MOBILE.boxY + MOBILE.boxH + 9) + '" width="' + (MOBILE.boxW - 18) + '" height="60" rx="8" fill="var(--flow-source-bg)" stroke="var(--flow-return)" stroke-opacity=".7"/>');
-  p.push('<text id="mobile-fd-ret-temp" x="' + (MOBILE.boxX + MOBILE.boxW / 2) + '" y="' + (MOBILE.boxY + MOBILE.boxH + 27) + '" text-anchor="middle" font-size="14" font-weight="800" fill="' + COLOR_RETURN + '" font-family="var(--mono)">' + t('overview.flowDiagram.returnShort') + ' ---</text>');
-  p.push('<text id="mobile-fd-dt-label" x="' + (MOBILE.boxX + MOBILE.boxW / 2) + '" y="' + (MOBILE.boxY + MOBILE.boxH + 43) + '" text-anchor="middle" font-size="11.5" font-weight="800" fill="' + COLOR_DT_LABEL + '" letter-spacing="1.1">' + t('overview.flowDiagram.dt') + '</text>');
-  p.push('<text id="mobile-fd-dt" x="' + (MOBILE.boxX + MOBILE.boxW / 2) + '" y="' + (MOBILE.boxY + MOBILE.boxH + 63) + '" text-anchor="middle" class="flow-metric" font-size="19" fill="var(--accent)">---</text>');
-  p.push('<line x1="' + MOBILE.endX + '" y1="34" x2="' + MOBILE.endX + '" y2="' + (H - 34) + '" stroke="var(--flow-track)" stroke-width="2" opacity=".72"/>');
+  p.push('<rect x="' + (MOBILE.boxX + 6) + '" y="' + (MOBILE.boxY + MOBILE.boxH + 10) + '" width="' + (MOBILE.boxW - 12) + '" height="84" rx="8" fill="var(--flow-source-bg)" stroke="var(--flow-return)" stroke-opacity=".7"/>');
+  p.push('<text id="mobile-fd-ret-temp" x="' + (MOBILE.boxX + MOBILE.boxW / 2) + '" y="' + (MOBILE.boxY + MOBILE.boxH + 36) + '" text-anchor="middle" font-size="21" font-weight="800" fill="' + COLOR_RETURN + '" font-family="var(--mono)">' + t('overview.flowDiagram.returnShort') + ' ---</text>');
+  p.push('<text id="mobile-fd-dt-label" x="' + (MOBILE.boxX + MOBILE.boxW / 2) + '" y="' + (MOBILE.boxY + MOBILE.boxH + 56) + '" text-anchor="middle" font-size="15.5" font-weight="800" fill="' + COLOR_DT_LABEL + '" letter-spacing=".7">' + t('overview.flowDiagram.dt') + '</text>');
+  p.push('<text id="mobile-fd-dt" x="' + (MOBILE.boxX + MOBILE.boxW / 2) + '" y="' + (MOBILE.boxY + MOBILE.boxH + 82) + '" text-anchor="middle" class="flow-metric" font-size="27" fill="var(--accent)">---</text>');
+  p.push('<line x1="' + MOBILE.endX + '" y1="38" x2="' + MOBILE.endX + '" y2="' + (H - 28) + '" stroke="var(--flow-track)" stroke-width="2" opacity=".72"/>');
 
-  p.push('<text id="mobile-fd-temp-head" x="506" y="30" font-size="12" fill="' + COLOR_COL_HEAD + '" font-weight="700" letter-spacing="1.2">' + t('overview.graph.layers.temp').toUpperCase() + '</text>');
-  p.push('<text id="mobile-fd-flow-head" x="592" y="30" font-size="12" fill="' + COLOR_COL_HEAD + '" font-weight="700" letter-spacing="1.2">' + t('overview.flowDiagram.flow') + '</text>');
-  p.push('<text id="mobile-fd-ret-head" x="678" y="30" font-size="12" fill="' + COLOR_COL_HEAD + '" font-weight="700" letter-spacing="1.2">' + t('overview.flowDiagram.returnShort') + '</text>');
+  p.push('<text id="mobile-fd-temp-head" x="506" y="34" font-size="17" fill="' + COLOR_COL_HEAD + '" font-weight="700" letter-spacing="1">' + t('overview.graph.layers.temp').toUpperCase() + '</text>');
+  p.push('<text id="mobile-fd-flow-head" x="592" y="34" font-size="17" fill="' + COLOR_COL_HEAD + '" font-weight="700" letter-spacing="1">' + t('overview.flowDiagram.flow') + '</text>');
+  p.push('<text id="mobile-fd-ret-head" x="678" y="34" font-size="17" fill="' + COLOR_COL_HEAD + '" font-weight="700" letter-spacing="1">' + t('overview.flowDiagram.returnShort') + '</text>');
   for (let z = 1; z <= ZONES; z++) {
     const y = MOBILE.zoneYs[z - 1];
-    p.push('<line id="mobile-fd-tick-' + z + '" x1="' + (MOBILE.endX - 8) + '" y1="' + y + '" x2="' + (MOBILE.endX + 8) + '" y2="' + y + '" stroke="var(--flow-track)" stroke-width="2"/>');
-    p.push('<text id="mobile-fd-zn' + z + '" x="' + (MOBILE.endX - 14) + '" y="' + (y + 5) + '" text-anchor="end" font-size="14" fill="' + COLOR_ZONE_ON + '" font-weight="800" letter-spacing="1.2">Z' + z + '</text>');
-    p.push('<text id="mobile-fd-zf' + z + '" x="' + MOBILE.nameX + '" y="' + (y - 8) + '" text-anchor="middle" font-size="10.5" fill="' + COLOR_FRIENDLY_ON + '" font-weight="700" letter-spacing=".5">---</text>');
-    p.push('<text id="mobile-fd-zsp' + z + '" x="' + MOBILE.nameX + '" y="' + (y + 8) + '" text-anchor="middle" font-size="10" fill="' + COLOR_FRIENDLY_OFF + '" font-weight="600" font-family="var(--mono)"></text>');
-    p.push('<text id="mobile-fd-zt' + z + '" x="506" y="' + (y + 5) + '" class="flow-metric" font-size="15" fill="var(--text-strong)">---°C</text>');
-    p.push('<text id="mobile-fd-zv' + z + '" x="592" y="' + (y + 5) + '" class="flow-metric" font-size="15" fill="' + COLOR_FRIENDLY_ON + '">---%</text>');
-    p.push('<text id="mobile-fd-zr' + z + '" x="678" y="' + (y + 5) + '" class="flow-metric" font-size="15" fill="' + COLOR_RETURN + '">---</text>');
+    p.push('<line id="mobile-fd-tick-' + z + '" x1="' + (MOBILE.endX - 10) + '" y1="' + y + '" x2="' + (MOBILE.endX + 10) + '" y2="' + y + '" stroke="var(--flow-track)" stroke-width="2"/>');
+    p.push('<text id="mobile-fd-zn' + z + '" x="' + (MOBILE.endX - 14) + '" y="' + (y + 7) + '" text-anchor="end" font-size="21" fill="' + COLOR_ZONE_ON + '" font-weight="800" letter-spacing="1.1">Z' + z + '</text>');
+    p.push('<text id="mobile-fd-zf' + z + '" x="' + MOBILE.nameX + '" y="' + (y - 12) + '" text-anchor="middle" font-size="17" fill="' + COLOR_FRIENDLY_ON + '" font-weight="700" letter-spacing=".3">---</text>');
+    p.push('<text id="mobile-fd-zsp' + z + '" x="' + MOBILE.nameX + '" y="' + (y + 12) + '" text-anchor="middle" font-size="15.5" fill="' + COLOR_FRIENDLY_OFF + '" font-weight="600" font-family="var(--mono)"></text>');
+    p.push('<text id="mobile-fd-zt' + z + '" x="506" y="' + (y + 7) + '" class="flow-metric" font-size="22" fill="var(--text-strong)">---°C</text>');
+    p.push('<text id="mobile-fd-zv' + z + '" x="592" y="' + (y + 7) + '" class="flow-metric" font-size="22" fill="' + COLOR_FRIENDLY_ON + '">---%</text>');
+    p.push('<text id="mobile-fd-zr' + z + '" x="678" y="' + (y + 7) + '" class="flow-metric" font-size="22" fill="' + COLOR_RETURN + '">---</text>');
   }
   p.push('</svg>');
   return p.join('');
@@ -298,7 +298,7 @@ component({
       if (!zoneRefs) return;
 
       const { enabled, pct, temp, setpoint, valve, returnTemp, hasReturn } = data;
-      const tag = compactFriendlyName(zone, layout === 'desktop' ? 11 : 12);
+      const tag = compactFriendlyName(zone, layout === 'desktop' ? 12 : 11);
       const tempStr = fmtT(temp);
       const setpointStr = setpoint != null ? fmtT(setpoint) : '';
 

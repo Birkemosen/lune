@@ -104,8 +104,9 @@ const css = `
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
-  padding: 11px 0;
+  gap: 12px;
+  min-height: var(--control-height, 44px);
+  padding: 6px 0;
   border-bottom: 1px solid var(--divider);
 }
 .ui-row[hidden] { display: none; }
@@ -113,7 +114,7 @@ const css = `
 
 .ui-label {
   color: var(--text);
-  font-size: .96rem;
+  font-size: .92rem;
   font-weight: 600;
   line-height: 1.22;
   min-width: 0;
@@ -134,7 +135,7 @@ const css = `
   gap: 8px;
 }
 
-/* ---- Controls ---- */
+/* ---- Controls (iOS HIG default touch target: 44×44 pt) ---- */
 .ui-input {
   width: 96px;
   box-sizing: border-box;
@@ -143,27 +144,37 @@ const css = `
   background: var(--control-bg);
   color: var(--text);
   border-radius: 8px;
-  min-height:44px;
-  padding: 8px 10px;
-  font-size: .92rem;
+  height: var(--control-height, 44px);
+  min-height: var(--control-height, 44px);
+  padding: 0 10px;
+  font-size: .875rem;
   font-family: var(--mono);
-  box-shadow:none;
+  line-height: 1.2;
+  box-shadow: none;
   transition: border-color .15s ease;
 }
-.ui-input.wide { width: 180px; text-align: left; font-family: inherit; }
+/* Text fields and selects in label+control rows share one control width. */
+.ui-input.wide {
+  width: var(--control-width, 180px);
+  max-width: 100%;
+  text-align: left;
+  font-family: inherit;
+}
 
 .ui-select {
-  min-width: 160px;
-  max-width: 240px;
+  width: var(--control-width, 180px);
+  max-width: 100%;
   box-sizing: border-box;
   border: 1px solid var(--control-border);
-  background:var(--control-bg);
+  background: var(--control-bg);
   color: var(--text);
   border-radius: 8px;
-  min-height:44px;
-  padding: 8px 10px;
-  font-size: .92rem;
-  box-shadow:none;
+  height: var(--control-height, 44px);
+  min-height: var(--control-height, 44px);
+  padding: 0 10px;
+  font-size: .875rem;
+  line-height: 1.2;
+  box-shadow: none;
   transition: border-color .15s ease;
 }
 
@@ -185,7 +196,7 @@ const css = `
   border-color: var(--control-border);
   background: var(--control-bg);
   color: var(--text);
-  font-size: 1.04rem;
+  font-size: 1rem;
   font-weight: 700;
   cursor: text;
   -moz-appearance: textfield;
@@ -193,16 +204,16 @@ const css = `
 .ui-stepper .ui-input::-webkit-outer-spin-button,
 .ui-stepper .ui-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
 .ui-step-btn {
-  width: 44px;
-  height: 44px;
+  width: var(--control-height, 44px);
+  height: var(--control-height, 44px);
   flex-shrink: 0;
   border: 1px solid var(--control-border);
-  background: linear-gradient(145deg, rgba(255,255,255,.13), rgba(255,255,255,.055));
+  background: var(--control-bg);
   color: var(--text);
   border-radius: 8px;
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.12), 0 10px 22px rgba(0,0,0,.18);
+  box-shadow: none;
   cursor: pointer;
-  font-size: 1.15rem;
+  font-size: 1.1rem;
   line-height: 1;
   display: flex;
   align-items: center;
@@ -242,10 +253,10 @@ const css = `
 .ui-form-apply { background: var(--accent); color: var(--text-on-accent); border-color: var(--accent); }
 .ui-form-apply:hover { filter: brightness(1.08); }
 
-/* ---- Green pill toggle (canonical) ---- */
+/* ---- Green pill toggle (canonical; 44pt hit area, compact track) ---- */
 .ui-toggle {
-  width: 52px;
-  height: 44px;
+  width: 51px;
+  height: var(--control-height, 44px);
   border-radius: 999px;
   background: transparent;
   position: relative;
@@ -254,27 +265,27 @@ const css = `
   flex-shrink: 0;
 }
 .ui-toggle::before {
-  content:'';
-  position:absolute;
-  inset:7px 2px;
-  border:1px solid var(--control-border);
-  border-radius:999px;
-  background:var(--control-bg-hover);
-  transition:background .2s ease,border-color .2s ease;
+  content: '';
+  position: absolute;
+  inset: 10px 2px;
+  border: 1px solid var(--control-border);
+  border-radius: 999px;
+  background: var(--control-bg-hover);
+  transition: background .2s ease, border-color .2s ease;
 }
 .ui-toggle::after {
   content: '';
   position: absolute;
-  top: 11px;
+  top: 13px;
   left: 6px;
-  width: 22px;
-  height: 22px;
+  width: 18px;
+  height: 18px;
   background: var(--control-knob);
   border-radius: 999px;
   transition: transform .2s ease;
 }
-.ui-toggle.on::before { background:var(--accent);border-color:var(--accent); }
-.ui-toggle.on::after { transform:translateX(18px);background:var(--text-on-accent); }
+.ui-toggle.on::before { background: var(--accent); border-color: var(--accent); }
+.ui-toggle.on::after { transform: translateX(21px); background: var(--text-on-accent); }
 
 /* ---- Notes & dividers ---- */
 .ui-note {
@@ -294,25 +305,30 @@ const css = `
 .ui-btn {
   flex: 1;
   min-width: 120px;
+  box-sizing: border-box;
   border: 1px solid var(--control-border);
-  background: linear-gradient(145deg, rgba(255,255,255,.13), rgba(255,255,255,.055));
+  background: var(--control-bg);
   color: var(--text-strong);
   border-radius: 8px;
-  padding: 9px 14px;
+  height: var(--control-height, 44px);
+  min-height: var(--control-height, 44px);
+  padding: 0 14px;
   cursor: pointer;
-  font-weight: 700;
+  font-weight: 650;
   font-size: .875rem;
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.12), 0 10px 22px rgba(0,0,0,.18);
-  transition: .18s ease;
+  line-height: 1.2;
+  box-shadow: none;
+  transition: .15s ease;
 }
-.ui-btn:hover { background: linear-gradient(135deg, rgba(255,138,61,.90), rgba(255,189,74,.84)); border-color: rgba(255,218,166,.58); color: var(--text-on-accent); }
+.ui-btn:hover { background: var(--control-bg-hover); border-color: var(--accent); color: var(--accent); }
 .ui-btn.warn { border-color: var(--danger-border); background: var(--danger-bg); color: var(--danger-text); }
 .ui-btn.warn:hover { background: var(--danger-bg-strong); border-color: var(--danger-border-strong); }
 
 @media (max-width: 520px) {
-  .ui-row { align-items: flex-start; flex-direction: column; gap: 6px; }
-  .ui-field { align-self: stretch; }
+  .ui-row { align-items: stretch; flex-direction: column; gap: 4px; padding: 8px 0; }
+  .ui-field { align-self: stretch; width: 100%; }
   .ui-input, .ui-select { width: 100%; max-width: none; }
+  .ui-btn { width: 100%; }
   .ui-stepper { width: 100%; }
   .ui-stepper .ui-input { flex: 1; width: auto; }
 }

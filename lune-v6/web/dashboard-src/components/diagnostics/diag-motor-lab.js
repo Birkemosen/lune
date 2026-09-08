@@ -1,6 +1,6 @@
 import { component, subscribe } from '../../core/component.js';
 import { injectStyle } from '../../core/style.js';
-import { ev, getDashboardValue, isEntityOn, subscribeDashboard, setDashboardValue } from '../../core/store.js';
+import { ev, getDashboardValue, isEntityOn, subscribeDashboard, setDashboardValue, zoneLabel } from '../../core/store.js';
 import {
   emergencyStopMotors, fetchDiagnostics, fetchMotorTraceCsv,
   openMotorTimed, closeMotorTimed, setDriversEnabled, setGlobalNumber, setManualMode,
@@ -36,7 +36,7 @@ const css = `
   color: var(--state-warn); font-size: .66rem; letter-spacing: .08em; text-transform: uppercase;
 }
 .diag-motor-lab .lab-select {
-  min-height: 44px; min-width: 148px; max-width: 220px; padding: 0 12px;
+  height: var(--control-height, 44px); min-height: var(--control-height, 44px); min-width: 148px; max-width: 220px; padding: 0 12px;
   border: 1px solid var(--control-border); border-radius: 8px;
   background: var(--control-bg); color: var(--text-strong); font-weight: 650;
 }
@@ -59,7 +59,7 @@ const css = `
   color: var(--danger-text); border-color: var(--danger-border);
 }
 .diag-motor-lab .lab-estop {
-  min-width: 148px; min-height: 48px; padding: 0 18px;
+  min-width: 148px; height: var(--control-height, 44px); min-height: var(--control-height, 44px); padding: 0 18px;
   border: 1px solid var(--danger-border-strong); border-radius: 10px;
   background: var(--danger-bg-strong); color: var(--danger-text);
   font-weight: 800; letter-spacing: .04em; text-transform: uppercase; cursor: pointer;
@@ -105,7 +105,7 @@ const css = `
   gap: 8px; margin: 0;
 }
 .diag-motor-lab .lab-actions .ui-btn {
-  flex: 0 0 auto; width: auto; min-width: 148px; min-height: 44px;
+  flex: 0 0 auto; width: auto; min-width: 148px; height: var(--control-height, 44px); min-height: var(--control-height, 44px);
 }
 .diag-motor-lab .lab-actions .ui-btn.primary {
   background: var(--accent); border-color: var(--accent); color: var(--text-on-accent);
@@ -390,17 +390,17 @@ export default component({
       return STEPS.indexOf(id);
     }
 
-    function zoneLabel() {
-      return t('common.zone') + ' ' + zone;
+    function motorZoneLabel() {
+      return zoneLabel(zone);
     }
 
     function rebuildZones() {
       const current = String(zone);
       zoneSelect.innerHTML = Array.from({ length: 6 }, (_, i) =>
-        '<option value="' + (i + 1) + '">' + t('common.zone') + ' ' + (i + 1) + '</option>').join('');
+        '<option value="' + (i + 1) + '">' + zoneLabel(i + 1).replace(/</g, '&lt;') + '</option>').join('');
       zoneSelect.value = current;
       zoneSelect.setAttribute('aria-label', t('diagnostics.lab.motor'));
-      zoneChip.textContent = zoneLabel();
+      zoneChip.textContent = motorZoneLabel();
       zoneChip.setAttribute('aria-label', t('diagnostics.lab.motor'));
     }
 
@@ -554,7 +554,7 @@ export default component({
       setupEl.hidden = !inSetup;
       zoneSelect.disabled = !inSetup || run.active;
       zoneChip.hidden = inSetup;
-      zoneChip.textContent = zoneLabel();
+      zoneChip.textContent = motorZoneLabel();
       estopBtn.dataset.armed = run.active ? 'true' : 'false';
       paintGauges();
 
@@ -878,7 +878,7 @@ export default component({
     estopBtn.addEventListener('click', estop);
     zoneSelect.addEventListener('change', () => {
       zone = Number(zoneSelect.value || 1);
-      zoneChip.textContent = zoneLabel();
+      zoneChip.textContent = motorZoneLabel();
     });
 
     function onKey(event) {

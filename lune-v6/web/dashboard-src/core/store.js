@@ -1,6 +1,7 @@
 // core/store.js
 
 import { notify, subscribe } from './component.js';
+import { gkey, key } from '../utils/keys.js';
 
 export const NZ = 6;
 export const HISTORY_MAX = 28;
@@ -112,6 +113,37 @@ export function isEntityOn(id) {
   return isOnState(es(id));
 }
 
+/** Touch discovered a coordinator that still needs local approval. */
+export function touchNeedsAttention() {
+  return isEntityOn(gkey.authorityProposalPending);
+}
+
+/** Count zones with an active fault state or non-ok motor last-fault. */
+export function countZoneFaults() {
+  let faults = 0;
+  for (let zone = 1; zone <= NZ; zone++) {
+    const state = String(es(key.state(zone)) || '').toLowerCase();
+    const fault = String(es(key.motorLastFault(zone)) || '').toLowerCase();
+    if (state === 'fault' || (fault && fault !== 'none' && fault !== 'ok')) faults += 1;
+  }
+  return faults;
+}
+
+/**
+ * Highest-priority chrome attention action (header chip + deep-link).
+ * Touch approval beats zone faults; firmware updates stay on their own badge.
+ */
+export function primaryAttentionAction() {
+  if (touchNeedsAttention()) {
+    return { kind: 'touch', section: 'settings', focus: 'touch' };
+  }
+  const faults = countZoneFaults();
+  if (faults > 0) {
+    return { kind: 'faults', section: 'zones', count: faults };
+  }
+  return null;
+}
+
 export function setEntity(id, patch) {
   let entity = E[id];
 
@@ -221,10 +253,65 @@ export function zoneTag(zone) {
   return D.zoneNames[normalizeZone(zone) - 1] || '';
 }
 
+/** Trimmed friendly/room name, or empty string when unset. */
+export function zoneFriendly(zone) {
+  return String(zoneTag(zone) || '').trim();
+}
+
+/** Compact hardware id: Z1..Z6 */
+export function zoneIdShort(zone) {
+  return 'Z' + normalizeZone(zone);
+}
+
+/** Expanded hardware id: Zone 1..Zone 6 */
+export function zoneIdLong(zone) {
+  return 'Zone ' + normalizeZone(zone);
+}
+
+/** Alias kept for older call sites; prefer zoneIdShort. */
+export function zoneShortLabel(zone) {
+  return zoneIdShort(zone);
+}
+
+/**
+ * Plain-text / a11y label.
+ * With friendly name: "Zone 1 - Kontor"; otherwise "Zone 1".
+ */
 export function zoneLabel(zone) {
   const index = normalizeZone(zone);
-  const tag = zoneTag(index);
-  return tag ? 'Zone ' + index + ' · ' + tag : 'Zone ' + index;
+  const friendly = zoneFriendly(index);
+  return friendly ? zoneIdLong(index) + ' - ' + friendly : zoneIdLong(index);
+}
+
+function escapeZoneHtml(value) {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+/** Responsive Zx / Zone x spans; pair with .zone-id-short/.zone-id-long CSS. */
+export function zoneIdMarkup(zone) {
+  const index = normalizeZone(zone);
+  return '<span class="zone-id-short">' + zoneIdShort(index) + '</span>' +
+    '<span class="zone-id-long">' + zoneIdLong(index) + '</span>';
+}
+
+/**
+ * Display markup: id first, then friendly name when set.
+ * Example: Z1 - Kontor / Zone 1 - Kontor. Without name: Z1 / Zone 1.
+ * Pair with CSS that hides .zone-title-name in compact mobile menus.
+ */
+export function zoneTitleMarkup(zone) {
+  const index = normalizeZone(zone);
+  const friendly = zoneFriendly(index);
+  const id = zoneIdMarkup(index);
+  if (friendly) {
+    return '<span class="zone-title-id">' + id + '</span>' +
+      '<span class="zone-title-name"> - ' + escapeZoneHtml(friendly) + '</span>';
+  }
+  return '<span class="zone-title-id">' + id + '</span>';
 }
 
 export function setI2cResult(text) {

@@ -38,7 +38,7 @@ const css = `
   margin: 0;
 }
 .diag-i2c .btn-row { margin-top: 12px; }
-.diag-i2c .btn { min-height:44px;padding:7px 14px;border-radius:8px;border:1px solid var(--control-border);background:var(--control-bg);color:var(--text-strong);font-weight:650;cursor:pointer; }
+.diag-i2c .btn { height:var(--control-height,44px);min-height:var(--control-height,44px);padding:0 14px;border-radius:8px;border:1px solid var(--control-border);background:var(--control-bg);color:var(--text-strong);font-weight:650;line-height:1.2;cursor:pointer; }
 .diag-i2c .btn:hover { background:var(--control-bg-hover);border-color:var(--control-border-hover); }
 .diag-i2c .fault {
     color: var(--red);

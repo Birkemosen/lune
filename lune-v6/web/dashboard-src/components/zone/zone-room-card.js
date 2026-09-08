@@ -17,7 +17,7 @@ injectStyle('zone-room-card', css);
 // ========================================
 const template = () => `
   <div class="ui-card zone-room-card">
-    <div class="ui-card-title" data-i18n="zone.room.title">Zone identity</div>
+    <div class="ui-card-title" data-i18n="zone.room.title">Identity</div>
     <div class="ui-row">
       <span class="ui-label" data-i18n="zone.room.friendlyName">Name</span>
       <span class="ui-field"><input class="ui-input wide zr-friendly" maxlength="24" placeholder="e.g. Living Room" data-i18n-placeholder="zone.room.friendlyPlaceholder"></span>

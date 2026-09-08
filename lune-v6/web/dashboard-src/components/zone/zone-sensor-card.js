@@ -21,13 +21,17 @@ const css = `
 .zone-sensor-card .ble-row .ble-input {
   flex: 1;
   min-width: 0;
+  box-sizing: border-box;
   border: 1px solid var(--control-border);
-  background: linear-gradient(145deg, rgba(255,255,255,.075), rgba(255,255,255,.025));
+  background: var(--control-bg);
   color: var(--text);
   border-radius: 8px;
-  padding: 9px 10px;
-  font-size: .88rem;
+  height: var(--control-height, 44px);
+  min-height: var(--control-height, 44px);
+  padding: 0 10px;
+  font-size: .875rem;
   font-family: var(--mono);
+  line-height: 1.2;
   transition: border-color .15s ease;
 }
 .zone-sensor-card .ble-row .ble-input:focus {
@@ -37,13 +41,17 @@ const css = `
 }
 .zone-sensor-card .btn-scan {
   flex-shrink: 0;
-  padding: 9px 13px;
+  box-sizing: border-box;
+  height: var(--control-height, 44px);
+  min-height: var(--control-height, 44px);
+  padding: 0 13px;
   border-radius: 8px;
   border: 1px solid var(--control-border);
-  background: linear-gradient(145deg, rgba(255,255,255,.08), rgba(255,255,255,.025));
+  background: var(--control-bg);
   color: var(--accent);
   font-size: .82rem;
   font-weight: 700;
+  line-height: 1.2;
   cursor: pointer;
   white-space: nowrap;
 }
@@ -109,17 +117,9 @@ injectStyle('zone-sensor-card', css);
 // ========================================
 // TEMPLATE
 // ========================================
-const template = () => {
-  let probeOptions = '<option value="None" data-i18n="common.none">None</option>';
-  for (let probe = 1; probe <= 8; probe++) probeOptions += '<option value="Probe ' + probe + '">Probe ' + probe + '</option>';
-
-  return `
+const template = () => `
     <div class="ui-card zone-sensor-card">
-      <div class="ui-card-title" data-i18n="zone.sensor.title">Temperature and coordination</div>
-      <div class="ui-row">
-        <span class="ui-label" data-i18n="zone.sensor.returnSensor">Return temperature sensor</span>
-        <span class="ui-field"><select class="ui-select zs-probe">${probeOptions}</select></span>
-      </div>
+      <div class="ui-card-title" data-i18n="zone.sensor.title">Temperature</div>
       <div class="ui-row">
         <span class="ui-label" data-i18n="zone.sensor.tempSource">Room temperature source</span>
         <span class="ui-field"><select class="ui-select zs-source"></select></span>
@@ -133,25 +133,8 @@ const template = () => {
         </div>
         <div class="ble-scan-list zs-scan-list" style="display:none"></div>
       </div>
-      <div class="ui-divider"></div>
-      <div class="ui-row">
-        <span class="ui-label"><span data-i18n="zone.sensor.mergeWith">Merge With Zone</span> <span class="ui-sublabel" data-i18n="zone.sensor.mergeHelp">merge into one room - mean temperature, valves open equally</span></span>
-        <span class="ui-field"><select class="ui-select zs-sync"></select></span>
-      </div>
     </div>
   `;
-};
-
-function buildSyncOptions(selectEl, zone) {
-  const current = selectEl.value;
-  let html = '<option value="None" data-i18n="common.none">' + t('common.none') + '</option>';
-  for (let z = 1; z <= 6; z++) {
-    if (z === zone) continue;
-    html += '<option value="Zone ' + z + '">' + t('common.zone') + ' ' + z + '</option>';
-  }
-  selectEl.innerHTML = html;
-  selectEl.value = current || 'None';
-}
 
 function sourceToUiValue(source) {
   if (source === 'BLE' || source === 'BLE Sensor') return 'BLE Sensor';
@@ -180,14 +163,12 @@ export default component({
   tag: 'zone-sensor-card',
   render: template,
   onMount(ctx, el) {
-    const probeEl = el.querySelector('.zs-probe');
     const sourceEl = el.querySelector('.zs-source');
     const bleEl = el.querySelector('.zs-ble');
-    const syncEl = el.querySelector('.zs-sync');
     const rowBle = el.querySelector('.zs-row-ble');
     const scanBtn = el.querySelector('.zs-scan');
     const scanList = el.querySelector('.zs-scan-list');
-    let syncZone = 0;
+    let paintedZone = 0;
 
     function selectedZone() {
       return getDashboardValue('selectedZone');
@@ -201,17 +182,14 @@ export default component({
 
     const form = cardForm(el);
     setSourceOptions(sourceEl, 'Local Probe');
-    form.select(probeEl, { read: () => es(key.probe(selectedZone())) || undefined, commit: (v) => setZoneSelect(selectedZone(), 'zone_probe', v) });
     form.select(sourceEl, { read: () => sourceToUiValue(String(es(key.tempSource(selectedZone())) || '')), commit: (v) => setZoneSelect(selectedZone(), 'zone_temp_source', uiValueToApiValue(v)) });
-    form.select(syncEl, { read: () => es(key.syncTo(selectedZone())) || 'None', commit: (v) => setZoneSelect(selectedZone(), 'zone_sync_to', v) });
     const bleField = form.text(bleEl, { read: () => es(key.ble(selectedZone())) || '', commit: (v) => setZoneText(selectedZone(), 'zone_ble_mac', v) });
     sourceEl.addEventListener('change', paintBleRow);
 
     function update() {
       const zone = selectedZone();
-      if (syncZone !== zone) {
-        buildSyncOptions(syncEl, zone);
-        syncZone = zone;
+      if (paintedZone !== zone) {
+        paintedZone = zone;
         scanList.style.display = 'none';
         form.discard();   // drop staged edits from the previous zone
       } else {
@@ -222,13 +200,7 @@ export default component({
 
     function updateIfSelectedZone(id) {
       const zone = selectedZone();
-      if (
-        id === key.probe(zone) ||
-        id === key.tempSource(zone) ||
-        id === key.syncTo(zone) ||
-        id === key.ble(zone) ||
-        /^select-zone_\d+_sync_to$/.test(id)
-      ) {
+      if (id === key.tempSource(zone) || id === key.ble(zone)) {
         form.refresh();
         paintBleRow();
       }
@@ -310,17 +282,12 @@ export default component({
 
     subscribeDashboard('selectedZone', update);
     for (let zone = 1; zone <= 6; zone++) {
-      subscribe(key.probe(zone), updateIfSelectedZone);
       subscribe(key.tempSource(zone), updateIfSelectedZone);
-      subscribe(key.syncTo(zone), updateIfSelectedZone);
       subscribe(key.ble(zone), updateIfSelectedZone);
     }
     subscribeLanguage(() => {
       const sourceValue = sourceEl.value || 'Local Probe';
-      const syncValue = syncEl.value || 'None';
       setSourceOptions(sourceEl, sourceValue);
-      buildSyncOptions(syncEl, selectedZone());
-      syncEl.value = syncValue;
       scanBtn.textContent = scanBtn.disabled ? scanBtn.textContent : t('zone.sensor.scan');
       localize(el);
       paintBleRow();

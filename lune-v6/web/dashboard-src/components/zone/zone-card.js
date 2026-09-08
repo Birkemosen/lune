@@ -1,6 +1,6 @@
 import { component, subscribe } from '../../core/component.js';
 import { injectStyle } from '../../core/style.js';
-import { ev, es, getDashboardValue, isEntityOn, setSection, setSelectedZone, subscribeDashboard, zoneLabel, zoneTag } from '../../core/store.js';
+import { ev, es, getDashboardValue, isEntityOn, setSection, setSelectedZone, subscribeDashboard, zoneFriendly, zoneLabel, zoneTitleMarkup } from '../../core/store.js';
 import { fmtT, fmtV } from '../../utils/format.js';
 import { key } from '../../utils/keys.js';
 import { subscribeLanguage, t } from '../../core/i18n.js';
@@ -36,10 +36,10 @@ injectStyle('zone-card', css);
 // TEMPLATE
 // ========================================
 const template = (ctx) => `
-	<button type="button" class="zone-card" data-zone="${ctx.zone}" aria-label="Open zone ${ctx.zone}">
+	<button type="button" class="zone-card" data-zone="${ctx.zone}" aria-label="${zoneLabel(ctx.zone).replace(/"/g, '&quot;')}">
 		<div class="zc-state-row"><span class="zc-dot"></span><span class="zc-state-label">---</span></div>
-		<div class="zc-zone-name">${zoneLabel(ctx.zone)}</div>
-		<div class="zc-friendly">${zoneTag(ctx.zone) || '---'}</div>
+		<div class="zc-zone-name">${zoneTitleMarkup(ctx.zone)}</div>
+		<div class="zc-friendly"${zoneFriendly(ctx.zone) ? ' hidden' : ''}>${zoneFriendly(ctx.zone) ? '' : '---'}</div>
 		<div class="zc-reading"><strong class="zc-temp">---</strong><small class="zc-target">Target ---</small></div>
 		<div class="zc-valve"><strong class="zc-valve-value">---</strong><small>Valve</small></div>
 	</button>
@@ -77,10 +77,12 @@ export default component({
 				const hasFault = lastFault && lastFault !== 'NONE' && lastFault !== 'OK';
 				const state = (enabled && (rawState === 'FAULT' || hasFault)) ? 'FAULT' : rawState;
 				const active = ctx.selection && getDashboardValue('selectedZone') === zone;
-				const friendlyTag = zoneTag(zone);
+				const friendlyTag = zoneFriendly(zone);
 
-				nameEl.textContent = friendlyTag || 'Zone ' + zone;
-				friendlyEl.textContent = 'Zone ' + zone + ' · physical loop';
+				nameEl.innerHTML = zoneTitleMarkup(zone);
+				friendlyEl.textContent = friendlyTag ? '' : '---';
+				friendlyEl.hidden = !!friendlyTag;
+				el.setAttribute('aria-label', zoneLabel(zone));
 				tempEl.textContent = fmtT(ev(tempKey));
 				targetEl.textContent = t('zone.card.setpoint', {
 					value: fmtT(ev(key.effectiveSetpoint(zone)) ?? ev(key.setpoint(zone))),

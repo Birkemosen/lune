@@ -19,6 +19,7 @@ firmware_card="$root/web/dashboard-src/components/settings/settings-firmware-car
 backup_card="$root/web/dashboard-src/components/settings/settings-backup-card.js"
 logs="$root/web/dashboard-src/components/logs/logs-view.js"
 system_card="$root/web/dashboard-src/components/diagnostics/diag-system-card.js"
+store="$root/web/dashboard-src/core/store.js"
 
 grep -qF '<div class="main-panel"><div class="hdr"></div><main class="view-panel">' "$app" >/dev/null
 grep -qF 'overview-status status-summary' "$app" >/dev/null
@@ -32,14 +33,26 @@ grep -qF 'hydraulic-history-slot' "$app" >/dev/null
 grep -qF 'Needs attention' "$app" >/dev/null
 grep -qF 'aria-current' "$header" >/dev/null
 grep -qF 'v6-more-toggle' "$header" >/dev/null
+grep -qF "nav.classList.toggle('more-open')" "$header" >/dev/null
+! grep -qF "el.querySelector('.v6-side-nav')" "$header" >/dev/null
+grep -qF 'mobile-zone-dock' "$app" >/dev/null
+grep -qF 'has-zone-dock' "$app" >/dev/null
+! grep -qF 'zones-index' "$app" >/dev/null
+! grep -qF 'zones-list' "$app" >/dev/null
+! grep -qF 'Local zones' "$app" >/dev/null
+! grep -qF 'data-zone-back' "$app" >/dev/null
+! grep -qF 'All zones' "$app" >/dev/null
+! grep -qF 'zoneDetailOpen' "$app" >/dev/null
+grep -qF 'zone-detail-view zones-detail-pane' "$app" >/dev/null
+grep -qF "mountComponent('zone-detail'" "$app" >/dev/null
 grep -qF '<button type="button" class="zone-card"' "$card" >/dev/null
-grep -qF 'subscribeDashboard, zoneLabel, zoneTag' "$card" >/dev/null
+grep -qF 'subscribeDashboard, zoneFriendly, zoneLabel, zoneTitleMarkup' "$card" >/dev/null
 grep -qF "setSection('zones')" "$card" >/dev/null
 grep -qF '.zone-card.zs-heating .zc-dot{background:var(--accent)}' "$card" >/dev/null
 grep -qF '.zone-card.zs-idle .zc-dot,.zone-card.zs-off .zc-dot{background:var(--state-disabled)}' "$card" >/dev/null
 ! grep -qF '.zone-card.zs-idle .zc-dot{background:var(--state-ok)}' "$card" >/dev/null
 grep -qF 'data-open-zones' "$app" >/dev/null
-for removed in 'overview-zones' 'zones-master-detail' 'settings-group-head' 'diagnostics-group-head'; do
+for removed in 'overview-zones' 'zones-master-detail' 'settings-group-head' 'diagnostics-group-head' 'zones-index' 'zones-summary'; do
   if grep -qF "$removed" "$app" >/dev/null; then
     echo "Unexpected legacy dashboard pattern: $removed" >&2
     exit 1
@@ -76,15 +89,82 @@ grep -qF 'Manual motor control' "$app" >/dev/null
 grep -qF 'Recovery and restart' "$app" >/dev/null
 grep -qF "window.confirm('Restart Lune V6 now?" "$root/web/dashboard-src/components/settings/settings-control-card.js" >/dev/null
 grep -qF "window.confirm('Reset the 1-Wire probe map" "$root/web/dashboard-src/components/settings/settings-control-card.js" >/dev/null
-grep -qF 'zones-index' "$app" >/dev/null
-grep -qF 'zones-summary' "$app" >/dev/null
-grep -qF 'zone-detail-toolbar' "$app" >/dev/null
-grep -qF 'zone-configuration-group' "$app" >/dev/null
-grep -qF 'Service and recovery' "$app" >/dev/null
-grep -qF 'class="zone-tabstrip" role="tablist"' "$app" >/dev/null
-grep -qF 'role="tab"' "$app" >/dev/null
-grep -qF 'data-zone-back' "$app" >/dev/null
-grep -qF "zoneTabstrip.addEventListener('click'" "$app" >/dev/null
+grep -qF 'zone-overview' "$app" >/dev/null
+grep -qF 'zone-overview-strip' "$app" >/dev/null
+grep -qF 'zone-configuration-groups' "$app" >/dev/null
+grep -qF 'zone-room-slot' "$app" >/dev/null
+grep -qF 'zone-sensor-slot' "$app" >/dev/null
+grep -qF 'zone-coordination-slot' "$app" >/dev/null
+grep -qF 'grid-template-areas:"sensor room" "sensor coordination"' "$app" >/dev/null
+grep -qF '@media(min-width:901px)' "$app" >/dev/null
+grep -qF 'grid-template-columns:minmax(0,1fr) minmax(0,1fr)' "$app" >/dev/null
+! grep -qF 'max-width:960px' "$app" >/dev/null
+! grep -qF 'max-width:560px' "$app" >/dev/null
+grep -qF 'zone-actuator-slot' "$app" >/dev/null
+grep -qF "mountComponent('zone-actuator-card')" "$app" >/dev/null
+! grep -qF 'Service and recovery' "$app" >/dev/null
+! grep -qF 'zone-recovery-disclosure' "$app" >/dev/null
+! grep -qF 'diag-zone-recovery-card' "$app" >/dev/null
+! grep -qF '1.15fr' "$app" >/dev/null
+! grep -qF 'minmax(0,.95fr)' "$app" >/dev/null
+grep -qF 'class="zone-chipstrip" role="tablist"' "$app" >/dev/null
+grep -qF 'zo-status' "$app" >/dev/null
+grep -qF 'zo-title' "$app" >/dev/null
+grep -qF 'zo-temps' "$app" >/dev/null
+grep -qF 'zo-merge' "$app" >/dev/null
+grep -qF 'is-merged' "$app" >/dev/null
+grep -qF 'zo-pair-start' "$app" >/dev/null
+grep -qF 'zoneMergeMeta' "$app" >/dev/null
+grep -qF 'parseSyncTarget' "$app" >/dev/null
+grep -qF 'overview.zone.mergedWith' "$app" >/dev/null
+grep -qF 'key.syncTo(z)' "$app" >/dev/null
+grep -qF 'zone-id-short' "$app" >/dev/null
+grep -qF 'zone-id-long' "$app" >/dev/null
+grep -qF 'zoneTitleMarkup' "$app" >/dev/null
+grep -qF 'zone-label-compact' "$app" >/dev/null
+grep -qF 'zone-title-name' "$app" >/dev/null
+grep -qF '.zone-label-compact .zone-title-name,.mobile-zone-dock .zone-title-name{display:none}' "$app" >/dev/null
+# Actuator sits above Temperature/Identity so BLE scan expansion does not shove it down.
+grep -qF 'zone-detail-slot"></div><div class="zone-actuator-slot"></div><section class="zone-configuration-groups' "$app" >/dev/null
+! grep -qF 'zone-configuration-groups" aria-label="Zone configuration"><div class="zone-room-slot"></div><div class="zone-sensor-slot"></div><div class="zone-coordination-slot"></div></section><div class="zone-actuator-slot"' "$app" >/dev/null
+! grep -qF 'zo-name' "$app" >/dev/null
+! grep -qF 'zo-room' "$app" >/dev/null
+! grep -qF 'zo-id' "$app" >/dev/null
+# Desktop: overview is the interactive zone switcher; sidebar fold is gone.
+# Mobile: overview stays display-only; selection via dock chips.
+grep -qF 'isDesktopZoneSwitcher' "$app" >/dev/null
+grep -qF 'button type="button" class="zone-overview-card' "$app" >/dev/null
+grep -qF 'data-zone-select="${value}" aria-current="${selected?' "$app" >/dev/null
+grep -qF '@media(min-width:901px){.zone-overview-card{cursor:pointer}' "$app" >/dev/null
+grep -qF 'zoneOverview.addEventListener(' "$app" >/dev/null
+grep -qF "zoneOverview.addEventListener('click',onZoneOverviewClick)" "$app" >/dev/null
+grep -qF "zoneOverview.addEventListener('keydown',onZoneOverviewKeydown)" "$app" >/dev/null
+grep -qF 'pointer-events:none;cursor:default' "$app" >/dev/null
+grep -qF "mobileZoneChips.addEventListener('click',onZoneSelectClick)" "$app" >/dev/null
+grep -qF "mobileZoneChips.addEventListener('keydown',onZoneChipKeydown)" "$app" >/dev/null
+! grep -qF 'v6-zone-fold' "$header" >/dev/null
+! grep -qF 'v6-zone-fold-link' "$header" >/dev/null
+! grep -qF 'rebuildZoneFold' "$header" >/dev/null
+grep -qF 'data-section="zones"' "$header" >/dev/null
+grep -qF 'zoneTitleMarkup' "$store" >/dev/null
+grep -qF 'zoneIdShort' "$store" >/dev/null
+grep -qF 'zoneIdLong' "$store" >/dev/null
+grep -qF 'zoneFriendly' "$store" >/dev/null
+grep -qF 'zoneTitleMarkup' "$store" >/dev/null
+grep -qF "zoneIdLong(index) + ' - ' + friendly" "$store" >/dev/null
+grep -qF "class=\"zone-title-name\"> - '" "$store" >/dev/null
+! grep -qF 'zone-title-primary' "$store" >/dev/null
+! grep -qF "friendly + ' · '" "$store" >/dev/null
+! grep -qF " (' + id + ')" "$store" >/dev/null
+grep -qF 'zoneDisplayState' "$app" >/dev/null
+grep -qF 'rebuildZoneChrome()' "$app" >/dev/null
+grep -qF 'key.effectiveSetpoint(z)' "$app" >/dev/null
+! grep -qF 'zone-detail-toolbar' "$app" >/dev/null
+! grep -qF 'zt-temps' "$app" >/dev/null
+grep -qF 'dashboard.js?v=' "$dashboard_cpp" >/dev/null
+grep -qF 'LV6_DASHBOARD_ASSET_V' "$dashboard_cpp" >/dev/null
+grep -qF 'LV6_DASHBOARD_ASSET_V' "$root/components/lv6_dashboard/__init__.py" >/dev/null
+grep -qF 'hashlib.sha256' "$root/components/lv6_dashboard/__init__.py" >/dev/null
 grep -qF "['ArrowLeft','ArrowRight','Home','End']" "$app" >/dev/null
 ! grep -qF 'class="zone-picker"' "$app" >/dev/null
 ! grep -rqF 'zone_exterior_walls' "$root/web/dashboard-src" >/dev/null
@@ -95,10 +175,38 @@ grep -qF "['ArrowLeft','ArrowRight','Home','End']" "$app" >/dev/null
 ! grep -rqF 'Zone Area' "$root/web/dashboard-src" >/dev/null
 ! grep -rqF 'Pipe Spacing' "$root/web/dashboard-src" >/dev/null
 ! grep -rqF 'Pipe Type' "$root/web/dashboard-src" >/dev/null
-grep -qF 'Zone identity' "$root/web/dashboard-src/components/zone/zone-room-card.js" >/dev/null
+grep -qF 'Identity' "$root/web/dashboard-src/components/zone/zone-room-card.js" >/dev/null
+grep -qF 'Temperature' "$root/web/dashboard-src/components/zone/zone-sensor-card.js" >/dev/null
+grep -qF 'Coordination' "$root/web/dashboard-src/components/zone/zone-coordination-card.js" >/dev/null
+grep -qF "mountComponent('zone-coordination-card')" "$app" >/dev/null
+grep -qF "import './components/zone/zone-coordination-card.js'" "$main" >/dev/null
+grep -qF "'zone.room.title': 'Identity'" "$i18n" >/dev/null
+grep -qF "'zone.room.title': 'Identitet'" "$i18n" >/dev/null
+grep -qF "'zone.sensor.title': 'Temperature'" "$i18n" >/dev/null
+grep -qF "'zone.sensor.title': 'Temperatur'" "$i18n" >/dev/null
+grep -qF "'zone.coordination.title': 'Coordination'" "$i18n" >/dev/null
+grep -qF "'zone.coordination.title': 'Koordinering'" "$i18n" >/dev/null
+grep -qF "'zone.actuator.title': 'Actuator'" "$i18n" >/dev/null
+grep -qF "'zone.actuator.title': 'Aktuator'" "$i18n" >/dev/null
+! grep -qF 'zs-sync' "$root/web/dashboard-src/components/zone/zone-sensor-card.js" >/dev/null
+grep -qF 'zc-sync' "$root/web/dashboard-src/components/zone/zone-coordination-card.js" >/dev/null
 ! grep -qF "input.addEventListener('dblclick'" "$root/web/dashboard-src/core/ui-kit.js" >/dev/null
 grep -qF "new CustomEvent('zone-open'" "$card" >/dev/null
-grep -qF 'Advanced motor properties' "$root/web/dashboard-src/components/zone/zone-detail.js" >/dev/null
+grep -qF 'Actuator' "$root/web/dashboard-src/components/zone/zone-actuator-card.js" >/dev/null
+grep -qF 'class="disclosure zone-actuator-disclosure"' "$root/web/dashboard-src/components/zone/zone-actuator-card.js" >/dev/null
+grep -qF '<summary data-i18n="zone.actuator.title">Actuator</summary>' "$root/web/dashboard-src/components/zone/zone-actuator-card.js" >/dev/null
+! grep -qF '<details class="disclosure zone-actuator-disclosure" open>' "$root/web/dashboard-src/components/zone/zone-actuator-card.js" >/dev/null
+grep -qF 'resetMotorFault' "$root/web/dashboard-src/components/zone/zone-actuator-card.js" >/dev/null
+grep -qF 'resetMotorLearnedFactors' "$root/web/dashboard-src/components/zone/zone-actuator-card.js" >/dev/null
+grep -qF 'resetMotorAndRelearn' "$root/web/dashboard-src/components/zone/zone-actuator-card.js" >/dev/null
+! grep -qF 'Advanced motor properties' "$root/web/dashboard-src/components/zone/zone-detail.js" >/dev/null
+! grep -qF 'zd-motor' "$root/web/dashboard-src/components/zone/zone-detail.js" >/dev/null
+! grep -qF 'zoneTitleMarkup' "$root/web/dashboard-src/components/zone/zone-detail.js" >/dev/null
+grep -qF 'data-i18n="zone.detail.title"' "$root/web/dashboard-src/components/zone/zone-detail.js" >/dev/null
+grep -qF "'zone.detail.title': 'Control'" "$i18n" >/dev/null
+grep -qF "'zone.detail.title': 'Styring'" "$i18n" >/dev/null
+grep -qF "import './components/zone/zone-actuator-card.js'" "$main" >/dev/null
+! grep -qF 'diag-zone-recovery-card' "$main" >/dev/null
 grep -qF 'badge-heating{background:rgba(var(--accent-rgb),.12);color:var(--accent)}' "$root/web/dashboard-src/components/zone/zone-detail.js" >/dev/null
 grep -qF '.status-summary h2.status-ok{color:var(--text-strong)!important}' "$app" >/dev/null
 grep -qF 'effectiveSetpoint' "$keys" >/dev/null
@@ -115,7 +223,7 @@ grep -qF 'return pct > 0 ? COLOR_FLOW_ACTIVE : COLOR_FRIENDLY_ON' "$flow" >/dev/
 ! grep -qF '#021824' "$flow" >/dev/null
 ! grep -qF 'stop-color="#7aa7ce"' "$flow" >/dev/null
 ! grep -rqF 'fonts.googleapis.com' "$root/web/dashboard-src" >/dev/null
-! grep -qF 'grid-template-columns: repeat(3' "$app" >/dev/null
+grep -qF 'grid-template-columns:repeat(3,1fr)' "$app" >/dev/null
 ! grep -qF 'Target Temperature' "$root/web/dashboard-src/components/zone/zone-detail.js" >/dev/null
 grep -qF "const COLOR_SCHEME_QUERY = '(prefers-color-scheme: dark)'" "$theme" >/dev/null
 grep -qF 'root.dataset.colorScheme = scheme' "$theme" >/dev/null
@@ -204,8 +312,16 @@ grep -qF 'data-k="reset"' "$system_card" >/dev/null
 grep -qF 'gkey.resetReason' "$system_card" >/dev/null
 
 grep -qF 'v6-update-badge' "$header" >/dev/null
+grep -qF 'v6-attention-badge' "$header" >/dev/null
+grep -qF 'v6-nav-dot' "$header" >/dev/null
+grep -qF 'primaryAttentionAction' "$header" >/dev/null
+grep -qF 'touchNeedsAttention' "$header" >/dev/null
 grep -qF "subscribeDashboard('firmwareUpdateAvailable'" "$header" >/dev/null
 grep -qF "setSection('settings')" "$header" >/dev/null
+grep -qF 'export function touchNeedsAttention' "$store" >/dev/null
+grep -qF 'export function primaryAttentionAction' "$store" >/dev/null
+grep -qF "'status.attention.approveTouch'" "$i18n" >/dev/null
+grep -qF "'status.attention.approveTouch': 'Godkend Touch'" "$i18n" >/dev/null
 
 grep -qF 'export function mockLatestRelease' "$mock" >/dev/null
 grep -qF 'export function mockSettingsExport' "$mock" >/dev/null
@@ -220,6 +336,8 @@ grep -qF "'logs.download': 'Download'" "$i18n" >/dev/null
 grep -qF "'diagnostics.system.resetReason': 'Last reset reason'" "$i18n" >/dev/null
 grep -qF "'diagnostics.system.resetReason': 'Seneste genstartsårsag'" "$i18n" >/dev/null
 grep -qF "'status.updateAvailable'" "$i18n" >/dev/null
+grep -qF "'overview.zone.mergedWith': 'Merged with {zones}'" "$i18n" >/dev/null
+grep -qF "'overview.zone.mergedWith': 'Flettet med {zones}'" "$i18n" >/dev/null
 
 tmp=$(mktemp)
 cat > "$tmp" <<'EOF'
@@ -275,6 +393,31 @@ grep -qF 'tacho_period_us' "$mock" >/dev/null
 grep -qF 'data-k="pin"' "$root/web/dashboard-src/components/diagnostics/diag-motor-lab.js" >/dev/null
 grep -qF 'diagnostics.lab.stroke.contact' "$i18n" >/dev/null
 grep -qF 'export function pinContactSample' "$root/web/dashboard-src/utils/motor-trace.js" >/dev/null
+
+# Return temperature probes are configured globally in Settings (not per-zone).
+# Master disable persists zone_probe = None for all zones (PROBE_UNASSIGNED).
+return_temp_card="$root/web/dashboard-src/components/settings/settings-return-temp-card.js"
+sensor_card="$root/web/dashboard-src/components/zone/zone-sensor-card.js"
+grep -qF 'settings-return-temp-card' "$return_temp_card" >/dev/null
+grep -qF 'srt-enabled' "$return_temp_card" >/dev/null
+grep -qF 'srt-zones' "$return_temp_card" >/dev/null
+grep -qF 'srt-probe' "$return_temp_card" >/dev/null
+grep -qF 'zoneTitleMarkup' "$return_temp_card" >/dev/null
+grep -qF "setZoneSelect(zone, 'zone_probe', 'None')" "$return_temp_card" >/dev/null
+grep -qF "setZoneSelect(zone, 'zone_probe', v)" "$return_temp_card" >/dev/null
+grep -qF 'return-temp-slot' "$root/web/dashboard-src/app/app-root.js" >/dev/null
+grep -qF "settings-return-temp-card" "$root/web/dashboard-src/main.js" >/dev/null
+grep -qF "'settings.returnTemp.title': 'Return temperature'" "$i18n" >/dev/null
+grep -qF "'settings.returnTemp.title': 'Returtemperatur'" "$i18n" >/dev/null
+grep -qF "'settings.returnTemp.enabledSub': 'Optional return probes" "$i18n" >/dev/null
+grep -qF "'settings.returnTemp.enabledSub': 'Valgfrie returprober" "$i18n" >/dev/null
+! grep -qF 'zs-probe-enabled' "$sensor_card" >/dev/null
+! grep -qF 'zs-probe-row' "$sensor_card" >/dev/null
+! grep -qF 'zone.sensor.returnEnabledSub' "$sensor_card" >/dev/null
+! grep -qF "setZoneSelect(zone, 'zone_probe'" "$sensor_card" >/dev/null
+! grep -qF "setZoneSelect(selectedZone(), 'zone_sync_to'" "$sensor_card" >/dev/null
+grep -qF "setZoneSelect(selectedZone(), 'zone_sync_to'" "$root/web/dashboard-src/components/zone/zone-coordination-card.js" >/dev/null
+
 node --input-type=module <<EOF
 import { isDevBuild } from 'file://$root/web/dashboard-src/utils/dev-build.js';
 import { analyzeMotorTrace, motorTraceSeries, parseMotorTraceCsv } from 'file://$root/web/dashboard-src/utils/motor-trace.js';

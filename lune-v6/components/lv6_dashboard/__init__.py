@@ -4,6 +4,7 @@ from esphome.components.esp32 import add_extra_script
 from esphome.components import web_server_base, sensor, text_sensor, update
 from esphome.const import CONF_ID
 import gzip
+import hashlib
 from pathlib import Path
 from esphome.core import CORE
 
@@ -98,9 +99,10 @@ CONFIG_SCHEMA = cv.Schema(
     }
 ).extend(cv.COMPONENT_SCHEMA)
 
-def _embed_gzip_as_progmem(symbol: str, file_path: str) -> None:
+def _embed_gzip_as_progmem(symbol: str, file_path: str) -> str:
     with open(file_path, encoding="utf-8") as f:
         content = f.read()
+    asset_v = hashlib.sha256(content.encode("utf-8")).hexdigest()[:12]
     compressed = gzip.compress(content.encode("utf-8"), compresslevel=9)
     size = len(compressed)
     bytes_str = ", ".join(str(b) for b in compressed)
@@ -110,6 +112,7 @@ def _embed_gzip_as_progmem(symbol: str, file_path: str) -> None:
     cg.add_global(cg.RawExpression(
         f"const size_t {symbol}_SIZE = {size};"
     ))
+    return asset_v
 
 async def to_code(config):
     # ESP-IDF's default HTTP server task is too small for the dashboard's
@@ -234,5 +237,8 @@ async def to_code(config):
 
     if CONF_DASHBOARD_JS in config:
         path = CORE.relative_config_path(config[CONF_DASHBOARD_JS])
-        _embed_gzip_as_progmem("LV6_DASHBOARD_JS", path)
+        asset_v = _embed_gzip_as_progmem("LV6_DASHBOARD_JS", path)
         cg.add_define("LV6_HAS_DASHBOARD_JS")
+        # Content hash of web/dashboard.js so HTML ?v= changes whenever the
+        # bundle changes — manual cache-buster strings were easy to forget.
+        cg.add_define("LV6_DASHBOARD_ASSET_V", f'"{asset_v}"')

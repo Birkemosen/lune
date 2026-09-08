@@ -38,6 +38,8 @@ Show the current state and next action first. Put evidence, histories, raw value
 
 The two themes share layout, neutral surfaces, typography, component behavior, and semantic status colors. Only the product accent changes.
 
+Browser dashboards for Lune Touch and Lune V6 share the same control density tokens (`--control-height: 44px`, focus rings, steppers, Apply/Discard staging). Domain-specific cards and ownership boundaries stay product-local; there is no shared runtime package.
+
 ### Accessibility
 
 The interface remains understandable without color, glow, hover, animation, or perfect vision. Keyboard, touch, and pointer use are first-class input modes.
@@ -53,7 +55,7 @@ Use stable nouns and keep the hierarchy no deeper than two levels.
 | Home | Overview | Whole-house state, exceptions, and next action |
 | Home | Heat source | Current source state and the boundary between Touch and source ownership |
 | Home | Zones | Comfort and target by logical zone |
-| System | Manifolds | V6 availability, trust, and zone distribution |
+| Home | Controllers | V6 availability, trust, and imported loops |
 | System | Weather | Forecast and preload decisions |
 | System | Commands | Command ledger and blocked actions |
 | System | Diagnostics | Runtime health, evidence, logs, and recovery |
@@ -89,7 +91,7 @@ Healthy or unchanged diagnostics should collapse into a single summary. Empty se
 At `900px` and below in the browser dashboard:
 
 - Replace the sidebar with a persistent bottom tab bar.
-- Show four frequent destinations: Overview, Zones, Heat Source, and Manifolds.
+- Show four frequent destinations: Overview, Zones, Heat Source, and Controllers.
 - Put Help, Weather, Commands, Diagnostics, and Settings in a labeled More menu.
 - Every tab includes an icon and a one-word label.
 - A destination remains available when its data is unavailable; the view explains why.
@@ -105,6 +107,7 @@ The built-in `1024 × 600` landscape display is an operational surface, not a mi
 - Show at most two manifolds (`12` zones) per fixed Touch display page. For three or four manifolds, expose a second ordered page with explicit previous/next controls and a visible page position; hide paging entirely when only one page exists. Recalculate geometry only when topology or the selected page changes, never for routine telemetry refreshes.
 - Import each physical zone name, sensor state, applied setpoint, and valve output from V6. Touch must not ask people to map, rename, or assign the same physical output again. Missing zones direct people to the respective V6 manifold. Touch may still express whole-house comfort intent and temporary adjustments without taking ownership of physical zone configuration.
 - A zone cell shows only its imported name, current temperature, applied setpoint, a small semantic status dot, and a quantized five-step vertical valve-flow gauge (`0`, `1–20`, `21–40`, `41–60`, `61–80`, `81–100%`). The fixed column header carries the physical Z-number once for every manifold row.
+- Manifold bands and zone cells must stay flat: one shared warm-graphite band surface with `1px` hairline separators between cells. Do not nest bordered rounded cards inside the matrix. Each zone remains a full-cell hit target (≥ `48 × 48px`), but visual grouping comes from alignment and separators, not stacked card chrome. The bottom status rail follows the same rule—a hairline strip, not a floating card.
 - On the physical RGB panel, prioritize legibility over browser-like density: zone names use at least the `16px` embedded font, current temperatures at least `22px`, secondary setpoints at least `16px`, and the top title at least `22px`. Use Regular, Medium, or Semibold weights; never use Light or Thin. The fixed-density hardware cannot provide Dynamic Type, so validate the result on the actual panel at normal standing distance.
 - Use the neutral warm graphite surface stack for most area. Color has one meaning: orange for heating and primary action, cyan for measured temperature, violet for target/forecast intent, green for healthy/live, red for fault, and gray for unavailable. Every colored state also retains a label, dot, gauge, or other non-color cue.
 - Treat repeated room names across cells as intentional physical-loop evidence. Tapping any imported loop opens the one logical-room control modal, and the resulting target applies to every loop associated with that logical zone.
@@ -359,7 +362,7 @@ Use a bordered container only when it encloses one coherent task, selection, for
 
 ### Device and zone collections
 
-Present zones, manifolds, and similar text-heavy collections as one grouped list, not as a grid of equally prominent cards.
+Present zones, controllers, and similar text-heavy collections as one grouped list, not as a grid of equally prominent cards.
 
 - Each primary row contains only identity, user-visible state, and two or three values needed for comparison.
 - Keep columns in a stable position so people can scan vertically without rereading labels.
@@ -367,8 +370,8 @@ Present zones, manifolds, and similar text-heavy collections as one grouped list
 - Put the next corrective action at the top of expanded content. Keep destructive actions in the detail layer.
 - Show setup controls in one disclosure above or below the collection; open it automatically only when the collection is empty.
 - On compact widths, retain identity and state, then remove secondary columns before stacking the whole row.
-- Keep domain ownership visible in the actions: physical manifold rows navigate to zone settings, while comfort actions such as boost and away live in Zones.
-- A manifold detail overview contains no more than four decision-level facts. Flow, return, identity, trust internals, and maintenance controls belong in one secondary device disclosure.
+- Keep domain ownership visible in the actions: controller zone rows open the zone in Zones; comfort actions such as boost and away live only in Zones.
+- A controller detail overview contains no more than four decision-level facts. Flow, return, identity, trust internals, and maintenance controls belong in one secondary device disclosure.
 
 V6 and Touch use the same list-to-detail sequence for Zones. The entire zone row is the navigation target; its chevron only communicates direction and must never be the sole clickable element. A detail view provides “All zones” back-navigation and a labelled pop-up selector with a minimum `44px` interaction height, so another zone can be selected without returning to the list. Zones are content objects, not top-level destinations, so individual zones do not appear as sidebar submenus.
 
