@@ -12,26 +12,33 @@
 esp32_ble:
   id: hv6_ble
   enable_on_boot: false
-  # Offload Bluedroid GATT/GAP tables onto the PSRAM heap. ESPHome 2026.7.3
-  # has no NimBLE host for esp32_ble_tracker; this is the supported equivalent.
+  # Offload Bluedroid GATT/GAP tables onto the PSRAM heap (~40 KB internal).
+  # ESPHome still has no NimBLE host for esp32_ble_tracker (Bluedroid only);
+  # Espressif NimBLE APIs are not interchangeable with this stack.
   use_psram: true
+  # Passive BTHome scan only — no GATT connections. Default is 3 (~1 KB each).
+  max_connections: 1
 
 esp32_ble_tracker:
   id: hv6_ble_tracker
   scan_parameters:
-    # BTHome sensors advertise briefly and may not repeat during a very low
-    # duty-cycle scan. Use the proven pre-Lune cadence, but keep the scan
-    # passive so it does not send scan-request bursts into the WiFi link.
+    # Passive scan so we do not send scan-request bursts into the WiFi link.
+    # ESPHome 2026.8 defaults window=interval (100% duty) when WiFi is present,
+    # which improves BTHome discovery but blows Bluedroid HCI buffers (~16 KB
+    # internal heap). Pin 50% duty (160/320) as a middle ground.
+    # See https://esphome.io/blog/2026/08/19/esphome-2026-8/
     active: false
     interval: 320ms
-    window: 30ms
+    window: 160ms
     continuous: false
   on_ble_advertise:
     then:
       - lambda: |-
           // BTHome v2 service data UUID: 0xFCD2
           for (const auto &sd : x.get_service_datas()) {
-            if (sd.uuid != esphome::esp32_ble_tracker::ESPBTUUID::from_uint16(0xFCD2))
+            // ESPHome 2026.8 moved ESPBTUUID into ble_device_base (re-exported
+            // via esp32_ble). Prefer the stable ble_device_base path.
+            if (sd.uuid != esphome::ble_device_base::ESPBTUUID::from_uint16(0xFCD2))
               continue;
             if (sd.data.size() < 3)
               continue;
