@@ -1,8 +1,8 @@
 #pragma once
 
 #include "ble_datetime_broadcast.h"
-#include "esphome/components/esp32_ble_tracker/esp32_ble_tracker.h"
 #include "esphome/components/lv6_config_store/lv6_config_store.h"
+#include "esphome/components/nimble_hub/nimble_hub.h"
 #include "esphome/components/time/real_time_clock.h"
 #include "esphome/core/component.h"
 
@@ -12,7 +12,7 @@ class Lv6BleTimeBeacon : public esphome::Component {
  public:
   void set_time(esphome::time::RealTimeClock *clock) { time_ = clock; }
   void set_config_store(Lv6ConfigStore *store) { config_store_ = store; }
-  void set_ble_tracker(esphome::esp32_ble_tracker::ESP32BLETracker *tracker) { tracker_ = tracker; }
+  void set_hub(esphome::nimble_hub::NimbleHub *hub) { hub_ = hub; }
 
   void setup() override;
   void loop() override;
@@ -39,11 +39,10 @@ class Lv6BleTimeBeacon : public esphome::Component {
 
   esphome::time::RealTimeClock *time_{nullptr};
   Lv6ConfigStore *config_store_{nullptr};
-  esphome::esp32_ble_tracker::ESP32BLETracker *tracker_{nullptr};
+  esphome::nimble_hub::NimbleHub *hub_{nullptr};
 
   bool pending_now_{false};
   bool advertising_{false};
-  bool scan_paused_{false};
   uint32_t burst_start_ms_{0};
   uint32_t next_try_ms_{0};
   uint32_t last_ok_s_{0};

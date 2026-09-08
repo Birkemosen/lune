@@ -84,7 +84,7 @@ inline LogGroup classify(const char *tag) {
   static const char *const NET[] = {"wifi",     "http_request", "ota",   "lv6_dashboard",
                                     "esp-tls",  "web_server",   "mdns",  "api",
                                     "safe_mode", "update",      "esp_netif"};
-  static const char *const BLE[] = {"ble", "esp32_ble", "lv6_ble", "bt_"};
+  static const char *const BLE[] = {"ble", "esp32_ble", "nimble_hub", "lv6_ble", "lv6_bthome", "bt_"};
 
   if (tag == nullptr || tag[0] == '\0')
     return LogGroup::NONE;

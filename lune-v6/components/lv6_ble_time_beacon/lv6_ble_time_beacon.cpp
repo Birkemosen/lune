@@ -4,13 +4,11 @@
 
 #include "esphome/core/log.h"
 
-#ifdef USE_ESP32
-#include <esp_gap_ble_api.h>
-#endif
-
 namespace lv6 {
 
 static const char *const TAG = "lv6_ble_clock";
+// BLE flags: General Discoverable + BR/EDR Not Supported (same as ESP_BLE_ADV_FLAG_*).
+static constexpr uint8_t ADV_FLAGS = 0x06;
 
 void Lv6BleTimeBeacon::setup() {
   ESP_LOGI(TAG, "Shelly BLU Date/Time Broadcast ready (Europe/Copenhagen)");
@@ -82,6 +80,20 @@ void Lv6BleTimeBeacon::loop() {
 }
 
 bool Lv6BleTimeBeacon::start_burst_() {
+  if (this->hub_ == nullptr) {
+    this->set_error_("ble_busy");
+    ESP_LOGW(TAG, "Clock sync skipped: no nimble_hub");
+    this->next_try_ms_ = esphome::millis() + 15000;
+    return false;
+  }
+
+  if (!this->hub_->is_enabled()) {
+    this->set_error_("ble_busy");
+    ESP_LOGD(TAG, "Clock sync skipped: nimble_hub disabled");
+    this->next_try_ms_ = esphome::millis() + 15000;
+    return false;
+  }
+
   if (this->time_ == nullptr) {
     this->set_error_("clock_invalid");
     ESP_LOGW(TAG, "Clock sync skipped: no time source");
@@ -100,13 +112,6 @@ bool Lv6BleTimeBeacon::start_burst_() {
   if (this->advertising_) {
     this->set_error_("ble_busy");
     return false;
-  }
-
-  if (this->tracker_ != nullptr &&
-      this->tracker_->get_scanner_state() != esphome::esp32_ble_tracker::ScannerState::IDLE) {
-    this->tracker_->set_scan_continuous(false);
-    this->tracker_->stop_scan();
-    this->scan_paused_ = true;
   }
 
   const uint32_t unix_s = static_cast<uint32_t>(now.timestamp);
@@ -132,54 +137,30 @@ bool Lv6BleTimeBeacon::start_burst_() {
 void Lv6BleTimeBeacon::stop_burst_() {
   this->stop_advertising_();
   this->advertising_ = false;
-  if (this->scan_paused_ && this->tracker_ != nullptr) {
-    this->tracker_->set_scan_continuous(true);
-    this->tracker_->start_scan();
-    this->scan_paused_ = false;
-  }
 }
 
 bool Lv6BleTimeBeacon::start_advertising_(uint32_t unix_s, int year) {
-#ifdef USE_ESP32
+  if (this->hub_ == nullptr)
+    return false;
+
   uint8_t raw[31] = {};
   size_t n = 0;
   raw[n++] = 0x02;
   raw[n++] = 0x01;
-  raw[n++] = ESP_BLE_ADV_FLAG_GEN_DISC | ESP_BLE_ADV_FLAG_BREDR_NOT_SPT;
+  raw[n++] = ADV_FLAGS;
   raw[n++] = 0x18;
   raw[n++] = 0xFF;
   n += ble_time::encode_manufacturer_data(raw + n, unix_s, year);
 
-  esp_err_t err = esp_ble_gap_config_adv_data_raw(raw, n);
-  if (err != ESP_OK) {
-    ESP_LOGW(TAG, "config_adv_data_raw failed: %s", esp_err_to_name(err));
-    return false;
-  }
-
-  esp_ble_adv_params_t params = {};
-  params.adv_int_min = 0xA0;  // 100 ms
-  params.adv_int_max = 0xC0;  // 120 ms
-  params.adv_type = ADV_TYPE_NONCONN_IND;
-  params.own_addr_type = BLE_ADDR_TYPE_PUBLIC;
-  params.channel_map = ADV_CHNL_ALL;
-  params.adv_filter_policy = ADV_FILTER_ALLOW_SCAN_ANY_CON_ANY;
-  err = esp_ble_gap_start_advertising(&params);
-  if (err != ESP_OK) {
-    ESP_LOGW(TAG, "start_advertising failed: %s", esp_err_to_name(err));
-    return false;
-  }
-  return true;
-#else
-  (void) unix_s;
-  (void) year;
-  return false;
-#endif
+  esphome::nimble_hub::RawAdvertiseParams params;
+  params.interval_min = 0xA0;  // 100 ms
+  params.interval_max = 0xC0;  // 120 ms
+  return this->hub_->start_raw_advertise(raw, n, params);
 }
 
 void Lv6BleTimeBeacon::stop_advertising_() {
-#ifdef USE_ESP32
-  esp_ble_gap_stop_advertising();
-#endif
+  if (this->hub_ != nullptr)
+    this->hub_->stop_advertise();
 }
 
 }  // namespace lv6

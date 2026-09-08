@@ -7,7 +7,7 @@
 # the ESP32-S3-WROOM-1-N8R8 module comes from packages/board/esp32-s3.yaml.
 #
 # Build/deploy via the Makefile (`make build`). Do NOT add
-# `esp32_ble_tracker:` blocks here — they belong in the BLE package.
+# `nimble_hub:` / BLE packages live in packages/hardware/ble.yaml.
 # =============================================================================
 
 # =============================================================================
@@ -106,11 +106,13 @@ external_components:
       type: local
       path: ../components
     components:
+      - nimble_hub
       - lv6_valve_controller
       - lv6_zone_controller
       - lv6_config_store
       - lv6_dashboard
       - lv6_ble_time_beacon
+      - lv6_bthome_bridge
 
 # =============================================================================
 # Logger

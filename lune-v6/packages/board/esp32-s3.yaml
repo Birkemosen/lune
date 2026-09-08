@@ -35,11 +35,9 @@ esp32:
       # internal heap available for the dashboard and native API tasks.
       CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP: "y"
       CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC: "y"
-      # ESPHome's esp32_ble still uses the Bluedroid host (not NimBLE).
-      # use_psram on esp32_ble sets CONFIG_BT_BLE_DYNAMIC_ENV_MEMORY so GATT/GAP
-      # tables can land in PSRAM. Do not set CONFIG_BT_ALLOCATION_FROM_SPIRAM_FIRST
-      # here — that Kconfig is BTDM/classic-ESP32 only and breaks S3 builds.
-      CONFIG_BT_BLE_DYNAMIC_ENV_MEMORY: "y"
+      # BLE host is ESP-IDF NimBLE (nimble_hub). Do not enable Bluedroid here.
+      # Role/PSRAM/mem options are set from nimble_hub codegen
+      # (OBSERVER+BROADCASTER, MEM_ALLOC_MODE_EXTERNAL, no GATT).
       # mDNS is disabled; Helios HTTP uses a 3s socket timeout so 15s is
       # sufficient headroom for DNS + connect + transfer on weak WiFi.
       CONFIG_ESP_TASK_WDT_TIMEOUT_S: "15"
