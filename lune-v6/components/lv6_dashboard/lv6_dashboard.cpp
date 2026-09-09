@@ -21,6 +21,7 @@
 #include <esp_system.h>
 #if defined(CONFIG_HEAP_TRACING_STANDALONE) || defined(CONFIG_HEAP_TRACING)
 #include <esp_heap_trace.h>
+#include <esp_memory_utils.h>
 #endif
 
 namespace esphome {
@@ -472,29 +473,190 @@ void LV6Dashboard::update_snapshot_() {
 
 #if defined(CONFIG_HEAP_TRACING_STANDALONE) || defined(CONFIG_HEAP_TRACING)
 // TEMPORARY — remove with packages/debug/heap-tracing.yaml after investigation.
+//
+// ESP-IDF heap_trace_dump() prints only via esp_rom_printf (UART ROM path). That
+// bypasses ESPHome's logger callback, so dashboard / live-log views show the
+// "--- heap_trace_dump ---" banner and then nothing. We dump through ESP_LOGI
+// instead and aggregate INTERNAL outstanding sites by caller PC.
+
+namespace {
+
+constexpr size_t kHeapTraceRecords = 768;
+constexpr size_t kHeapTraceTopSites = 24;
+constexpr size_t kHeapTraceTopAllocs = 16;
+
+struct HeapTraceSiteAgg {
+  void *pc{nullptr};
+  size_t bytes{0};
+  size_t count{0};
+  size_t max_bytes{0};
+};
+
+void dump_heap_trace_via_logger_() {
+  heap_trace_summary_t summary{};
+  esp_err_t sum_err = heap_trace_summary(&summary);
+  if (sum_err != ESP_OK) {
+    ESP_LOGE(TAG, "heap_trace_summary failed: %s (tracing never init/started?)",
+             esp_err_to_name(sum_err));
+    return;
+  }
+
+  // Stop so LEAKS-mode iteration does not skip entries mid-dump; resume after.
+  const bool was_running = (heap_trace_stop() == ESP_OK);
+
+  ESP_LOGI(TAG,
+           "heap_trace summary: mode=%s records=%u/%u high_water=%u overflow=%s "
+           "total_alloc=%u total_free=%u",
+           summary.mode == HEAP_TRACE_ALL ? "ALL" : "LEAKS", (unsigned) summary.count,
+           (unsigned) summary.capacity, (unsigned) summary.high_water_mark,
+           summary.has_overflowed ? "yes" : "no", (unsigned) summary.total_allocations,
+           (unsigned) summary.total_frees);
+
+  const size_t n = heap_trace_get_count();
+  if (n == 0) {
+    ESP_LOGW(TAG, "heap_trace: 0 outstanding records — nothing to attribute "
+                  "(start failed, buffer empty, or all traced allocs already freed)");
+    if (was_running)
+      heap_trace_resume();
+    return;
+  }
+
+  std::vector<HeapTraceSiteAgg> sites;
+  sites.reserve(64);
+  size_t internal_bytes = 0;
+  size_t internal_count = 0;
+  size_t psram_bytes = 0;
+  size_t psram_count = 0;
+  size_t other_bytes = 0;
+  size_t other_count = 0;
+
+  struct LargeAlloc {
+    size_t size;
+    void *addr;
+    void *pc;
+  };
+  LargeAlloc largest[kHeapTraceTopAllocs]{};
+  size_t largest_n = 0;
+
+  for (size_t i = 0; i < n; i++) {
+    heap_trace_record_t rec{};
+    if (heap_trace_get(i, &rec) != ESP_OK || rec.address == nullptr || rec.freed)
+      continue;
+
+    if (esp_ptr_external_ram(rec.address)) {
+      psram_bytes += rec.size;
+      psram_count++;
+      continue;
+    }
+    if (!esp_ptr_internal(rec.address)) {
+      other_bytes += rec.size;
+      other_count++;
+      continue;
+    }
+
+    internal_bytes += rec.size;
+    internal_count++;
+
+    void *pc = (CONFIG_HEAP_TRACING_STACK_DEPTH > 0) ? rec.alloced_by[0] : nullptr;
+    bool found = false;
+    for (auto &s : sites) {
+      if (s.pc == pc) {
+        s.bytes += rec.size;
+        s.count++;
+        if (rec.size > s.max_bytes)
+          s.max_bytes = rec.size;
+        found = true;
+        break;
+      }
+    }
+    if (!found) {
+      HeapTraceSiteAgg s;
+      s.pc = pc;
+      s.bytes = rec.size;
+      s.count = 1;
+      s.max_bytes = rec.size;
+      sites.push_back(s);
+    }
+
+    // Track largest individual INTERNAL allocs (insertion into fixed top-N).
+    size_t insert_at = largest_n;
+    for (size_t k = 0; k < largest_n; k++) {
+      if (rec.size > largest[k].size) {
+        insert_at = k;
+        break;
+      }
+    }
+    if (insert_at < kHeapTraceTopAllocs) {
+      size_t move_n = largest_n < kHeapTraceTopAllocs ? largest_n : (kHeapTraceTopAllocs - 1);
+      for (size_t k = move_n; k > insert_at; k--)
+        largest[k] = largest[k - 1];
+      largest[insert_at] = LargeAlloc{rec.size, rec.address, pc};
+      if (largest_n < kHeapTraceTopAllocs)
+        largest_n++;
+    }
+  }
+
+  ESP_LOGI(TAG,
+           "heap_trace caps split: INTERNAL %uB in %u allocs | PSRAM %uB in %u | other %uB in %u",
+           (unsigned) internal_bytes, (unsigned) internal_count, (unsigned) psram_bytes,
+           (unsigned) psram_count, (unsigned) other_bytes, (unsigned) other_count);
+
+  std::sort(sites.begin(), sites.end(),
+            [](const HeapTraceSiteAgg &a, const HeapTraceSiteAgg &b) { return a.bytes > b.bytes; });
+
+  const size_t show = std::min(sites.size(), kHeapTraceTopSites);
+  ESP_LOGI(TAG, "--- top INTERNAL alloc sites by total size (caller PC) ---");
+  for (size_t i = 0; i < show; i++) {
+    ESP_LOGI(TAG, "  #%02u %6u B ×%u (max %u B) pc=%p", (unsigned) (i + 1),
+             (unsigned) sites[i].bytes, (unsigned) sites[i].count, (unsigned) sites[i].max_bytes,
+             sites[i].pc);
+  }
+  if (show == 0)
+    ESP_LOGW(TAG, "  (no INTERNAL outstanding records in buffer)");
+
+  ESP_LOGI(TAG, "--- largest INTERNAL allocs ---");
+  for (size_t i = 0; i < largest_n; i++) {
+    ESP_LOGI(TAG, "  #%02u %6u B @ %p pc=%p", (unsigned) (i + 1), (unsigned) largest[i].size,
+             largest[i].addr, largest[i].pc);
+  }
+
+  if (summary.has_overflowed) {
+    ESP_LOGW(TAG, "heap_trace buffer overflowed — oldest sites dropped; bump kHeapTraceRecords");
+  }
+
+  if (was_running) {
+    esp_err_t r = heap_trace_resume();
+    if (r != ESP_OK)
+      ESP_LOGW(TAG, "heap_trace_resume failed: %s", esp_err_to_name(r));
+  }
+}
+
+}  // namespace
+
 void start_heap_tracing_early() {
   static bool started = false;
   if (started)
     return;
 
-  // 384 records × ~88 B ≈ 33 KB. Prefer PSRAM so INTERNAL stays available for
-  // the owners we are trying to attribute (ISR allocs may not be recorded).
-  static constexpr size_t kNumRecords = 384;
+  // Prefer PSRAM so INTERNAL stays available for the owners we attribute
+  // (ISR allocs may not be recorded when the buffer is external).
+  const char *buf_where = "PSRAM";
   heap_trace_record_t *records = static_cast<heap_trace_record_t *>(heap_caps_calloc(
-      kNumRecords, sizeof(heap_trace_record_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+      kHeapTraceRecords, sizeof(heap_trace_record_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
   if (records == nullptr) {
+    buf_where = "INTERNAL";
     records = static_cast<heap_trace_record_t *>(heap_caps_calloc(
-        kNumRecords, sizeof(heap_trace_record_t), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
+        kHeapTraceRecords, sizeof(heap_trace_record_t), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
   }
   if (records == nullptr) {
-    ESP_LOGE(TAG, "heap_trace: record buffer alloc failed (%u × %u B)", (unsigned) kNumRecords,
-             (unsigned) sizeof(heap_trace_record_t));
+    ESP_LOGE(TAG, "heap_trace INIT FAILED: record buffer alloc failed (%u × %u B)",
+             (unsigned) kHeapTraceRecords, (unsigned) sizeof(heap_trace_record_t));
     return;
   }
 
-  esp_err_t err = heap_trace_init_standalone(records, kNumRecords);
+  esp_err_t err = heap_trace_init_standalone(records, kHeapTraceRecords);
   if (err != ESP_OK) {
-    ESP_LOGE(TAG, "heap_trace_init_standalone failed: %s", esp_err_to_name(err));
+    ESP_LOGE(TAG, "heap_trace INIT FAILED: heap_trace_init_standalone: %s", esp_err_to_name(err));
     heap_caps_free(records);
     return;
   }
@@ -502,16 +664,17 @@ void start_heap_tracing_early() {
   // LEAKS mode keeps outstanding allocs only — right tool for "who holds INTERNAL".
   err = heap_trace_start(HEAP_TRACE_LEAKS);
   if (err != ESP_OK) {
-    ESP_LOGE(TAG, "heap_trace_start failed: %s", esp_err_to_name(err));
+    ESP_LOGE(TAG, "heap_trace INIT FAILED: heap_trace_start: %s", esp_err_to_name(err));
     return;
   }
 
   started = true;
+  const unsigned buf_kb =
+      (unsigned) ((kHeapTraceRecords * sizeof(heap_trace_record_t) + 1023) / 1024);
   ESP_LOGW(TAG,
-           "TEMPORARY heap tracing ON: %u records (~%u KB), HEAP_TRACE_LEAKS — "
-           "Dump task stats to print sites",
-           (unsigned) kNumRecords,
-           (unsigned) ((kNumRecords * sizeof(heap_trace_record_t) + 1023) / 1024));
+           "heap_trace STARTED ok: mode=HEAP_TRACE_LEAKS records=%u (~%u KB in %s) "
+           "stack_depth=%d — Dump task stats prints INTERNAL top sites via logger",
+           (unsigned) kHeapTraceRecords, buf_kb, buf_where, CONFIG_HEAP_TRACING_STACK_DEPTH);
 }
 #endif
 
@@ -639,10 +802,11 @@ void LV6Dashboard::dump_task_stats_() {
   this->dump_heap_cap_("DMA", MALLOC_CAP_DMA);
   this->dump_heap_cap_("SPIRAM", MALLOC_CAP_SPIRAM);
 #if defined(CONFIG_HEAP_TRACING_STANDALONE) || defined(CONFIG_HEAP_TRACING)
-  // Only present in opt-in debug builds (see packages/board/esp32-s3.yaml).
-  // Requires heap_trace_init_* + heap_trace_start earlier in the session.
-  ESP_LOGI(TAG, "--- heap_trace_dump (CONFIG_HEAP_TRACING*) ---");
-  heap_trace_dump();
+  // Opt-in debug builds only (packages/debug/heap-tracing.yaml). Do NOT call
+  // heap_trace_dump() here — it uses esp_rom_printf and never reaches the
+  // ESPHome logger / dashboard Logs view.
+  ESP_LOGI(TAG, "--- heap_trace INTERNAL sites (CONFIG_HEAP_TRACING*) ---");
+  dump_heap_trace_via_logger_();
 #endif
 }
 

@@ -40,7 +40,7 @@ esp32:
       # For call-site attribution, include packages/debug/heap-tracing.yaml from
       # lune.yaml (TEMPORARY — remove after investigation). That package sets
       # CONFIG_HEAP_TRACING_STANDALONE + STACK_DEPTH and starts tracing on boot;
-      # Dump task stats then also calls heap_trace_dump().
+      # Dump task stats then logs INTERNAL top sites via the ESPHome logger.
       # BLE host is ESP-IDF NimBLE (nimble_hub). Do not enable Bluedroid here.
       # Role/PSRAM/mem options are set from nimble_hub codegen
       # (OBSERVER+BROADCASTER, MEM_ALLOC_MODE_EXTERNAL, no GATT).

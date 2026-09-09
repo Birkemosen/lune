@@ -7,10 +7,11 @@
 # Enable:  keep `heap_tracing: !include packages/debug/heap-tracing.yaml`
 # Disable: remove that packages: entry and rebuild (reverts to production path).
 #
-# After flash: Diagnostics → Dump task stats (or POST dump_task_stats). Serial /
-# live logs print heap_caps walks plus heap_trace_dump() allocation sites.
+# After flash: Diagnostics → Dump task stats (or POST dump_task_stats). Live logs
+# print heap_caps walks plus INTERNAL top alloc sites via ESP_LOGI (not IDF's
+# heap_trace_dump / esp_rom_printf, which bypass the ESPHome logger).
 #
-# Cost (approx): ~33 KB PSRAM for 384 records × ~88 B (STACK_DEPTH=8) + slower
+# Cost (approx): ~66 KB PSRAM for 768 records × ~88 B (STACK_DEPTH=8) + slower
 # malloc/free + flash for tracing hooks. The record buffer prefers PSRAM so the
 # investigation does not further starve INTERNAL DRAM; ISR allocs may be missed.
 # Tracing itself still touches heap — expect some self-noise in the dump.
