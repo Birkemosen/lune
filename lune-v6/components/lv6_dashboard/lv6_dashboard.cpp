@@ -477,20 +477,103 @@ void LV6Dashboard::update_snapshot_() {
 // ESP-IDF heap_trace_dump() prints only via esp_rom_printf (UART ROM path). That
 // bypasses ESPHome's logger callback, so dashboard / live-log views show the
 // "--- heap_trace_dump ---" banner and then nothing. We dump through ESP_LOGI
-// instead and aggregate INTERNAL outstanding sites by caller PC.
+// instead, skip malloc/heap_caps wrapper frames when picking an owner PC, and
+// print a sample multi-frame PC stack for each top INTERNAL site.
 
 namespace {
 
+// Depth 8 → ~88 B/record with standalone TAILQ; 768 × 88 ≈ 66 KB in PSRAM.
 constexpr size_t kHeapTraceRecords = 768;
 constexpr size_t kHeapTraceTopSites = 24;
 constexpr size_t kHeapTraceTopAllocs = 16;
+constexpr uintptr_t kHeapWrapperWindow = 0x800;  // ~2 KB past each wrapper symbol
 
 struct HeapTraceSiteAgg {
-  void *pc{nullptr};
+  void *owner_pc{nullptr};
   size_t bytes{0};
   size_t count{0};
   size_t max_bytes{0};
+  void *sample_stack[CONFIG_HEAP_TRACING_STACK_DEPTH]{};
 };
+
+// Thin wrappers that usually own alloced_by[0] (and sometimes [1]) on Xtensa.
+// Return addresses land a few bytes past the call site inside these functions.
+extern "C" {
+void *heap_caps_malloc(size_t size, uint32_t caps);
+void *heap_caps_calloc(size_t n, size_t size, uint32_t caps);
+void *heap_caps_realloc(void *ptr, size_t size, uint32_t caps);
+void *heap_caps_aligned_alloc(size_t alignment, size_t size, uint32_t caps);
+void *heap_caps_malloc_prefer(size_t size, size_t num, ...);
+void *heap_caps_calloc_prefer(size_t n, size_t size, size_t num, ...);
+void *pvPortMalloc(size_t xWantedSize);
+void *__wrap_heap_caps_malloc_base(size_t size, uint32_t caps);
+void *__wrap_heap_caps_realloc_base(void *ptr, size_t size, uint32_t caps);
+void *__wrap_heap_caps_aligned_alloc_base(size_t alignment, size_t size, uint32_t caps);
+}
+
+bool pc_in_wrapper_window_(void *pc, void *fn) {
+  if (pc == nullptr || fn == nullptr)
+    return false;
+  const uintptr_t p = reinterpret_cast<uintptr_t>(pc);
+  const uintptr_t s = reinterpret_cast<uintptr_t>(fn);
+  return p >= s && p < s + kHeapWrapperWindow;
+}
+
+bool is_heap_wrapper_pc_(void *pc) {
+  if (pc == nullptr)
+    return false;
+  // malloc/calloc/realloc come from <cstdlib> / newlib — compare by address.
+  return pc_in_wrapper_window_(pc, reinterpret_cast<void *>(heap_caps_malloc)) ||
+         pc_in_wrapper_window_(pc, reinterpret_cast<void *>(heap_caps_calloc)) ||
+         pc_in_wrapper_window_(pc, reinterpret_cast<void *>(heap_caps_realloc)) ||
+         pc_in_wrapper_window_(pc, reinterpret_cast<void *>(heap_caps_aligned_alloc)) ||
+         pc_in_wrapper_window_(pc, reinterpret_cast<void *>(heap_caps_malloc_prefer)) ||
+         pc_in_wrapper_window_(pc, reinterpret_cast<void *>(heap_caps_calloc_prefer)) ||
+         pc_in_wrapper_window_(pc, reinterpret_cast<void *>(malloc)) ||
+         pc_in_wrapper_window_(pc, reinterpret_cast<void *>(calloc)) ||
+         pc_in_wrapper_window_(pc, reinterpret_cast<void *>(realloc)) ||
+         pc_in_wrapper_window_(pc, reinterpret_cast<void *>(pvPortMalloc)) ||
+         pc_in_wrapper_window_(pc, reinterpret_cast<void *>(__wrap_heap_caps_malloc_base)) ||
+         pc_in_wrapper_window_(pc, reinterpret_cast<void *>(__wrap_heap_caps_realloc_base)) ||
+         pc_in_wrapper_window_(pc, reinterpret_cast<void *>(__wrap_heap_caps_aligned_alloc_base));
+}
+
+void *owner_pc_from_stack_(void *const *stack) {
+  void *first = nullptr;
+  for (int i = 0; i < CONFIG_HEAP_TRACING_STACK_DEPTH; i++) {
+    void *pc = stack[i];
+    if (pc == nullptr)
+      break;
+    if (first == nullptr)
+      first = pc;
+    if (!is_heap_wrapper_pc_(pc))
+      return pc;
+  }
+  return first;  // all wrappers / empty — still attribute somewhere
+}
+
+void copy_alloc_stack_(void *dst[CONFIG_HEAP_TRACING_STACK_DEPTH],
+                       void *const src[CONFIG_HEAP_TRACING_STACK_DEPTH]) {
+  for (int i = 0; i < CONFIG_HEAP_TRACING_STACK_DEPTH; i++)
+    dst[i] = src[i];
+}
+
+void format_pc_stack_(char *buf, size_t buf_len, void *const *stack) {
+  if (buf_len == 0)
+    return;
+  buf[0] = '\0';
+  size_t off = 0;
+  for (int i = 0; i < CONFIG_HEAP_TRACING_STACK_DEPTH; i++) {
+    if (stack[i] == nullptr)
+      break;
+    const int n = snprintf(buf + off, buf_len - off, "%s%p", (i == 0) ? "" : ":", stack[i]);
+    if (n < 0 || static_cast<size_t>(n) >= buf_len - off)
+      break;
+    off += static_cast<size_t>(n);
+  }
+  if (off == 0)
+    snprintf(buf, buf_len, "(none)");
+}
 
 void dump_heap_trace_via_logger_() {
   heap_trace_summary_t summary{};
@@ -506,11 +589,11 @@ void dump_heap_trace_via_logger_() {
 
   ESP_LOGI(TAG,
            "heap_trace summary: mode=%s records=%u/%u high_water=%u overflow=%s "
-           "total_alloc=%u total_free=%u",
+           "total_alloc=%u total_free=%u stack_depth=%d",
            summary.mode == HEAP_TRACE_ALL ? "ALL" : "LEAKS", (unsigned) summary.count,
            (unsigned) summary.capacity, (unsigned) summary.high_water_mark,
            summary.has_overflowed ? "yes" : "no", (unsigned) summary.total_allocations,
-           (unsigned) summary.total_frees);
+           (unsigned) summary.total_frees, CONFIG_HEAP_TRACING_STACK_DEPTH);
 
   const size_t n = heap_trace_get_count();
   if (n == 0) {
@@ -530,10 +613,17 @@ void dump_heap_trace_via_logger_() {
   size_t other_bytes = 0;
   size_t other_count = 0;
 
+  // Power-of-two size histogram for INTERNAL outstanding allocs.
+  static constexpr size_t kHistEdges[] = {16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192};
+  static constexpr size_t kHistBuckets = (sizeof(kHistEdges) / sizeof(kHistEdges[0])) + 1;
+  size_t hist_count[kHistBuckets]{};
+  size_t hist_bytes[kHistBuckets]{};
+
   struct LargeAlloc {
     size_t size;
     void *addr;
-    void *pc;
+    void *owner_pc;
+    void *stack[CONFIG_HEAP_TRACING_STACK_DEPTH];
   };
   LargeAlloc largest[kHeapTraceTopAllocs]{};
   size_t largest_n = 0;
@@ -557,24 +647,37 @@ void dump_heap_trace_via_logger_() {
     internal_bytes += rec.size;
     internal_count++;
 
-    void *pc = (CONFIG_HEAP_TRACING_STACK_DEPTH > 0) ? rec.alloced_by[0] : nullptr;
+    size_t bucket = kHistBuckets - 1;
+    for (size_t b = 0; b < sizeof(kHistEdges) / sizeof(kHistEdges[0]); b++) {
+      if (rec.size <= kHistEdges[b]) {
+        bucket = b;
+        break;
+      }
+    }
+    hist_count[bucket]++;
+    hist_bytes[bucket] += rec.size;
+
+    void *owner = owner_pc_from_stack_(rec.alloced_by);
     bool found = false;
     for (auto &s : sites) {
-      if (s.pc == pc) {
+      if (s.owner_pc == owner) {
         s.bytes += rec.size;
         s.count++;
-        if (rec.size > s.max_bytes)
+        if (rec.size > s.max_bytes) {
           s.max_bytes = rec.size;
+          copy_alloc_stack_(s.sample_stack, rec.alloced_by);
+        }
         found = true;
         break;
       }
     }
     if (!found) {
       HeapTraceSiteAgg s;
-      s.pc = pc;
+      s.owner_pc = owner;
       s.bytes = rec.size;
       s.count = 1;
       s.max_bytes = rec.size;
+      copy_alloc_stack_(s.sample_stack, rec.alloced_by);
       sites.push_back(s);
     }
 
@@ -590,7 +693,10 @@ void dump_heap_trace_via_logger_() {
       size_t move_n = largest_n < kHeapTraceTopAllocs ? largest_n : (kHeapTraceTopAllocs - 1);
       for (size_t k = move_n; k > insert_at; k--)
         largest[k] = largest[k - 1];
-      largest[insert_at] = LargeAlloc{rec.size, rec.address, pc};
+      largest[insert_at].size = rec.size;
+      largest[insert_at].addr = rec.address;
+      largest[insert_at].owner_pc = owner;
+      copy_alloc_stack_(largest[insert_at].stack, rec.alloced_by);
       if (largest_n < kHeapTraceTopAllocs)
         largest_n++;
     }
@@ -601,23 +707,46 @@ void dump_heap_trace_via_logger_() {
            (unsigned) internal_bytes, (unsigned) internal_count, (unsigned) psram_bytes,
            (unsigned) psram_count, (unsigned) other_bytes, (unsigned) other_count);
 
+  ESP_LOGI(TAG, "--- INTERNAL size histogram ---");
+  for (size_t b = 0; b < kHistBuckets; b++) {
+    if (hist_count[b] == 0)
+      continue;
+    if (b == 0) {
+      ESP_LOGI(TAG, "  <=%4u B: %u allocs, %u B", (unsigned) kHistEdges[0],
+               (unsigned) hist_count[b], (unsigned) hist_bytes[b]);
+    } else if (b < kHistBuckets - 1) {
+      ESP_LOGI(TAG, "  <=%4u B: %u allocs, %u B", (unsigned) kHistEdges[b],
+               (unsigned) hist_count[b], (unsigned) hist_bytes[b]);
+    } else {
+      ESP_LOGI(TAG, "   >%4u B: %u allocs, %u B",
+               (unsigned) kHistEdges[kHistBuckets - 2], (unsigned) hist_count[b],
+               (unsigned) hist_bytes[b]);
+    }
+  }
+
   std::sort(sites.begin(), sites.end(),
             [](const HeapTraceSiteAgg &a, const HeapTraceSiteAgg &b) { return a.bytes > b.bytes; });
 
+  char stack_buf[CONFIG_HEAP_TRACING_STACK_DEPTH * 12];
   const size_t show = std::min(sites.size(), kHeapTraceTopSites);
-  ESP_LOGI(TAG, "--- top INTERNAL alloc sites by total size (caller PC) ---");
+  ESP_LOGI(TAG,
+           "--- top INTERNAL alloc sites by total size (owner PC skips heap_caps/malloc) ---");
   for (size_t i = 0; i < show; i++) {
-    ESP_LOGI(TAG, "  #%02u %6u B ×%u (max %u B) pc=%p", (unsigned) (i + 1),
+    format_pc_stack_(stack_buf, sizeof(stack_buf), sites[i].sample_stack);
+    ESP_LOGI(TAG, "  #%02u %6u B ×%u (max %u B) owner=%p", (unsigned) (i + 1),
              (unsigned) sites[i].bytes, (unsigned) sites[i].count, (unsigned) sites[i].max_bytes,
-             sites[i].pc);
+             sites[i].owner_pc);
+    ESP_LOGI(TAG, "       stack=%s", stack_buf);
   }
   if (show == 0)
     ESP_LOGW(TAG, "  (no INTERNAL outstanding records in buffer)");
 
   ESP_LOGI(TAG, "--- largest INTERNAL allocs ---");
   for (size_t i = 0; i < largest_n; i++) {
-    ESP_LOGI(TAG, "  #%02u %6u B @ %p pc=%p", (unsigned) (i + 1), (unsigned) largest[i].size,
-             largest[i].addr, largest[i].pc);
+    format_pc_stack_(stack_buf, sizeof(stack_buf), largest[i].stack);
+    ESP_LOGI(TAG, "  #%02u %6u B @ %p owner=%p", (unsigned) (i + 1), (unsigned) largest[i].size,
+             largest[i].addr, largest[i].owner_pc);
+    ESP_LOGI(TAG, "       stack=%s", stack_buf);
   }
 
   if (summary.has_overflowed) {
