@@ -35,6 +35,16 @@ esp32:
       # internal heap available for the dashboard and native API tasks.
       CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP: "y"
       CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC: "y"
+      # --- Optional heap attribution (DEBUG BUILDS ONLY — do not ship) ---
+      # Standalone heap tracing records every malloc/free with a short backtrace.
+      # Cost: large static record buffer in DRAM/PSRAM + slower allocs + flash.
+      # Enable locally when hunting an internal-heap owner, then flash a normal
+      # build again. With these on, "Dump task stats" also calls heap_trace_dump()
+      # (you must still heap_trace_init_standalone + heap_trace_start in setup).
+      #   CONFIG_HEAP_TRACING_STANDALONE: "y"
+      #   CONFIG_HEAP_TRACING_STACK_DEPTH: "8"
+      # Prefer the on-demand multi_heap_info / heap_caps_print_heap_info dump
+      # (dump_task_stats) first — it needs no sdkconfig change.
       # BLE host is ESP-IDF NimBLE (nimble_hub). Do not enable Bluedroid here.
       # Role/PSRAM/mem options are set from nimble_hub codegen
       # (OBSERVER+BROADCASTER, MEM_ALLOC_MODE_EXTERNAL, no GATT).

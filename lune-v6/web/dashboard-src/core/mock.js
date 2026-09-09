@@ -300,6 +300,9 @@ export function mockDiagnosticsSnapshot() {
         min_internal_kb: ev(gkey.minInternalKb) || 96,
         psram_kb: ev(gkey.freePsramKb) || 7800,
         largest_psram_kb: ev(gkey.largestPsramKb) || 4096,
+        internal_allocated_kb: 280,
+        internal_free_blocks: 12,
+        internal_alloc_blocks: 180,
       },
       ble: {
         enabled: es(gkey.bleHubEnabled) === 'on',

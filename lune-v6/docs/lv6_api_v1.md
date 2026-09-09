@@ -305,7 +305,11 @@ panels and coordinator pairing checks:
 
 ### `GET /api/hv6/v1/diagnostics`
 
-Returns diagnostics summary and latest fault/calibration state. On Rev 3.1 the
+Returns diagnostics summary and latest fault/calibration state. The `heap`
+object reports free INTERNAL/DMA/PSRAM (KB), largest/min free INTERNAL blocks,
+plus `internal_allocated_kb` / `internal_free_blocks` / `internal_alloc_blocks`
+from `multi_heap_info_t` (still totals — not call-site owners). For a region
+walk and per-task stack table, POST `dump_task_stats`. On Rev 3.1 the
 `motor_safety` object exposes the live bring-up evidence used by the endpoint
 classifier: shared current, raw terminal A/B ADC samples, differential BEMF,
 A/B sample separation, validity/motion flags, invalid-sample count, motion
@@ -463,6 +467,10 @@ Minimum command set:
 - `calibrate_all_motors`
 - `i2c_scan`
 - `ble_clock_sync_now`
+- `dump_task_stats` — logs FreeRTOS per-task CPU%/stack headroom plus
+  `multi_heap_info` / `heap_caps_print_heap_info` for INTERNAL, DMA, and SPIRAM
+  to the device log (serial + live log ring). Prefer this before enabling
+  `CONFIG_HEAP_TRACING_STANDALONE` (see `packages/board/esp32-s3.yaml`).
 - `firmware_check`
 - `firmware_prepare`
 - `firmware_install`

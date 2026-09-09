@@ -327,7 +327,7 @@ export function resetMotorAndRelearn(zone) {
 }
 
 export function dumpTaskStats() {
-  addActivity('Task stats dumped to device log');
+  addActivity('Task/heap stats dumped to device log');
   return command('dump_task_stats');
 }
 

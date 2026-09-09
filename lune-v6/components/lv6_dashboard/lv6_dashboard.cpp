@@ -19,6 +19,9 @@
 #include <esp_http_server.h>
 #include <esp_heap_caps.h>
 #include <esp_system.h>
+#if defined(CONFIG_HEAP_TRACING_STANDALONE) || defined(CONFIG_HEAP_TRACING)
+#include <esp_heap_trace.h>
+#endif
 
 namespace esphome {
 namespace lv6_dashboard {
@@ -326,6 +329,13 @@ void LV6Dashboard::update_snapshot_() {
   s.min_internal_kb = heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL) / 1024;
   s.free_psram_kb = heap_caps_get_free_size(MALLOC_CAP_SPIRAM) / 1024;
   s.largest_psram_kb = heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM) / 1024;
+  {
+    multi_heap_info_t info{};
+    heap_caps_get_info(&info, MALLOC_CAP_INTERNAL);
+    s.internal_allocated_kb = info.total_allocated_bytes / 1024;
+    s.internal_free_blocks = info.free_blocks;
+    s.internal_alloc_blocks = info.allocated_blocks;
+  }
 
   if (this->nimble_hub_) {
     s.ble_hub_enabled = this->nimble_hub_->is_enabled();
@@ -527,6 +537,21 @@ void LV6Dashboard::sample_cpu_load_() {
   cpu_last_idle1_ = idle1;
 }
 
+void LV6Dashboard::dump_heap_cap_(const char *label, uint32_t caps) const {
+  multi_heap_info_t info{};
+  heap_caps_get_info(&info, caps);
+  ESP_LOGI(TAG,
+           "heap[%s]: free=%uB alloc=%uB largest_free=%uB min_free=%uB "
+           "free_blocks=%u alloc_blocks=%u total_blocks=%u",
+           label, (unsigned) info.total_free_bytes, (unsigned) info.total_allocated_bytes,
+           (unsigned) info.largest_free_block, (unsigned) info.minimum_free_bytes,
+           (unsigned) info.free_blocks, (unsigned) info.allocated_blocks,
+           (unsigned) info.total_blocks);
+  // ESP-IDF walks each heap region and prints free/used ranges — the tool for
+  // seeing *which* banks are empty vs fragmented (not which call site owns bytes).
+  heap_caps_print_heap_info(caps);
+}
+
 void LV6Dashboard::dump_task_stats_() {
   UBaseType_t count = uxTaskGetNumberOfTasks();
   if (count == 0)
@@ -558,6 +583,17 @@ void LV6Dashboard::dump_task_stats_() {
              t.pcTaskName ? t.pcTaskName : "?", (unsigned) t.uxCurrentPriority, pct,
              (unsigned) (t.usStackHighWaterMark * sizeof(StackType_t)));
   }
+
+  ESP_LOGI(TAG, "--- heap caps (INTERNAL / DMA / SPIRAM) ---");
+  this->dump_heap_cap_("INTERNAL", MALLOC_CAP_INTERNAL);
+  this->dump_heap_cap_("DMA", MALLOC_CAP_DMA);
+  this->dump_heap_cap_("SPIRAM", MALLOC_CAP_SPIRAM);
+#if defined(CONFIG_HEAP_TRACING_STANDALONE) || defined(CONFIG_HEAP_TRACING)
+  // Only present in opt-in debug builds (see packages/board/esp32-s3.yaml).
+  // Requires heap_trace_init_* + heap_trace_start earlier in the session.
+  ESP_LOGI(TAG, "--- heap_trace_dump (CONFIG_HEAP_TRACING*) ---");
+  heap_trace_dump();
+#endif
 }
 
 void LV6Dashboard::loop() {
@@ -1457,7 +1493,9 @@ void LV6Dashboard::handle_diagnostics_(AsyncWebServerRequest *request) {
   snprintf(this->json_buf_, sizeof(this->json_buf_),
            "{\"ok\":true,\"version\":\"v1\",\"data\":{\"heap\":{\"internal_kb\":%lu,"
            "\"dma_kb\":%lu,\"largest_internal_kb\":%lu,\"min_internal_kb\":%lu,"
-           "\"psram_kb\":%lu,\"largest_psram_kb\":%lu},"
+           "\"psram_kb\":%lu,\"largest_psram_kb\":%lu,"
+           "\"internal_allocated_kb\":%lu,\"internal_free_blocks\":%lu,"
+           "\"internal_alloc_blocks\":%lu},"
            "\"cpu\":{\"core0_pct\":%s,\"core1_pct\":%s},"
            "\"ble\":{\"enabled\":%s,\"scanning\":%s,\"demanded\":%s,"
            "\"ads_per_sec\":%s,\"last_adv_age_ms\":%lu},"
@@ -1482,7 +1520,10 @@ void LV6Dashboard::handle_diagnostics_(AsyncWebServerRequest *request) {
            static_cast<unsigned long>(snap->largest_internal_kb),
            static_cast<unsigned long>(snap->min_internal_kb),
            static_cast<unsigned long>(snap->free_psram_kb),
-           static_cast<unsigned long>(snap->largest_psram_kb), cpu0, cpu1,
+           static_cast<unsigned long>(snap->largest_psram_kb),
+           static_cast<unsigned long>(snap->internal_allocated_kb),
+           static_cast<unsigned long>(snap->internal_free_blocks),
+           static_cast<unsigned long>(snap->internal_alloc_blocks), cpu0, cpu1,
            snap->ble_hub_enabled ? "true" : "false",
            snap->ble_scanning ? "true" : "false",
            snap->ble_demanded ? "true" : "false",

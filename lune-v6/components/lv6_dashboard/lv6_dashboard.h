@@ -75,6 +75,10 @@ struct DashboardSnapshot {
   uint32_t min_internal_kb{0};        // min free internal heap since boot (KB)
   uint32_t free_psram_kb{0};          // free PSRAM (KB), 0 if none
   uint32_t largest_psram_kb{0};       // largest free PSRAM block (KB)
+  // multi_heap_info (INTERNAL) — attribution aids beyond free/largest/min
+  uint32_t internal_allocated_kb{0};  // total allocated bytes in INTERNAL heaps
+  uint32_t internal_free_blocks{0};
+  uint32_t internal_alloc_blocks{0};
 
   // --- BLE scan liveness (nimble_hub) ---
   bool     ble_hub_enabled{false};
@@ -335,9 +339,13 @@ class LV6Dashboard : public Component, public AsyncWebHandler {
   std::vector<TaskStatus_t> task_status_buf_;  // reused across samples (no per-call alloc)
   // Sample per-core load from the IDLE-task runtime counters (called from loop()).
   void sample_cpu_load_();
-  // Log a per-task table (name, prio, state, CPU%, stack headroom) on demand —
-  // the tool to find a task that saturates a core. Triggered by a dashboard command.
+  // Log FreeRTOS per-task CPU%/stack headroom plus heap_caps / multi_heap_info
+  // for INTERNAL, DMA, and SPIRAM. Triggered by dump_task_stats (dashboard button
+  // or POST /api/hv6/v1/commands). Does not enable heap tracing by default —
+  // see packages/board/esp32-s3.yaml for an optional debug build.
   void dump_task_stats_();
+  // multi_heap_info + heap_caps_print_heap_info for one capability mask.
+  void dump_heap_cap_(const char *label, uint32_t caps) const;
 
   // History ring buffer (protected by history_lock_)
   SemaphoreHandle_t history_lock_{nullptr};
