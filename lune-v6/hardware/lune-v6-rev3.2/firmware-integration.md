@@ -333,7 +333,7 @@ contract, the arm/select/enable ordering and the endpoint classifier. A
 successful compile proves integration and pin/config consistency; it does not
 qualify endpoint thresholds, analog integrity or safe energized time.
 
-During bench qualification, poll `GET /api/lv6/v1/diagnostics`. Its
+During bench qualification, poll `GET /api/v1/diagnostics`. Its
 `motor_safety` object reports `backend`, `motion_evidence_count` (the qualified
 count), `tacho_period_us` (cadence), `tacho_rejected`, `tacho_hardware_count`
 (the raw PCNT total, so the rejection rate can be computed), `tacho_amp_raw`,
@@ -342,7 +342,7 @@ count), `tacho_period_us` (cadence), `tacho_rejected`, `tacho_hardware_count`
 observation-only and cannot bypass the local safety classifier.
 
 After a move has stopped, download
-`GET /api/lv6/v1/motor-trace.csv` for the complete chronological capture. Its
+`GET /api/v1/motor-trace.csv` for the complete chronological capture. Its
 columns are `t_ms, motion_count, current_ma, adc_current_raw, drive_on,
 direction_open, armed, tacho_period_us, tacho_amp_raw` followed by the six Rev
 3.1 `bemf_*` columns, which a Rev 3.2 trace leaves at their unused sentinels.

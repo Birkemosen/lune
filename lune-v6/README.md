@@ -333,9 +333,9 @@ one of the OTA paths instead:
   firmware over the ESPHome native OTA transport.
 
 > Back up your settings before every update. Download
-> `http://<device>/api/lv6/v1/settings/export` and keep the file; it restores
-> through `POST /api/lv6/v1/settings/import` if a configuration migration goes
-> wrong. `http://<device>/api/lv6/v1/logs/download` captures the device log ring
+> `http://<device>/api/v1/settings/export` and keep the file; it restores
+> through `POST /api/v1/settings/import` if a configuration migration goes
+> wrong. `http://<device>/api/v1/logs/download` captures the device log ring
 > for a bug report — it is RAM-only and lost on reboot.
 
 An OTA boot is only marked good after a 60 s settle window (`safe_mode`), so a

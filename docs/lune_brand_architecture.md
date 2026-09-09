@@ -25,8 +25,9 @@ Lune covers hydronic heating, indoor comfort, sensing, and whole-house heat coor
 | Lune Sense | Future room / temperature sensor hardware |
 | Lune Flow | Future flow / return / supply monitoring module |
 
-The former public product name **HeatValve-6** is replaced by **Lune V6**. The dashboard
-HTTP API namespace is `/api/lv6/v1`. Some internal identifiers (NVS namespace `"hv6"`,
+The former public product name **HeatValve-6** is replaced by **Lune V6**. The V6
+host dashboard HTTP API is `/api/v1` (no product segment; older `/api/lv6/v1` and
+`/api/hv6/v1` paths are gone). Some internal identifiers (NVS namespace `"hv6"`,
 legacy C++ type/log tags) may still say `hv6` to avoid wiping persisted config or a
 large firmware rename; new user-facing text, docs, and product decisions should use
 Lune V6 / `lv6`.

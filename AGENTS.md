@@ -82,7 +82,7 @@ docs/
 ```
 
 Dashboard source is `lune-v6/web/dashboard-src/` and the committed bundle is
-`lune-v6/web/dashboard.js`. The dashboard must use `/api/lv6/v1`, not ESPHome
+`lune-v6/web/dashboard.js`. The dashboard must use `/api/v1`, not ESPHome
 entity REST routes.
 
 Important local ownership:

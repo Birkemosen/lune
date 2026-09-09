@@ -385,7 +385,7 @@ export function setZoneStateHistory(data) {
   notify(dashboardKey('zoneStateHistory'));
 }
 
-// ---- live device log (fed by GET /api/lv6/v1/logs) ----
+// ---- live device log (fed by GET /api/v1/logs) ----
 
 export function getDeviceLogSeq() {
   return D.deviceLogSeq;

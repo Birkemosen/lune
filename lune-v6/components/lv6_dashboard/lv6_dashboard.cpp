@@ -1000,7 +1000,7 @@ void LV6Dashboard::loop() {
   }
 }
 
-static constexpr const char V1_PREFIX[] = "/api/lv6/v1";
+static constexpr const char V1_PREFIX[] = "/api/v1";
 static constexpr size_t V1_PREFIX_LEN = sizeof(V1_PREFIX) - 1;
 
 bool LV6Dashboard::canHandle(AsyncWebServerRequest *request) const {
@@ -1879,8 +1879,8 @@ void LV6Dashboard::handle_diagnostics_(AsyncWebServerRequest *request) {
            "\"authority\":{\"state\":\"%s\",\"reason\":\"%s\",\"lease_remaining_s\":%lu,\"generation\":%lu,\"v6_write_allowed\":%s},"
            "\"firmware\":{\"update\":{\"current\":\"%s\",\"latest\":\"%s\",\"available\":%s,"
            "\"status\":\"%s\"}},\"reset_reason\":\"%s\","
-           "%s,\"logs_endpoint\":\"/api/lv6/v1/logs\","
-           "\"logs_download_endpoint\":\"/api/lv6/v1/logs/download\"}}",
+           "%s,\"logs_endpoint\":\"/api/v1/logs\","
+           "\"logs_download_endpoint\":\"/api/v1/logs/download\"}}",
            static_cast<unsigned long>(snap->free_internal_kb),
            static_cast<unsigned long>(snap->free_dma_kb),
            static_cast<unsigned long>(snap->largest_internal_kb),
@@ -1999,7 +1999,7 @@ void LV6Dashboard::handle_motor_trace_(AsyncWebServerRequest *request) {
 void LV6Dashboard::handle_events_(AsyncWebServerRequest *request) {
   send_text_(request, 200, "text/event-stream",
              "event: hello\n"
-             "data: {\"resource\":\"/api/lv6/v1/state\",\"stream\":\"poll\"}\n\n",
+             "data: {\"resource\":\"/api/v1/state\",\"stream\":\"poll\"}\n\n",
              true, "no-cache");
 }
 
@@ -2014,7 +2014,7 @@ void LV6Dashboard::handle_revision_(AsyncWebServerRequest *request) {
 }
 
 // =============================================================================
-// /api/lv6/v1 - request routing (contract: lune-v6/docs/lv6_api_v1.md)
+// /api/v1 - request routing (contract: lune-v6/docs/lv6_api_v1.md)
 // =============================================================================
 
 namespace {
@@ -3197,7 +3197,7 @@ constexpr uint16_t SMART_COPY_SLOTS = 32;
 
 }  // namespace
 
-// GET /api/lv6/v1/logs?since=<seq> — live scratch only, lines newer than <seq>.
+// GET /api/v1/logs?since=<seq> — live scratch only, lines newer than <seq>.
 void LV6Dashboard::handle_logs_(AsyncWebServerRequest *request) {
   uint32_t since = 0;
   const std::string since_arg = request->arg("since");
@@ -3261,7 +3261,7 @@ void LV6Dashboard::handle_logs_(AsyncWebServerRequest *request) {
   free(staging);
 }
 
-// GET /api/lv6/v1/logs/download — the smart FIFO as a plain-text attachment.
+// GET /api/v1/logs/download — the smart FIFO as a plain-text attachment.
 void LV6Dashboard::handle_logs_download_(AsyncWebServerRequest *request) {
   httpd_req_t *req = *request;
   httpd_resp_set_status(req, "200 OK");
@@ -3304,7 +3304,7 @@ void LV6Dashboard::handle_logs_download_(AsyncWebServerRequest *request) {
 // Settings backup — export / import
 // =============================================================================
 
-// GET /api/lv6/v1/settings/export[?include_learned=0|1]
+// GET /api/v1/settings/export[?include_learned=0|1]
 void LV6Dashboard::handle_settings_export_(AsyncWebServerRequest *request) {
   if (this->config_store_ == nullptr) {
     this->send_v1_(request, 503, "config_store_unavailable", "No config store");
@@ -3370,7 +3370,7 @@ void LV6Dashboard::handle_settings_export_(AsyncWebServerRequest *request) {
   free(scratch);
 }
 
-// POST /api/lv6/v1/settings/import — body is an export document.
+// POST /api/v1/settings/import — body is an export document.
 void LV6Dashboard::handle_settings_import_(AsyncWebServerRequest *request, const char *body) {
   if (!this->authorize_write_(request))
     return;

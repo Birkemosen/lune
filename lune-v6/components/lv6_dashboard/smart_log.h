@@ -4,9 +4,9 @@
 // Two rings are fed from the single ESPHome logger callback:
 //
 //   * live scratch (LIVE_SLOTS)   — everything ERROR..DEBUG, short window.
-//                                   Served by GET /api/lv6/v1/logs?since=.
+//                                   Served by GET /api/v1/logs?since=.
 //   * smart FIFO   (SMART_SLOTS)  — long window, admission-filtered. Served by
-//                                   GET /api/lv6/v1/logs/download.
+//                                   GET /api/v1/logs/download.
 //
 // The smart FIFO exists so a support download covers hours of runtime without
 // 2048 slots of routine zone-cycle chatter. Admission keeps:
