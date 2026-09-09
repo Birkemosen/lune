@@ -223,8 +223,12 @@ bool NimbleHub::start_scan(uint16_t interval_ms, uint16_t window_ms, bool active
   this->continuous_scan_ = continuous;
   this->want_scan_ = true;
   if (this->advertising_) {
+    // Demand gate may re-call start_scan every loop during a clock advertise
+    // burst (~12s); only log the first defer so DEBUG stays usable.
+    if (!this->scan_paused_for_adv_) {
+      ESP_LOGD(TAG, "Scan deferred until advertise ends");
+    }
     this->scan_paused_for_adv_ = true;
-    ESP_LOGD(TAG, "Scan deferred until advertise ends");
     return true;
   }
   if (!this->synced_) {
