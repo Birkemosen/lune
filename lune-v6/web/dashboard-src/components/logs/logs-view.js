@@ -31,29 +31,20 @@ const css = `
   backdrop-filter: blur(16px) saturate(1.18);
 }
 
-.logs-view .card-title {
-  font-size: .84rem;
-  font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: 1.1px;
-  color: var(--accent);
-  margin-bottom: 12px;
-  padding-bottom: 10px;
-  border-bottom: 1px solid var(--panel-border);
+.logs-view .actions {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
 }
-
-.logs-view .actions { display: flex; gap: 6px; }
 .logs-view .btn {
   border: 1px solid var(--control-border);
-  background:var(--control-bg);
+  background: var(--control-bg);
   color: var(--text-secondary);
   border-radius: 8px;
-  padding: 4px 10px;
-  font-size: .68rem;
+  min-height: var(--control-height, 44px);
+  padding: 0 12px;
+  font-size: .72rem;
   font-weight: 700;
   cursor: pointer;
 }
@@ -61,11 +52,10 @@ const css = `
 .logs-view .btn.on { color: var(--text-on-accent); border-color: var(--accent); background: var(--accent); }
 
 .logs-stream {
-  margin-top: 4px;
   height: 420px;
   overflow-y: auto;
   border-radius: 8px;
-  background:rgba(0,0,0,.14);
+  background: rgba(0,0,0,.14);
   border: 1px solid var(--control-border);
   padding: 6px 0;
   font-family: var(--mono);
@@ -99,15 +89,13 @@ injectStyle('logs-view', css);
 // ========================================
 const template = () => `
   <div class="logs-view">
-    <div class="card-title">
-      <span data-i18n="logs.deviceLogs">Device Logs</span>
-      <div class="actions">
-        <button class="btn pause-btn" type="button" data-i18n="logs.pause">Pause</button>
-        <button class="btn clear-btn" type="button" data-i18n="logs.clear">Clear</button>
-        <button class="btn download-btn" type="button" data-i18n="logs.download">Download</button>
-      </div>
-    </div>
     <div class="logs-stream"></div>
+    <div class="actions">
+      <button class="btn pause-btn" type="button" data-i18n="logs.pause">Pause</button>
+      <button class="btn clear-btn" type="button" data-i18n="logs.clear">Clear</button>
+      <button class="btn download-btn" type="button" data-i18n="logs.download">Download</button>
+      <button class="btn bottom-btn" type="button" data-i18n="logs.scrollBottom">Scroll to bottom</button>
+    </div>
   </div>
 `;
 
@@ -136,7 +124,12 @@ export default component({
     const pauseBtn = el.querySelector('.pause-btn');
     const clearBtn = el.querySelector('.clear-btn');
     const downloadBtn = el.querySelector('.download-btn');
+    const bottomBtn = el.querySelector('.bottom-btn');
     let paused = false;
+
+    function scrollToBottom() {
+      streamEl.scrollTop = streamEl.scrollHeight;
+    }
 
     function update() {
       if (paused) return;
@@ -148,7 +141,7 @@ export default component({
       // Stick to the bottom only if the user is already near it.
       const atBottom = streamEl.scrollHeight - streamEl.scrollTop - streamEl.clientHeight < 40;
       streamEl.innerHTML = items.map(lineHtml).join('');
-      if (atBottom) streamEl.scrollTop = streamEl.scrollHeight;
+      if (atBottom) scrollToBottom();
     }
 
     pauseBtn.addEventListener('click', () => {
@@ -171,6 +164,10 @@ export default component({
           window.alert(t('logs.downloadFailed'));
         })
         .finally(() => { downloadBtn.disabled = false; });
+    });
+
+    bottomBtn.addEventListener('click', () => {
+      scrollToBottom();
     });
 
     subscribeDashboard('deviceLog', update);

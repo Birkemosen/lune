@@ -84,7 +84,7 @@ packages:
   pcb:          !include packages/board/lune-v6-rev32.yaml
   # TEMPORARY — remove after investigation (standalone heap tracing + early start).
   # Disable by deleting this line and rebuilding; do not ship as production default.
-  heap_tracing: !include packages/debug/heap-tracing.yaml
+  # heap_tracing: !include packages/debug/heap-tracing.yaml
   # Network (radio-agnostic only — wifi/api/ota are in every variant)
   wifi:         !include packages/network/wifi.yaml
   api:          !include packages/network/api.yaml

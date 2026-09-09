@@ -1,0 +1,39 @@
+---
+description: Apple HIG is the foundation for Lune dashboard UI design and changes
+globs: lune-v6/web/**,lune-v6/web/dashboard-src/**
+alwaysApply: false
+---
+
+# Apple HIG UI Foundation
+
+When designing, building, or changing UI in the Lune V6 dashboard, treat Apple HIG as the foundation.
+
+## Required
+
+1. Load Apple HIG guidance first (`~/.codex/skills/apple-hig/SKILL.md` + relevant distilled topics: accessibility, buttons, text-fields, layout, color, typography).
+2. Touch targets: iOS default **44×44 pt** (min 28×28). Prefer `--control-height` (44px). Do not make controls needlessly larger than 44pt.
+3. Contrast: meet WCAG AA (4.5:1 normal text / 3:1 large or bold). Support light and dark.
+4. Never convey status with color alone — pair with label, icon, or shape.
+5. Match existing Lune tokens (`--accent`, `--control-*`, `--text-*`, `--separator`, `--surface-*`) and shared kit classes (`.ui-btn`, `.ui-input`, `.ui-select`, `.ui-row`).
+6. Compact mobile density: 44pt is enough; tighten padding before growing hit areas.
+7. Zone chrome: static overview cards may be multi-line (≥56–60px). Mobile zone chips stay single-line at `--control-height` (44px) without temp/status.
+
+## Do not
+
+- Invent oversized “chunky” controls, heavy multi-layer shadows, or gradient button chrome that fights the kit
+- Cram temp/status into the mobile bottom zone picker — keep that condensed; put rich status in the page overview
+- Ship generic AI aesthetics (purple gradients, cream+terracotta broadsheet, glow pills, emoji decoration)
+
+## Examples
+
+```css
+/* ❌ BAD — oversized form control */
+.ui-input { min-height: 56px; padding: 14px 16px; }
+
+/* ✅ GOOD — HIG default via token */
+.ui-input {
+  height: var(--control-height, 44px);
+  min-height: var(--control-height, 44px);
+  padding: 0 10px;
+}
+```
