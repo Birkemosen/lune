@@ -83,5 +83,9 @@ export const gkey = {
   cpuLoadCore0: 'sensor-cpu_load_core0',
   cpuLoadCore1: 'sensor-cpu_load_core1',
   freeInternalKb: 'sensor-free_internal_kb',
+  freeDmaKb: 'sensor-free_dma_kb',
+  largestInternalKb: 'sensor-largest_internal_kb',
+  minInternalKb: 'sensor-min_internal_kb',
   freePsramKb: 'sensor-free_psram_kb',
+  largestPsramKb: 'sensor-largest_psram_kb',
 };

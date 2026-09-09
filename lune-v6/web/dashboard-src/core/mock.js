@@ -119,7 +119,11 @@ function seed() {
   setEntity(gkey.cpuLoadCore0, { value: 18.5 });
   setEntity(gkey.cpuLoadCore1, { value: 7.2 });
   setEntity(gkey.freeInternalKb, { value: 142 });
+  setEntity(gkey.freeDmaKb, { value: 118 });
+  setEntity(gkey.largestInternalKb, { value: 64 });
+  setEntity(gkey.minInternalKb, { value: 96 });
   setEntity(gkey.freePsramKb, { value: 7800 });
+  setEntity(gkey.largestPsramKb, { value: 4096 });
   sampleHistory(true);
 
   // Generate 24 h of mock zone-state history (5-min intervals = 288 entries).
@@ -284,6 +288,14 @@ export function mockDiagnosticsSnapshot() {
     ok: true,
     version: 'v1',
     data: {
+      heap: {
+        internal_kb: ev(gkey.freeInternalKb) || 142,
+        dma_kb: ev(gkey.freeDmaKb) || 118,
+        largest_internal_kb: ev(gkey.largestInternalKb) || 64,
+        min_internal_kb: ev(gkey.minInternalKb) || 96,
+        psram_kb: ev(gkey.freePsramKb) || 7800,
+        largest_psram_kb: ev(gkey.largestPsramKb) || 4096,
+      },
       drivers_enabled: !!state.driversEnabled,
       motor_safety: {
         backend: 'mock',

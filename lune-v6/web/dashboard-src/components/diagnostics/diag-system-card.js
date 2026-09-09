@@ -63,8 +63,24 @@ const template = () => `
         <div class="sys-value" data-k="heap">—</div>
       </div>
       <div class="sys-cell">
+        <div class="sys-label" data-i18n="diagnostics.system.dma">Free DMA</div>
+        <div class="sys-value" data-k="dma">—</div>
+      </div>
+      <div class="sys-cell">
+        <div class="sys-label" data-i18n="diagnostics.system.largestInternal">Largest free (int)</div>
+        <div class="sys-value" data-k="largestInternal">—</div>
+      </div>
+      <div class="sys-cell">
+        <div class="sys-label" data-i18n="diagnostics.system.minInternal">Min free (int)</div>
+        <div class="sys-value" data-k="minInternal">—</div>
+      </div>
+      <div class="sys-cell">
         <div class="sys-label" data-i18n="diagnostics.system.psram">Free PSRAM</div>
         <div class="sys-value" data-k="psram">—</div>
+      </div>
+      <div class="sys-cell">
+        <div class="sys-label" data-i18n="diagnostics.system.largestPsram">Largest free PSRAM</div>
+        <div class="sys-value" data-k="largestPsram">—</div>
       </div>
       <div class="sys-cell sys-cell-wide">
         <div class="sys-label" data-i18n="diagnostics.system.resetReason">Last reset reason</div>
@@ -72,7 +88,7 @@ const template = () => `
       </div>
     </div>
     <button class="ui-btn sys-dump" type="button" data-i18n="diagnostics.system.dump">Dump task stats to log</button>
-    <div class="ui-note" data-i18n="diagnostics.system.note">Per-core load is sampled every 2 s. "Dump task stats" logs every task's CPU% and stack headroom to the device log above - use it to find what saturates a core.</div>
+    <div class="ui-note" data-i18n="diagnostics.system.note">Per-core load is sampled every 2 s. Heap figures show free internal/DMA/PSRAM and fragmentation (largest block + min since boot). "Dump task stats" logs every task's CPU% and stack headroom to the device log above - use it to find what saturates a core.</div>
   </div>
 `;
 
@@ -86,7 +102,11 @@ export default component({
     const cpu0El = el.querySelector('[data-k="cpu0"]');
     const cpu1El = el.querySelector('[data-k="cpu1"]');
     const heapEl = el.querySelector('[data-k="heap"]');
+    const dmaEl = el.querySelector('[data-k="dma"]');
+    const largestInternalEl = el.querySelector('[data-k="largestInternal"]');
+    const minInternalEl = el.querySelector('[data-k="minInternal"]');
     const psramEl = el.querySelector('[data-k="psram"]');
+    const largestPsramEl = el.querySelector('[data-k="largestPsram"]');
     const bar0 = el.querySelector('[data-bar="cpu0"]');
     const bar1 = el.querySelector('[data-bar="cpu1"]');
     const resetEl = el.querySelector('[data-k="reset"]');
@@ -114,7 +134,11 @@ export default component({
       setCpu(cpu0El, bar0, ev(gkey.cpuLoadCore0));
       setCpu(cpu1El, bar1, ev(gkey.cpuLoadCore1));
       setKb(heapEl, ev(gkey.freeInternalKb), 48);   // < 48 KB internal = tight for HTTPS/TLS tasks
+      setKb(dmaEl, ev(gkey.freeDmaKb), 32);
+      setKb(largestInternalEl, ev(gkey.largestInternalKb), 24);
+      setKb(minInternalEl, ev(gkey.minInternalKb), 48);
       setKb(psramEl, ev(gkey.freePsramKb), null);
+      setKb(largestPsramEl, ev(gkey.largestPsramKb), null);
       // Firmware publishes the boot cause as a text sensor in /state; a
       // diagnostics fetch may fill the dashboard value instead.
       const reason = String(es(gkey.resetReason) || getDashboardValue('resetReason') || '').trim();
@@ -128,7 +152,11 @@ export default component({
     subscribe(gkey.cpuLoadCore0, update);
     subscribe(gkey.cpuLoadCore1, update);
     subscribe(gkey.freeInternalKb, update);
+    subscribe(gkey.freeDmaKb, update);
+    subscribe(gkey.largestInternalKb, update);
+    subscribe(gkey.minInternalKb, update);
     subscribe(gkey.freePsramKb, update);
+    subscribe(gkey.largestPsramKb, update);
     subscribe(gkey.resetReason, update);
     subscribeDashboard('resetReason', update);
     subscribeLanguage(() => localize(el));

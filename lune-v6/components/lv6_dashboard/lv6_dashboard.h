@@ -63,8 +63,12 @@ struct DashboardSnapshot {
   // --- system diagnostics (FreeRTOS runtime stats + heap) ---
   float    cpu0_pct{NAN};        // Core 0 load % (loop/web/API/WiFi/zone task)
   float    cpu1_pct{NAN};        // Core 1 load % (valve/ripple/HTTP tasks)
-  uint32_t free_internal_kb{0};  // free DMA-capable internal heap (KB)
-  uint32_t free_psram_kb{0};     // free PSRAM (KB), 0 if none
+  uint32_t free_internal_kb{0};       // free internal heap (KB)
+  uint32_t free_dma_kb{0};            // free DMA-capable heap (KB)
+  uint32_t largest_internal_kb{0};    // largest free internal block (KB)
+  uint32_t min_internal_kb{0};        // min free internal heap since boot (KB)
+  uint32_t free_psram_kb{0};          // free PSRAM (KB), 0 if none
+  uint32_t largest_psram_kb{0};       // largest free PSRAM block (KB)
 
   // --- full config copies (POD structs, safe to memcpy) ---
   lv6::ZoneConfig   zones[lv6::NUM_ZONES];

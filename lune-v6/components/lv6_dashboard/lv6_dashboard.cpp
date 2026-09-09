@@ -320,7 +320,11 @@ void LV6Dashboard::update_snapshot_() {
   s.cpu0_pct = cpu0_pct_;
   s.cpu1_pct = cpu1_pct_;
   s.free_internal_kb = heap_caps_get_free_size(MALLOC_CAP_INTERNAL) / 1024;
+  s.free_dma_kb = heap_caps_get_free_size(MALLOC_CAP_DMA) / 1024;
+  s.largest_internal_kb = heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL) / 1024;
+  s.min_internal_kb = heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL) / 1024;
   s.free_psram_kb = heap_caps_get_free_size(MALLOC_CAP_SPIRAM) / 1024;
+  s.largest_psram_kb = heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM) / 1024;
 
   auto snap_float = [](sensor::Sensor *sns) -> float {
     return (sns && sns->has_state()) ? sns->state : NAN;
@@ -522,10 +526,16 @@ void LV6Dashboard::dump_task_stats_() {
   if (got == 0 || total_runtime == 0)
     return;
 
-  ESP_LOGI(TAG, "--- task stats: %u tasks | core0=%.0f%% core1=%.0f%% | heap int=%uKB psram=%uKB ---",
+  ESP_LOGI(TAG,
+           "--- task stats: %u tasks | core0=%.0f%% core1=%.0f%% | "
+           "heap int=%uKB dma=%uKB largest_int=%uKB min_int=%uKB psram=%uKB largest_psram=%uKB ---",
            (unsigned) got, cpu0_pct_, cpu1_pct_,
            (unsigned) (heap_caps_get_free_size(MALLOC_CAP_INTERNAL) / 1024),
-           (unsigned) (heap_caps_get_free_size(MALLOC_CAP_SPIRAM) / 1024));
+           (unsigned) (heap_caps_get_free_size(MALLOC_CAP_DMA) / 1024),
+           (unsigned) (heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL) / 1024),
+           (unsigned) (heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL) / 1024),
+           (unsigned) (heap_caps_get_free_size(MALLOC_CAP_SPIRAM) / 1024),
+           (unsigned) (heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM) / 1024));
   // ulRunTimeCounter is the lifetime counter, so cpu% here is the since-boot
   // average per task (the live per-core figures above cover "now"). stack_free
   // is the lifetime minimum free stack — a small value flags near-overflow.
@@ -723,10 +733,18 @@ void LV6Dashboard::handle_state_(AsyncWebServerRequest *request) {
   appendf(buf, BUF_SIZE, offset,
       "\"sensor-cpu_load_core1\":{\"value\":%s},"
       "\"sensor-free_internal_kb\":{\"value\":%lu},"
-      "\"sensor-free_psram_kb\":{\"value\":%lu},",
+      "\"sensor-free_dma_kb\":{\"value\":%lu},"
+      "\"sensor-largest_internal_kb\":{\"value\":%lu},"
+      "\"sensor-min_internal_kb\":{\"value\":%lu},"
+      "\"sensor-free_psram_kb\":{\"value\":%lu},"
+      "\"sensor-largest_psram_kb\":{\"value\":%lu},",
       num_buf,
       static_cast<unsigned long>(snap->free_internal_kb),
-      static_cast<unsigned long>(snap->free_psram_kb));
+      static_cast<unsigned long>(snap->free_dma_kb),
+      static_cast<unsigned long>(snap->largest_internal_kb),
+      static_cast<unsigned long>(snap->min_internal_kb),
+      static_cast<unsigned long>(snap->free_psram_kb),
+      static_cast<unsigned long>(snap->largest_psram_kb));
 
   // --- manifold temps ---
   format_float_token(num_buf, sizeof(num_buf), snap->manifold_flow_c);
@@ -1085,7 +1103,9 @@ void LV6Dashboard::handle_overview_(AsyncWebServerRequest *request) {
            "\"zones\":{\"count\":%u,\"enabled\":%u,\"active\":%u,\"open_valves\":%u},"
            "\"manifold\":{\"flow_c\":%s,\"return_c\":%s,\"mean_valve_pct\":%s},"
            "\"system\":{\"wifi_dbm\":%s,\"drivers_enabled\":%s,\"free_internal_kb\":%lu,"
-           "\"free_psram_kb\":%lu},\"safety\":{\"local_authority\":true,\"commands_clamped\":true,"
+           "\"free_dma_kb\":%lu,\"largest_internal_kb\":%lu,\"min_internal_kb\":%lu,"
+           "\"free_psram_kb\":%lu,\"largest_psram_kb\":%lu},"
+           "\"safety\":{\"local_authority\":true,\"commands_clamped\":true,"
            "\"minimum_flow_always\":%s}}}",
            snap->firmware_version, snap->ip_address, snap->connected_ssid, snap->mac_address,
            pairing_fingerprint, static_cast<unsigned long>(snap->uptime_s),
@@ -1098,7 +1118,11 @@ void LV6Dashboard::handle_overview_(AsyncWebServerRequest *request) {
            static_cast<unsigned>(active), static_cast<unsigned>(active),
            flow, ret, demand, wifi, snap->drivers_enabled ? "true" : "false",
            static_cast<unsigned long>(snap->free_internal_kb),
+           static_cast<unsigned long>(snap->free_dma_kb),
+           static_cast<unsigned long>(snap->largest_internal_kb),
+           static_cast<unsigned long>(snap->min_internal_kb),
            static_cast<unsigned long>(snap->free_psram_kb),
+           static_cast<unsigned long>(snap->largest_psram_kb),
            snap->minimum_flow_always ? "true" : "false");
   send_text_(request, 200, "application/json", this->json_buf_, true, "no-cache");
 }
@@ -1395,7 +1419,9 @@ void LV6Dashboard::handle_diagnostics_(AsyncWebServerRequest *request) {
   appendf(hydraulic_json, sizeof(hydraulic_json), hydraulic_off, "]");
   snprintf(this->json_buf_, sizeof(this->json_buf_),
            "{\"ok\":true,\"version\":\"v1\",\"data\":{\"heap\":{\"internal_kb\":%lu,"
-           "\"psram_kb\":%lu},\"cpu\":{\"core0_pct\":%s,\"core1_pct\":%s},"
+           "\"dma_kb\":%lu,\"largest_internal_kb\":%lu,\"min_internal_kb\":%lu,"
+           "\"psram_kb\":%lu,\"largest_psram_kb\":%lu},"
+           "\"cpu\":{\"core0_pct\":%s,\"core1_pct\":%s},"
            "\"manifold\":{\"flow_c\":%s,\"return_c\":%s},\"drivers_enabled\":%s,"
            "\"motor_safety\":{\"backend\":\"%s\",\"motor_busy\":%s,\"drive_on\":%s,"
            "\"latch_faulted\":%s,\"fault_code\":%u,\"current_ma\":%.1f,"
@@ -1413,7 +1439,11 @@ void LV6Dashboard::handle_diagnostics_(AsyncWebServerRequest *request) {
            "%s,\"logs_endpoint\":\"/api/hv6/v1/logs\","
            "\"logs_download_endpoint\":\"/api/hv6/v1/logs/download\"}}",
            static_cast<unsigned long>(snap->free_internal_kb),
-           static_cast<unsigned long>(snap->free_psram_kb), cpu0, cpu1, flow, ret,
+           static_cast<unsigned long>(snap->free_dma_kb),
+           static_cast<unsigned long>(snap->largest_internal_kb),
+           static_cast<unsigned long>(snap->min_internal_kb),
+           static_cast<unsigned long>(snap->free_psram_kb),
+           static_cast<unsigned long>(snap->largest_psram_kb), cpu0, cpu1, flow, ret,
            snap->drivers_enabled ? "true" : "false",
            motor_diag.backend,
            motor_diag.motor_busy ? "true" : "false",
