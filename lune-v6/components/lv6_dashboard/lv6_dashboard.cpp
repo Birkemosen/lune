@@ -32,6 +32,13 @@ static constexpr size_t STATIC_CHUNK_SIZE = 2048;
 
 namespace {
 
+/// Large scratch: PSRAM first, internal heap as fallback. free() routes back to
+/// the correct heap for either allocation.
+void *alloc_scratch(size_t bytes) {
+  void *p = heap_caps_malloc(bytes, MALLOC_CAP_SPIRAM);
+  return p != nullptr ? p : malloc(bytes);
+}
+
 bool appendf(char *buffer, size_t capacity, size_t &offset, const char *fmt, ...) {
   if (offset >= capacity)
     return false;
@@ -807,6 +814,13 @@ void start_heap_tracing_early() {
 }
 #endif
 
+LV6Dashboard::~LV6Dashboard() {
+  if (this->json_buf_ != nullptr) {
+    free(this->json_buf_);
+    this->json_buf_ = nullptr;
+  }
+}
+
 void LV6Dashboard::setup() {
 #if defined(CONFIG_HEAP_TRACING_STANDALONE) || defined(CONFIG_HEAP_TRACING)
   // Fallback if on_boot priority 900 did not run (or package omitted init).
@@ -817,6 +831,15 @@ void LV6Dashboard::setup() {
     ESP_LOGE(TAG, "web_server_base is null; dashboard handler not registered");
     return;
   }
+
+  this->json_buf_ = static_cast<char *>(alloc_scratch(JSON_BUF_SIZE));
+  if (this->json_buf_ == nullptr) {
+    ESP_LOGE(TAG, "Failed to allocate %u-byte JSON buffer (SPIRAM/INTERNAL); JSON API disabled",
+             static_cast<unsigned>(JSON_BUF_SIZE));
+    this->mark_failed();
+    return;
+  }
+  ESP_LOGI(TAG, "JSON buffer: %u bytes in PSRAM/INTERNAL", static_cast<unsigned>(JSON_BUF_SIZE));
 
   this->action_lock_ = xSemaphoreCreateMutex();
   this->snapshot_lock_ = xSemaphoreCreateMutex();
@@ -1499,7 +1522,7 @@ void LV6Dashboard::handle_overview_(AsyncWebServerRequest *request) {
   char pairing_fingerprint[24];
   format_pairing_fingerprint(snap->mac_address, pairing_fingerprint, sizeof(pairing_fingerprint));
 
-  snprintf(this->json_buf_, sizeof(this->json_buf_),
+  snprintf(this->json_buf_, JSON_BUF_SIZE,
            "{\"ok\":true,\"version\":\"v1\",\"data\":{\"node\":{\"model\":\"lune-v6\","
            "\"firmware\":\"%s\",\"ip\":\"%s\",\"ssid\":\"%s\",\"mac\":\"%s\","
            "\"pairing_fingerprint\":\"%s\",\"uptime_s\":%lu},"
@@ -1555,9 +1578,9 @@ void LV6Dashboard::handle_zones_(AsyncWebServerRequest *request) {
   const DashboardSnapshot *snap = &this->state_snap_buf_;
   char *buf = this->json_buf_;
   size_t off = 0;
-  appendf(buf, sizeof(this->json_buf_), off, "{\"ok\":true,\"version\":\"v1\",\"data\":{\"count\":%u,\"zones\":[",
+  appendf(buf, JSON_BUF_SIZE, off, "{\"ok\":true,\"version\":\"v1\",\"data\":{\"count\":%u,\"zones\":[",
           static_cast<unsigned>(lv6::NUM_ZONES));
-  for (uint8_t i = 0; i < lv6::NUM_ZONES && off + 360 < sizeof(this->json_buf_); i++) {
+  for (uint8_t i = 0; i < lv6::NUM_ZONES && off + 360 < JSON_BUF_SIZE; i++) {
     char temp[24], setpoint[24], valve[24], preload[24];
     format_float_token(temp, sizeof(temp), snap->zone_temp_c[i], 1);
     format_float_token(setpoint, sizeof(setpoint), snap->zones[i].setpoint_c, 1);
@@ -1567,14 +1590,14 @@ void LV6Dashboard::handle_zones_(AsyncWebServerRequest *request) {
     format_float_token(wind, sizeof(wind), snap->zones[i].wind_exposure, 2);
     format_float_token(solar, sizeof(solar), snap->zones[i].solar_gain_factor, 2);
     format_float_token(max_offset, sizeof(max_offset), snap->zones[i].max_offset_c, 2);
-    appendf(buf, sizeof(this->json_buf_), off,
+    appendf(buf, JSON_BUF_SIZE, off,
             "%s{\"zone\":%u,\"name\":\"",
             i ? "," : "", static_cast<unsigned>(i + 1));
-    append_json_escaped(buf, sizeof(this->json_buf_), off, snap->zones[i].name);
-    appendf(buf, sizeof(this->json_buf_), off,
+    append_json_escaped(buf, JSON_BUF_SIZE, off, snap->zones[i].name);
+    appendf(buf, JSON_BUF_SIZE, off,
             "\",\"friendly_name\":\"");
-    append_json_escaped(buf, sizeof(this->json_buf_), off, snap->zones[i].name);
-    appendf(buf, sizeof(this->json_buf_), off,
+    append_json_escaped(buf, JSON_BUF_SIZE, off, snap->zones[i].name);
+    appendf(buf, JSON_BUF_SIZE, off,
             "\",\"enabled\":%s,\"temperature_c\":%s,\"setpoint_c\":%s,\"valve_pct\":%s,"
             "\"preheat_c\":%s,\"state\":\"%s\",\"temp_source\":\"%s\",\"fresh\":%s,"
             "\"forecast\":{\"wind_exposure\":%s,\"solar_gain\":%s,"
@@ -1585,7 +1608,7 @@ void LV6Dashboard::handle_zones_(AsyncWebServerRequest *request) {
             wind, solar,
             static_cast<unsigned>(snap->zones[i].thermal_lead_h), max_offset);
   }
-  appendf(buf, sizeof(this->json_buf_), off, "]}}");
+  appendf(buf, JSON_BUF_SIZE, off, "]}}");
   send_text_(request, 200, "application/json", buf, true, "no-cache");
 }
 
@@ -1637,11 +1660,11 @@ void LV6Dashboard::handle_zone_(AsyncWebServerRequest *request, uint8_t zone) {
 
   char *buf = this->json_buf_;
   size_t off = 0;
-  appendf(buf, sizeof(this->json_buf_), off,
+  appendf(buf, JSON_BUF_SIZE, off,
           "{\"ok\":true,\"version\":\"v1\",\"data\":{\"zone\":%u,\"name\":\"",
           static_cast<unsigned>(zone));
-  append_json_escaped(buf, sizeof(this->json_buf_), off, z.name);
-  appendf(buf, sizeof(this->json_buf_), off,
+  append_json_escaped(buf, JSON_BUF_SIZE, off, z.name);
+  appendf(buf, JSON_BUF_SIZE, off,
           "\",\"enabled\":%s,\"state\":\"%s\",\"fresh\":%s,"
           "\"temperature_c\":%s,\"setpoint_c\":%s,\"valve_pct\":%s,\"preheat_c\":%s,"
           "\"temp_source\":\"%s\",\"probe_index\":%d,\"probe_temp_c\":%s,\"ble_mac\":\"%s\","
@@ -1833,7 +1856,7 @@ void LV6Dashboard::handle_diagnostics_(AsyncWebServerRequest *request) {
             freshness, evidence, alarm.action);
   }
   appendf(hydraulic_json, sizeof(hydraulic_json), hydraulic_off, "]");
-  snprintf(this->json_buf_, sizeof(this->json_buf_),
+  snprintf(this->json_buf_, JSON_BUF_SIZE,
            "{\"ok\":true,\"version\":\"v1\",\"data\":{\"heap\":{\"internal_kb\":%lu,"
            "\"dma_kb\":%lu,\"largest_internal_kb\":%lu,\"min_internal_kb\":%lu,"
            "\"psram_kb\":%lu,\"largest_psram_kb\":%lu,"
@@ -3166,13 +3189,6 @@ void LV6Dashboard::on_log_(uint8_t level, const char *tag, const char *message,
 }
 
 namespace {
-
-/// Large per-request scratch: PSRAM first, internal heap as fallback. free()
-/// routes back to the correct heap for either allocation.
-void *alloc_scratch(size_t bytes) {
-  void *p = heap_caps_malloc(bytes, MALLOC_CAP_SPIRAM);
-  return p != nullptr ? p : malloc(bytes);
-}
 
 /// Lines staged per copy. The ring lock is held for the copy only, never for
 /// the network write, so a slow client cannot make the logger drop lines.

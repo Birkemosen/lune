@@ -181,6 +181,7 @@ class LV6Dashboard : public Component, public AsyncWebHandler {
   void setup() override;
   void loop() override;
   float get_setup_priority() const override { return setup_priority::WIFI - 1.0f; }
+  ~LV6Dashboard() override;
 
   void set_web_server_base(web_server_base::WebServerBase *b) { this->base_ = b; }
   void set_zone_controller(lv6::Lv6ZoneController *controller) { this->zone_controller_ = controller; }
@@ -325,10 +326,14 @@ class LV6Dashboard : public Component, public AsyncWebHandler {
   // which HTTP handlers use while holding snapshot_lock_.
   DashboardSnapshot update_snap_buf_{};
   DashboardSnapshot state_snap_buf_;
-  // The v1 zones response contains two names plus forecast metadata for all
-  // six valves.  Keep enough room for the complete document; truncation here
-  // makes Touch reject the response and fall back to generated legacy names.
-  char json_buf_[8192];
+  // Shared JSON scratch for HTTP handlers. Sized for the v1 zones response
+  // (two names + forecast metadata for all six valves); truncation there makes
+  // Touch reject the response and fall back to generated legacy names.
+  // Allocated from PSRAM in setup() (INTERNAL fallback). Safe as a single shared
+  // buffer because ESP-IDF httpd is single-threaded (one worker) — see also the
+  // static BleSensorSeen buffer in handle_ble_scan_().
+  static constexpr size_t JSON_BUF_SIZE = 8192;
+  char *json_buf_{nullptr};
   uint32_t snapshot_last_ms_{0};
   bool snapshot_ready_{false};
   static constexpr uint32_t SNAPSHOT_INTERVAL_MS = 1000;
