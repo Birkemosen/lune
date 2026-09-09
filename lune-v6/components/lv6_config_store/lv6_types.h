@@ -138,6 +138,7 @@ enum class ManifoldType : uint8_t {
 enum class TempSource : uint8_t {
   LOCAL_PROBE = 0,
   BLE_SENSOR = 1,
+  EXTERNAL = 2,  ///< Wi‑Fi HTTP ingest (sensor_id → zone on V6)
 };
 
 /// Hydraulic-balancing strategy. STATIC uses the resistance-aware design model
@@ -246,6 +247,8 @@ struct ProbeConfig {
 };
 
 static constexpr uint8_t BLE_MAC_LEN = 18;  // "AA:BB:CC:DD:EE:FF" + null
+static constexpr uint8_t SENSOR_ID_LEN = 48;   ///< EXTERNAL producer id (MAC or hub entity id)
+static constexpr uint8_t SENSOR_NAME_LEN = 24; ///< Optional friendly label (UI only)
 
 struct SensorConfig {
   TempSource zone_temp_source[NUM_ZONES] = {
@@ -260,6 +263,9 @@ struct SensorConfig {
   // Room-clock Date/Time Broadcast for nearby Shelly BLU displays.
   bool ble_clock_sync_enabled = true;
   uint16_t ble_clock_sync_interval_min = 60;
+  // v3 append: EXTERNAL HTTP ingest identity (routing) + optional display name.
+  char zone_sensor_id[NUM_ZONES][SENSOR_ID_LEN] = {};
+  char zone_sensor_name[NUM_ZONES][SENSOR_NAME_LEN] = {};
 };
 
 /// Version tag for the standalone sensor-pairing NVS blob. This is persisted
@@ -268,12 +274,16 @@ struct SensorConfig {
 /// Bump only when SensorConfig's layout changes.
 /// v1: zone_temp_source + zone_ble_mac
 /// v2: + ble_clock_sync_enabled / ble_clock_sync_interval_min (append-only)
-static constexpr uint32_t SENSOR_CONFIG_VERSION = 2;
+/// v3: + zone_sensor_id / zone_sensor_name (EXTERNAL ingest)
+static constexpr uint32_t SENSOR_CONFIG_VERSION = 3;
 static constexpr uint32_t SENSOR_CONFIG_VERSION_V1 = 1;
+static constexpr uint32_t SENSOR_CONFIG_VERSION_V2 = 2;
 /// Byte length of the v1 SensorConfig payload (fields before the room-clock
 /// append). Used to migrate durable NVS blobs after the v2 layout growth.
 static constexpr size_t SENSOR_CONFIG_V1_SIZE =
     offsetof(SensorConfig, ble_clock_sync_enabled);
+static constexpr size_t SENSOR_CONFIG_V2_SIZE =
+    offsetof(SensorConfig, zone_sensor_id);
 
 /// Version tag for the standalone zone-config NVS blob. Persisted under its own
 /// key (separate from the main DeviceConfig blob) so per-zone settings (area,

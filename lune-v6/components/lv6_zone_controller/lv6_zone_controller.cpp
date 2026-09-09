@@ -14,6 +14,10 @@
 #include "esp_timer.h"
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
+#include <cstring>
+#include <ctime>
+#include <strings.h>
 #include <numeric>
 #include <inttypes.h>
 
@@ -466,9 +470,19 @@ float Lv6ZoneController::get_zone_external_temperature(uint8_t zone) const {
   if (zone >= NUM_ZONES)
     return NAN;
   uint32_t now_ms = static_cast<uint32_t>(esp_timer_get_time() / 1000);
-  if (external_temp_last_ms_[zone] > 0 && (now_ms - external_temp_last_ms_[zone]) > EXTERNAL_TEMP_STALE_MS)
+  const uint32_t stale_ms =
+      (get_zone_temp_source(zone) == TempSource::EXTERNAL) ? EXTERNAL_HTTP_TEMP_STALE_MS
+                                                           : EXTERNAL_TEMP_STALE_MS;
+  if (external_temp_last_ms_[zone] > 0 && (now_ms - external_temp_last_ms_[zone]) > stale_ms)
     return NAN;
   return external_temperatures_[zone];
+}
+
+uint32_t Lv6ZoneController::get_zone_external_temp_age_ms(uint8_t zone) const {
+  if (zone >= NUM_ZONES || external_temp_last_ms_[zone] == 0)
+    return UINT32_MAX;
+  uint32_t now_ms = static_cast<uint32_t>(esp_timer_get_time() / 1000);
+  return now_ms - external_temp_last_ms_[zone];
 }
 
 void Lv6ZoneController::set_zone_temp_source(uint8_t zone, TempSource source) {
@@ -479,8 +493,12 @@ void Lv6ZoneController::set_zone_temp_source(uint8_t zone, TempSource source) {
     return;
   cfg.sensor_config.zone_temp_source[zone] = source;
   config_store_->update_sensor_config(cfg.sensor_config);
-  ESP_LOGI(TAG, "Zone %d temp source: %s", zone + 1,
-           source == TempSource::BLE_SENSOR ? "BLE" : "Local Probe");
+  const char *label = "Local Probe";
+  if (source == TempSource::BLE_SENSOR)
+    label = "BLE";
+  else if (source == TempSource::EXTERNAL)
+    label = "External";
+  ESP_LOGI(TAG, "Zone %d temp source: %s", zone + 1, label);
 }
 
 TempSource Lv6ZoneController::get_zone_temp_source(uint8_t zone) const {
@@ -507,18 +525,89 @@ std::string Lv6ZoneController::get_zone_ble_mac(uint8_t zone) const {
   return std::string(config_store_->get_config().sensor_config.zone_ble_mac[zone]);
 }
 
+void Lv6ZoneController::set_zone_sensor_id(uint8_t zone, const std::string &sensor_id) {
+  if (zone >= NUM_ZONES || !config_store_)
+    return;
+  auto cfg = config_store_->get_config();
+  strncpy(cfg.sensor_config.zone_sensor_id[zone], sensor_id.c_str(), SENSOR_ID_LEN - 1);
+  cfg.sensor_config.zone_sensor_id[zone][SENSOR_ID_LEN - 1] = '\0';
+  config_store_->update_sensor_config(cfg.sensor_config);
+  ESP_LOGI(TAG, "Zone %d sensor_id: '%s'", zone + 1, cfg.sensor_config.zone_sensor_id[zone]);
+}
+
+std::string Lv6ZoneController::get_zone_sensor_id(uint8_t zone) const {
+  if (zone >= NUM_ZONES || !config_store_)
+    return "";
+  return std::string(config_store_->get_config().sensor_config.zone_sensor_id[zone]);
+}
+
+void Lv6ZoneController::set_zone_sensor_name(uint8_t zone, const std::string &name) {
+  if (zone >= NUM_ZONES || !config_store_)
+    return;
+  auto cfg = config_store_->get_config();
+  strncpy(cfg.sensor_config.zone_sensor_name[zone], name.c_str(), SENSOR_NAME_LEN - 1);
+  cfg.sensor_config.zone_sensor_name[zone][SENSOR_NAME_LEN - 1] = '\0';
+  config_store_->update_sensor_config(cfg.sensor_config);
+}
+
+std::string Lv6ZoneController::get_zone_sensor_name(uint8_t zone) const {
+  if (zone >= NUM_ZONES || !config_store_)
+    return "";
+  return std::string(config_store_->get_config().sensor_config.zone_sensor_name[zone]);
+}
+
 int8_t Lv6ZoneController::match_ble_mac(const char *mac) const {
   if (mac == nullptr || mac[0] == '\0' || !config_store_)
     return -1;
   char cfg[BLE_MAC_LEN];
   for (uint8_t z = 0; z < NUM_ZONES; z++) {
+    if (get_zone_temp_source(z) != TempSource::BLE_SENSOR)
+      continue;
     config_store_->get_zone_ble_mac_str(z, cfg, sizeof(cfg));
     if (cfg[0] == '\0')
       continue;
-    if (strncmp(cfg, mac, BLE_MAC_LEN) == 0)
+    if (strncasecmp(cfg, mac, BLE_MAC_LEN) == 0)
       return static_cast<int8_t>(z);
   }
   return -1;
+}
+
+int8_t Lv6ZoneController::match_external_sensor_id(const char *sensor_id) const {
+  if (sensor_id == nullptr || sensor_id[0] == '\0' || !config_store_)
+    return -1;
+  const auto &sc = config_store_->get_config().sensor_config;
+  for (uint8_t z = 0; z < NUM_ZONES; z++) {
+    if (sc.zone_temp_source[z] != TempSource::EXTERNAL)
+      continue;
+    if (sc.zone_sensor_id[z][0] == '\0')
+      continue;
+    if (strcasecmp(sc.zone_sensor_id[z], sensor_id) == 0)
+      return static_cast<int8_t>(z);
+  }
+  return -1;
+}
+
+int8_t Lv6ZoneController::apply_external_room_temperature(const char *sensor_id, float temp_c,
+                                                          int64_t observed_at_ms) {
+  if (!std::isfinite(temp_c) || temp_c < -40.0f || temp_c > 85.0f)
+    return -1;
+  const int8_t z = match_external_sensor_id(sensor_id);
+  if (z < 0)
+    return -1;
+
+  if (observed_at_ms > 0) {
+    const int64_t now_ms = static_cast<int64_t>(::time(nullptr)) * 1000LL;
+    if (now_ms > 1000000000000LL) {
+      const int64_t age = now_ms - observed_at_ms;
+      if (age > static_cast<int64_t>(EXTERNAL_HTTP_TEMP_STALE_MS))
+        return -1;
+      if (age < -120000)
+        return -1;
+    }
+  }
+
+  set_zone_external_temperature(static_cast<uint8_t>(z), temp_c);
+  return z;
 }
 
 void Lv6ZoneController::set_zone_name(uint8_t zone, const std::string &name) {
@@ -1183,7 +1272,8 @@ float Lv6ZoneController::read_zone_temperature_(uint8_t zone) const {
 
   auto cfg = config_store_->get_config();
 
-  if (cfg.sensor_config.zone_temp_source[zone] == TempSource::BLE_SENSOR) {
+  if (cfg.sensor_config.zone_temp_source[zone] == TempSource::BLE_SENSOR ||
+      cfg.sensor_config.zone_temp_source[zone] == TempSource::EXTERNAL) {
     return get_zone_external_temperature(zone);
   }
 

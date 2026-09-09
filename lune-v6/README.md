@@ -375,10 +375,12 @@ yourself from this repository.
 
 ## Documentation
 
-- [../docs/lune_brand_architecture.md](../docs/lune_brand_architecture.md)
+- Brand architecture (private): `Birkemosen/lune-coordinator` → `docs/lune_brand_architecture.md`
+  (stub: [../docs/lune_brand_architecture.md](../docs/lune_brand_architecture.md))
 - [../docs/lune_touch_build_plan.md](../docs/lune_touch_build_plan.md)
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 - [docs/lv6_api_v1.md](docs/lv6_api_v1.md) — local dashboard API
+- [docs/external_room_temperature.md](docs/external_room_temperature.md) — HTTP EXTERNAL ingest
 - [docs/endstop_detection.md](docs/endstop_detection.md)
 - [docs/esp32_ripple_spec_strict.md](docs/esp32_ripple_spec_strict.md) — commutation
   ripple capture requirements

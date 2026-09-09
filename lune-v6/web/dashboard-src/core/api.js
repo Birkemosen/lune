@@ -152,6 +152,8 @@ const zoneSelectMap = {
 
 const zoneTextMap = {
   zone_ble_mac: (zone) => key.ble(zone),
+  zone_sensor_id: (zone) => key.sensorId(zone),
+  zone_sensor_name: (zone) => key.sensorName(zone),
   zone_name: (zone) => key.name(zone)
 };
 

@@ -93,7 +93,7 @@ class Lv6ZoneController : public esphome::Component {
   void set_manifold_return_probe(int8_t probe);
   int8_t get_manifold_return_probe() const;
 
-  // External temperature source (BLE sensor, etc.)
+  // External temperature source (BLE sensor or HTTP EXTERNAL ingest)
   void set_zone_external_temperature(uint8_t zone, float temp_c);
   float get_zone_external_temperature(uint8_t zone) const;
   void set_zone_temp_source(uint8_t zone, TempSource source);
@@ -103,10 +103,31 @@ class Lv6ZoneController : public esphome::Component {
   void set_zone_ble_mac(uint8_t zone, const std::string &mac);
   std::string get_zone_ble_mac(uint8_t zone) const;
 
+  // EXTERNAL HTTP ingest: stable sensor_id (routing) + optional friendly name (UI)
+  void set_zone_sensor_id(uint8_t zone, const std::string &sensor_id);
+  std::string get_zone_sensor_id(uint8_t zone) const;
+  void set_zone_sensor_name(uint8_t zone, const std::string &name);
+  std::string get_zone_sensor_name(uint8_t zone) const;
+
   // Lightweight MAC match for the BLE advertise hot path (loopTask). Copies
   // only the 18-byte MAC fields — never the whole DeviceConfig — so it is safe
   // to call per advertisement. Returns the matching zone index (0..5) or -1.
+  // Only matches zones with TempSource::BLE_SENSOR.
   int8_t match_ble_mac(const char *mac) const;
+
+  /// Match EXTERNAL zone by sensor_id (case-insensitive). Returns 0..5 or -1.
+  int8_t match_external_sensor_id(const char *sensor_id) const;
+
+  /// Apply a producer room-temp reading. Returns matched zone (0..5) or -1 if
+  /// unbound / rejected. Updates EXTERNAL slot only when source is EXTERNAL.
+  int8_t apply_external_room_temperature(const char *sensor_id, float temp_c,
+                                         int64_t observed_at_ms = 0);
+
+  /// Age of last external (BLE or HTTP) sample in ms, or UINT32_MAX if never.
+  uint32_t get_zone_external_temp_age_ms(uint8_t zone) const;
+
+  static constexpr uint32_t EXTERNAL_TEMP_STALE_MS = 60 * 60 * 1000;       ///< BLE path
+  static constexpr uint32_t EXTERNAL_HTTP_TEMP_STALE_MS = 15 * 60 * 1000;  ///< HTTP EXTERNAL
 
   // BLE sensor discovery — callable from BLE advertise lambda (loopTask)
   struct BleSensorSeen {
@@ -190,7 +211,6 @@ class Lv6ZoneController : public esphome::Component {
   static constexpr uint8_t ADJ_QUEUE_LEN = 12;
 
   static constexpr uint32_t TEMP_FAILSAFE_MS = 60 * 60 * 1000;
-  static constexpr uint32_t EXTERNAL_TEMP_STALE_MS = 60 * 60 * 1000;
   static constexpr float FALLBACK_SETPOINT_C = 20.0f;
   static constexpr bool DEVELOPMENT_MANUAL_ONLY = false;
   static constexpr float SIMPLE_PREHEAT_MAX_ADVANCE_C = 0.8f;

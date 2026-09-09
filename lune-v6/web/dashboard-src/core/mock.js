@@ -512,6 +512,8 @@ export function handleMockPost(body) {
   // Text settings
   if (k === 'zone_name' && zone >= 1) { setEntity(key.name(zone), { state: String(v) }); addActivity('Setting updated: ' + k + ' = ' + v, zone); return; }
   if (k === 'zone_ble_mac' && zone >= 1) { setEntity(key.ble(zone), { state: String(v) }); addActivity('Setting updated: ' + k + ' = ' + v, zone); return; }
+  if (k === 'zone_sensor_id' && zone >= 1) { setEntity(key.sensorId(zone), { state: String(v) }); addActivity('Setting updated: ' + k + ' = ' + v, zone); return; }
+  if (k === 'zone_sensor_name' && zone >= 1) { setEntity(key.sensorName(zone), { state: String(v) }); addActivity('Setting updated: ' + k + ' = ' + v, zone); return; }
   if (k === 'authority_approve_proposal') {
     setEntity(gkey.authorityInstallationId, { state: es(gkey.authorityProposalInstallationId) || 'lune-mock' });
     setEntity(gkey.authorityCoordinatorId, { state: es(gkey.authorityProposalCoordinatorId) || 'touch-mock' });
@@ -589,6 +591,8 @@ export function mockSettingsExport(includeLearned) {
       probe: es(key.probe(zone)),
       temp_source: es(key.tempSource(zone)),
       ble_mac: es(key.ble(zone)),
+      sensor_id: es(key.sensorId(zone)),
+      sensor_name: es(key.sensorName(zone)),
       sync_to: es(key.syncTo(zone)),
     });
   }

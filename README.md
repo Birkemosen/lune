@@ -9,7 +9,7 @@ folder.
 ```text
 lune-v6/         Local 6-zone hydronic manifold controller
   hardware/      KiCad schematics and design contracts, per revision
-docs/            Product-level brand and architecture notes
+docs/            Cross-device notes (brand architecture → lune-coordinator)
 shared/          Shared contracts and design notes, not shared runtime code
 ```
 

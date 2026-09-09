@@ -1589,7 +1589,7 @@ docs/lune_heating_control_implementation_plan.md
 Read these files before changing anything:
 1. AGENTS.md
 2. docs/lune_heating_control_implementation_plan.md
-3. docs/lune_brand_architecture.md
+3. `Birkemosen/lune-coordinator` → `docs/lune_brand_architecture.md` (moved from this repo)
 4. The device-local docs and source files named by the next unchecked task
 
 Your job:

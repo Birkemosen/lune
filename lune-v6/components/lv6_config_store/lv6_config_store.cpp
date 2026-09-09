@@ -521,8 +521,11 @@ bool Lv6ConfigStore::load_sensor_config_(nvs_handle_t handle) {
   if (version == SENSOR_CONFIG_VERSION && payload == sizeof(SensorConfig)) {
     memcpy(&config_.sensor_config, blob.data() + sizeof(uint32_t), sizeof(SensorConfig));
     ok = true;
+  } else if (version == SENSOR_CONFIG_VERSION_V2 && payload == SENSOR_CONFIG_V2_SIZE) {
+    memcpy(&config_.sensor_config, blob.data() + sizeof(uint32_t), SENSOR_CONFIG_V2_SIZE);
+    ok = true;
   } else if (version == SENSOR_CONFIG_VERSION_V1 && payload == SENSOR_CONFIG_V1_SIZE) {
-    // Append-only growth: keep pairing, leave room-clock fields at defaults.
+    // Append-only growth: keep pairing, leave room-clock / EXTERNAL fields at defaults.
     memcpy(&config_.sensor_config, blob.data() + sizeof(uint32_t), SENSOR_CONFIG_V1_SIZE);
     ok = true;
   }

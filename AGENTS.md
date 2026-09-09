@@ -10,12 +10,13 @@ dedicated subfolder:
 ```text
 devices/
   lune-v6/       ESPHome firmware, local dashboard, hardware files, V6 tests/docs
-docs/            Product-level brand and cross-device architecture notes
+docs/            Cross-device notes; brand architecture lives in lune-coordinator
 shared/          Shared contracts/design notes; no shared runtime dashboard code yet
 ```
 
 Lune Touch / Lune Mini coordinator code lives in the private repository
-`Birkemosen/lune-coordinator`.
+`Birkemosen/lune-coordinator`. Product brand architecture is owned there
+(`docs/lune_brand_architecture.md`).
 
 Keep hardware code separate unless a deliberate shared package is introduced. In
 particular, Lune V6 must remain a safe local manifold node and must not depend on Lune
@@ -88,11 +89,16 @@ entity REST routes.
 Important local ownership:
 
 - Motor movement and endstop safety
-- Local temperature source freshness
+- Local temperature source freshness (probe, on-manifold BLE, HTTP EXTERNAL)
+- `sensor_id` → zone mapping for EXTERNAL ingest (producers never choose the zone)
 - Conservative zone control without coordinator
 - Minimum flow protection
 - Command validation, clamp, expiry, and reporting
 - Snapshot / diagnostics API for local state
+
+Lune Touch / Mini must not ingest room temperatures; they send setpoint/authority
+commands only. BYO hubs (Shelly / HA / Homey) POST to `/api/v1/room-temperatures`.
+See `lune-v6/docs/external_room_temperature.md`.
 
 When changing persisted config structs, increment the relevant version in
 `lune-v6/components/lv6_config_store/lv6_types.h`.

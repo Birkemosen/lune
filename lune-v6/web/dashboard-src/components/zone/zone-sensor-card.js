@@ -1,14 +1,11 @@
 import { component, subscribe } from '../../core/component.js';
 import { injectStyle } from '../../core/style.js';
 import { cardForm } from '../../core/ui-kit.js';
-import { es, getDashboardValue, subscribeDashboard } from '../../core/store.js';
+import { es, ev, getDashboardValue, subscribeDashboard } from '../../core/store.js';
 import { key } from '../../utils/keys.js';
 import { setZoneSelect, setZoneText } from '../../core/api.js';
 import { localize, subscribeLanguage, t } from '../../core/i18n.js';
 
-// ========================================
-// CSS
-// ========================================
 const css = `
 .zone-sensor-card { height: 100%; }
 
@@ -18,7 +15,8 @@ const css = `
   align-items: center;
   margin-top: 8px;
 }
-.zone-sensor-card .ble-row .ble-input {
+.zone-sensor-card .ble-row .ble-input,
+.zone-sensor-card .ext-input {
   flex: 1;
   min-width: 0;
   box-sizing: border-box;
@@ -34,7 +32,9 @@ const css = `
   line-height: 1.2;
   transition: border-color .15s ease;
 }
-.zone-sensor-card .ble-row .ble-input:focus {
+.zone-sensor-card .ext-input { font-family: inherit; margin-top: 8px; width: 100%; }
+.zone-sensor-card .ble-row .ble-input:focus,
+.zone-sensor-card .ext-input:focus {
   outline: 3px solid var(--focus-ring);
   outline-offset: 2px;
   border-color: var(--accent);
@@ -55,10 +55,7 @@ const css = `
   cursor: pointer;
   white-space: nowrap;
 }
-.zone-sensor-card .btn-scan:disabled {
-  opacity: .5;
-  cursor: default;
-}
+.zone-sensor-card .btn-scan:disabled { opacity: .5; cursor: default; }
 .zone-sensor-card .ble-scan-list {
   margin-top: 6px;
   border: 1px solid var(--panel-border);
@@ -81,10 +78,7 @@ const css = `
   color: var(--text);
   font-size: .8rem;
 }
-.zone-sensor-card .ble-scan-item .ble-meta {
-  color: var(--text-secondary);
-  font-size: .75rem;
-}
+.zone-sensor-card .ble-scan-item .ble-meta { color: var(--text-secondary); font-size: .75rem; }
 .zone-sensor-card .ble-scan-item .ble-badge {
   color: var(--text-faint);
   font-size: .72rem;
@@ -101,22 +95,22 @@ const css = `
   cursor: pointer;
   white-space: nowrap;
 }
-.zone-sensor-card .btn-assign:hover {
-  background: rgba(var(--accent-rgb),.10);
-}
+.zone-sensor-card .btn-assign:hover { background: rgba(var(--accent-rgb),.10); }
 .zone-sensor-card .scan-msg {
   padding: 8px 10px;
   font-size: .8rem;
   color: var(--text-secondary);
   font-style: italic;
 }
+.zone-sensor-card .ext-age {
+  margin-top: 8px;
+  font-size: .78rem;
+  color: var(--text-muted);
+}
 `;
 
 injectStyle('zone-sensor-card', css);
 
-// ========================================
-// TEMPLATE
-// ========================================
 const template = () => `
     <div class="ui-card zone-sensor-card">
       <div class="ui-card-title" data-i18n="zone.sensor.title">Temperature</div>
@@ -133,32 +127,39 @@ const template = () => `
         </div>
         <div class="ble-scan-list zs-scan-list" style="display:none"></div>
       </div>
+      <div class="zs-row-ext" style="display:none">
+        <div class="ui-section" data-i18n="zone.sensor.externalTitle">External (Wi‑Fi)</div>
+        <div class="ui-note" data-i18n="zone.sensor.externalNote">Bind a stable sensor_id. Producers POST temperatures; zone mapping stays on V6.</div>
+        <input class="ext-input zs-sid" maxlength="47" placeholder="AA:BB:CC:DD:EE:FF or entity id" data-i18n-placeholder="zone.sensor.sensorIdPh">
+        <input class="ext-input zs-sname" maxlength="23" placeholder="Friendly name (optional)" data-i18n-placeholder="zone.sensor.sensorNamePh">
+        <div class="ext-age zs-age"></div>
+      </div>
     </div>
   `;
 
 function sourceToUiValue(source) {
   if (source === 'BLE' || source === 'BLE Sensor') return 'BLE Sensor';
+  if (source === 'External' || source === 'EXTERNAL') return 'External';
   return 'Local Probe';
 }
 
 function uiValueToApiValue(value) {
   if (value === 'BLE Sensor') return 'BLE';
+  if (value === 'External') return 'External';
   return 'Local Probe';
 }
 
 function setSourceOptions(selectEl, value) {
   const html =
     '<option value="Local Probe" data-i18n="zone.sensor.localProbe">' + t('zone.sensor.localProbe') + '</option>' +
-    '<option value="BLE Sensor" data-i18n="zone.sensor.bleSource">' + t('zone.sensor.bleSource') + '</option>';
+    '<option value="BLE Sensor" data-i18n="zone.sensor.bleSource">' + t('zone.sensor.bleSource') + '</option>' +
+    '<option value="External" data-i18n="zone.sensor.externalSource">' + t('zone.sensor.externalSource') + '</option>';
   if (selectEl.innerHTML !== html) {
     selectEl.innerHTML = html;
   }
   selectEl.value = value;
 }
 
-// ========================================
-// COMPONENT
-// ========================================
 export default component({
   tag: 'zone-sensor-card',
   render: template,
@@ -166,6 +167,10 @@ export default component({
     const sourceEl = el.querySelector('.zs-source');
     const bleEl = el.querySelector('.zs-ble');
     const rowBle = el.querySelector('.zs-row-ble');
+    const rowExt = el.querySelector('.zs-row-ext');
+    const sidEl = el.querySelector('.zs-sid');
+    const snameEl = el.querySelector('.zs-sname');
+    const ageEl = el.querySelector('.zs-age');
     const scanBtn = el.querySelector('.zs-scan');
     const scanList = el.querySelector('.zs-scan-list');
     let paintedZone = 0;
@@ -174,98 +179,84 @@ export default component({
       return getDashboardValue('selectedZone');
     }
 
-    // BLE row visibility follows the *staged* source so picking "BLE Sensor"
-    // reveals the field immediately, before Apply.
-    function paintBleRow() {
-      rowBle.style.display = sourceEl.value === 'BLE Sensor' ? '' : 'none';
+    function paintSourceRows() {
+      const v = sourceEl.value;
+      rowBle.style.display = v === 'BLE Sensor' ? '' : 'none';
+      rowExt.style.display = v === 'External' ? '' : 'none';
     }
 
     const form = cardForm(el);
     setSourceOptions(sourceEl, 'Local Probe');
     form.select(sourceEl, { read: () => sourceToUiValue(String(es(key.tempSource(selectedZone())) || '')), commit: (v) => setZoneSelect(selectedZone(), 'zone_temp_source', uiValueToApiValue(v)) });
-    const bleField = form.text(bleEl, { read: () => es(key.ble(selectedZone())) || '', commit: (v) => setZoneText(selectedZone(), 'zone_ble_mac', v) });
-    sourceEl.addEventListener('change', paintBleRow);
+    form.text(bleEl, { read: () => es(key.ble(selectedZone())) || '', commit: (v) => setZoneText(selectedZone(), 'zone_ble_mac', v) });
+    form.text(sidEl, { read: () => es(key.sensorId(selectedZone())) || '', commit: (v) => setZoneText(selectedZone(), 'zone_sensor_id', v) });
+    form.text(snameEl, { read: () => es(key.sensorName(selectedZone())) || '', commit: (v) => setZoneText(selectedZone(), 'zone_sensor_name', v) });
+    sourceEl.addEventListener('change', paintSourceRows);
+
+    function paintAge() {
+      const z = selectedZone();
+      const age = Number(ev(key.externalAge(z)));
+      if (!Number.isFinite(age) || age < 0) {
+        ageEl.textContent = t('zone.sensor.noIngestYet');
+        return;
+      }
+      const sec = Math.round(age / 1000);
+      ageEl.textContent = t('zone.sensor.lastIngestAge', { sec });
+    }
 
     function update() {
       const zone = selectedZone();
       if (paintedZone !== zone) {
         paintedZone = zone;
         scanList.style.display = 'none';
-        form.discard();   // drop staged edits from the previous zone
+        form.discard();
       } else {
         form.refresh();
       }
-      paintBleRow();
+      paintSourceRows();
+      paintAge();
     }
 
-    function updateIfSelectedZone(id) {
-      const zone = selectedZone();
-      if (id === key.tempSource(zone) || id === key.ble(zone)) {
-        form.refresh();
-        paintBleRow();
-      }
-    }
-
-    // BLE scan logic
     scanBtn.addEventListener('click', () => {
-      if (scanBtn.disabled) return;
       scanBtn.disabled = true;
-      scanBtn.textContent = '…';
+      scanBtn.textContent = t('zone.sensor.scanning');
       scanList.style.display = '';
       scanList.innerHTML = '<div class="scan-msg">' + t('zone.sensor.scanning') + '</div>';
-
       const ctrl = new AbortController();
       const timeout = setTimeout(() => ctrl.abort(), 8000);
-
-      fetch('/api/v1/ble-scan', { cache: 'no-store', signal: ctrl.signal })
-        .then(r => {
-          if (!r.ok) throw new Error('HTTP ' + r.status);
-          return r.json();
-        })
-        .then(data => {
+      fetch('/api/v1/ble-scan', { signal: ctrl.signal })
+        .then((r) => r.json())
+        .then((data) => {
           clearTimeout(timeout);
           scanBtn.disabled = false;
           scanBtn.textContent = t('zone.sensor.scan');
-          if (!data.ok || !data.sensors || data.sensors.length === 0) {
+          const sensors = (data && data.data && data.data.sensors) || data.sensors || [];
+          if (!sensors.length) {
             scanList.innerHTML = '<div class="scan-msg">' + t('zone.sensor.noSensors') + '</div>';
             return;
           }
-          const zone = selectedZone();
-          const currentMac = (es(key.ble(zone)) || '').toUpperCase();
-          const esc = (str) => String(str).replace(/[&<>"']/g, (c) =>
-            ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-          let html = '';
-          for (const s of data.sensors) {
-            const mac = s.mac.toUpperCase();
-            const name = s.name ? esc(s.name) : '';
-            const temp = s.temp_c != null ? s.temp_c.toFixed(1) + '°C' : '—';
-            const rssi = s.rssi != null ? s.rssi + ' dBm' : '';
-            const age = s.age_s < 60
-              ? t('common.secondsAgo', { value: s.age_s })
-              : t('common.minutesAgo', { value: Math.round(s.age_s / 60) });
+          const currentMac = (es(key.ble(selectedZone())) || '').toUpperCase();
+          scanList.innerHTML = sensors.map((s) => {
+            const mac = String(s.mac || '').toUpperCase();
             let badge = '';
             if (mac === currentMac) badge = '<span class="ble-badge">' + t('zone.sensor.assignedThisZone') + '</span>';
             else if (s.zone > 0) badge = '<span class="ble-badge">' + t('zone.sensor.zoneBadge', { zone: s.zone }) + '</span>';
-            // Name as primary line when known, MAC as secondary; MAC alone otherwise.
-            const title = name
-              ? `<div class="ble-mac">${name}</div><div class="ble-meta">${mac}</div>`
-              : `<div class="ble-mac">${mac}</div>`;
-            html += `<div class="ble-scan-item">
+            const temp = Number.isFinite(Number(s.temp_c)) ? Number(s.temp_c).toFixed(1) + '°C' : '—';
+            const name = s.name ? String(s.name) : '';
+            return `<div class="ble-scan-item">
               <div>
-                ${title}
-                <div class="ble-meta">${temp} &nbsp;${rssi} &nbsp;${age}</div>
-                ${badge}
+                <div class="ble-mac">${mac}</div>
+                <div class="ble-meta">${name ? name + ' · ' : ''}${temp} · ${s.rssi || '?'} dBm ${badge}</div>
               </div>
               <button class="btn-assign" data-mac="${mac}">${t('zone.sensor.assign')}</button>
             </div>`;
-          }
-          scanList.innerHTML = html;
-
-          scanList.querySelectorAll('.btn-assign').forEach(btn => {
+          }).join('');
+          scanList.querySelectorAll('.btn-assign').forEach((btn) => {
             btn.addEventListener('click', () => {
-              bleEl.value = btn.dataset.mac;
-              bleField.markDirty();   // staged — committed on Apply
-              scanList.style.display = 'none';
+              const mac = btn.getAttribute('data-mac') || '';
+              bleEl.value = mac;
+              bleEl.dispatchEvent(new Event('change', { bubbles: true }));
+              setZoneText(selectedZone(), 'zone_ble_mac', mac);
             });
           });
         })
@@ -273,26 +264,21 @@ export default component({
           clearTimeout(timeout);
           scanBtn.disabled = false;
           scanBtn.textContent = t('zone.sensor.scan');
-          const msg = (err && err.name === 'AbortError')
+          const msg = err && err.name === 'AbortError'
             ? t('zone.sensor.scanTimeout')
             : t('zone.sensor.scanFailed');
           scanList.innerHTML = '<div class="scan-msg">' + msg + '</div>';
         });
     });
 
-    subscribeDashboard('selectedZone', update);
-    for (let zone = 1; zone <= 6; zone++) {
-      subscribe(key.tempSource(zone), updateIfSelectedZone);
-      subscribe(key.ble(zone), updateIfSelectedZone);
-    }
-    subscribeLanguage(() => {
-      const sourceValue = sourceEl.value || 'Local Probe';
-      setSourceOptions(sourceEl, sourceValue);
-      scanBtn.textContent = scanBtn.disabled ? scanBtn.textContent : t('zone.sensor.scan');
-      localize(el);
-      paintBleRow();
-    });
-    localize(el);
     update();
-  }
+    subscribeDashboard(update);
+    subscribeLanguage(() => {
+      localize(el);
+      setSourceOptions(sourceEl, sourceEl.value);
+      scanBtn.textContent = scanBtn.disabled ? scanBtn.textContent : t('zone.sensor.scan');
+      paintAge();
+    });
+    return subscribe(() => {});
+  },
 });

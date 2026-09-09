@@ -184,12 +184,17 @@ bool parse_pipe_type(const char *s, lv6::PipeType *out) {
 }
 
 const char *temp_source_str(lv6::TempSource s) {
-  return s == lv6::TempSource::BLE_SENSOR ? "BLE_SENSOR" : "LOCAL_PROBE";
+  switch (s) {
+    case lv6::TempSource::BLE_SENSOR: return "BLE_SENSOR";
+    case lv6::TempSource::EXTERNAL: return "EXTERNAL";
+    default: return "LOCAL_PROBE";
+  }
 }
 
 bool parse_temp_source(const char *s, lv6::TempSource *out) {
   if (ieq(s, "LOCAL_PROBE") || ieq(s, "Local Probe")) { *out = lv6::TempSource::LOCAL_PROBE; return true; }
   if (ieq(s, "BLE_SENSOR") || ieq(s, "BLE")) { *out = lv6::TempSource::BLE_SENSOR; return true; }
+  if (ieq(s, "EXTERNAL") || ieq(s, "External")) { *out = lv6::TempSource::EXTERNAL; return true; }
   return false;
 }
 
@@ -686,6 +691,10 @@ size_t write_export_json(char *out, size_t out_cap, const lv6::DeviceConfig &cfg
     b.addf(",");
     b.key_str("ble_mac", cfg.sensor_config.zone_ble_mac[i]);
     b.addf(",");
+    b.key_str("sensor_id", cfg.sensor_config.zone_sensor_id[i]);
+    b.addf(",");
+    b.key_str("sensor_name", cfg.sensor_config.zone_sensor_name[i]);
+    b.addf(",");
     b.key_int("sync_to_zone", z.sync_to_zone);
     b.addf(",");
     b.key_str("motor_profile_override", motor_profile_str(z.motor_profile_override));
@@ -986,6 +995,10 @@ ImportResult apply_import_json(const char *json, lv6::DeviceConfig &cfg, bool re
         result.applied++;
       }
       apply_str(z_json, "ble_mac", cfg.sensor_config.zone_ble_mac[i], lv6::BLE_MAC_LEN,
+                result.applied);
+      apply_str(z_json, "sensor_id", cfg.sensor_config.zone_sensor_id[i], lv6::SENSOR_ID_LEN,
+                result.applied);
+      apply_str(z_json, "sensor_name", cfg.sensor_config.zone_sensor_name[i], lv6::SENSOR_NAME_LEN,
                 result.applied);
 
       apply_int(z_json, "sync_to_zone", z.sync_to_zone, -1, lv6::NUM_ZONES - 1, result.applied);

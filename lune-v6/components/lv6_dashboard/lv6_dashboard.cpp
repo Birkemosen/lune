@@ -236,6 +236,11 @@ static bool parse_temp_source(const char *raw, lv6::TempSource *out) {
     *out = lv6::TempSource::BLE_SENSOR;
     return true;
   }
+  if (strcasecmp(raw, "External") == 0 || strcasecmp(raw, "EXTERNAL") == 0 ||
+      strcasecmp(raw, "External (Wi-Fi)") == 0 || strcasecmp(raw, "External (Wi‑Fi)") == 0) {
+    *out = lv6::TempSource::EXTERNAL;
+    return true;
+  }
   return false;
 }
 
@@ -249,6 +254,8 @@ static const char *temp_source_to_dashboard_str(lv6::TempSource src) {
       return "Local Probe";
     case lv6::TempSource::BLE_SENSOR:
       return "BLE";
+    case lv6::TempSource::EXTERNAL:
+      return "External";
     default:
       return "Local Probe";
   }
@@ -428,6 +435,14 @@ void LV6Dashboard::update_snapshot_() {
       s.zones[i]            = this->config_store_->get_zone_config(i);
       s.zone_temp_source[i] = this->config_store_->get_zone_temp_source(i);
       this->config_store_->get_zone_ble_mac_str(i, s.zone_ble_mac[i], sizeof(s.zone_ble_mac[i]));
+      const auto &sc = this->config_store_->get_config().sensor_config;
+      strncpy(s.zone_sensor_id[i], sc.zone_sensor_id[i], sizeof(s.zone_sensor_id[i]) - 1);
+      s.zone_sensor_id[i][sizeof(s.zone_sensor_id[i]) - 1] = '\0';
+      strncpy(s.zone_sensor_name[i], sc.zone_sensor_name[i], sizeof(s.zone_sensor_name[i]) - 1);
+      s.zone_sensor_name[i][sizeof(s.zone_sensor_name[i]) - 1] = '\0';
+      s.zone_external_temp_age_ms[i] =
+          this->zone_controller_ ? this->zone_controller_->get_zone_external_temp_age_ms(i)
+                                 : UINT32_MAX;
       if (s.zone_temp_source[i] == lv6::TempSource::BLE_SENSOR)
         s.ble_demanded = true;
     }
@@ -1357,8 +1372,19 @@ void LV6Dashboard::handle_state_(AsyncWebServerRequest *request) {
     const char *pt_str = (pt_idx < 8) ? PIPE_TYPE_STR[pt_idx] : "Unknown";
     appendf(buf, BUF_SIZE, offset, "\"select-zone_%u_pipe_type\":{\"state\":\"%s\"},", zn, pt_str);
 
+    char age_ent[16];
+    if (snap->zone_external_temp_age_ms[i] == UINT32_MAX)
+      snprintf(age_ent, sizeof(age_ent), "null");
+    else
+      snprintf(age_ent, sizeof(age_ent), "%lu",
+               static_cast<unsigned long>(snap->zone_external_temp_age_ms[i]));
     appendf(buf, BUF_SIZE, offset,
-        "\"text-zone_%u_ble_mac\":{\"state\":\"%s\"},", zn, snap->zone_ble_mac[i]);
+        "\"text-zone_%u_ble_mac\":{\"state\":\"%s\"},"
+        "\"text-zone_%u_sensor_id\":{\"state\":\"%s\"},"
+        "\"text-zone_%u_sensor_name\":{\"state\":\"%s\"},"
+        "\"sensor-zone_%u_external_temp_age_ms\":{\"value\":%s},",
+        zn, snap->zone_ble_mac[i], zn, snap->zone_sensor_id[i], zn, snap->zone_sensor_name[i],
+        zn, age_ent);
 
     // Friendly zone name — JSON-escape quotes/backslashes/control chars.
     char name_esc[2 * sizeof(z.name)];
@@ -1660,6 +1686,12 @@ void LV6Dashboard::handle_zone_(AsyncWebServerRequest *request, uint8_t zone) {
 
   char *buf = this->json_buf_;
   size_t off = 0;
+  char age_tok[16];
+  if (snap->zone_external_temp_age_ms[i] == UINT32_MAX)
+    snprintf(age_tok, sizeof(age_tok), "null");
+  else
+    snprintf(age_tok, sizeof(age_tok), "%lu",
+             static_cast<unsigned long>(snap->zone_external_temp_age_ms[i]));
   appendf(buf, JSON_BUF_SIZE, off,
           "{\"ok\":true,\"version\":\"v1\",\"data\":{\"zone\":%u,\"name\":\"",
           static_cast<unsigned>(zone));
@@ -1668,6 +1700,7 @@ void LV6Dashboard::handle_zone_(AsyncWebServerRequest *request, uint8_t zone) {
           "\",\"enabled\":%s,\"state\":\"%s\",\"fresh\":%s,"
           "\"temperature_c\":%s,\"setpoint_c\":%s,\"valve_pct\":%s,\"preheat_c\":%s,"
           "\"temp_source\":\"%s\",\"probe_index\":%d,\"probe_temp_c\":%s,\"ble_mac\":\"%s\","
+          "\"sensor_id\":\"%s\",\"sensor_name\":\"%s\",\"external_temp_age_ms\":%s,"
           "\"settings\":{\"area_m2\":%s,\"pipe_spacing_mm\":%s,\"pipe_type\":%u,"
           "\"sync_to_zone\":%d,\"abs_min_c\":%.1f,\"abs_max_c\":%.1f,"
           "\"min_offset_c\":%.2f,\"max_offset_c\":%.2f},"
@@ -1682,6 +1715,7 @@ void LV6Dashboard::handle_zone_(AsyncWebServerRequest *request, uint8_t zone) {
           std::isfinite(snap->zone_temp_c[i]) ? "true" : "false",
           temp, setpoint, valve, preload, temp_source_to_dashboard_str(snap->zone_temp_source[i]),
           probe_idx >= 0 ? static_cast<int>(probe_idx) + 1 : 0, probe, snap->zone_ble_mac[i],
+          snap->zone_sensor_id[i], snap->zone_sensor_name[i], age_tok,
           area, spacing, static_cast<unsigned>(z.pipe_type),
           z.sync_to_zone >= 0 ? static_cast<int>(z.sync_to_zone) + 1 : 0,
           z.abs_min_c, z.abs_max_c, z.min_offset_c, z.max_offset_c,
@@ -1840,22 +1874,43 @@ void LV6Dashboard::handle_diagnostics_(AsyncWebServerRequest *request) {
   // Keep the large diagnostic assembly buffer out of the HTTP task stack. The
   // endpoint is serialized by ESP-IDF's single request worker, so a static
   // buffer is safe here and leaves ample stack for snprintf/httpd internals.
-  static char hydraulic_json[2300];
-  memset(hydraulic_json, 0, sizeof(hydraulic_json));
-  size_t hydraulic_off = 0;
+  static char extras_json[3600];
+  memset(extras_json, 0, sizeof(extras_json));
+  size_t extras_off = 0;
+  appendf(extras_json, sizeof(extras_json), extras_off, "\"room_temperatures\":[");
+  for (uint8_t i = 0; i < lv6::NUM_ZONES; i++) {
+    char age_tok[16];
+    if (snap->zone_external_temp_age_ms[i] == UINT32_MAX)
+      snprintf(age_tok, sizeof(age_tok), "null");
+    else
+      snprintf(age_tok, sizeof(age_tok), "%lu",
+               static_cast<unsigned long>(snap->zone_external_temp_age_ms[i]));
+    const bool http_external = snap->zone_temp_source[i] == lv6::TempSource::EXTERNAL;
+    const bool ingest_fresh =
+        http_external && snap->zone_external_temp_age_ms[i] != UINT32_MAX &&
+        snap->zone_external_temp_age_ms[i] <=
+            lv6::Lv6ZoneController::EXTERNAL_HTTP_TEMP_STALE_MS;
+    appendf(extras_json, sizeof(extras_json), extras_off,
+            "%s{\"zone\":%u,\"temp_source\":\"%s\",\"sensor_id\":\"%s\","
+            "\"sensor_name\":\"%s\",\"external_temp_age_ms\":%s,\"ingest_fresh\":%s}",
+            i ? "," : "", static_cast<unsigned>(i + 1),
+            temp_source_to_dashboard_str(snap->zone_temp_source[i]), snap->zone_sensor_id[i],
+            snap->zone_sensor_name[i], age_tok, ingest_fresh ? "true" : "false");
+  }
+  appendf(extras_json, sizeof(extras_json), extras_off, "],");
   const char *const freshness = "snapshot_observed_source_timestamp_unavailable";
-  appendf(hydraulic_json, sizeof(hydraulic_json), hydraulic_off, "\"hydraulic_alarms\":[");
+  appendf(extras_json, sizeof(extras_json), extras_off, "\"hydraulic_alarms\":[");
   for (uint8_t i = 0; i < 3; i++) {
     const auto alarm = lv6::hydraulic_diagnostics::evaluate(i, hydraulic);
     const char *evidence = "required documented telemetry is unavailable";
     if (i == 1 && hydraulic.manifold_delta_known)
       evidence = "observed manifold supply-return delta";
-    appendf(hydraulic_json, sizeof(hydraulic_json), hydraulic_off,
+    appendf(extras_json, sizeof(extras_json), extras_off,
             "%s{\"id\":\"%s\",\"state\":\"%s\",\"freshness\":\"%s\",\"evidence\":\"%s\",\"suggested_action\":\"%s\"}",
             i ? "," : "", alarm.id, lv6::hydraulic_diagnostics::state_str(alarm.state),
             freshness, evidence, alarm.action);
   }
-  appendf(hydraulic_json, sizeof(hydraulic_json), hydraulic_off, "]");
+  appendf(extras_json, sizeof(extras_json), extras_off, "]");
   snprintf(this->json_buf_, JSON_BUF_SIZE,
            "{\"ok\":true,\"version\":\"v1\",\"data\":{\"heap\":{\"internal_kb\":%lu,"
            "\"dma_kb\":%lu,\"largest_internal_kb\":%lu,\"min_internal_kb\":%lu,"
@@ -1929,7 +1984,7 @@ void LV6Dashboard::handle_diagnostics_(AsyncWebServerRequest *request) {
            snap->authority_v6_write_allowed ? "true" : "false",
            snap->firmware_update_current, snap->firmware_update_latest,
            snap->firmware_update_available ? "true" : "false",
-           snap->firmware_update_status, snap->reset_reason, hydraulic_json);
+           snap->firmware_update_status, snap->reset_reason, extras_json);
   send_text_(request, 200, "application/json", this->json_buf_, true, "no-cache");
 }
 
@@ -2258,10 +2313,16 @@ void LV6Dashboard::handle_v1_(AsyncWebServerRequest *request, const char *path) 
     return;
   }
 
+  const std::string body_str_early = request->arg("plain");
+  if (strcmp(path, "/room-temperatures") == 0) {
+    this->handle_room_temperatures_(request, body_str_early.c_str());
+    return;
+  }
+
   DashboardAction act{};
   float num = 0.0f;
   bool flag = false;
-  const std::string body_str = request->arg("plain");
+  const std::string body_str = body_str_early;
   const char *body = body_str.c_str();
 
   // Settings import replaces whole config sections at once, so it bypasses the
@@ -2869,6 +2930,14 @@ void LV6Dashboard::dispatch_set_(const DashboardAction &act) {
   } else if (strcmp(key, "zone_ble_mac") == 0 && has_str && zone_valid && this->zone_controller_) {
     this->zone_controller_->set_zone_ble_mac(zi, std::string(str_val));
 
+  // ---- zone_sensor_id (EXTERNAL) ----
+  } else if (strcmp(key, "zone_sensor_id") == 0 && has_str && zone_valid && this->zone_controller_) {
+    this->zone_controller_->set_zone_sensor_id(zi, std::string(str_val));
+
+  // ---- zone_sensor_name (friendly, UI only) ----
+  } else if (strcmp(key, "zone_sensor_name") == 0 && has_str && zone_valid && this->zone_controller_) {
+    this->zone_controller_->set_zone_sensor_name(zi, std::string(str_val));
+
   // ---- coordinator weather metadata (same durable V6 zone config) ----
   } else if (strcmp(key, "zone_wind_exposure") == 0 && has_num && zone_valid && this->zone_controller_) {
     this->zone_controller_->set_zone_wind_exposure(zi, num_val);
@@ -3437,6 +3506,74 @@ void LV6Dashboard::handle_settings_import_(AsyncWebServerRequest *request, const
            "\"ignored\":%u,\"learned_restored\":%s,\"data_revision\":%lu}}",
            static_cast<unsigned>(result.applied), static_cast<unsigned>(result.skipped),
            static_cast<unsigned>(result.ignored), learned_applied ? "true" : "false",
+           static_cast<unsigned long>(data_revision_));
+  send_text_(request, 200, "application/json", response, false, "no-cache");
+}
+
+void LV6Dashboard::handle_room_temperatures_(AsyncWebServerRequest *request, const char *body) {
+  if (!this->authorize_write_(request))
+    return;
+  if (this->zone_controller_ == nullptr) {
+    this->send_v1_(request, 503, "unavailable", "Zone controller unavailable");
+    return;
+  }
+  if (body == nullptr || body[0] == '\0') {
+    this->send_v1_(request, 400, "missing_body", "JSON body required");
+    return;
+  }
+
+  // Light per-minute budget separate from settings writes (hubs may POST often).
+  static uint32_t room_temp_window_ms = 0;
+  static uint16_t room_temp_count = 0;
+  const uint32_t now_ms = millis();
+  if (static_cast<int32_t>(now_ms - room_temp_window_ms) >= 60000) {
+    room_temp_window_ms = now_ms;
+    room_temp_count = 0;
+  }
+  if (room_temp_count >= 120) {
+    this->send_v1_(request, 429, "rate_limited", "Too many room-temperature posts");
+    return;
+  }
+  room_temp_count++;
+
+  char sensor_id[lv6::SENSOR_ID_LEN]{};
+  parse_text_param(request, body, "sensor_id", "", sensor_id, sizeof(sensor_id));
+  if (sensor_id[0] == '\0') {
+    this->send_v1_(request, 400, "missing_param", "sensor_id is required");
+    return;
+  }
+  float temp_c = NAN;
+  if (!parse_num_param(request, body, "temp_c", &temp_c) || !std::isfinite(temp_c)) {
+    this->send_v1_(request, 400, "missing_param", "temp_c is required");
+    return;
+  }
+  float observed = 0.0f;
+  int64_t observed_at_ms = 0;
+  if (parse_num_param(request, body, "observed_at_ms", &observed) && std::isfinite(observed) &&
+      observed > 0.0f) {
+    observed_at_ms = static_cast<int64_t>(observed);
+  }
+
+  const int8_t matched =
+      this->zone_controller_->apply_external_room_temperature(sensor_id, temp_c, observed_at_ms);
+  if (matched < 0) {
+    // Unbound or rejected — no-op success so one producer can broadcast all sensors.
+    char response[192];
+    snprintf(response, sizeof(response),
+             "{\"ok\":true,\"version\":\"v1\",\"data\":{\"applied\":false,"
+             "\"sensor_id\":\"%s\",\"reason\":\"unbound_or_rejected\"}}",
+             sensor_id);
+    send_text_(request, 200, "application/json", response, false, "no-cache");
+    return;
+  }
+
+  if (data_revision_ != UINT32_MAX)
+    data_revision_++;
+  char response[224];
+  snprintf(response, sizeof(response),
+           "{\"ok\":true,\"version\":\"v1\",\"data\":{\"applied\":true,\"zone\":%u,"
+           "\"sensor_id\":\"%s\",\"temp_c\":%.2f,\"data_revision\":%lu}}",
+           static_cast<unsigned>(matched + 1), sensor_id, temp_c,
            static_cast<unsigned long>(data_revision_));
   send_text_(request, 200, "application/json", response, false, "no-cache");
 }

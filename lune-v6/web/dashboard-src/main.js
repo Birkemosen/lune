@@ -34,6 +34,7 @@ import './components/settings/settings-firmware-card.js';
 import './components/settings/settings-backup-card.js';
 import './components/settings/settings-appearance-card.js';
 import './components/settings/smart-preheat-card.js';
+import './components/help/help-external-ingest.js';
 
 // root
 import './app/app-root.js';

@@ -50,6 +50,7 @@ legacy bookmarks that redirect to `/`.
   - `GET /api/v1/logs/download` — the same log ring as a single `text/plain`
     attachment for bug reports. See "Maintenance endpoints".
   - `GET /api/v1/ble-scan` — discovered BTHome sensors
+  - `POST /api/v1/room-temperatures` — EXTERNAL room-temp ingest by `sensor_id` (V6 maps to zone)
   - `GET /api/v1/settings/export[?include_learned=0|1]` — configuration backup as a
     downloadable JSON document. See "Maintenance endpoints".
   - `POST /api/v1/authority/lease` — V6-A-only authenticated Touch lease acquisition
@@ -259,6 +260,11 @@ Returns all zones:
 Returns one zone with the settings and diagnostics fields required by dashboard details
 panels and coordinator pairing checks:
 
+Room temperature sources: `Local Probe`, `BLE`, `External`.
+
+For `External`, V6 binds a stable `sensor_id` (and optional `sensor_name` for UI). Producers
+must not send zone numbers — see `POST /api/v1/room-temperatures`.
+
 ```json
 {
   "ok": true,
@@ -277,6 +283,9 @@ panels and coordinator pairing checks:
     "probe_index": 2,
     "probe_temp_c": 21.1,
     "ble_mac": "AA:BB:CC:DD:EE:FF",
+    "sensor_id": "",
+    "sensor_name": "",
+    "external_temp_age_ms": null,
     "settings": {
       "area_m2": 18.5,
       "pipe_spacing_mm": 150,
@@ -317,6 +326,10 @@ A/B sample separation, validity/motion flags, invalid-sample count, motion
 evidence count, runtime and persistent latch state. These raw values are for
 qualification and diagnostics; clients must not infer or command an endpoint
 from them.
+
+Also includes `room_temperatures[]`: per-zone `temp_source`, bound `sensor_id` /
+`sensor_name`, `external_temp_age_ms`, and `ingest_fresh` (true when External and
+last HTTP ingest is within the 15‑minute EXTERNAL TTL).
 
 ### `GET /api/v1/motor-trace.csv`
 
@@ -406,6 +419,47 @@ Returns dashboard-editable settings currently backed by config store and control
 ```
 
 ## Write Endpoints
+
+### `POST /api/v1/room-temperatures`
+
+Authenticated EXTERNAL room-temperature ingest. **Zone mapping is only on V6** via
+the zone's bound `sensor_id` (`temp_source=External`).
+
+Headers (when a local access key is provisioned):
+
+- `X-Lune-Local-Key: <key>`
+- `X-Lune-CSRF: <key>` (same value)
+
+Body:
+
+```json
+{
+  "sensor_id": "AA:BB:CC:DD:EE:FF",
+  "temp_c": 21.5,
+  "observed_at_ms": 1713111111000,
+  "producer_id": "shelly"
+}
+```
+
+- `sensor_id` (required): stable producer identity; must match a zone bind.
+- `temp_c` (required): °C, finite, roughly −40…85.
+- `observed_at_ms` (optional): producer wall-clock ms; samples older than 15 minutes
+  are rejected.
+- `producer_id` (optional): informational; ignored for routing.
+- Optional `name` in the body is ignored (friendly names are edited on V6 only).
+
+Response when applied:
+
+```json
+{ "ok": true, "version": "v1", "data": { "applied": true, "zone": 2, "sensor_id": "…", "temp_c": 21.5, "data_revision": 12 } }
+```
+
+Unbound / rejected readings return `200` with `"applied": false` so a gateway may
+forward every heard sensor without per-zone fan-out.
+
+Do not document `/zones/{n}/…` temperature writes for customers.
+
+See [external_room_temperature.md](external_room_temperature.md).
 
 ### `POST /api/v1/zones/{zone}/setpoint`
 

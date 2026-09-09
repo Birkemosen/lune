@@ -109,9 +109,11 @@ on an external service.
   FSM enforces sequential execution)
 - **Endstop Detection**: Four-path software detection (threshold, slope, hard cap, ripple
   limit) with per-direction parameters — see [endstop_detection.md](endstop_detection.md)
-- **Sensors**: 1-Wire DS18B20 (8 slots, NVS-persisted ROM mapping), BLE BTHome
+- **Sensors**: 1-Wire DS18B20 (8 slots, NVS-persisted ROM mapping), on-manifold BLE
+  BTHome, and authenticated HTTP EXTERNAL ingest (`POST /api/v1/room-temperatures`,
+  `sensor_id` → zone mapping on V6 only). See [external_room_temperature.md](external_room_temperature.md).
 - **Communication**: WiFi, ESPHome native API (Home Assistant), HTTP/JSON (dashboard +
-  Lune Touch. No message broker — MQTT was removed in favor of plain HTTP over LAN.
+  Lune Touch). No MQTT on V6 — hubs forward room temps over HTTP.
 
 ## Dashboard API
 
@@ -123,7 +125,7 @@ Dashboard transport uses the dedicated `/api/v1` JSON namespace served by
 - All dashboard reads/writes go through `/api/v1` — the dashboard must not call
   ESPHome entity REST routes (`/climate`, `/switch`, `/number`, …)
 - Home Assistant integration continues through the ESPHome native API
-- Contract: [hv6_api_v1.md](hv6_api_v1.md)
+- Contract: [lv6_api_v1.md](lv6_api_v1.md)
 
 Frontend source lives under `devices/lune-v6/web/dashboard-src/` and is bundled by esbuild
 into `devices/lune-v6/web/dashboard.js`, which is committed and embedded into the firmware

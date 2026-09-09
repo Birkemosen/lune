@@ -92,6 +92,9 @@ struct DashboardSnapshot {
   lv6::SystemConfig system;
   lv6::TempSource   zone_temp_source[lv6::NUM_ZONES];
   char              zone_ble_mac[lv6::NUM_ZONES][lv6::BLE_MAC_LEN];
+  char              zone_sensor_id[lv6::NUM_ZONES][lv6::SENSOR_ID_LEN];
+  char              zone_sensor_name[lv6::NUM_ZONES][lv6::SENSOR_NAME_LEN];
+  uint32_t          zone_external_temp_age_ms[lv6::NUM_ZONES]{};
   lv6::ProbeConfig  probes;
   lv6::MotorConfig  motor;
   lv6::ManifoldType manifold_type;
@@ -258,6 +261,7 @@ class LV6Dashboard : public Component, public AsyncWebHandler {
   void handle_settings_import_(AsyncWebServerRequest *request, const char *body);
   void handle_v1_(AsyncWebServerRequest *request, const char *path);
   void handle_ble_scan_(AsyncWebServerRequest *request);
+  void handle_room_temperatures_(AsyncWebServerRequest *request, const char *body);
   void handle_authority_lease_(AsyncWebServerRequest *request, const char *body);
   void handle_authority_proposal_(AsyncWebServerRequest *request, const char *body);
   void handle_authority_proposal_approval_(AsyncWebServerRequest *request);

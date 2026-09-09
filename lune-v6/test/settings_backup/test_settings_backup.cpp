@@ -126,8 +126,13 @@ lv6::DeviceConfig make_known_config() {
     z.expected_thermal_delay_min = 35.0f;
 
     cfg.sensor_config.zone_temp_source[i] =
-        (i == 0) ? lv6::TempSource::LOCAL_PROBE : lv6::TempSource::BLE_SENSOR;
+        (i == 0) ? lv6::TempSource::LOCAL_PROBE
+                 : (i == 1) ? lv6::TempSource::EXTERNAL : lv6::TempSource::BLE_SENSOR;
     std::snprintf(cfg.sensor_config.zone_ble_mac[i], lv6::BLE_MAC_LEN, "AA:BB:CC:DD:EE:0%u", i);
+    if (i == 1) {
+      std::snprintf(cfg.sensor_config.zone_sensor_id[i], lv6::SENSOR_ID_LEN, "sensor.living_room");
+      std::snprintf(cfg.sensor_config.zone_sensor_name[i], lv6::SENSOR_NAME_LEN, "Living");
+    }
   }
 
   return cfg;
@@ -253,12 +258,16 @@ int main() {
                  source.sensor_config.zone_temp_source[i] ==
                      restored.sensor_config.zone_temp_source[i] &&
                  std::strcmp(source.sensor_config.zone_ble_mac[i],
-                             restored.sensor_config.zone_ble_mac[i]) == 0;
+                             restored.sensor_config.zone_ble_mac[i]) == 0 &&
+                 std::strcmp(source.sensor_config.zone_sensor_id[i],
+                             restored.sensor_config.zone_sensor_id[i]) == 0 &&
+                 std::strcmp(source.sensor_config.zone_sensor_name[i],
+                             restored.sensor_config.zone_sensor_name[i]) == 0;
     probes_ok = probes_ok && source.probes.zone_return_probe[i] == restored.probes.zone_return_probe[i];
   }
   expect(zones_ok, "every zone's settings round-trip (including quoted names)");
   expect(hydraulic_ok, "hydraulic commissioning fields round-trip at zone version 4");
-  expect(sensors_ok, "zone temp source and BLE MAC round-trip");
+  expect(sensors_ok, "zone temp source, BLE MAC, and EXTERNAL sensor_id round-trip");
   expect(probes_ok, "zone return probe map round-trips");
 
   expect(learned_applied, "learned data is restored when the caller confirms");

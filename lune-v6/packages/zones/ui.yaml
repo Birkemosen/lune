@@ -1116,17 +1116,19 @@ select:
     id: zone_temp_source
     entity_category: config
     optimistic: false
-    options: ["Local Probe", "BLE Sensor"]
+    options: ["Local Probe", "BLE Sensor", "External"]
     lambda: |-
       uint8_t zi = id(ui_selected_zone_index);
       auto src = id(hv6_zones).get_zone_temp_source(zi);
       if (src == lv6::TempSource::BLE_SENSOR) return std::string("BLE Sensor");
+      if (src == lv6::TempSource::EXTERNAL) return std::string("External");
       return std::string("Local Probe");
     set_action:
       - lambda: |-
           uint8_t zi = id(ui_selected_zone_index);
           lv6::TempSource src = lv6::TempSource::LOCAL_PROBE;
           if (x == "BLE Sensor") src = lv6::TempSource::BLE_SENSOR;
+          else if (x == "External") src = lv6::TempSource::EXTERNAL;
           id(hv6_zones).set_zone_temp_source(zi, src);
 
   - platform: template
@@ -1165,3 +1167,35 @@ text:
       - lambda: |-
           uint8_t zi = id(ui_selected_zone_index);
           id(hv6_zones).set_zone_ble_mac(zi, x);
+
+  - platform: template
+    name: "Zone Sensor ID"
+    id: zone_sensor_id
+    entity_category: config
+    mode: text
+    min_length: 0
+    max_length: 47
+    optimistic: false
+    lambda: |-
+      uint8_t zi = id(ui_selected_zone_index);
+      return id(hv6_zones).get_zone_sensor_id(zi);
+    set_action:
+      - lambda: |-
+          uint8_t zi = id(ui_selected_zone_index);
+          id(hv6_zones).set_zone_sensor_id(zi, x);
+
+  - platform: template
+    name: "Zone Sensor Name"
+    id: zone_sensor_name
+    entity_category: config
+    mode: text
+    min_length: 0
+    max_length: 23
+    optimistic: false
+    lambda: |-
+      uint8_t zi = id(ui_selected_zone_index);
+      return id(hv6_zones).get_zone_sensor_name(zi);
+    set_action:
+      - lambda: |-
+          uint8_t zi = id(ui_selected_zone_index);
+          id(hv6_zones).set_zone_sensor_name(zi, x);
