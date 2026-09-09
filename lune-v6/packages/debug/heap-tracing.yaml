@@ -1,0 +1,33 @@
+# =============================================================================
+# TEMPORARY — remove after investigation
+# =============================================================================
+# Opt-in standalone heap tracing for attributing INTERNAL heap owners.
+# Include only from lune.yaml while hunting leaks / large early allocators.
+#
+# Enable:  keep `heap_tracing: !include packages/debug/heap-tracing.yaml`
+# Disable: remove that packages: entry and rebuild (reverts to production path).
+#
+# After flash: Diagnostics → Dump task stats (or POST dump_task_stats). Serial /
+# live logs print heap_caps walks plus heap_trace_dump() allocation sites.
+#
+# Cost (approx): ~33 KB PSRAM for 384 records × ~88 B (STACK_DEPTH=8) + slower
+# malloc/free + flash for tracing hooks. The record buffer prefers PSRAM so the
+# investigation does not further starve INTERNAL DRAM; ISR allocs may be missed.
+# Tracing itself still touches heap — expect some self-noise in the dump.
+# =============================================================================
+
+esp32:
+  framework:
+    sdkconfig_options:
+      # ESP-IDF 5.x / ESPHome 2026.8: standalone destination implies CONFIG_HEAP_TRACING.
+      CONFIG_HEAP_TRACING_STANDALONE: "y"
+      CONFIG_HEAP_TRACING_STACK_DEPTH: "8"
+
+esphome:
+  on_boot:
+    # Run before WiFi/BLE setup so early networking allocs are recorded.
+    - priority: 900
+      then:
+        - logger.log: "TEMPORARY heap tracing: init+start (HEAP_TRACE_LEAKS)"
+        - lambda: |-
+            esphome::lv6_dashboard::start_heap_tracing_early();

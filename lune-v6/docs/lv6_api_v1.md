@@ -470,7 +470,7 @@ Minimum command set:
 - `dump_task_stats` — logs FreeRTOS per-task CPU%/stack headroom plus
   `multi_heap_info` / `heap_caps_print_heap_info` for INTERNAL, DMA, and SPIRAM
   to the device log (serial + live log ring). Prefer this before enabling
-  `CONFIG_HEAP_TRACING_STANDALONE` (see `packages/board/esp32-s3.yaml`).
+  temporary `packages/debug/heap-tracing.yaml` (standalone `heap_trace_dump`).
 - `firmware_check`
 - `firmware_prepare`
 - `firmware_install`

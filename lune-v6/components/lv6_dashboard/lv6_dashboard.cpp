@@ -470,7 +470,57 @@ void LV6Dashboard::update_snapshot_() {
   }
 }
 
+#if defined(CONFIG_HEAP_TRACING_STANDALONE) || defined(CONFIG_HEAP_TRACING)
+// TEMPORARY — remove with packages/debug/heap-tracing.yaml after investigation.
+void start_heap_tracing_early() {
+  static bool started = false;
+  if (started)
+    return;
+
+  // 384 records × ~88 B ≈ 33 KB. Prefer PSRAM so INTERNAL stays available for
+  // the owners we are trying to attribute (ISR allocs may not be recorded).
+  static constexpr size_t kNumRecords = 384;
+  heap_trace_record_t *records = static_cast<heap_trace_record_t *>(heap_caps_calloc(
+      kNumRecords, sizeof(heap_trace_record_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  if (records == nullptr) {
+    records = static_cast<heap_trace_record_t *>(heap_caps_calloc(
+        kNumRecords, sizeof(heap_trace_record_t), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
+  }
+  if (records == nullptr) {
+    ESP_LOGE(TAG, "heap_trace: record buffer alloc failed (%u × %u B)", (unsigned) kNumRecords,
+             (unsigned) sizeof(heap_trace_record_t));
+    return;
+  }
+
+  esp_err_t err = heap_trace_init_standalone(records, kNumRecords);
+  if (err != ESP_OK) {
+    ESP_LOGE(TAG, "heap_trace_init_standalone failed: %s", esp_err_to_name(err));
+    heap_caps_free(records);
+    return;
+  }
+
+  // LEAKS mode keeps outstanding allocs only — right tool for "who holds INTERNAL".
+  err = heap_trace_start(HEAP_TRACE_LEAKS);
+  if (err != ESP_OK) {
+    ESP_LOGE(TAG, "heap_trace_start failed: %s", esp_err_to_name(err));
+    return;
+  }
+
+  started = true;
+  ESP_LOGW(TAG,
+           "TEMPORARY heap tracing ON: %u records (~%u KB), HEAP_TRACE_LEAKS — "
+           "Dump task stats to print sites",
+           (unsigned) kNumRecords,
+           (unsigned) ((kNumRecords * sizeof(heap_trace_record_t) + 1023) / 1024));
+}
+#endif
+
 void LV6Dashboard::setup() {
+#if defined(CONFIG_HEAP_TRACING_STANDALONE) || defined(CONFIG_HEAP_TRACING)
+  // Fallback if on_boot priority 900 did not run (or package omitted init).
+  start_heap_tracing_early();
+#endif
+
   if (this->base_ == nullptr) {
     ESP_LOGE(TAG, "web_server_base is null; dashboard handler not registered");
     return;

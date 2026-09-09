@@ -170,6 +170,12 @@ struct HistoryEntry {
 // GET /api/hv6/v1/logs/download. Both are RAM-only; lost on reboot.
 // -----------------------------------------------------------------------
 
+#if defined(CONFIG_HEAP_TRACING_STANDALONE) || defined(CONFIG_HEAP_TRACING)
+// TEMPORARY — remove with packages/debug/heap-tracing.yaml after investigation.
+// Idempotent; safe from early on_boot (priority 900) and again from setup().
+void start_heap_tracing_early();
+#endif
+
 class LV6Dashboard : public Component, public AsyncWebHandler {
  public:
   void setup() override;
