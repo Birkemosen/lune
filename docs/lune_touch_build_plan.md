@@ -75,7 +75,7 @@ Coordinator responsibilities:
 - Discover and pair Lune V6 nodes
 - Store a stable V6 identity fingerprint during commissioning and reject later
   polling responses from a different device on the same hostname/IP
-- Poll `/api/hv6/v1/overview` and `/api/hv6/v1/zones`, while retaining `/state`
+- Poll `/api/lv6/v1/overview` and `/api/lv6/v1/zones`, while retaining `/state`
   as a migration/debug snapshot
 - Maintain local house model and persisted lightweight per-zone history as the
   first learning layer for response rate, heat-call frequency, and future comfort tuning
@@ -102,12 +102,12 @@ Lune V6 responsibilities remain local:
 ## V6 API Requirements Before Touch
 
 Before Lune Touch becomes the primary coordinator, Lune V6 should expose a clearer
-resource-shaped API on top of the current `/api/hv6/v1` namespace:
+resource-shaped API on top of the current `/api/lv6/v1` namespace:
 
-- `GET /api/hv6/v1/overview`
-- `GET /api/hv6/v1/zones`
-- `GET /api/hv6/v1/diagnostics`
-- `GET /api/hv6/v1/events` for server-sent events
+- `GET /api/lv6/v1/overview`
+- `GET /api/lv6/v1/zones`
+- `GET /api/lv6/v1/diagnostics`
+- `GET /api/lv6/v1/events` for server-sent events
 - JSON-body command writes in addition to query-string compatibility
 - Stable command-path fields for coordinator offsets, expiry, source, and reason
 
@@ -157,7 +157,7 @@ recommendations, and local safety results.
 | Phase | Status | Current state |
 | --- | --- | --- |
 | 1. Prototype UI shell on ESP32-S3 7-inch hardware with LVGL, OTA, WiFi, and mock V6 data. | Implemented | `lune-touch-7.yaml` builds for the Waveshare ESP32-S3 7-inch profile with OTA size checks, LVGL display wiring, local dashboard, and mock/runtime coordinator data. |
-| 2. Pair and poll one Lune V6 over the current `/api/hv6/v1/state` endpoint. | Implemented | Touch stores nodes, scans/polls candidates, retains legacy `/state` ingestion as fallback, and prefers resource-shaped V6 endpoints when available. |
+| 2. Pair and poll one Lune V6 over the current `/api/lv6/v1/state` endpoint. | Implemented | Touch stores nodes, scans/polls candidates, retains legacy `/state` ingestion as fallback, and prefers resource-shaped V6 endpoints when available. |
 | 3. Add multi-V6 zone registry, health model, and read-only house overview. | Implemented | The coordinator model supports multiple V6 nodes, room-to-node/zone bindings, stale-state propagation, node health summaries, and house/zone/manifold dashboard views. |
 | 4. Implement command-path writes with expiry, clamp reporting, and local fallback proof. | Implemented | Touch issues dashboard and forecast setpoint-offset commands with TTL, source/reason metadata, stale/unreachable/untrusted blocking, V6 response handling, persisted ledger records, and clamp reporting. V6 remains the safety authority. |
 | 5. Move forecast preload and adaptive whole-house logic from V6 toward Touch. | Implemented for first field build | Touch owns Open-Meteo fetch/cache, per-zone wind/solar/thermal-lead decisions, forecast dispatch, dedupe, learned thermal-lead inputs, and forecast diagnostics. |
@@ -198,6 +198,6 @@ Field validation is tracked in
   metadata, not long-term weather history.
 - Touch/Mini split: current field build keeps one shared coordinator/API/dashboard
   runtime, with display/LVGL selected by entrypoint.
-- API namespace: current integration stays under `/api/hv6/v1` for V6 and
+- API namespace: current integration stays under `/api/lv6/v1` for V6 and
   `/api/lune-touch/v1` for Touch. A public Lune namespace remains a future
   migration.

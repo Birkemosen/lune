@@ -166,8 +166,8 @@ struct HistoryEntry {
 // -----------------------------------------------------------------------
 // Device logs
 // LogLine and the dual live/smart PSRAM rings live in smart_log.h. The live
-// scratch backs GET /api/hv6/v1/logs?since=<seq>; the smart FIFO backs
-// GET /api/hv6/v1/logs/download. Both are RAM-only; lost on reboot.
+// scratch backs GET /api/lv6/v1/logs?since=<seq>; the smart FIFO backs
+// GET /api/lv6/v1/logs/download. Both are RAM-only; lost on reboot.
 // -----------------------------------------------------------------------
 
 #if defined(CONFIG_HEAP_TRACING_STANDALONE) || defined(CONFIG_HEAP_TRACING)
@@ -352,7 +352,7 @@ class LV6Dashboard : public Component, public AsyncWebHandler {
   void sample_cpu_load_();
   // Log FreeRTOS per-task CPU%/stack headroom plus heap_caps / multi_heap_info
   // for INTERNAL, DMA, and SPIRAM. Triggered by dump_task_stats (dashboard button
-  // or POST /api/hv6/v1/commands). Does not enable heap tracing by default —
+  // or POST /api/lv6/v1/commands). Does not enable heap tracing by default —
   // see packages/board/esp32-s3.yaml for an optional debug build.
   void dump_task_stats_();
   // multi_heap_info + heap_caps_print_heap_info for one capability mask.

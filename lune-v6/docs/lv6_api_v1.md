@@ -7,12 +7,12 @@ The cross-product v1 envelope, compatibility rules, and fixtures are in
 
 Hydraulic commissioning is documented in [hydraulic_commissioning.md](hydraulic_commissioning.md).
 
-`/api/hv6/v1` is intentionally retained as an internal compatibility namespace during
-the public rename from HeatValve-6 to Lune V6.
+Canonical HTTP namespace is `/api/lv6/v1` (matches the `lv6_*` component prefix).
+The former HeatValve-era path `/api/hv6/v1` has been removed (hard cut, no alias).
 
 ## Scope
 
-- Dedicated namespace: `/api/hv6/v1`
+- Dedicated namespace: `/api/lv6/v1`
 - Dashboard transport: HTTP JSON responses, URL-encoded POST forms, and revision polling
 - Home Assistant integration remains on ESPHome API/entities/services
 - Dashboard no longer depends on ESPHome entity-name REST routes
@@ -27,12 +27,12 @@ itself is served at `/` + `/dashboard.js`; `/dashboard` and `/dashboard/` are
 legacy bookmarks that redirect to `/`.
 
 - Read endpoints (raw JSON, no envelope yet — see "Planned"):
-  - `GET /api/hv6/v1/state` — full dashboard snapshot (entity-id → value map consumed by the frontend store)
-  - `GET /api/hv6/v1/revision` — lightweight revision-polling resource. The dashboard polls
+  - `GET /api/lv6/v1/state` — full dashboard snapshot (entity-id → value map consumed by the frontend store)
+  - `GET /api/lv6/v1/revision` — lightweight revision-polling resource. The dashboard polls
     this every three seconds and fetches the full state only when `data_revision` changes;
     this intentionally replaces the unsafe one-shot pseudo-SSE route. The payload also
     includes `uptime_s` so the UI can keep device uptime current without a full snapshot.
-  - `GET /api/hv6/v1/history` — 24 h ring buffer (288 slots @ 5 min). Each entry is
+  - `GET /api/lv6/v1/history` — 24 h ring buffer (288 slots @ 5 min). Each entry is
     `[uptime_s, z0, z1, z2, z3, z4, z5, absorbing, flow_c, return_c, demand_pct]` where
     `z0..z5` are `ZoneDisplayState` codes (`0xFF` = unknown), `absorbing` is `1` when preheat
     absorption was active at that sample (else `0`), `flow_c`/`return_c` are the manifold
@@ -42,16 +42,16 @@ legacy bookmarks that redirect to `/`.
     fields are appended after `absorbing` so index-based consumers (e.g. the zone-state timeline)
     are unaffected. Shape:
     `{"interval_s":300,"uptime_s":N,"count":N,"entries":[[…],…]}`
-  - `GET /api/hv6/v1/logs?since=<seq>` — live device-log ring (last ~96 lines). Returns only lines
+  - `GET /api/lv6/v1/logs?since=<seq>` — live device-log ring (last ~96 lines). Returns only lines
     newer than `<seq>`. Shape: `{"next_seq":N,"lines":[[seq,level,"tag","msg"],…]}` where `level`
     is the ESPHome log level (1=ERROR … 7=VERY_VERBOSE). Pass the previous `next_seq` (or the
     highest seen `seq`) back as `?since=` to append only new lines. RAM-only; reset on reboot.
-  - `GET /api/hv6/v1/logs/download` — the same log ring as a single `text/plain`
+  - `GET /api/lv6/v1/logs/download` — the same log ring as a single `text/plain`
     attachment for bug reports. See "Maintenance endpoints".
-  - `GET /api/hv6/v1/ble-scan` — discovered BTHome sensors
-  - `GET /api/hv6/v1/settings/export[?include_learned=0|1]` — configuration backup as a
+  - `GET /api/lv6/v1/ble-scan` — discovered BTHome sensors
+  - `GET /api/lv6/v1/settings/export[?include_learned=0|1]` — configuration backup as a
     downloadable JSON document. See "Maintenance endpoints".
-  - `POST /api/hv6/v1/authority/lease` — V6-A-only authenticated Touch lease acquisition
+  - `POST /api/lv6/v1/authority/lease` — V6-A-only authenticated Touch lease acquisition
     and renewal. The URL-encoded form body contains `installation_id`, `coordinator_id`, `lease_id`,
     `sequence`, `issued_ms`, and a 30–120 second `duration_ms`; the request must supply the
     provisioned `X-Lune-Authority-Key`. V6 never restores an active lease after reboot and
@@ -59,30 +59,30 @@ legacy bookmarks that redirect to `/`.
     lease ID. Authority state, remaining lease time, generation, and transition reason are
     included in `GET /diagnostics`. Touch includes a `degraded` coverage-health flag in each
     renewal. V6 does not aggregate zones or write to a heat source.
-  - `POST /api/hv6/v1/authority/proposal` — receives the automatically generated Touch
+  - `POST /api/lv6/v1/authority/proposal` — receives the automatically generated Touch
     installation identity and authentication material as a three-minute, RAM-only proposal.
     A proposal never grants control and the shared key is never returned by a read endpoint.
-  - `POST /api/hv6/v1/authority/approve-proposal` — local, explicit approval of the current
+  - `POST /api/lv6/v1/authority/approve-proposal` — local, explicit approval of the current
     proposal. V6 persists the proposed identity only after this action and returns the local
     browser credential once so the approving browser can continue making authenticated writes.
-  - `POST /api/hv6/v1/authority/revoke` — fail-safe local revocation. It removes the approved
+  - `POST /api/lv6/v1/authority/revoke` — fail-safe local revocation. It removes the approved
     coordinator identity and immediately rejects subsequent Touch commands.
 - Write endpoints (`application/x-www-form-urlencoded` request bodies or backwards-compatible query parameters; return the v1 response envelope):
-  - `POST /api/hv6/v1/zones/{zone}/setpoint?setpoint_c=<float>`
-  - `POST /api/hv6/v1/zones/{zone}/enabled?enabled=true|false`
-  - `POST /api/hv6/v1/zones/{zone}/setpoint-command`
-  - `POST /api/hv6/v1/commands?command=<name>[&zone=1..6]`
-  - `POST /api/hv6/v1/drivers/enabled?enabled=true|false`
-  - `POST /api/hv6/v1/motors/{zone}/target?value=<0..100>`
-  - `POST /api/hv6/v1/motors/{zone}/open_timed`
-  - `POST /api/hv6/v1/motors/{zone}/close_timed`
-  - `POST /api/hv6/v1/motors/{zone}/stop`
-  - `POST /api/hv6/v1/settings/select?key=<name>&value=<value>[&zone=1..6]`
-  - `POST /api/hv6/v1/settings/number?key=<name>&value=<value>[&zone=1..6]`
-  - `POST /api/hv6/v1/settings/text?key=<name>&value=<value>[&zone=1..6]`
-  - `POST /api/hv6/v1/settings/import[?restore_learned=0|1]` — restore a backup produced
+  - `POST /api/lv6/v1/zones/{zone}/setpoint?setpoint_c=<float>`
+  - `POST /api/lv6/v1/zones/{zone}/enabled?enabled=true|false`
+  - `POST /api/lv6/v1/zones/{zone}/setpoint-command`
+  - `POST /api/lv6/v1/commands?command=<name>[&zone=1..6]`
+  - `POST /api/lv6/v1/drivers/enabled?enabled=true|false`
+  - `POST /api/lv6/v1/motors/{zone}/target?value=<0..100>`
+  - `POST /api/lv6/v1/motors/{zone}/open_timed`
+  - `POST /api/lv6/v1/motors/{zone}/close_timed`
+  - `POST /api/lv6/v1/motors/{zone}/stop`
+  - `POST /api/lv6/v1/settings/select?key=<name>&value=<value>[&zone=1..6]`
+  - `POST /api/lv6/v1/settings/number?key=<name>&value=<value>[&zone=1..6]`
+  - `POST /api/lv6/v1/settings/text?key=<name>&value=<value>[&zone=1..6]`
+  - `POST /api/lv6/v1/settings/import[?restore_learned=0|1]` — restore a backup produced
     by `GET /settings/export`; the body is the JSON document. See "Maintenance endpoints".
-- `POST /api/hv6/v1/manual_mode?enabled=true|false`
+- `POST /api/lv6/v1/manual_mode?enabled=true|false`
 
 Local dashboard writes remain available while a V6 is standalone and no
 `authority.shared_key` has been provisioned. After Touch provisioning, the
@@ -90,10 +90,10 @@ same writes require `X-Lune-Local-Key` and a matching `X-Lune-CSRF` header;
 coordinator commands always require the separate authority authentication
 described below.
 - Migration reads:
-  - `GET /api/hv6/v1/overview`, `GET /api/hv6/v1/zones`,
-    `GET /api/hv6/v1/zones/{zone}`, `GET /api/hv6/v1/settings`,
-    `GET /api/hv6/v1/diagnostics`
-  - `GET /api/hv6/v1/events` is retained only as a compatibility placeholder; clients must
+  - `GET /api/lv6/v1/overview`, `GET /api/lv6/v1/zones`,
+    `GET /api/lv6/v1/zones/{zone}`, `GET /api/lv6/v1/settings`,
+    `GET /api/lv6/v1/diagnostics`
+  - `GET /api/lv6/v1/events` is retained only as a compatibility placeholder; clients must
     use documented revision polling until real SSE can be safely maintained on the target.
 
 Implemented command names:
@@ -169,7 +169,7 @@ Error responses:
 
 ## Read Endpoints
 
-### `GET /api/hv6/v1/overview`
+### `GET /api/lv6/v1/overview`
 
 Returns controller-level snapshot:
 
@@ -225,7 +225,7 @@ Returns controller-level snapshot:
 Lune Touch stores it during commissioning and treats later overview responses
 with a different fingerprint as an identity mismatch.
 
-### `GET /api/hv6/v1/zones`
+### `GET /api/lv6/v1/zones`
 
 Returns all zones:
 
@@ -253,7 +253,7 @@ Returns all zones:
 }
 ```
 
-### `GET /api/hv6/v1/zones/{zone}`
+### `GET /api/lv6/v1/zones/{zone}`
 
 Returns one zone with the settings and diagnostics fields required by dashboard details
 panels and coordinator pairing checks:
@@ -303,7 +303,7 @@ panels and coordinator pairing checks:
 }
 ```
 
-### `GET /api/hv6/v1/diagnostics`
+### `GET /api/lv6/v1/diagnostics`
 
 Returns diagnostics summary and latest fault/calibration state. The `heap`
 object reports free INTERNAL/DMA/PSRAM (KB), largest/min free INTERNAL blocks,
@@ -317,7 +317,7 @@ evidence count, runtime and persistent latch state. These raw values are for
 qualification and diagnostics; clients must not infer or command an endpoint
 from them.
 
-### `GET /api/hv6/v1/motor-trace.csv`
+### `GET /api/lv6/v1/motor-trace.csv`
 
 Downloads the most recently completed motor capture in chronological order.
 Rev 3.1 rows contain current, raw BEMF terminal A/B, differential BEMF,
@@ -325,7 +325,7 @@ measured sample separation, validity/motion flags and consecutive invalid-sample
 count. The endpoint returns `409 motor_busy` while a motor is moving so a CSV
 can never mix an active, wrapping capture with older samples.
 
-### `GET /api/hv6/v1/settings`
+### `GET /api/lv6/v1/settings`
 
 Returns dashboard-editable settings currently backed by config store and controllers:
 
@@ -406,7 +406,7 @@ Returns dashboard-editable settings currently backed by config store and control
 
 ## Write Endpoints
 
-### `POST /api/hv6/v1/zones/{zone}/setpoint`
+### `POST /api/lv6/v1/zones/{zone}/setpoint`
 
 Request:
 
@@ -416,7 +416,7 @@ Request:
 }
 ```
 
-### `POST /api/hv6/v1/zones/{zone}/enabled`
+### `POST /api/lv6/v1/zones/{zone}/enabled`
 
 Request:
 
@@ -426,7 +426,7 @@ Request:
 }
 ```
 
-### `POST /api/hv6/v1/zones/{zone}/setpoint-command`
+### `POST /api/lv6/v1/zones/{zone}/setpoint-command`
 
 Coordinator-owned, expiring setpoint offset. Lune V6 clamps the offset locally before
 applying it and returns the accepted/effective values.
@@ -446,7 +446,7 @@ Request:
 `requested_offset_c` is accepted as an alias for `setpoint_offset_c`. Query parameters
 with the same names remain accepted during dashboard/coordinator migration.
 
-### `POST /api/hv6/v1/commands`
+### `POST /api/lv6/v1/commands`
 
 Generic command endpoint for button-style actions.
 
@@ -475,7 +475,7 @@ Minimum command set:
 - `firmware_prepare`
 - `firmware_install`
 
-### `POST /api/hv6/v1/settings`
+### `POST /api/lv6/v1/settings`
 
 Applies validated partial settings payload.
 
@@ -489,7 +489,7 @@ one-based `zone` field.
 These exist so a user can take a settings backup before a firmware update and hand
 over a log capture with a bug report. Both are local-only surfaces.
 
-### `GET /api/hv6/v1/settings/export`
+### `GET /api/lv6/v1/settings/export`
 
 Returns the user-owned configuration as a downloadable JSON document — a file, not
 the v1 envelope:
@@ -546,7 +546,7 @@ credentials are outside this document, so a backup file cannot grant control.
 Errors: `503 config_store_unavailable`, `503 out_of_memory` (the ~8 KB document is
 built in PSRAM scratch), `500 export_failed` if the document does not fit.
 
-### `POST /api/hv6/v1/settings/import`
+### `POST /api/lv6/v1/settings/import`
 
 Restores a document produced by `GET /settings/export`. The request body **is** the
 JSON document. Requires the same write authorization as the other write endpoints.
@@ -590,9 +590,9 @@ Import does not restore authority material and does not move motors; the next
 zone-controller cycle acts on the restored setpoints. A successful import bumps
 `data_revision`, so revision-polling clients refresh on their own.
 
-### `GET /api/hv6/v1/logs/download`
+### `GET /api/lv6/v1/logs/download`
 
-Returns the same log ring as `GET /api/hv6/v1/logs` as a single `text/plain`
+Returns the same log ring as `GET /api/lv6/v1/logs` as a single `text/plain`
 attachment (`filename=lune-v6-logs.txt`), oldest line first, one
 `[<level>] <tag>: <message>` line each, where level is `E`, `W`, `I`, `C`, `D` or
 `V`. The ring is RAM-only, so capture it *before* restarting a device that
@@ -605,7 +605,7 @@ Releases are published to
 ESP-Web-Tools manifest (`manifest-lune-v6.json`). The device's own
 `update: platform: http_request` entity polls
 `releases/latest/download/manifest-lune-v6.json`, and the dashboard drives that same
-entity through `POST /api/hv6/v1/commands`:
+entity through `POST /api/lv6/v1/commands`:
 
 - `firmware_check` — re-fetch the manifest and refresh the fields below. It does not
   download the image.
@@ -634,8 +634,8 @@ startup rolls back to the previous one.
     }
   },
   "reset_reason": "Software Reset CPU",
-  "logs_endpoint": "/api/hv6/v1/logs",
-  "logs_download_endpoint": "/api/hv6/v1/logs/download"
+  "logs_endpoint": "/api/lv6/v1/logs",
+  "logs_download_endpoint": "/api/lv6/v1/logs/download"
 }
 ```
 
@@ -657,7 +657,7 @@ partition table.
 
 ## SSE Endpoint
 
-### `GET /api/hv6/v1/events`
+### `GET /api/lv6/v1/events`
 
 Event types:
 

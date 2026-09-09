@@ -54,7 +54,7 @@ lune/
 │   ├── lv6_valve_controller/ Motor FSM, endstop detection, ripple counting
 │   ├── lv6_zone_controller/  Zone state machine, algorithms, hydraulic balance
 │   ├── lv6_ble_time_beacon/  Shelly Date/Time Broadcast for BLU display clocks
-│   └── lv6_dashboard/        HTTP API (/api/hv6/v1), dashboard asset serving
+│   └── lv6_dashboard/        HTTP API (/api/lv6/v1), dashboard asset serving
 ├── web/
 │   ├── dashboard-src/        Dashboard source (modular JS, esbuild)
 │   └── dashboard.js          Bundled artifact (committed, embedded in firmware)
@@ -115,12 +115,12 @@ on an external service.
 
 ## Dashboard API
 
-Dashboard transport uses the dedicated `/api/hv6/v1` JSON namespace served by
+Dashboard transport uses the dedicated `/api/lv6/v1` JSON namespace served by
 `lv6_dashboard` on the device web server (port 80):
 
 - The dashboard app is served at `/` (+ `/dashboard.js`); `/dashboard` and
   `/dashboard/` are retained as redirect-only legacy bookmarks
-- All dashboard reads/writes go through `/api/hv6/v1` — the dashboard must not call
+- All dashboard reads/writes go through `/api/lv6/v1` — the dashboard must not call
   ESPHome entity REST routes (`/climate`, `/switch`, `/number`, …)
 - Home Assistant integration continues through the ESPHome native API
 - Contract: [hv6_api_v1.md](hv6_api_v1.md)

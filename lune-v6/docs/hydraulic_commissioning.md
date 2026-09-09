@@ -16,13 +16,13 @@ by default.
 
 ## Per-loop record
 
-For every port, use `POST /api/hv6/v1/settings/{text|number}` with its stable
+For every port, use `POST /api/lv6/v1/settings/{text|number}` with its stable
 zone number to save `zone_manifold_id`, `zone_manifold_port`, `zone_room_id`,
 `zone_loop_pipe_length_m`, `zone_design_flow_l_h`, `zone_measured_flow_l_h`,
 `zone_actuator_calibration_pct`, and `zone_expected_thermal_delay_min`.
 `area_m2` and `floor_type` are already part of the zone record. Unknown numeric
 values are stored as `-1`; port `0` means not commissioned. The resource
-`GET /api/hv6/v1/zones/{zone}` returns the complete commissioning record.
+`GET /api/lv6/v1/zones/{zone}` returns the complete commissioning record.
 
 Room identity is a stable room ID, never an array index. These records are
 passive commissioning metadata and do not alter physical temperature,
@@ -38,7 +38,7 @@ interface and must be clearly labelled with its source and freshness.
 
 ## Diagnostics
 
-`GET /api/hv6/v1/diagnostics` publishes six hydraulic alarm records. Every
+`GET /api/lv6/v1/diagnostics` publishes six hydraulic alarm records. Every
 record includes `freshness`, `evidence`, and `suggested_action`. A V6 currently
 observes its snapshot but lacks source timestamps, pump-run telemetry, other
 manifold telemetry, and trustworthy primary-side flow. Those checks are

@@ -18,7 +18,7 @@ async function fetchStateOnce() {
 
   pollAbortController = new AbortController();
 
-  const response = await fetch('/api/hv6/v1/state', {
+  const response = await fetch('/api/lv6/v1/state', {
     cache: 'no-store',
     signal: pollAbortController.signal,
   });
@@ -89,7 +89,7 @@ function pollStateCycle() {
 
 async function pollRevision() {
   try {
-    const response = await fetch('/api/hv6/v1/revision', { cache: 'no-store' });
+    const response = await fetch('/api/lv6/v1/revision', { cache: 'no-store' });
     if (!response.ok) throw new Error('Revision fetch failed');
     const payload = await response.json();
     const data = payload && payload.data;

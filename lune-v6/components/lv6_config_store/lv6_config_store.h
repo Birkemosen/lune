@@ -64,6 +64,7 @@ class Lv6ConfigStore : public esphome::Component {
   bool erase_namespace_and_restart();
 
  protected:
+  // Legacy storage id (HeatValve-era); renaming would wipe persisted device config.
   static constexpr const char *NVS_NAMESPACE = "hv6";
   static constexpr const char *KEY_CONFIG = "config";
   static constexpr const char *KEY_MOTOR_PFX = "mot";

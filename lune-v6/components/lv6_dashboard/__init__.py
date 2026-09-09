@@ -120,7 +120,7 @@ def _embed_gzip_as_progmem(symbol: str, file_path: str) -> str:
 
 async def to_code(config):
     # ESP-IDF's default HTTP server task is too small for the dashboard's
-    # response path (notably /api/hv6/v1/revision). Keep this fix coupled to
+    # response path (notably /api/lv6/v1/revision). Keep this fix coupled to
     # the dashboard component so every generated build gets the same safety
     # margin without a fragile path in platformio_options.
     add_extra_script(

@@ -5,7 +5,7 @@ import { handleMockPost, mockLatestRelease, mockSettingsExport, mockSettingsImpo
 import { saveBlob, saveText, stampedName } from '../utils/download.js';
 import { key, gkey } from '../utils/keys.js';
 
-export const BASE = '/api/hv6/v1';
+export const BASE = '/api/lv6/v1';
 
 // Firmware releases are published on GitHub. The browser asks GitHub directly
 // (on Settings open and on the explicit Check button) so the device never
@@ -34,7 +34,7 @@ function queryUrl(path, params) {
   return BASE + path + (query ? '?' + query : '');
 }
 
-// POST to a /api/hv6/v1 write endpoint. ESPHome's ESP-IDF server consumes
+// POST to a /api/lv6/v1 write endpoint. ESPHome's ESP-IDF server consumes
 // URL-encoded form bodies; query params remain as a compatibility fallback.
 // mockBody carries the legacy {key, value, zone?} action shape consumed by core/mock.js.
 function postV1(path, params, mockBody) {
@@ -90,7 +90,7 @@ function localAccessKey() {
   return sessionStorage.getItem('hv6_local_access_key') || '';
 }
 
-// POST a JSON document to a /api/hv6/v1 write endpoint. Only the settings
+// POST a JSON document to a /api/lv6/v1 write endpoint. Only the settings
 // restore path uses this: a backup envelope is a nested document that does not
 // fit the flat form-urlencoded shape every other write endpoint uses. The
 // device reads the raw body from request->arg("plain").

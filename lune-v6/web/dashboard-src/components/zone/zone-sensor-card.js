@@ -217,7 +217,7 @@ export default component({
       const ctrl = new AbortController();
       const timeout = setTimeout(() => ctrl.abort(), 8000);
 
-      fetch('/api/hv6/v1/ble-scan', { cache: 'no-store', signal: ctrl.signal })
+      fetch('/api/lv6/v1/ble-scan', { cache: 'no-store', signal: ctrl.signal })
         .then(r => {
           if (!r.ok) throw new Error('HTTP ' + r.status);
           return r.json();
