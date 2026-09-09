@@ -14,6 +14,7 @@
 #endif
 #include "esphome/core/component.h"
 #include "esphome/core/progmem.h"
+#include <cstdint>
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
 #include <freertos/task.h>
@@ -27,6 +28,11 @@ extern const size_t LV6_DASHBOARD_JS_SIZE;
 
 namespace lv6 {
 class Lv6BleTimeBeacon;
+}
+namespace esphome {
+namespace nimble_hub {
+class NimbleHub;
+}
 }
 
 namespace esphome {
@@ -69,6 +75,13 @@ struct DashboardSnapshot {
   uint32_t min_internal_kb{0};        // min free internal heap since boot (KB)
   uint32_t free_psram_kb{0};          // free PSRAM (KB), 0 if none
   uint32_t largest_psram_kb{0};       // largest free PSRAM block (KB)
+
+  // --- BLE scan liveness (nimble_hub) ---
+  bool     ble_hub_enabled{false};
+  bool     ble_scanning{false};
+  bool     ble_demanded{false};
+  float    ble_ads_per_sec{0.0f};
+  uint32_t ble_last_adv_age_ms{UINT32_MAX};
 
   // --- full config copies (POD structs, safe to memcpy) ---
   lv6::ZoneConfig   zones[lv6::NUM_ZONES];
@@ -164,6 +177,7 @@ class LV6Dashboard : public Component, public AsyncWebHandler {
   void set_valve_controller(lv6::Lv6ValveController *ctrl) { this->valve_controller_ = ctrl; }
   void set_config_store(lv6::Lv6ConfigStore *store) { this->config_store_ = store; }
   void set_ble_time_beacon(lv6::Lv6BleTimeBeacon *beacon) { this->ble_time_beacon_ = beacon; }
+  void set_nimble_hub(nimble_hub::NimbleHub *hub) { this->nimble_hub_ = hub; }
   void set_wifi_signal_sensor(sensor::Sensor *sensor) { this->wifi_signal_sensor_ = sensor; }
   void set_manifold_flow_sensor(sensor::Sensor *s) { this->manifold_flow_sensor_ = s; }
   void set_manifold_return_sensor(sensor::Sensor *s) { this->manifold_return_sensor_ = s; }
@@ -256,6 +270,7 @@ class LV6Dashboard : public Component, public AsyncWebHandler {
   lv6::Lv6ValveController *valve_controller_{nullptr};
   lv6::Lv6ConfigStore *config_store_{nullptr};
   lv6::Lv6BleTimeBeacon *ble_time_beacon_{nullptr};
+  nimble_hub::NimbleHub *nimble_hub_{nullptr};
   lv6_authority::Lease authority_{};
   char authority_proposal_installation_id_[32]{};
   char authority_proposal_coordinator_id_[32]{};

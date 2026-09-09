@@ -54,6 +54,12 @@ class NimbleHub : public Component {
   void stop_scan();
   bool scanning() const { return scanning_; }
 
+  // Scan liveness (updated from the NimBLE host task; read from loop/HTTP).
+  float ads_per_sec() const { return ads_per_sec_; }
+  uint32_t last_adv_age_ms() const;
+  uint32_t last_adv_ms() const { return last_adv_ms_; }
+  uint32_t adv_total() const { return adv_total_; }
+
   void register_advertisement_callback(AdvertisementCallback cb);
 
   bool start_raw_advertise(const uint8_t *data, size_t len, const RawAdvertiseParams &params);
@@ -72,6 +78,8 @@ class NimbleHub : public Component {
   void stop_scan_locked_();
   void resume_scan_after_advertise_();
   void dispatch_advertisement_(const struct ble_gap_disc_desc *disc);
+  void note_advertisement_();
+  void update_ads_rate_();
   static uint16_t ms_to_units_(uint16_t ms);
 
   bool enable_on_boot_{false};
@@ -83,8 +91,9 @@ class NimbleHub : public Component {
   bool advertising_{false};
   bool scan_paused_for_adv_{false};
 
-  uint16_t scan_interval_ms_{320};
-  uint16_t scan_window_ms_{160};
+  // Quieter 50% duty default (640/320): longer quiet gaps than 320/160.
+  uint16_t scan_interval_ms_{640};
+  uint16_t scan_window_ms_{320};
   bool scan_active_{false};
 
   uint8_t own_addr_type_{0};
@@ -92,6 +101,12 @@ class NimbleHub : public Component {
 
   // Parsed name buffer for the active GAP callback (not re-entrant).
   char name_buf_[32]{};
+
+  uint32_t adv_total_{0};
+  uint32_t last_adv_ms_{0};
+  uint32_t rate_window_start_ms_{0};
+  uint32_t rate_window_count_{0};
+  float ads_per_sec_{0.0f};
 };
 
 template<typename... Ts> class EnableAction : public Action<Ts...> {

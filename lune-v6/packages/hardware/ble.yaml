@@ -8,17 +8,30 @@
 #
 # Keep the BLE controller off until WiFi has associated. Sharing the 2.4 GHz
 # radio during the 4-way handshake is a common Auth Expired / Association
-# Expired failure on ESP32-S3 + UniFi.
+# Expired failure on ESP32-S3 + UniFi. lv6_ble_demand enforces a 15s settle
+# after WiFi connect, then enables NimBLE only while config still needs it
+# (any zone TempSource=BLE, or ble clock sync enabled). After demand drops,
+# scan stops and the hub disables following a short idle grace.
+#
+# Scan epoch: 640ms interval / 320ms window (~50% duty, longer quiet gaps than
+# 320/160). Override via nimble_hub interval/window if field-tuning coexistence.
 #
 # Stack: ESP-IDF NimBLE via nimble_hub (Observer + Broadcaster, no GATT/Bluedroid).
 
 nimble_hub:
   id: hv6_ble
   enable_on_boot: false
-  # Conservative 50% duty keeps WiFi coexistence calm while still catching BTHome.
-  interval: 320ms
-  window: 160ms
+  # Quieter 50% duty: longer quiet gaps than 320/160 for WiFi coexistence.
+  interval: 640ms
+  window: 320ms
   active: false
+
+lv6_ble_demand:
+  id: hv6_ble_demand
+  hub_id: hv6_ble
+  config_store_id: hv6_config
+  wifi_settle: 15s
+  idle_grace: 30s
 
 lv6_bthome_bridge:
   id: hv6_bthome
@@ -40,33 +53,12 @@ lv6_ble_time_beacon:
 
 lv6_dashboard:
   ble_time_beacon_id: hv6_ble_clock
-
-script:
-  - id: hv6_ble_start_after_wifi
-    mode: restart
-    then:
-      # Give DHCP/API/WiFi a quiet period before sharing the 2.4 GHz radio.
-      - delay: 15s
-      - if:
-          condition:
-            wifi.connected:
-          then:
-            - logger.log: "BLE stack starting after stable WiFi"
-            - nimble_hub.enable:
-                id: hv6_ble
-            - delay: 1s
-            - logger.log: "BLE scan starting after stable WiFi"
-            - nimble_hub.start_scan:
-                id: hv6_ble
-                continuous: true
+  nimble_hub_id: hv6_ble
 
 wifi:
-  on_connect:
-    - script.execute: hv6_ble_start_after_wifi
   on_disconnect:
-    # Cancel a pending delayed start as well as stopping an active scan.
-    # Drop the BLE controller so a later reconnect gets the 2.4 GHz radio alone.
-    - script.stop: hv6_ble_start_after_wifi
+    # Belt-and-suspenders with lv6_ble_demand: drop the controller immediately
+    # so a reconnect gets the 2.4 GHz radio alone during association.
     - nimble_hub.stop_scan:
         id: hv6_ble
     - nimble_hub.disable:

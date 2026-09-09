@@ -124,6 +124,11 @@ function seed() {
   setEntity(gkey.minInternalKb, { value: 96 });
   setEntity(gkey.freePsramKb, { value: 7800 });
   setEntity(gkey.largestPsramKb, { value: 4096 });
+  setEntity(gkey.bleHubEnabled, { state: 'on' });
+  setEntity(gkey.bleScanning, { state: 'on' });
+  setEntity(gkey.bleDemanded, { state: 'on' });
+  setEntity(gkey.bleAdsPerSec, { value: 2.4 });
+  setEntity(gkey.bleLastAdvAgeMs, { value: 850 });
   sampleHistory(true);
 
   // Generate 24 h of mock zone-state history (5-min intervals = 288 entries).
@@ -295,6 +300,13 @@ export function mockDiagnosticsSnapshot() {
         min_internal_kb: ev(gkey.minInternalKb) || 96,
         psram_kb: ev(gkey.freePsramKb) || 7800,
         largest_psram_kb: ev(gkey.largestPsramKb) || 4096,
+      },
+      ble: {
+        enabled: es(gkey.bleHubEnabled) === 'on',
+        scanning: es(gkey.bleScanning) === 'on',
+        demanded: es(gkey.bleDemanded) === 'on',
+        ads_per_sec: ev(gkey.bleAdsPerSec) || 0,
+        last_adv_age_ms: ev(gkey.bleLastAdvAgeMs) || 0,
       },
       drivers_enabled: !!state.driversEnabled,
       motor_safety: {

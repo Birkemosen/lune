@@ -1,5 +1,6 @@
 #include "nimble_hub.h"
 
+#include <cstdint>
 #include <cstring>
 
 #include "esphome/core/application.h"
@@ -59,7 +60,7 @@ void NimbleHub::setup() {
 #endif
 }
 
-void NimbleHub::loop() {}
+void NimbleHub::loop() { this->update_ads_rate_(); }
 
 void NimbleHub::dump_config() {
   ESP_LOGCONFIG(TAG, "NimBLE hub:");
@@ -67,6 +68,37 @@ void NimbleHub::dump_config() {
   ESP_LOGCONFIG(TAG, "  Scan interval: %u ms", this->scan_interval_ms_);
   ESP_LOGCONFIG(TAG, "  Scan window: %u ms", this->scan_window_ms_);
   ESP_LOGCONFIG(TAG, "  Scan active: %s", YESNO(this->scan_active_));
+}
+
+uint32_t NimbleHub::last_adv_age_ms() const {
+  if (this->last_adv_ms_ == 0)
+    return UINT32_MAX;
+  return esphome::millis() - this->last_adv_ms_;
+}
+
+void NimbleHub::note_advertisement_() {
+  const uint32_t now = esphome::millis();
+  this->adv_total_++;
+  this->last_adv_ms_ = now;
+  this->rate_window_count_++;
+  if (this->rate_window_start_ms_ == 0)
+    this->rate_window_start_ms_ = now;
+}
+
+void NimbleHub::update_ads_rate_() {
+  const uint32_t now = esphome::millis();
+  if (this->rate_window_start_ms_ == 0) {
+    this->rate_window_start_ms_ = now;
+    return;
+  }
+  const uint32_t elapsed = now - this->rate_window_start_ms_;
+  if (elapsed < 1000)
+    return;
+  this->ads_per_sec_ = (this->rate_window_count_ * 1000.0f) / static_cast<float>(elapsed);
+  this->rate_window_count_ = 0;
+  this->rate_window_start_ms_ = now;
+  if (!this->enabled_ || !this->scanning_)
+    this->ads_per_sec_ = 0.0f;
 }
 
 void NimbleHub::register_advertisement_callback(AdvertisementCallback cb) {
@@ -110,6 +142,9 @@ void NimbleHub::disable() {
   this->deinit_stack_();
   this->enabled_ = false;
   this->synced_ = false;
+  this->ads_per_sec_ = 0.0f;
+  this->rate_window_count_ = 0;
+  this->rate_window_start_ms_ = 0;
   ESP_LOGI(TAG, "NimBLE disabled (free_heap=%u internal=%u)",
            static_cast<unsigned>(esp_get_free_heap_size()),
            static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_INTERNAL)));
@@ -375,6 +410,7 @@ int NimbleHub::on_gap_event_(struct ble_gap_event *event) {
 #ifdef USE_ESP32
   switch (event->type) {
     case BLE_GAP_EVENT_DISC:
+      this->note_advertisement_();
       this->dispatch_advertisement_(&event->disc);
       return 0;
     case BLE_GAP_EVENT_DISC_COMPLETE:

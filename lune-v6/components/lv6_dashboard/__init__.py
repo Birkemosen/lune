@@ -22,6 +22,7 @@ CONF_MAC_ADDRESS_ID = "mac_address_id"
 CONF_VALVE_CONTROLLER_ID = "valve_controller_id"
 CONF_CONFIG_STORE_ID = "config_store_id"
 CONF_BLE_TIME_BEACON_ID = "ble_time_beacon_id"
+CONF_NIMBLE_HUB_ID = "nimble_hub_id"
 CONF_MANIFOLD_FLOW_ID = "manifold_flow_id"
 CONF_MANIFOLD_RETURN_ID = "manifold_return_id"
 CONF_ZONE_TEMP_IDS = "zone_temp_ids"
@@ -44,6 +45,8 @@ Lv6ZoneController = lv6_ns.class_("Lv6ZoneController", cg.Component)
 Lv6ValveController = lv6_ns.class_("Lv6ValveController", cg.Component)
 Lv6ConfigStore = lv6_ns.class_("Lv6ConfigStore", cg.Component)
 Lv6BleTimeBeacon = lv6_ns.class_("Lv6BleTimeBeacon", cg.Component)
+nimble_hub_ns = cg.esphome_ns.namespace("nimble_hub")
+NimbleHub = nimble_hub_ns.class_("NimbleHub", cg.Component)
 
 CONFIG_SCHEMA = cv.Schema(
     {
@@ -53,6 +56,7 @@ CONFIG_SCHEMA = cv.Schema(
         cv.Optional(CONF_VALVE_CONTROLLER_ID): cv.use_id(Lv6ValveController),
         cv.Optional(CONF_CONFIG_STORE_ID): cv.use_id(Lv6ConfigStore),
         cv.Optional(CONF_BLE_TIME_BEACON_ID): cv.use_id(Lv6BleTimeBeacon),
+        cv.Optional(CONF_NIMBLE_HUB_ID): cv.use_id(NimbleHub),
         cv.Optional(CONF_WIFI_SIGNAL_ID): cv.use_id(sensor.Sensor),
         cv.Optional(CONF_MANIFOLD_FLOW_ID): cv.use_id(sensor.Sensor),
         cv.Optional(CONF_MANIFOLD_RETURN_ID): cv.use_id(sensor.Sensor),
@@ -144,6 +148,10 @@ async def to_code(config):
     if CONF_BLE_TIME_BEACON_ID in config:
         beacon = await cg.get_variable(config[CONF_BLE_TIME_BEACON_ID])
         cg.add(var.set_ble_time_beacon(beacon))
+
+    if CONF_NIMBLE_HUB_ID in config:
+        hub = await cg.get_variable(config[CONF_NIMBLE_HUB_ID])
+        cg.add(var.set_nimble_hub(hub))
 
     if CONF_WIFI_SIGNAL_ID in config:
         wifi_signal = await cg.get_variable(config[CONF_WIFI_SIGNAL_ID])

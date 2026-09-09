@@ -1,6 +1,7 @@
 #include "lv6_dashboard.h"
 #include "../lv6_zone_controller/hydraulic_diagnostics.h"
 #include "esphome/components/lv6_ble_time_beacon/lv6_ble_time_beacon.h"
+#include "esphome/components/nimble_hub/nimble_hub.h"
 #include "settings_backup.h"
 
 #include "esphome/core/log.h"
@@ -326,6 +327,13 @@ void LV6Dashboard::update_snapshot_() {
   s.free_psram_kb = heap_caps_get_free_size(MALLOC_CAP_SPIRAM) / 1024;
   s.largest_psram_kb = heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM) / 1024;
 
+  if (this->nimble_hub_) {
+    s.ble_hub_enabled = this->nimble_hub_->is_enabled();
+    s.ble_scanning = this->nimble_hub_->scanning();
+    s.ble_ads_per_sec = this->nimble_hub_->ads_per_sec();
+    s.ble_last_adv_age_ms = this->nimble_hub_->last_adv_age_ms();
+  }
+
   auto snap_float = [](sensor::Sensor *sns) -> float {
     return (sns && sns->has_state()) ? sns->state : NAN;
   };
@@ -402,7 +410,11 @@ void LV6Dashboard::update_snapshot_() {
       s.zones[i]            = this->config_store_->get_zone_config(i);
       s.zone_temp_source[i] = this->config_store_->get_zone_temp_source(i);
       this->config_store_->get_zone_ble_mac_str(i, s.zone_ble_mac[i], sizeof(s.zone_ble_mac[i]));
+      if (s.zone_temp_source[i] == lv6::TempSource::BLE_SENSOR)
+        s.ble_demanded = true;
     }
+    if (this->config_store_->get_config().sensor_config.ble_clock_sync_enabled)
+      s.ble_demanded = true;
   }
 
   if (this->ble_time_beacon_) {
@@ -726,7 +738,7 @@ void LV6Dashboard::handle_state_(AsyncWebServerRequest *request) {
       "\"sensor-wifi_signal\":{\"value\":%s},",
       static_cast<unsigned long>(snap->uptime_s), wifi_buf);
 
-  // --- system diagnostics: per-core CPU load + free heap ---
+  // --- system diagnostics: per-core CPU load + free heap + BLE scan liveness ---
   format_float_token(num_buf, sizeof(num_buf), snap->cpu0_pct, 1);
   appendf(buf, BUF_SIZE, offset, "\"sensor-cpu_load_core0\":{\"value\":%s},", num_buf);
   format_float_token(num_buf, sizeof(num_buf), snap->cpu1_pct, 1);
@@ -745,6 +757,20 @@ void LV6Dashboard::handle_state_(AsyncWebServerRequest *request) {
       static_cast<unsigned long>(snap->min_internal_kb),
       static_cast<unsigned long>(snap->free_psram_kb),
       static_cast<unsigned long>(snap->largest_psram_kb));
+  char ble_ads_buf[24];
+  format_float_token(ble_ads_buf, sizeof(ble_ads_buf), snap->ble_ads_per_sec, 2);
+  appendf(buf, BUF_SIZE, offset,
+      "\"binary_sensor-ble_hub_enabled\":{\"state\":\"%s\"},"
+      "\"binary_sensor-ble_scanning\":{\"state\":\"%s\"},"
+      "\"binary_sensor-ble_demanded\":{\"state\":\"%s\"},"
+      "\"sensor-ble_ads_per_sec\":{\"value\":%s},"
+      "\"sensor-ble_last_adv_age_ms\":{\"value\":%lu},",
+      snap->ble_hub_enabled ? "on" : "off",
+      snap->ble_scanning ? "on" : "off",
+      snap->ble_demanded ? "on" : "off",
+      ble_ads_buf,
+      static_cast<unsigned long>(snap->ble_last_adv_age_ms == UINT32_MAX ? 0
+                                                                        : snap->ble_last_adv_age_ms));
 
   // --- manifold temps ---
   format_float_token(num_buf, sizeof(num_buf), snap->manifold_flow_c);
@@ -1085,11 +1111,12 @@ void LV6Dashboard::handle_overview_(AsyncWebServerRequest *request) {
     }
   }
 
-  char flow[24], ret[24], demand[24], wifi[24];
+  char flow[24], ret[24], demand[24], wifi[24], ble_ads_status[24];
   format_float_token(flow, sizeof(flow), snap->manifold_flow_c, 1);
   format_float_token(ret, sizeof(ret), snap->manifold_return_c, 1);
   format_float_token(demand, sizeof(demand), valve_count ? valve_sum / valve_count : NAN, 0);
   format_float_token(wifi, sizeof(wifi), snap->wifi_dbm, 0);
+  format_float_token(ble_ads_status, sizeof(ble_ads_status), snap->ble_ads_per_sec, 2);
   char pairing_fingerprint[24];
   format_pairing_fingerprint(snap->mac_address, pairing_fingerprint, sizeof(pairing_fingerprint));
 
@@ -1104,7 +1131,9 @@ void LV6Dashboard::handle_overview_(AsyncWebServerRequest *request) {
            "\"manifold\":{\"flow_c\":%s,\"return_c\":%s,\"mean_valve_pct\":%s},"
            "\"system\":{\"wifi_dbm\":%s,\"drivers_enabled\":%s,\"free_internal_kb\":%lu,"
            "\"free_dma_kb\":%lu,\"largest_internal_kb\":%lu,\"min_internal_kb\":%lu,"
-           "\"free_psram_kb\":%lu,\"largest_psram_kb\":%lu},"
+           "\"free_psram_kb\":%lu,\"largest_psram_kb\":%lu,"
+           "\"ble_enabled\":%s,\"ble_scanning\":%s,\"ble_demanded\":%s,"
+           "\"ble_ads_per_sec\":%s,\"ble_last_adv_age_ms\":%lu},"
            "\"safety\":{\"local_authority\":true,\"commands_clamped\":true,"
            "\"minimum_flow_always\":%s}}}",
            snap->firmware_version, snap->ip_address, snap->connected_ssid, snap->mac_address,
@@ -1123,6 +1152,13 @@ void LV6Dashboard::handle_overview_(AsyncWebServerRequest *request) {
            static_cast<unsigned long>(snap->min_internal_kb),
            static_cast<unsigned long>(snap->free_psram_kb),
            static_cast<unsigned long>(snap->largest_psram_kb),
+           snap->ble_hub_enabled ? "true" : "false",
+           snap->ble_scanning ? "true" : "false",
+           snap->ble_demanded ? "true" : "false",
+           ble_ads_status,
+           static_cast<unsigned long>(snap->ble_last_adv_age_ms == UINT32_MAX
+                                          ? 0
+                                          : snap->ble_last_adv_age_ms),
            snap->minimum_flow_always ? "true" : "false");
   send_text_(request, 200, "application/json", this->json_buf_, true, "no-cache");
 }
@@ -1378,11 +1414,12 @@ void LV6Dashboard::handle_diagnostics_(AsyncWebServerRequest *request) {
   const lv6::MotorSafetyDiagnostics motor_diag = this->valve_controller_
       ? this->valve_controller_->get_motor_safety_diagnostics()
       : lv6::MotorSafetyDiagnostics{};
-  char cpu0[24], cpu1[24], flow[24], ret[24];
+  char cpu0[24], cpu1[24], flow[24], ret[24], ble_ads[24];
   format_float_token(cpu0, sizeof(cpu0), snap->cpu0_pct, 1);
   format_float_token(cpu1, sizeof(cpu1), snap->cpu1_pct, 1);
   format_float_token(flow, sizeof(flow), snap->manifold_flow_c, 1);
   format_float_token(ret, sizeof(ret), snap->manifold_return_c, 1);
+  format_float_token(ble_ads, sizeof(ble_ads), snap->ble_ads_per_sec, 2);
   lv6::hydraulic_diagnostics::Input hydraulic{};
   float valve_total = 0.0f;
   uint8_t valve_count = 0;
@@ -1422,6 +1459,8 @@ void LV6Dashboard::handle_diagnostics_(AsyncWebServerRequest *request) {
            "\"dma_kb\":%lu,\"largest_internal_kb\":%lu,\"min_internal_kb\":%lu,"
            "\"psram_kb\":%lu,\"largest_psram_kb\":%lu},"
            "\"cpu\":{\"core0_pct\":%s,\"core1_pct\":%s},"
+           "\"ble\":{\"enabled\":%s,\"scanning\":%s,\"demanded\":%s,"
+           "\"ads_per_sec\":%s,\"last_adv_age_ms\":%lu},"
            "\"manifold\":{\"flow_c\":%s,\"return_c\":%s},\"drivers_enabled\":%s,"
            "\"motor_safety\":{\"backend\":\"%s\",\"motor_busy\":%s,\"drive_on\":%s,"
            "\"latch_faulted\":%s,\"fault_code\":%u,\"current_ma\":%.1f,"
@@ -1443,7 +1482,14 @@ void LV6Dashboard::handle_diagnostics_(AsyncWebServerRequest *request) {
            static_cast<unsigned long>(snap->largest_internal_kb),
            static_cast<unsigned long>(snap->min_internal_kb),
            static_cast<unsigned long>(snap->free_psram_kb),
-           static_cast<unsigned long>(snap->largest_psram_kb), cpu0, cpu1, flow, ret,
+           static_cast<unsigned long>(snap->largest_psram_kb), cpu0, cpu1,
+           snap->ble_hub_enabled ? "true" : "false",
+           snap->ble_scanning ? "true" : "false",
+           snap->ble_demanded ? "true" : "false",
+           ble_ads, static_cast<unsigned long>(snap->ble_last_adv_age_ms == UINT32_MAX
+                                                   ? 0
+                                                   : snap->ble_last_adv_age_ms),
+           flow, ret,
            snap->drivers_enabled ? "true" : "false",
            motor_diag.backend,
            motor_diag.motor_busy ? "true" : "false",

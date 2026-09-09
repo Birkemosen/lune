@@ -32,8 +32,9 @@ CONFIG_SCHEMA = cv.All(
         {
             cv.GenerateID(): cv.declare_id(NimbleHub),
             cv.Optional(CONF_ENABLE_ON_BOOT, default=False): cv.boolean,
-            cv.Optional(CONF_INTERVAL, default="320ms"): cv.positive_time_period_milliseconds,
-            cv.Optional(CONF_WINDOW, default="160ms"): cv.positive_time_period_milliseconds,
+            # Quieter 50% duty than 320/160: longer quiet gaps for WiFi coexistence.
+            cv.Optional(CONF_INTERVAL, default="640ms"): cv.positive_time_period_milliseconds,
+            cv.Optional(CONF_WINDOW, default="320ms"): cv.positive_time_period_milliseconds,
             cv.Optional(CONF_ACTIVE, default=False): cv.boolean,
         }
     ).extend(cv.COMPONENT_SCHEMA),

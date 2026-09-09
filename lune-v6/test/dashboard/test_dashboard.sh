@@ -339,18 +339,30 @@ grep -qF "'diagnostics.system.dma': 'Free DMA'" "$i18n" >/dev/null
 grep -qF "'diagnostics.system.largestInternal': 'Largest free (int)'" "$i18n" >/dev/null
 grep -qF "'diagnostics.system.minInternal': 'Min free (int)'" "$i18n" >/dev/null
 grep -qF "'diagnostics.system.largestPsram': 'Largest free PSRAM'" "$i18n" >/dev/null
+grep -qF "'diagnostics.system.bleAds': 'BLE ads/s'" "$i18n" >/dev/null
+grep -qF "'diagnostics.system.bleLastAdv': 'BLE last adv'" "$i18n" >/dev/null
+grep -qF "'diagnostics.system.bleState': 'BLE radio'" "$i18n" >/dev/null
 grep -qF "data-k=\"dma\"" "$system_card" >/dev/null
 grep -qF "data-k=\"largestInternal\"" "$system_card" >/dev/null
 grep -qF "data-k=\"minInternal\"" "$system_card" >/dev/null
 grep -qF "data-k=\"largestPsram\"" "$system_card" >/dev/null
+grep -qF "data-k=\"bleAds\"" "$system_card" >/dev/null
+grep -qF "data-k=\"bleLastAdv\"" "$system_card" >/dev/null
+grep -qF "data-k=\"bleState\"" "$system_card" >/dev/null
 grep -qF 'freeDmaKb: ' "$keys" >/dev/null
 grep -qF 'largestInternalKb: ' "$keys" >/dev/null
 grep -qF 'minInternalKb: ' "$keys" >/dev/null
 grep -qF 'largestPsramKb: ' "$keys" >/dev/null
+grep -qF 'bleAdsPerSec: ' "$keys" >/dev/null
+grep -qF 'bleLastAdvAgeMs: ' "$keys" >/dev/null
+grep -qF 'bleHubEnabled: ' "$keys" >/dev/null
 grep -qF '\"dma_kb\":%lu' "$dashboard_cpp" >/dev/null
 grep -qF '\"largest_internal_kb\":%lu' "$dashboard_cpp" >/dev/null
 grep -qF '\"min_internal_kb\":%lu' "$dashboard_cpp" >/dev/null
 grep -qF '\"largest_psram_kb\":%lu' "$dashboard_cpp" >/dev/null
+grep -qF '\"ads_per_sec\":%s' "$dashboard_cpp" >/dev/null
+grep -qF '\"last_adv_age_ms\":%lu' "$dashboard_cpp" >/dev/null
+grep -qF 'sensor-ble_ads_per_sec' "$dashboard_cpp" >/dev/null
 grep -qF 'heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL)' "$dashboard_cpp" >/dev/null
 grep -qF 'heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL)' "$dashboard_cpp" >/dev/null
 grep -qF "'status.updateAvailable'" "$i18n" >/dev/null

@@ -82,6 +82,18 @@ const template = () => `
         <div class="sys-label" data-i18n="diagnostics.system.largestPsram">Largest free PSRAM</div>
         <div class="sys-value" data-k="largestPsram">—</div>
       </div>
+      <div class="sys-cell">
+        <div class="sys-label" data-i18n="diagnostics.system.bleAds">BLE ads/s</div>
+        <div class="sys-value" data-k="bleAds">—</div>
+      </div>
+      <div class="sys-cell">
+        <div class="sys-label" data-i18n="diagnostics.system.bleLastAdv">BLE last adv</div>
+        <div class="sys-value" data-k="bleLastAdv">—</div>
+      </div>
+      <div class="sys-cell sys-cell-wide">
+        <div class="sys-label" data-i18n="diagnostics.system.bleState">BLE radio</div>
+        <div class="sys-value sys-value-text" data-k="bleState">—</div>
+      </div>
       <div class="sys-cell sys-cell-wide">
         <div class="sys-label" data-i18n="diagnostics.system.resetReason">Last reset reason</div>
         <div class="sys-value sys-value-text" data-k="reset">—</div>
@@ -107,6 +119,9 @@ export default component({
     const minInternalEl = el.querySelector('[data-k="minInternal"]');
     const psramEl = el.querySelector('[data-k="psram"]');
     const largestPsramEl = el.querySelector('[data-k="largestPsram"]');
+    const bleAdsEl = el.querySelector('[data-k="bleAds"]');
+    const bleLastAdvEl = el.querySelector('[data-k="bleLastAdv"]');
+    const bleStateEl = el.querySelector('[data-k="bleState"]');
     const bar0 = el.querySelector('[data-bar="cpu0"]');
     const bar1 = el.querySelector('[data-bar="cpu1"]');
     const resetEl = el.querySelector('[data-k="reset"]');
@@ -129,6 +144,13 @@ export default component({
       valEl.textContent = kb + ' KB';
       valEl.classList.toggle('warn', warnBelow != null && kb < warnBelow);
     };
+    const formatAge = (ms) => {
+      if (ms == null || !Number.isFinite(Number(ms)) || Number(ms) <= 0) return '—';
+      const n = Number(ms);
+      if (n < 1000) return Math.round(n) + ' ms';
+      if (n < 60000) return (n / 1000).toFixed(1) + ' s';
+      return Math.round(n / 60000) + ' min';
+    };
 
     const update = () => {
       setCpu(cpu0El, bar0, ev(gkey.cpuLoadCore0));
@@ -139,6 +161,18 @@ export default component({
       setKb(minInternalEl, ev(gkey.minInternalKb), 48);
       setKb(psramEl, ev(gkey.freePsramKb), null);
       setKb(largestPsramEl, ev(gkey.largestPsramKb), null);
+      const ads = ev(gkey.bleAdsPerSec);
+      if (ads == null || !Number.isFinite(Number(ads))) bleAdsEl.textContent = '—';
+      else bleAdsEl.textContent = Number(ads).toFixed(1) + '/s';
+      bleLastAdvEl.textContent = formatAge(ev(gkey.bleLastAdvAgeMs));
+      const demanded = es(gkey.bleDemanded) === 'on';
+      const enabled = es(gkey.bleHubEnabled) === 'on';
+      const scanning = es(gkey.bleScanning) === 'on';
+      const parts = [];
+      parts.push(demanded ? 'demanded' : 'idle');
+      if (enabled) parts.push(scanning ? 'scanning' : 'on');
+      else parts.push('off');
+      bleStateEl.textContent = parts.join(' · ');
       // Firmware publishes the boot cause as a text sensor in /state; a
       // diagnostics fetch may fill the dashboard value instead.
       const reason = String(es(gkey.resetReason) || getDashboardValue('resetReason') || '').trim();
@@ -157,6 +191,11 @@ export default component({
     subscribe(gkey.minInternalKb, update);
     subscribe(gkey.freePsramKb, update);
     subscribe(gkey.largestPsramKb, update);
+    subscribe(gkey.bleAdsPerSec, update);
+    subscribe(gkey.bleLastAdvAgeMs, update);
+    subscribe(gkey.bleHubEnabled, update);
+    subscribe(gkey.bleScanning, update);
+    subscribe(gkey.bleDemanded, update);
     subscribe(gkey.resetReason, update);
     subscribeDashboard('resetReason', update);
     subscribeLanguage(() => localize(el));

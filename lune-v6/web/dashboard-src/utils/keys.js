@@ -88,4 +88,9 @@ export const gkey = {
   minInternalKb: 'sensor-min_internal_kb',
   freePsramKb: 'sensor-free_psram_kb',
   largestPsramKb: 'sensor-largest_psram_kb',
+  bleHubEnabled: 'binary_sensor-ble_hub_enabled',
+  bleScanning: 'binary_sensor-ble_scanning',
+  bleDemanded: 'binary_sensor-ble_demanded',
+  bleAdsPerSec: 'sensor-ble_ads_per_sec',
+  bleLastAdvAgeMs: 'sensor-ble_last_adv_age_ms',
 };
