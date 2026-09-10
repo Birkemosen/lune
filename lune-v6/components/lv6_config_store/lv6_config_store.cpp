@@ -184,6 +184,15 @@ DeviceConfig Lv6ConfigStore::get_config() const {
   return copy;
 }
 
+SensorConfig Lv6ConfigStore::get_sensor_config() const {
+  if (mutex_ == nullptr)
+    return config_.sensor_config;
+  xSemaphoreTake(mutex_, portMAX_DELAY);
+  SensorConfig copy = config_.sensor_config;
+  xSemaphoreGive(mutex_);
+  return copy;
+}
+
 MotorConfig Lv6ConfigStore::get_motor_config() const {
   if (mutex_ == nullptr)
     return config_.motor;
@@ -248,6 +257,26 @@ void Lv6ConfigStore::get_zone_ble_mac_str(uint8_t zone, char *ble, size_t ble_le
   }
   xSemaphoreTake(mutex_, portMAX_DELAY);
   if (ble && ble_len) { strncpy(ble, config_.sensor_config.zone_ble_mac[zone], ble_len - 1); ble[ble_len - 1] = '\0'; }
+  xSemaphoreGive(mutex_);
+}
+
+void Lv6ConfigStore::get_zone_sensor_id_str(uint8_t zone, char *out, size_t out_len) const {
+  if (zone >= NUM_ZONES) {
+    if (out && out_len) out[0] = '\0';
+    return;
+  }
+  if (mutex_ == nullptr) {
+    if (out && out_len) {
+      strncpy(out, config_.sensor_config.zone_sensor_id[zone], out_len - 1);
+      out[out_len - 1] = '\0';
+    }
+    return;
+  }
+  xSemaphoreTake(mutex_, portMAX_DELAY);
+  if (out && out_len) {
+    strncpy(out, config_.sensor_config.zone_sensor_id[zone], out_len - 1);
+    out[out_len - 1] = '\0';
+  }
   xSemaphoreGive(mutex_);
 }
 

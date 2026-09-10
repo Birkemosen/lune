@@ -202,7 +202,7 @@ class Lv6ZoneController : public esphome::Component {
   uint32_t get_cycle_count() const { return cycle_count_.load(std::memory_order_relaxed); }
 
  protected:
-  static constexpr uint32_t STACK_SIZE = 8192;
+  static constexpr uint32_t STACK_SIZE = 16384;  ///< DeviceConfig grew with EXTERNAL sensor fields
   static constexpr UBaseType_t PRIORITY = 6;
   // Core 0 hosts ESPHome's main loop and the ESP-IDF WiFi/lwIP work.  Keep the
   // long-running control cycle on Core 1 so a sensor/display or I2C stall

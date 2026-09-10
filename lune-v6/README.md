@@ -1,13 +1,11 @@
 # Lune V6
 
-ESPHome firmware for **Lune V6**, the Birkemosen 6-zone hydronic underfloor-heating
+ESPHome firmware for **Lune V6**, a 6-zone hydronic underfloor-heating
 manifold controller.
 
 Lune V6 is the local manifold node in the Lune product line. It owns valve motion,
 endstop detection, local temperature inputs, minimum-flow protection, motor fault
-handling, and conservative fail-safe heating. Whole-house learning and optimization
-belongs in the Lune Touch / Lune Mini coordinator, which lives in the private repository
-[`Birkemosen/lune-coordinator`](https://github.com/Birkemosen/lune-coordinator).
+handling, and conservative fail-safe heating.
 
 Some firmware entrypoint filenames, including `lune.yaml`, remain for configuration
 compatibility; the Lune V6 component directories and internal names use the `lv6` prefix.

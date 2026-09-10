@@ -1,22 +1,6 @@
-# Birkemosen Product Workspace
+# Lune V6
 
-This repository is a monorepo for the Lune hardware family. Each hardware product owns its
-firmware, dashboard, tests, hardware files, and device-specific documentation in its own
-folder.
-
-## Layout
-
-```text
-lune-v6/         Local 6-zone hydronic manifold controller
-  hardware/      KiCad schematics and design contracts, per revision
-docs/            Cross-device notes (brand architecture → lune-coordinator)
-shared/          Shared contracts and design notes, not shared runtime code
-```
-
-The Lune Touch / Lune Mini coordinator lives in the private repository
-[`Birkemosen/lune-coordinator`](https://github.com/Birkemosen/lune-coordinator).
-
-## Lune V6
+## IN DEVELOPMENT - NOT TESTED YET
 
 The current board is **`lune-v6-rev3.2`**: a two-layer, 90 × 75 mm, USB-C powered
 ESP32-S3-WROOM-1-N8R8 controller driving six 3.3 V valve channels from three `DRV8411`

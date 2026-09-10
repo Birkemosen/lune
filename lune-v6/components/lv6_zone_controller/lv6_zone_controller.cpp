@@ -538,7 +538,9 @@ void Lv6ZoneController::set_zone_sensor_id(uint8_t zone, const std::string &sens
 std::string Lv6ZoneController::get_zone_sensor_id(uint8_t zone) const {
   if (zone >= NUM_ZONES || !config_store_)
     return "";
-  return std::string(config_store_->get_config().sensor_config.zone_sensor_id[zone]);
+  char id[SENSOR_ID_LEN];
+  config_store_->get_zone_sensor_id_str(zone, id, sizeof(id));
+  return std::string(id);
 }
 
 void Lv6ZoneController::set_zone_sensor_name(uint8_t zone, const std::string &name) {
@@ -575,7 +577,8 @@ int8_t Lv6ZoneController::match_ble_mac(const char *mac) const {
 int8_t Lv6ZoneController::match_external_sensor_id(const char *sensor_id) const {
   if (sensor_id == nullptr || sensor_id[0] == '\0' || !config_store_)
     return -1;
-  const auto &sc = config_store_->get_config().sensor_config;
+  // Copy SensorConfig only — avoid stacking a full DeviceConfig (~2 KB) here.
+  const SensorConfig sc = config_store_->get_sensor_config();
   for (uint8_t z = 0; z < NUM_ZONES; z++) {
     if (sc.zone_temp_source[z] != TempSource::EXTERNAL)
       continue;
@@ -1243,10 +1246,10 @@ void Lv6ZoneController::check_failsafes_() {
 
   uint32_t now_ms = static_cast<uint32_t>(esp_timer_get_time() / 1000);
 
-  // Temperature sensor failsafe
-  const auto cfg = config_store_->get_config();
+  // Temperature sensor failsafe — avoid nesting DeviceConfig under run_cycle_().
   for (uint8_t i = 0; i < NUM_ZONES; i++) {
-    if (!cfg.zones[i].enabled)
+    const ZoneConfig zc = config_store_->get_zone_config(i);
+    if (!zc.enabled)
       continue;
     if (last_valid_temp_ms_[i] == 0)
       continue;
@@ -1255,7 +1258,8 @@ void Lv6ZoneController::check_failsafes_() {
     if (elapsed > TEMP_FAILSAFE_MS) {
       float temp = read_zone_temperature_(i);
       if (std::isnan(temp)) {
-        valve_controller_->request_position(i, cfg.control.maintenance_base_pct);
+        const float maint = config_store_->get_config().control.maintenance_base_pct;
+        valve_controller_->request_position(i, maint);
         ESP_LOGW(TAG, "Zone %d temp failsafe (%" PRIu32 "s)", i + 1, elapsed / 1000);
       }
     }
@@ -1270,21 +1274,19 @@ float Lv6ZoneController::read_zone_temperature_(uint8_t zone) const {
   if (zone >= NUM_ZONES || !config_store_)
     return NAN;
 
-  auto cfg = config_store_->get_config();
-
-  if (cfg.sensor_config.zone_temp_source[zone] == TempSource::BLE_SENSOR ||
-      cfg.sensor_config.zone_temp_source[zone] == TempSource::EXTERNAL) {
+  // Avoid nesting a full DeviceConfig copy under run_cycle_() (zone task stack).
+  const TempSource src = config_store_->get_zone_temp_source(zone);
+  if (src == TempSource::BLE_SENSOR || src == TempSource::EXTERNAL)
     return get_zone_external_temperature(zone);
-  }
 
   // Default: local probe (only if role is ROOM_TEMPERATURE; if RETURN_WATER, room temp
   // must come from BLE — return NAN to trigger failsafe/maintenance positioning)
-  if (cfg.zones[zone].probe_role == ProbeRole::RETURN_WATER) {
-    // Probe is measuring return water, not room temp — no local room temperature available
+  const ZoneConfig zc = config_store_->get_zone_config(zone);
+  if (zc.probe_role == ProbeRole::RETURN_WATER)
     return NAN;
-  }
 
-  int8_t probe = cfg.probes.zone_return_probe[zone];
+  const ProbeConfig probes = config_store_->get_probe_config();
+  const int8_t probe = probes.zone_return_probe[zone];
   if (probe < 0 || probe >= MAX_PROBES || probe_sensors_[probe] == nullptr)
     return NAN;
   if (!probe_sensors_[probe]->has_state())
@@ -1297,11 +1299,12 @@ float Lv6ZoneController::read_zone_return_temperature_(uint8_t zone) const {
   if (zone >= NUM_ZONES || !config_store_)
     return NAN;
 
-  auto cfg = config_store_->get_config();
-  if (cfg.zones[zone].probe_role != ProbeRole::RETURN_WATER)
+  const ZoneConfig zc = config_store_->get_zone_config(zone);
+  if (zc.probe_role != ProbeRole::RETURN_WATER)
     return NAN;
 
-  int8_t probe = cfg.probes.zone_return_probe[zone];
+  const ProbeConfig probes = config_store_->get_probe_config();
+  const int8_t probe = probes.zone_return_probe[zone];
   if (probe < 0 || probe >= MAX_PROBES || probe_sensors_[probe] == nullptr)
     return NAN;
   if (!probe_sensors_[probe]->has_state())
@@ -1313,7 +1316,7 @@ float Lv6ZoneController::read_manifold_flow_() const {
   if (!config_store_)
     return NAN;
 
-  int8_t probe = config_store_->get_config().probes.manifold_flow_probe;
+  const int8_t probe = config_store_->get_probe_config().manifold_flow_probe;
   if (probe >= 0 && probe < MAX_PROBES && probe_sensors_[probe] && probe_sensors_[probe]->has_state())
     return probe_sensors_[probe]->state;
   return NAN;
@@ -1323,7 +1326,7 @@ float Lv6ZoneController::read_manifold_return_() const {
   if (!config_store_)
     return NAN;
 
-  int8_t probe = config_store_->get_config().probes.manifold_return_probe;
+  const int8_t probe = config_store_->get_probe_config().manifold_return_probe;
   if (probe >= 0 && probe < MAX_PROBES && probe_sensors_[probe] && probe_sensors_[probe]->has_state())
     return probe_sensors_[probe]->state;
   return NAN;
