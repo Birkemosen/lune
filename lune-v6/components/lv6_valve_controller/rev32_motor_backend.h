@@ -59,6 +59,49 @@ class Rev32MotorBackend : public GpioMotorBackend {
 
   bool setup() override;
   bool arm_latch() override;
+  // Motor Lab / DMM: drive GPIO17 high immediately and hold it for seconds.
+  bool arm_latch_probe();
+  void assert_arm_high();
+
+  // Bring-up only, and the substitute for an oscilloscope. A single arm edge is
+  // a ~3 V spike that decays in about a millisecond, which no multimeter can
+  // see. Square-waving LATCH_ARM turns that into a periodic signal: a live
+  // R4/C4 path then reads hundreds of mV on U2 pin 1 in AC volts, an open one
+  // reads ~0. It also catches a latch that arms on any edge, so in the good
+  // case the probe answers on its own without a meter at all.
+  struct ArmClockProbe {
+    uint32_t cycles{0};
+    uint32_t armed_at_cycle{0};
+    uint32_t hz{0};
+    bool armed{false};
+    bool clamp{false};
+    int latch_state_start{-1};
+    int latch_state_end{-1};
+  };
+  // clamp=true holds MOTOR_ENABLE high for the whole run, which is the Q1
+  // interlock test: Q1 must short ARM_CLK to ground so an arm pulse issued on a
+  // live bridge is swallowed. The AC level on U2 pin 1 should collapse to ~0.
+  ArmClockProbe probe_arm_clock(uint32_t hz, uint32_t duration_ms, bool clamp = false);
+
+  // Holds one decoder address with MOTOR_ENABLE low so the 74HC4514 outputs can
+  // be probed with a meter. This is the only way to verify the twelve-entry
+  // channel/direction map against the hardware while the drive permit is off,
+  // and a wrong entry means the wrong motor or the wrong direction.
+  struct DecoderProbe {
+    bool accepted{false};
+    uint8_t zone{0};
+    bool reverse{false};
+    uint8_t decoder_address{0};
+    int a0{-1};
+    int a1{-1};
+    int a2{-1};
+    int a3{-1};
+    int motor_enable{-1};
+  };
+  DecoderProbe probe_decoder(uint8_t zone, bool reverse, uint32_t hold_ms);
+  int latch_arm_level() const;
+  int latch_state_level() const;
+  int motor_enable_level() const;
   bool select_zone(uint8_t zone, bool reverse) override {
     return select(zone, reverse ? Rev32Direction::REVERSE : Rev32Direction::FORWARD);
   }
@@ -101,10 +144,14 @@ class Rev32MotorBackend : public GpioMotorBackend {
 
   const Rev32TachoConfig &tacho_config() const { return tacho_cfg_; }
 
- private:
+ protected:
   // 110 kOhm x 10 nF = 1.1 ms; five time constants either side of the arm edge.
   static constexpr uint32_t ARM_SETTLE_MS = 6;
-  static constexpr uint32_t ARM_PULSE_US = 500;
+  // The clock edge is the rising flank; hold time only has to outlast VIH.
+  static constexpr uint32_t ARM_EDGE_MS = 1;
+  // Bring-up only: long enough for a DMM and the Motor Lab poll to see pad 10.
+  // The AC network still delivers only a ~290 us VIH pulse to CLK.
+  static constexpr uint32_t ARM_PROBE_MS = 5000;
   // PCNT's glitch filter counts APB cycles into a 10-bit field, so 12 us is the
   // hardware ceiling.  It removes the sharpest chopper spikes; the 200 us
   // minimum-width rejection the contract asks for is not reachable in hardware
@@ -115,6 +162,14 @@ class Rev32MotorBackend : public GpioMotorBackend {
 
   bool configure_tacho_();
   void write_address_();
+  // Configures LATCH_ARM exactly once. Re-running gpio_reset_pin on every arm
+  // dropped the output driver and let the pad drift up through the internal
+  // pull-up, so the "rising edge" was a weak RC rise rather than a push-pull
+  // step — the one thing the coupling network needs to deliver VIH to U2.
+  bool configure_latch_arm_gpio_();
+  // leave_high parks pad 10 at 3.3 V after the hold so a DMM reading is not a
+  // race against the trailing edge. Production arming still returns it low.
+  bool pulse_arm_(uint32_t hold_ms, bool leave_high = false);
   void delay_us_(uint32_t microseconds) const;
   void delay_ms_(uint32_t milliseconds) const;
 
@@ -129,6 +184,7 @@ class Rev32MotorBackend : public GpioMotorBackend {
   pcnt_channel_handle_t pcnt_channel_{nullptr};
   uint32_t last_hardware_count_{0};
 
+  bool latch_arm_ready_{false};
   bool ready_{false};
 };
 

@@ -44,6 +44,15 @@ substitutions:
   # D3, a plain KT-0805G green LED through R23 (1k), active low
   pin_status_led: GPIO4
 
+  # Rev 3.3 signals. Present so the shared lv6_valve_controller block in
+  # lune.yaml resolves on both revisions; the rev32 backend ignores them and
+  # the ADC_TACHO channel stays off because its 12 dB reference cannot fit the
+  # 6 dB span ADC_CURRENT needs (design-review B8).
+  pin_driver_nsleep: "17"
+  pin_rail_overcurrent: "48"
+  pin_fault_usb: "15"
+  adc_tacho_enabled: "false"
+
   motor_auto_start_calibration: "false"
 
 packages:

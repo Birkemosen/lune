@@ -1,0 +1,97 @@
+# =============================================================================
+# Lune V6 PCB — hardware revision 3.3
+# =============================================================================
+# Pin map is the `gpio` map in hardware/lune-v6-rev3.3/design-contract.json,
+# which `check_design.py` asserts against the schematic. If they disagree, the
+# contract is right.
+#
+# What changed from Rev 3.2, and why the pin map is not a superset:
+#
+#   * The fault latch is gone (U2, Q1, R4, R5, C4). LATCH_ARM and LATCH_STATE
+#     went with it, freeing GPIO17 and GPIO16. The hazard decision behind that
+#     removal is recorded in design-review R3.3-3 — read it before treating this
+#     board as a drop-in for Rev 3.2.
+#   * FAULT_N_RAW now reaches firmware directly on GPIO16, active LOW, pulled up
+#     by R3. On Rev 3.2 the equivalent input was LATCH_STATE, active HIGH. The
+#     polarity is inverted; a backend that reads one as the other is wrong in
+#     the dangerous direction.
+#   * The rail overcurrent comparator left the wired-AND for its own net on
+#     GPIO17, pulled up by R41, so a bridge fault and a rail overcurrent are
+#     finally distinguishable (O12).
+#   * DRIVER_N_SLEEP is driven from GPIO15. R31 still pulls it down, so GPIOs in
+#     high-Z put the drivers to sleep and U7's NAND inhibits the decoder — the
+#     same failsafe the latch's Q output used to define.
+#   * ADC_TACHO is back in the continuous stream at 6 dB, matching ADC_CURRENT.
+#     R11/R12 moved from 1k/1k to 10k/4k7 so TACHO_REF sits at 1.055 V and the
+#     amplified ripple fits the 1.75 V span. Two attenuations on one ADC unit is
+#     what ESP-IDF rejects and what took the whole stream down as design-review
+#     B8; they must stay equal.
+#   * R7 56k -> 10k moves the rail overcurrent trip from 280 mA to 165 mA.
+#
+# Automatic motion stays disabled. The current calibration and the tacho
+# qualification band are still bring-up values from measured actuator data, not
+# production constants.
+# =============================================================================
+
+substitutions:
+  motor_hardware_backend: rev33_gpio
+
+  # I2C — 4k7 pull-ups fitted (R16/R17)
+  pin_i2c_sda: GPIO21
+  pin_i2c_scl: GPIO47
+  # Protected external bus; a declared ADC1 exception
+  pin_onewire: GPIO8
+
+  # MOTOR_ENABLE. Named nsleep for the shared base; it is a per-move decoder
+  # gate, not a global nSLEEP. The real nSLEEP is pin_driver_nsleep below.
+  pin_nsleep: "18"
+  # FAULT_N_RAW, now only the three DRV8411 nFAULT outputs wired-AND, pulled up
+  # by R3 and filtered by C3. ACTIVE LOW — and note the polarity flip from
+  # Rev 3.2, where the equivalent input was LATCH_STATE, active HIGH.
+  pin_nfault: "16"
+  # FAULT_USB_RAW, the TPS2553 fault pin on its own net (R42 pull-up, C42).
+  # Split off the wired-AND so a USB current-limit event is distinguishable from
+  # a bridge fault. ACTIVE LOW. Mostly unreadable today: a completed latch-off
+  # removes power from the ESP32 too (O6), so it only reports during the
+  # current-limiting window before latch-off — or always, if O6 is ever resolved
+  # by keeping the logic rail alive upstream.
+  pin_fault_usb: "15"
+  # RAIL_OVERCURRENT, U3 pin 1 on its own net (R41 pull-up, C43). ACTIVE LOW.
+  # Routed parallel to COMM_TACHO_N from U3 down the east edge, both pulled up
+  # at the module end. Trip is 165 mA after R7 56k -> 10k; see design-review
+  # R3.3-4 for why that sits below the DRV8411's own 180-230 mA regulation.
+  pin_rail_overcurrent: "48"
+  # There is no LATCH_ARM on Rev 3.3 — U2, Q1, R4, R5 and C4 are gone. This
+  # substitution exists only because the shared lv6_valve_controller block in
+  # lune.yaml passes latch_arm_pin unconditionally; the rev33 backend never
+  # reads it. It points at GPIO17 because that pad is now DRIVER_N_SLEEP, so a
+  # stray reference lands on a pin the backend already owns rather than a
+  # random one.
+  pin_latch_arm: "17"
+  # DRIVER_N_SLEEP, the drive permit the latch used to hold. High wakes the
+  # three bridges and releases U7's decoder inhibit; R31 defines the safe state.
+  pin_driver_nsleep: "17"
+
+  # ADC_CURRENT, 10 V/A through the INA180A1, read at 6 dB attenuation
+  pin_adc_current: "2"
+  # TACHO_AMP through R13 (1k). Sampled at 6 dB, the SAME attenuation as
+  # ADC_CURRENT — see the note above.
+  pin_adc_tacho: "1"
+  adc_tacho_enabled: "true"
+  # COMM_TACHO_N, open-collector, counted by PCNT
+  pin_comm_tacho: "38"
+
+  # Four plain address bits. No bit encodes direction; the channel/direction
+  # pair maps through the decoder's 12-entry table in rev32_logic.h.
+  pin_motor_addr0: "12"
+  pin_motor_addr1: "11"
+  pin_motor_addr2: "14"
+  pin_motor_addr3: "13"
+
+  # D3, a plain KT-0805G green LED through R23 (1k), active low
+  pin_status_led: GPIO4
+
+  motor_auto_start_calibration: "false"
+
+packages:
+  led: !include ../hardware/led-mono.yaml

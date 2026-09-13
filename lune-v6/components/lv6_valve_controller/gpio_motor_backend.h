@@ -46,6 +46,11 @@ class GpioMotorBackend {
   // commutation counter here.
   virtual void poll_motion(uint32_t now_ms, bool drive_active) {}
 
+  /// Rev 3.3 replaced the fault latch with a firmware-held drive permit on
+  /// DRIVER_N_SLEEP. Revisions that keep the latch have nothing to do here:
+  /// their permit is a flip-flop output no GPIO can touch.
+  virtual void set_drive_permit(bool /*permitted*/) {}
+
   // Identifier used in logs and in dump_config().
   virtual const char *backend_name() const = 0;
 };

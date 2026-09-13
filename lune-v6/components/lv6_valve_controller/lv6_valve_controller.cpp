@@ -87,7 +87,35 @@ void Lv6ValveController::setup() {
   }
 
   if (gpio_backend_enabled_) {
-    if (backend_kind_ == MotorBackendKind::REV32_GPIO) {
+    if (backend_kind_ == MotorBackendKind::REV33_GPIO) {
+      // Same decoder, address bus, ADC and tacho as Rev 3.2 — only the safety
+      // path differs, so Rev33MotorBackend inherits the rest. `latch_state`
+      // carries FAULT_N_RAW here and is read ACTIVE LOW.
+      rev33_pins_.adc_current = ipropi_pin_;
+      rev33_pins_.motor_enable = nsleep_pin_;
+      rev33_pins_.latch_state = nfault_pin_;
+      rev33_pins_.address0 = rev32_pins_.address0;
+      rev33_pins_.address1 = rev32_pins_.address1;
+      rev33_pins_.address2 = rev32_pins_.address2;
+      rev33_pins_.address3 = rev32_pins_.address3;
+      rev33_pins_.comm_tacho = rev32_pins_.comm_tacho;
+      if (!probe_board_is_rev33_()) {
+        ESP_LOGE(TAG,
+                 "Configured for rev33_gpio but the board does not answer like "
+                 "Rev 3.3: RAIL_OVERCURRENT GPIO%d and FAULT_USB_RAW GPIO%d have "
+                 "no external pull-up. Refusing to drive — on Rev 3.2 hardware "
+                 "GPIO%d is LATCH_ARM, not the drive permit, and FAULT_N_RAW's "
+                 "polarity is inverted.",
+                 static_cast<int>(rev33_pins_.rail_overcurrent),
+                 static_cast<int>(rev33_pins_.fault_usb),
+                 static_cast<int>(rev33_pins_.driver_nsleep));
+        this->mark_failed();
+        return;
+      }
+      rev33_backend_ = new Rev33MotorBackend(rev33_pins_, rev32_tacho_);
+      rev32_backend_ = rev33_backend_;  // shares every Rev 3.2 accessor
+      gpio_backend_ = rev33_backend_;
+    } else if (backend_kind_ == MotorBackendKind::REV32_GPIO) {
       rev32_pins_.adc_current = ipropi_pin_;
       rev32_pins_.motor_enable = nsleep_pin_;
       rev32_pins_.latch_state = nfault_pin_;
@@ -127,9 +155,13 @@ void Lv6ValveController::setup() {
       gpio_backend_->coast();
     if (rev32_backend_) {
       ESP_LOGI(TAG,
-               "%s backend ready: latch=%s, automatic motion=%s, tacho qualification "
+               "%s backend ready: latch=%s, LATCH_ARM GPIO%d, LATCH_STATE GPIO%d, "
+               "MOTOR_ENABLE GPIO%d, automatic motion=%s, tacho qualification "
                "%u us min pulse / %" PRIu32 "-%" PRIu32 " us period",
                gpio_backend_->backend_name(), armed ? "armed" : "faulted",
+               static_cast<int>(rev32_pins_.latch_arm),
+               static_cast<int>(rev32_pins_.latch_state),
+               static_cast<int>(rev32_pins_.motor_enable),
                auto_start_calibration_ ? "enabled" : "disabled pending manual enable",
                rev32_tacho_.min_pulse_us, rev32_tacho_.min_period_us,
                rev32_tacho_.max_period_us);
@@ -365,13 +397,22 @@ void Lv6ValveController::set_drivers_enabled(bool enabled) {
       if (motor_turning_)
         stop_motor_(false);
       gpio_backend_->coast();
+      // Rev 3.3 holds the drive permit in firmware, so disabling has to release
+      // it; on revisions with a latch this is a no-op.
+      gpio_backend_->set_drive_permit(false);
       drivers_enabled_ = false;
       ESP_LOGI(TAG, "%s motor path DISABLED", gpio_backend_->backend_name());
       return;
     }
-    if (gpio_backend_->fault_latched() && !gpio_backend_->arm_latch()) {
+    // The production 1 ms edge, not the 5 s bring-up hold: that one blocks the
+    // ESPHome loop for five seconds on every enable, which makes motor testing
+    // unusable. The long hold now lives behind /api/v1/motors/arm-clock-probe.
+    // A latch armed by hand is accepted here too — pulse_arm_ can only set the
+    // flip-flop, never clear it, and the decision is read from LATCH_STATE.
+    const bool armed = gpio_backend_->arm_latch();
+    if (!armed) {
       drivers_enabled_ = false;
-      ESP_LOGE(TAG, "%s motor enable rejected: hardware fault remains latched",
+      ESP_LOGE(TAG, "%s motor enable rejected: latch did not arm",
                gpio_backend_->backend_name());
       return;
     }
@@ -421,6 +462,62 @@ void Lv6ValveController::set_drivers_enabled(bool enabled) {
   }
 
   ESP_LOGI(TAG, "Motor drivers %s", enabled ? "ENABLED" : "DISABLED");
+}
+
+bool Lv6ValveController::probe_board_is_rev33_() {
+  // Both nets are open-drain with a 10k pull-up to 3V3_LOGIC on Rev 3.3 and
+  // absent entirely on Rev 3.2. Pulling down internally (~45k) and reading back
+  // therefore separates them: the external 10k wins, a floating pad does not.
+  // Two independent witnesses, because getting this wrong means driving a board
+  // whose FAULT_N_RAW polarity is inverted.
+  const gpio_num_t probes[2] = {rev33_pins_.rail_overcurrent, rev33_pins_.fault_usb};
+  int high = 0;
+  for (gpio_num_t pin : probes) {
+    gpio_config_t cfg = {};
+    cfg.pin_bit_mask = 1ULL << static_cast<uint32_t>(pin);
+    cfg.mode = GPIO_MODE_INPUT;
+    cfg.pull_up_en = GPIO_PULLUP_DISABLE;
+    cfg.pull_down_en = GPIO_PULLDOWN_ENABLE;
+    if (gpio_config(&cfg) != ESP_OK)
+      return false;
+    // The 1 nF at the module end against 10k is ~10 us; a millisecond is ample.
+    vTaskDelay(pdMS_TO_TICKS(1));
+    if (gpio_get_level(pin))
+      high++;
+  }
+  if (high == 1) {
+    ESP_LOGE(TAG,
+             "Board revision probe is inconsistent: exactly one of GPIO%d/GPIO%d "
+             "reads high. Refusing to guess.",
+             static_cast<int>(probes[0]), static_cast<int>(probes[1]));
+    return false;
+  }
+  ESP_LOGI(TAG, "Board revision probe: %s", high == 2 ? "Rev 3.3" : "not Rev 3.3");
+  return high == 2;
+}
+
+void Lv6ValveController::assert_latch_arm_high() {
+  if (rev32_backend_)
+    rev32_backend_->assert_arm_high();
+}
+
+bool Lv6ValveController::probe_arm_clock(uint32_t hz, uint32_t duration_ms, bool clamp,
+                                         Rev32MotorBackend::ArmClockProbe *out) {
+  if (rev32_backend_ == nullptr || out == nullptr)
+    return false;
+  *out = rev32_backend_->probe_arm_clock(hz, duration_ms, clamp);
+  return true;
+}
+
+bool Lv6ValveController::probe_decoder(uint8_t zone, bool reverse, uint32_t hold_ms,
+                                       Rev32MotorBackend::DecoderProbe *out) {
+  if (rev32_backend_ == nullptr || out == nullptr)
+    return false;
+  // Refuse while a real move owns the bridges; the probe drives the same pins.
+  if (is_motor_busy() || is_calibrating())
+    return false;
+  *out = rev32_backend_->probe_decoder(zone, reverse, hold_ms);
+  return true;
 }
 
 void Lv6ValveController::reload_motor_config() {
@@ -915,6 +1012,11 @@ void Lv6ValveController::run_() {
     }
 
     if (!drivers_enabled_) {
+      // Timed lab/manual moves set override_drivers so they can run while the
+      // software switch is off. Leaving the queue untouched here swallowed
+      // those commands: the HTTP call succeeded, Motor Lab waited for motion,
+      // and the bridge never started.
+      process_command_queue_();
       vTaskDelayUntil(&last_wake, pdMS_TO_TICKS(TICK_MS));
       continue;
     }
@@ -1297,8 +1399,17 @@ bool Lv6ValveController::start_motor_(uint8_t zone, MotorDirection dir, bool ove
   if (gpio_backend_)
     gpio_backend_->reset_motion();
 
-  if (ripple_enabled_ && adc_continuous_handle_)
-    adc_continuous_start(static_cast<adc_continuous_handle_t>(adc_continuous_handle_));
+  if (ripple_enabled_ && adc_continuous_handle_) {
+    // The return was discarded here. ESP_ERR_INVALID_STATE from a stream that
+    // is already running, or any other failure, then looks exactly like working
+    // hardware that reports zero current — which is what Rev 3.2-D bring-up hit.
+    const esp_err_t start_err = adc_continuous_start(
+        static_cast<adc_continuous_handle_t>(adc_continuous_handle_));
+    adc_start_err_.store(static_cast<int32_t>(start_err), std::memory_order_relaxed);
+    if (start_err != ESP_OK)
+      ESP_LOGE(TAG, "adc_continuous_start failed: %s — no current and no analog "
+                    "tacho for this move", esp_err_to_name(start_err));
+  }
 
   if (gpio_backend_enabled_) {
     // Rev 3.2 arms the fault latch per move.  Nothing re-disarms it on its own
@@ -1749,30 +1860,54 @@ bool Lv6ValveController::start_adc_stream_() {
   pattern[0].unit = current_unit;
   pattern[0].bit_width = ADC_BITWIDTH_12;
 
-  if (rev32) {
+  // Rev 3.3 puts TACHO_AMP back in the stream at the SAME attenuation as
+  // ADC_CURRENT. That is the whole fix: the driver's objection was never the
+  // channel, it was two attenuations on one unit. It needs hardware that centres
+  // TACHO_REF low enough for the amplified ripple to fit the 6 dB span, so it is
+  // opt-in per board rather than on by default — enabling it on Rev 3.2, where
+  // TACHO_REF is the 1.65 V mid-rail, would saturate the channel from 1 mV of
+  // input ripple upward.
+  if (rev32 && adc_tacho_enabled_) {
     adc_unit_t tacho_unit;
     adc_channel_t tacho_chan;
     if (adc_oneshot_io_to_channel(static_cast<int>(rev32_pins_.adc_tacho),
                                   &tacho_unit, &tacho_chan) != ESP_OK ||
         tacho_unit != current_unit) {
-      ESP_LOGE(TAG, "ADC_TACHO GPIO%d must be on the same ADC unit as ADC_CURRENT",
-               rev32_pins_.adc_tacho);
-      ripple_enabled_ = false;
-      return false;
+      ESP_LOGE(TAG, "ADC_TACHO GPIO%d must be on the same ADC unit as ADC_CURRENT; "
+                    "leaving the analog cross-check off", rev32_pins_.adc_tacho);
+    } else {
+      tacho_adc_channel_ = static_cast<int>(tacho_chan);
+      pattern[1].atten = current_atten;  // must equal pattern[0]; see B8
+      pattern[1].channel = tacho_chan;
+      pattern[1].unit = tacho_unit;
+      pattern[1].bit_width = ADC_BITWIDTH_12;
+      pattern_num = 2;
     }
-    tacho_adc_channel_ = static_cast<int>(tacho_chan);
-    // TACHO_AMP is an ~85x amplified ripple riding on the mid-rail reference,
-    // so it needs the full-scale range even though the ripple itself is small.
-    pattern[1].atten = ADC_ATTEN_DB_12;
-    pattern[1].channel = tacho_chan;
-    pattern[1].unit = tacho_unit;
-    pattern[1].bit_width = ADC_BITWIDTH_12;
-    pattern_num = 2;
   }
 
-  // Two channels share the sample rate round-robin, so the aggregate is doubled
-  // to keep each channel at the per-channel rate the filters are derived for.
-  const uint32_t sample_rate = rev32 ? REV32_ADC_SAMPLE_RATE_HZ * 2
+  // TACHO_AMP is deliberately NOT in the continuous stream.
+  //
+  // It wants the 12 dB span — an ~85x amplified ripple riding on the mid-rail
+  // reference — while ADC_CURRENT wants 6 dB for resolution. ESP-IDF forbids
+  // that: adc_continuous.c:507-515 returns ESP_ERR_INVALID_ARG when two pattern
+  // entries on the same unit carry different attenuations, and both of these are
+  // on ADC1. The two-channel config therefore failed at boot with err=258,
+  // start_adc_stream_() cleared ripple_enabled_, and the result was no current
+  // measurement at all — which on this design removes the overcurrent trip and
+  // the current-based endstop detection, and made every move end in a spurious
+  // "commutation ceased while current vanished" stall. See design-review B8.
+  //
+  // ADC_CURRENT is the safety input and wins. The analog tacho was only ever a
+  // cross-check on the hardware commutation count, so losing it costs a
+  // validation instrument rather than a protection. Restoring it needs both
+  // channels on one attenuation, a second ADC unit, or a separate mechanism —
+  // a design decision, not something to paper over here.
+  if (rev32 && pattern_num == 1)
+    tacho_adc_channel_ = -1;
+
+  // Two channels share the converter round-robin, so the aggregate has to be
+  // doubled to keep each one at the per-channel rate the filters assume.
+  const uint32_t sample_rate = rev32 ? REV32_ADC_SAMPLE_RATE_HZ * pattern_num
                                      : RIPPLE_SAMPLE_RATE_HZ;
   const uint32_t frame_bytes = rev32 ? REV32_DMA_FRAME_BYTES : RIPPLE_DMA_FRAME_BYTES;
 
@@ -1846,10 +1981,11 @@ bool Lv6ValveController::start_adc_stream_() {
   ripple_enabled_ = true;
   if (rev32) {
     ESP_LOGI(TAG,
-             "ADC continuous @ %" PRIu32 "Hz: ADC_CURRENT GPIO%d @6dB + ADC_TACHO GPIO%d @12dB "
-             "(%" PRIu32 "Hz each, %" PRIu32 " byte frames)",
-             sample_rate, ipropi_pin_, rev32_pins_.adc_tacho,
-             REV32_ADC_SAMPLE_RATE_HZ, frame_bytes);
+             "ADC continuous @ %" PRIu32 "Hz: ADC_CURRENT GPIO%d @6dB, single channel "
+             "(%" PRIu32 " byte frames). ADC_TACHO GPIO%d is NOT sampled: the driver "
+             "rejects two attenuations on one unit, so the analog cross-check is off "
+             "and tacho_adc_count stays 0 by design — see design-review B8.",
+             sample_rate, ipropi_pin_, frame_bytes, rev32_pins_.adc_tacho);
   } else {
     ESP_LOGI(TAG, "IPROPI ADC continuous @ %" PRIu32 "Hz (GPIO%d), ripple counting enabled",
              sample_rate, ipropi_pin_);
@@ -2499,14 +2635,23 @@ void Lv6ValveController::run_ripple_task_() {
     if (!adc_continuous_handle_ || !ripple_enabled_)
       continue;
 
+    adc_notifies_.fetch_add(1, std::memory_order_relaxed);
+
     uint32_t bytes_read = 0;
     auto *h = static_cast<adc_continuous_handle_t>(adc_continuous_handle_);
+    // Read the frame size this stream was actually configured with. Rev 3.2
+    // configures REV32_DMA_FRAME_BYTES (512) but this call asked for
+    // RIPPLE_DMA_FRAME_BYTES (1024), which is the Rev 3.1 constant.
+    const uint32_t read_bytes = rev32_backend_ ? REV32_DMA_FRAME_BYTES : RIPPLE_DMA_FRAME_BYTES;
     esp_err_t ret = adc_continuous_read(
-        h, adc_frame_buf_, RIPPLE_DMA_FRAME_BYTES, &bytes_read, 0 /* non-blocking */);
-    if (ret != ESP_OK || bytes_read == 0)
+        h, adc_frame_buf_, read_bytes, &bytes_read, 0 /* non-blocking */);
+    if (ret != ESP_OK || bytes_read == 0) {
+      adc_read_errors_.fetch_add(1, std::memory_order_relaxed);
       continue;
+    }
 
     const uint32_t n_frames = bytes_read / sizeof(adc_digi_output_data_t);
+    adc_frames_.fetch_add(n_frames, std::memory_order_relaxed);
     const auto *frames = reinterpret_cast<const adc_digi_output_data_t *>(adc_frame_buf_);
     const int expected_chan = ipropi_channel_;
 
@@ -2518,6 +2663,11 @@ void Lv6ValveController::run_ripple_task_() {
     for (uint32_t i = 0; i < n_frames; ++i) {
       // ESP32-S3 TYPE2 output format
       const int chan = static_cast<int>(frames[i].type2.channel);
+      // Record every channel id the stream actually carries. If this mask never
+      // contains ipropi_channel_ or tacho_adc_channel_, the pattern config and
+      // the reader disagree and both measurements silently read zero.
+      if (chan >= 0 && chan < 32)
+        adc_channel_mask_.fetch_or(1u << chan, std::memory_order_relaxed);
 
       // Rev 3.2 interleaves TACHO_AMP into the same stream. It is the analog
       // cross-check on the hardware commutation count and must never reach the
@@ -3045,13 +3195,26 @@ MotorSafetyDiagnostics Lv6ValveController::get_motor_safety_diagnostics() const 
   result.motor_runtime_ms = motor_diag_runtime_ms_.load(std::memory_order_relaxed);
   result.current_ma = static_cast<float>(
       motor_diag_current_ma_x10_.load(std::memory_order_relaxed)) / 10.0f;
-  result.armed = motor_diag_armed_.load(std::memory_order_relaxed) != 0;
+  result.armed = rev32_backend_
+                     ? rev32_backend_->armed()
+                     : motor_diag_armed_.load(std::memory_order_relaxed) != 0;
+  if (rev32_backend_) {
+    result.latch_arm_level = static_cast<int8_t>(rev32_backend_->latch_arm_level());
+    result.latch_state_level = static_cast<int8_t>(rev32_backend_->latch_state_level());
+    result.motor_enable_level = static_cast<int8_t>(rev32_backend_->motor_enable_level());
+  }
   result.decoder_address = motor_diag_decoder_address_.load(std::memory_order_relaxed);
   result.tacho_period_us = motor_diag_tacho_period_us_.load(std::memory_order_relaxed);
   result.tacho_cadence_us = motor_diag_tacho_cadence_us_.load(std::memory_order_relaxed);
   result.tacho_rejected = motor_diag_tacho_rejected_.load(std::memory_order_relaxed);
   result.tacho_hardware_count = motor_diag_tacho_hardware_.load(std::memory_order_relaxed);
   result.tacho_amp_raw = tacho_adc_raw_.load(std::memory_order_relaxed);
+  result.adc_notifies = adc_notifies_.load(std::memory_order_relaxed);
+  result.adc_frames = adc_frames_.load(std::memory_order_relaxed);
+  result.adc_read_errors = adc_read_errors_.load(std::memory_order_relaxed);
+  result.adc_channel_mask = adc_channel_mask_.load(std::memory_order_relaxed);
+  result.adc_start_err = adc_start_err_.load(std::memory_order_relaxed);
+  result.adc_stream_ready = ripple_enabled_ && adc_continuous_handle_ != nullptr;
   result.tacho_adc_count = tacho_adc_count_.load(std::memory_order_relaxed);
   result.stroke_phase = motor_diag_stroke_phase_.load(std::memory_order_relaxed);
   result.fault = current_fault_code_.load(std::memory_order_acquire);

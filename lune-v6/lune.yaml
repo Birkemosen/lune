@@ -328,6 +328,10 @@ lv6_valve_controller:
   latch_arm_pin: ${pin_latch_arm}
   comm_tacho_pin: ${pin_comm_tacho}
   adc_tacho_pin: ${pin_adc_tacho}
+  driver_nsleep_pin: ${pin_driver_nsleep}
+  rail_overcurrent_pin: ${pin_rail_overcurrent}
+  fault_usb_pin: ${pin_fault_usb}
+  adc_tacho_enabled: ${adc_tacho_enabled}
   auto_start_calibration: ${motor_auto_start_calibration}
 
 # Zone controller

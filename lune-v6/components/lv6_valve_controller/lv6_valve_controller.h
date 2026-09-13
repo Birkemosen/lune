@@ -18,6 +18,7 @@
 #include "gpio_motor_backend.h"
 #include "rev31_motor_backend.h"
 #include "rev32_motor_backend.h"
+#include "rev33_motor_backend.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/queue.h"
@@ -91,6 +92,9 @@ struct MotorSafetyDiagnostics {
   // count; these add the cadence, what was thrown away, and the analog
   // cross-check that § 2 of the validation plan measures the count against.
   bool armed{false};
+  int8_t latch_arm_level{-1};
+  int8_t latch_state_level{-1};
+  int8_t motor_enable_level{-1};
   uint8_t decoder_address{0};
   uint32_t tacho_period_us{0};
   uint32_t tacho_cadence_us{0};
@@ -104,6 +108,22 @@ struct MotorSafetyDiagnostics {
   /// Rev32StrokePhase as an integer: 0 free travel, 1 pin contact, 2 under
   /// load, 3 stopping.
   uint8_t stroke_phase{0};
+  /// Bring-up instrumentation for the continuous ADC, which delivered nothing
+  /// on either channel through a full energised move during Rev 3.2-D. These
+  /// separate "never started" from "no frames" from "frames on channels the
+  /// reader does not recognise" without needing the log ring.
+  uint32_t adc_notifies{0};
+  uint32_t adc_frames{0};
+  uint32_t adc_read_errors{0};
+  /// One bit per ADC channel id seen in the stream, so a channel mismatch shows
+  /// up as a mask that does not contain ipropi_channel_ or tacho_adc_channel_.
+  uint32_t adc_channel_mask{0};
+  /// -1 = adc_continuous_start() never attempted (the stream was never armed),
+  /// 0 = attempted and returned ESP_OK, anything else is the esp_err_t.
+  int32_t adc_start_err{-1};
+  /// ripple_enabled_ && the continuous handle exists, i.e. whether the per-move
+  /// start is even reachable.
+  bool adc_stream_ready{false};
   FaultCode fault{FaultCode::NONE};
 };
 
@@ -111,6 +131,7 @@ enum class MotorBackendKind : uint8_t {
   DRV8215_I2C = 0,
   REV31_GPIO = 1,
   REV32_GPIO = 2,
+  REV33_GPIO = 3,
 };
 
 class Lv6ValveController : public esphome::Component {
@@ -154,7 +175,19 @@ class Lv6ValveController : public esphome::Component {
   void set_direction_pin(int pin) { rev31_pins_.terminal_direction = static_cast<gpio_num_t>(pin); }
   void set_address3_pin(int pin) { rev32_pins_.address3 = static_cast<gpio_num_t>(pin); }
   void set_comm_tacho_pin(int pin) { rev32_pins_.comm_tacho = static_cast<gpio_num_t>(pin); }
-  void set_adc_tacho_pin(int pin) { rev32_pins_.adc_tacho = static_cast<gpio_num_t>(pin); }
+  void set_adc_tacho_pin(int pin) {
+    rev32_pins_.adc_tacho = static_cast<gpio_num_t>(pin);
+    rev33_pins_.adc_tacho = static_cast<gpio_num_t>(pin);
+  }
+  // Rev 3.3 only. The latch is gone: the drive permit is a GPIO, and the fault
+  // net split into three attributable, ACTIVE LOW inputs.
+  void set_driver_nsleep_pin(int pin) { rev33_pins_.driver_nsleep = static_cast<gpio_num_t>(pin); }
+  void set_rail_overcurrent_pin(int pin) { rev33_pins_.rail_overcurrent = static_cast<gpio_num_t>(pin); }
+  void set_fault_usb_pin(int pin) { rev33_pins_.fault_usb = static_cast<gpio_num_t>(pin); }
+  // Rev 3.3+ only. ADC_TACHO shares ADC_CURRENT's attenuation, so the board must
+  // centre TACHO_REF inside that span; on Rev 3.2's 1.65 V mid-rail the channel
+  // saturates from ~1 mV of ripple. Off unless the board declares otherwise.
+  void set_adc_tacho_enabled(bool enabled) { adc_tacho_enabled_ = enabled; }
   void set_tacho_min_pulse_us(uint16_t us) { rev32_tacho_.min_pulse_us = us; }
   void set_tacho_min_period_us(uint32_t us) { rev32_tacho_.min_period_us = us; }
   void set_tacho_max_period_us(uint32_t us) { rev32_tacho_.max_period_us = us; }
@@ -194,6 +227,23 @@ class Lv6ValveController : public esphome::Component {
   /// When disabled, all motors are put to sleep and commands are rejected.
   void set_drivers_enabled(bool enabled);
   bool are_drivers_enabled() const { return drivers_enabled_.load(std::memory_order_acquire); }
+  // Drive LATCH_ARM high on the HTTP thread so pad 10 is high before loop()
+  // drains the queued enable. Bring-up only.
+  void assert_latch_arm_high();
+  // Bring-up only: square-wave LATCH_ARM so the AC-coupled arm path can be
+  // measured with a multimeter. False when the Rev 3.2 backend is not active.
+  // Reads the board revision from the hardware rather than trusting the YAML.
+  // On Rev 3.3 RAIL_OVERCURRENT and FAULT_USB_RAW carry external 10k pull-ups;
+  // on Rev 3.2 those pads are unconnected. An internal pull-down loses to the
+  // external pull-up and wins against a floating pad, so the two revisions are
+  // distinguishable with no extra hardware.
+  bool probe_board_is_rev33_();
+  bool probe_arm_clock(uint32_t hz, uint32_t duration_ms, bool clamp,
+                       Rev32MotorBackend::ArmClockProbe *out);
+  // Bring-up only: hold one decoder address with the bridges coasting so the
+  // 74HC4514 outputs can be verified against the channel map with a meter.
+  bool probe_decoder(uint8_t zone, bool reverse, uint32_t hold_ms,
+                     Rev32MotorBackend::DecoderProbe *out);
 
   /// Reload motor config from config store (call after UI changes).
   void reload_motor_config();
@@ -378,12 +428,14 @@ class Lv6ValveController : public esphome::Component {
   bool gpio_backend_enabled_{false};
   Rev31PinConfig rev31_pins_{};
   Rev32PinConfig rev32_pins_{};
+  Rev33PinConfig rev33_pins_{};
   Rev32TachoConfig rev32_tacho_{};
   // Owning pointer to whichever backend was built; the typed pointers below
   // alias it and are non-null only for their own revision.
   GpioMotorBackend *gpio_backend_{nullptr};
   Rev31MotorBackend *rev31_backend_{nullptr};
   Rev32MotorBackend *rev32_backend_{nullptr};
+  Rev33MotorBackend *rev33_backend_{nullptr};
   uint16_t bemf_threshold_raw_{40};
   bool auto_start_calibration_{true};
   uint32_t last_bemf_sample_ms_{0};
@@ -397,6 +449,14 @@ class Lv6ValveController : public esphome::Component {
   std::atomic<uint8_t> rev31_diag_invalid_samples_{0};
   std::atomic<uint32_t> motor_diag_tacho_period_us_{0};
   std::atomic<uint32_t> motor_diag_tacho_rejected_{0};
+  // Continuous-ADC instrumentation; see MotorSafetyDiagnostics.
+  std::atomic<uint32_t> adc_notifies_{0};
+  std::atomic<uint32_t> adc_frames_{0};
+  std::atomic<uint32_t> adc_read_errors_{0};
+  std::atomic<uint32_t> adc_channel_mask_{0};
+  // -1 means adc_continuous_start() was never even attempted, which is a
+  // different failure from it being attempted and returning ESP_OK (0).
+  std::atomic<int32_t> adc_start_err_{-1};
   std::atomic<uint32_t> motor_diag_tacho_hardware_{0};
   std::atomic<uint8_t> motor_diag_armed_{0};
   std::atomic<uint8_t> motor_diag_decoder_address_{0};
@@ -521,6 +581,7 @@ class Lv6ValveController : public esphome::Component {
   int adc_current_atten_ = 0;
   /// Rev 3.2 only: TACHO_AMP's channel in the same DMA pattern, -1 when absent.
   int tacho_adc_channel_ = -1;
+  bool adc_tacho_enabled_{false};
 
   // Ripple counter (written by ripple task, count read via live_ripple_count_)
   RippleCounter ripple_counter_{kRippleConfig};

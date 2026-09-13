@@ -33,6 +33,10 @@ CONF_ADDRESS3_PIN = "address3_pin"
 CONF_DIRECTION_PIN = "direction_pin"
 CONF_LATCH_ARM_PIN = "latch_arm_pin"
 CONF_COMM_TACHO_PIN = "comm_tacho_pin"
+CONF_ADC_TACHO_ENABLED = "adc_tacho_enabled"
+CONF_RAIL_OVERCURRENT_PIN = "rail_overcurrent_pin"
+CONF_DRIVER_NSLEEP_PIN = "driver_nsleep_pin"
+CONF_FAULT_USB_PIN = "fault_usb_pin"
 CONF_ADC_TACHO_PIN = "adc_tacho_pin"
 CONF_TACHO_MIN_PULSE_US = "tacho_min_pulse_us"
 CONF_TACHO_MIN_PERIOD_US = "tacho_min_period_us"
@@ -43,9 +47,11 @@ CONF_AUTO_START_CALIBRATION = "auto_start_calibration"
 BACKEND_DRV8215_I2C = "drv8215_i2c"
 BACKEND_REV31_GPIO = "rev31_gpio"
 BACKEND_REV32_GPIO = "rev32_gpio"
+BACKEND_REV33_GPIO = "rev33_gpio"
 
 # Mirrors MotorBackendKind in lv6_valve_controller.h.
 BACKEND_KIND = {
+    BACKEND_REV33_GPIO: 3,
     BACKEND_DRV8215_I2C: 0,
     BACKEND_REV31_GPIO: 1,
     BACKEND_REV32_GPIO: 2,
@@ -86,6 +92,18 @@ Lv6ConfigStore = lv6_ns.class_("Lv6ConfigStore", cg.Component)
 
 def _validate_backend(config):
     backend = config[CONF_HARDWARE_BACKEND]
+    if backend == BACKEND_REV33_GPIO:
+        missing = [k for k in (CONF_DRIVER_NSLEEP_PIN, CONF_RAIL_OVERCURRENT_PIN,
+                               CONF_FAULT_USB_PIN) if k not in config]
+        if missing:
+            raise cv.Invalid(
+                f"hardware_backend: rev33_gpio requires {', '.join(missing)}. "
+                f"Rev 3.3 removed the fault latch, so the drive permit and each "
+                f"fault source need their own pin. See design-review R3.3-3."
+            )
+        # latch_arm_pin is still passed by the shared lv6_valve_controller block
+        # in lune.yaml, so it cannot simply be rejected here. The rev33 backend
+        # never touches it; the board file documents that it is inert.
     if backend != BACKEND_REV32_GPIO:
         return config
 
@@ -155,6 +173,13 @@ CONFIG_SCHEMA = cv.All(
             cv.Optional(CONF_DIRECTION_PIN): cv.int_range(min=0, max=48),
             cv.Optional(CONF_LATCH_ARM_PIN, default=16): cv.int_range(min=0, max=48),
             cv.Optional(CONF_COMM_TACHO_PIN, default=38): cv.int_range(min=0, max=48),
+            # Requires Rev 3.3 hardware: TACHO_REF centred for the 6 dB span.
+            cv.Optional(CONF_ADC_TACHO_ENABLED, default=False): cv.boolean,
+            # Rev 3.3 only: the latch is gone, so the drive permit and the
+            # raw fault net each need their own pin.
+            cv.Optional(CONF_RAIL_OVERCURRENT_PIN): cv.int_range(min=0, max=48),
+            cv.Optional(CONF_DRIVER_NSLEEP_PIN): cv.int_range(min=0, max=48),
+            cv.Optional(CONF_FAULT_USB_PIN): cv.int_range(min=0, max=48),
             cv.Optional(CONF_ADC_TACHO_PIN, default=1): cv.int_range(min=0, max=48),
             # Bring-up values from measured actuator data, not production
             # constants. The 20-40 Hz commutation band leaves 25-50 ms of period
@@ -200,6 +225,12 @@ async def to_code(config):
     cg.add(var.set_latch_arm_pin(config[CONF_LATCH_ARM_PIN]))
     cg.add(var.set_comm_tacho_pin(config[CONF_COMM_TACHO_PIN]))
     cg.add(var.set_adc_tacho_pin(config[CONF_ADC_TACHO_PIN]))
+    cg.add(var.set_adc_tacho_enabled(config[CONF_ADC_TACHO_ENABLED]))
+    for key, setter in ((CONF_DRIVER_NSLEEP_PIN, var.set_driver_nsleep_pin),
+                        (CONF_RAIL_OVERCURRENT_PIN, var.set_rail_overcurrent_pin),
+                        (CONF_FAULT_USB_PIN, var.set_fault_usb_pin)):
+        if key in config:
+            cg.add(setter(config[key]))
     cg.add(var.set_tacho_min_pulse_us(config[CONF_TACHO_MIN_PULSE_US]))
     cg.add(var.set_tacho_min_period_us(config[CONF_TACHO_MIN_PERIOD_US]))
     cg.add(var.set_tacho_max_period_us(config[CONF_TACHO_MAX_PERIOD_US]))
