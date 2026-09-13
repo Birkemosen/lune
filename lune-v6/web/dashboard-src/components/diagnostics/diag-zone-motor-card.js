@@ -253,11 +253,14 @@ export default component({
     function toggleManualMode() {
       const next = !manualMode;
       setControlsEnabled(next);
+      // These writes are fire-and-forget; postV1 rejects on a refused write and
+      // already surfaces it in the activity log, so absorb the rejection here.
+      const ignore = () => {};
       if (next) {
-        setManualMode(true);
-        for (let z = 1; z <= 6; z++) stopMotor(z);
+        setManualMode(true).catch(ignore);
+        for (let z = 1; z <= 6; z++) stopMotor(z).catch(ignore);
       } else {
-        setManualMode(false);
+        setManualMode(false).catch(ignore);
       }
     }
 

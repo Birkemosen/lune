@@ -59,13 +59,21 @@ bool appendf(char *buffer, size_t capacity, size_t &offset, const char *fmt, ...
   return true;
 }
 
+// Every code `send_v1_` can emit must appear here: an unmapped code silently
+// becomes 500, and the dashboard branches on the exact status. A missing 403
+// masked the local-auth rejection as a server error, so `postV1`'s
+// commissioning-key prompt (which fires only on 403) never ran and every write
+// failed with nothing but a console warning.
 const char *http_status_line(int code) {
   switch (code) {
     case 200: return "200 OK";
     case 204: return "204 No Content";
     case 400: return "400 Bad Request";
+    case 403: return "403 Forbidden";
     case 404: return "404 Not Found";
     case 405: return "405 Method Not Allowed";
+    case 409: return "409 Conflict";
+    case 429: return "429 Too Many Requests";
     case 503: return "503 Service Unavailable";
     default: return "500 Internal Server Error";
   }
@@ -1926,7 +1934,11 @@ void LV6Dashboard::handle_diagnostics_(AsyncWebServerRequest *request) {
            "\"bemf_raw_a\":%u,\"bemf_raw_b\":%u,\"bemf_differential_raw\":%d,"
            "\"sample_separation_us\":%u,\"bemf_threshold_raw\":%u,"
            "\"sample_valid\":%s,\"sample_moving\":%s,\"invalid_samples\":%u,"
-           "\"armed\":%s,\"decoder_address\":%u,\"stroke_phase\":%u,"
+           "\"armed\":%s,\"latch_arm_level\":%d,\"latch_state_level\":%d,"
+           "\"motor_enable_level\":%d,\"adc_notifies\":%lu,\"adc_frames\":%lu,"
+           "\"adc_read_errors\":%lu,\"adc_channel_mask\":%lu,\"adc_start_err\":%ld,"
+           "\"adc_stream_ready\":%s,"
+           "\"decoder_address\":%u,\"stroke_phase\":%u,"
            "\"tacho_period_us\":%lu,\"tacho_cadence_us\":%lu,"
            "\"tacho_rejected\":%lu,\"tacho_hardware_count\":%lu,"
            "\"tacho_adc_count\":%lu,\"tacho_amp_raw\":%u,"
@@ -1967,6 +1979,15 @@ void LV6Dashboard::handle_diagnostics_(AsyncWebServerRequest *request) {
            motor_diag.sample_moving ? "true" : "false",
            static_cast<unsigned>(motor_diag.consecutive_invalid_samples),
            motor_diag.armed ? "true" : "false",
+           static_cast<int>(motor_diag.latch_arm_level),
+           static_cast<int>(motor_diag.latch_state_level),
+           static_cast<int>(motor_diag.motor_enable_level),
+           static_cast<unsigned long>(motor_diag.adc_notifies),
+           static_cast<unsigned long>(motor_diag.adc_frames),
+           static_cast<unsigned long>(motor_diag.adc_read_errors),
+           static_cast<unsigned long>(motor_diag.adc_channel_mask),
+           static_cast<long>(motor_diag.adc_start_err),
+           motor_diag.adc_stream_ready ? "true" : "false",
            static_cast<unsigned>(motor_diag.decoder_address),
            static_cast<unsigned>(motor_diag.stroke_phase),
            static_cast<unsigned long>(motor_diag.tacho_period_us),
@@ -2198,6 +2219,15 @@ bool LV6Dashboard::authorize_write_(AsyncWebServerRequest *request) {
     local_diff |= static_cast<unsigned char>((i < local_len ? local_cfg.shared_key[i] : '\0') ^
                                              (i < supplied_len ? local_key[i] : '\0'));
   if (local_len != 0 && (local_diff != 0 || strcmp(local_key, csrf) != 0)) {
+    // A silent rejection leaves no trace anywhere on the device: the browser only
+    // console.warns, so a mis-provisioned key looks exactly like dead hardware.
+    // Log the shape of the failure, never the key or any part of it.
+    ESP_LOGW(TAG,
+             "Write to %s rejected: local auth failed (key %s, csrf %s, %s)",
+             request->url().c_str(), supplied_len == 0 ? "absent" : "present",
+             csrf[0] == '\0' ? "absent" : "present",
+             supplied_len != 0 && strcmp(local_key, csrf) != 0 ? "key/csrf mismatch"
+                                                              : "wrong key");
     this->send_v1_(request, 403, "local_auth_failed", "Local credential and CSRF header required");
     return false;
   }
@@ -2345,7 +2375,27 @@ void LV6Dashboard::handle_v1_(AsyncWebServerRequest *request, const char *path) 
     return;
   }
   if (strcmp(path, "/authority/revoke") == 0) {
+    // Revoke clears shared_key, which opens every local write. Matched here, far
+    // above the generic write gate at the bottom of this function, it was the one
+    // endpoint that could disable authorization without presenting it — so it has
+    // to carry the check itself. Rotation via /authority/proposal already does.
+    if (!this->authorize_write_(request))
+      return;
     this->handle_authority_revoke_(request);
+    return;
+  }
+  // Bring-up instrument, not a control surface: it only wiggles LATCH_ARM while
+  // the bridges are coasting, so it lives outside the queued-action path.
+  if (strcmp(path, "/motors/arm-clock-probe") == 0) {
+    if (!this->authorize_write_(request))
+      return;
+    this->handle_arm_clock_probe_(request, body);
+    return;
+  }
+  if (strcmp(path, "/motors/decoder-probe") == 0) {
+    if (!this->authorize_write_(request))
+      return;
+    this->handle_decoder_probe_(request, body);
     return;
   }
 
@@ -2613,6 +2663,9 @@ void LV6Dashboard::handle_v1_(AsyncWebServerRequest *request, const char *path) 
     send_text_(request, 200, "application/json", response, false, "no-cache");
     return;
   }
+  if (act.key == "drivers_enabled" && act.has_num && act.num_val != 0.0f &&
+      this->valve_controller_)
+    this->valve_controller_->assert_latch_arm_high();
   if (!this->enqueue_action_(act)) {
     this->send_v1_(request, 503, "busy", "System busy, try again");
     return;
@@ -2779,6 +2832,90 @@ void LV6Dashboard::handle_authority_revoke_(AsyncWebServerRequest *request) {
   send_text_(request, 200, "application/json",
              "{\"ok\":true,\"version\":\"v1\",\"data\":{\"status\":\"revoked\"}}",
              false, "no-store");
+}
+
+// Square-waves LATCH_ARM for a few seconds. A single arm edge is a ~3 V spike
+// that decays in about a millisecond, so no multimeter can confirm whether it
+// survives R4/C4 and reaches U2's clock. A periodic edge can be read on U2
+// pin 1 in AC volts. Runs inline on the HTTP task: the ESPHome loop must not
+// block for seconds, and nothing here energises a bridge.
+void LV6Dashboard::handle_arm_clock_probe_(AsyncWebServerRequest *request, const char *body) {
+  if (this->valve_controller_ == nullptr) {
+    this->send_v1_(request, 503, "controller_unavailable", "Valve controller unavailable");
+    return;
+  }
+  float num = 0.0f;
+  bool flag = false;
+  const uint32_t hz =
+      parse_num_param(request, body, "hz", &num) ? static_cast<uint32_t>(num) : 100u;
+  const uint32_t duration_ms =
+      parse_num_param(request, body, "duration_ms", &num) ? static_cast<uint32_t>(num) : 5000u;
+  const bool clamp = parse_bool_param(request, body, "clamp", &flag) && flag;
+
+  lv6::Rev32MotorBackend::ArmClockProbe probe{};
+  if (!this->valve_controller_->probe_arm_clock(hz, duration_ms, clamp, &probe)) {
+    this->send_v1_(request, 503, "backend_unavailable", "Rev 3.2 motor backend is not active");
+    return;
+  }
+
+  char buf[320];
+  snprintf(buf, sizeof(buf),
+           "{\"ok\":true,\"version\":\"v1\",\"data\":{\"cycles\":%u,\"hz\":%u,"
+           "\"clamp\":%s,\"armed\":%s,\"armed_at_cycle\":%u,\"latch_state_start\":%d,"
+           "\"latch_state_end\":%d}}",
+           static_cast<unsigned>(probe.cycles), static_cast<unsigned>(probe.hz),
+           probe.clamp ? "true" : "false",
+           probe.armed ? "true" : "false", static_cast<unsigned>(probe.armed_at_cycle),
+           probe.latch_state_start, probe.latch_state_end);
+  send_text_(request, 200, "application/json", buf, true, "no-store");
+}
+
+// Holds one decoder address with the bridges coasting so the 74HC4514 outputs
+// can be checked against the twelve-entry channel map with a meter. Nothing is
+// energised: MOTOR_ENABLE stays low for the whole hold, and the decoder is
+// parked back on address 0 afterwards.
+void LV6Dashboard::handle_decoder_probe_(AsyncWebServerRequest *request, const char *body) {
+  if (this->valve_controller_ == nullptr) {
+    this->send_v1_(request, 503, "controller_unavailable", "Valve controller unavailable");
+    return;
+  }
+  float num = 0.0f;
+  bool flag = false;
+  if (!parse_num_param(request, body, "zone", &num)) {
+    this->send_v1_(request, 400, "missing_param", "zone is required");
+    return;
+  }
+  const int zone = static_cast<int>(num);
+  if (zone < 1 || zone > static_cast<int>(lv6::NUM_ZONES)) {
+    this->send_v1_(request, 400, "invalid_zone", "Zone must be in range 1..6");
+    return;
+  }
+  const bool reverse = parse_bool_param(request, body, "reverse", &flag) && flag;
+  const uint32_t hold_ms =
+      parse_num_param(request, body, "duration_ms", &num) ? static_cast<uint32_t>(num) : 10000u;
+
+  lv6::Rev32MotorBackend::DecoderProbe probe{};
+  if (!this->valve_controller_->probe_decoder(static_cast<uint8_t>(zone), reverse,
+                                              hold_ms, &probe)) {
+    this->send_v1_(request, 503, "probe_unavailable",
+                   "Rev 3.2 backend inactive, or a move is in progress");
+    return;
+  }
+  if (!probe.accepted) {
+    this->send_v1_(request, 400, "unmapped_selection",
+                   "That zone/direction pair has no decoder address");
+    return;
+  }
+
+  char buf[320];
+  snprintf(buf, sizeof(buf),
+           "{\"ok\":true,\"version\":\"v1\",\"data\":{\"zone\":%u,\"reverse\":%s,"
+           "\"decoder_address\":%u,\"a3\":%d,\"a2\":%d,\"a1\":%d,\"a0\":%d,"
+           "\"motor_enable\":%d}}",
+           static_cast<unsigned>(probe.zone), probe.reverse ? "true" : "false",
+           static_cast<unsigned>(probe.decoder_address),
+           probe.a3, probe.a2, probe.a1, probe.a0, probe.motor_enable);
+  send_text_(request, 200, "application/json", buf, true, "no-store");
 }
 
 void LV6Dashboard::dispatch_set_(const DashboardAction &act) {

@@ -62,8 +62,11 @@ function postV1(path, params, mockBody) {
   });
   return send(localKey).then(async resp => {
     // Reads stay prompt-free. Ask only after an explicit write is rejected
-    // because the local access key is not provisioned in this browser.
-    if (resp.status === 403 && !localKey) {
+    // because the local access key is not accepted by this device. Prompting
+    // only when nothing was stored left a wrong or stale key failing forever
+    // with no way to correct it, so drop the bad key and re-ask.
+    if (resp.status === 403) {
+      if (localKey) sessionStorage.removeItem('hv6_local_access_key');
       const entered = window.prompt('Enter the Lune commissioning key to change local settings') || '';
       if (entered) {
         sessionStorage.setItem('hv6_local_access_key', entered);
@@ -72,10 +75,16 @@ function postV1(path, params, mockBody) {
       }
     }
     if (!resp.ok && [400, 404, 415].includes(resp.status)) {
-      return fetch(queryUrl(path, params), { method: 'POST' });
+      resp = await fetch(queryUrl(path, params), { method: 'POST' });
     }
+    // Never resolve on a failed write. Swallowing the status made a refused
+    // request indistinguishable from a successful one, so callers waited on
+    // state that was never going to change and blamed the hardware.
     if (!resp.ok) {
-      console.warn(`API call failed: POST ${path} status=${resp.status}`);
+      const detail = `POST ${path} failed (HTTP ${resp.status})`;
+      console.warn('API call failed: ' + detail);
+      addActivity(detail);
+      throw new Error(detail);
     }
     return resp;
   }).catch(err => {
@@ -132,6 +141,32 @@ export function setEnabled(zone, enabled) {
 export function setDriversEnabled(enabled) {
   setEntity(gkey.drivers, { state: enabled ? 'on' : 'off', value: enabled });
   return postV1('/drivers/enabled', { enabled: !!enabled }, { key: 'drivers_enabled', value: enabled ? 1 : 0 });
+}
+
+// Square-wave LATCH_ARM so a DMM can see the coupled clock on U2 pin 1.
+// A single 1 ms arm edge is invisible on a meter and already over before
+// Motor Lab's first diagnostics poll.
+export async function probeArmClock({ hz = 100, durationMs = 4000, clamp = false } = {}) {
+  if (isMock()) {
+    return {
+      ok: true,
+      data: {
+        cycles: Math.max(1, Math.floor(durationMs / 10)),
+        hz,
+        clamp: !!clamp,
+        armed: true,
+        armed_at_cycle: 1,
+        latch_state_start: 1,
+        latch_state_end: 0,
+      },
+    };
+  }
+  const resp = await postV1('/motors/arm-clock-probe', {
+    hz,
+    duration_ms: durationMs,
+    clamp: clamp ? 1 : 0,
+  });
+  return resp.json();
 }
 
 export function command(name, zone) {

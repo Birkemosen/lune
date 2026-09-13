@@ -486,7 +486,15 @@ export function cardForm(el, opts = {}) {
 
   const refresh = () => fields.forEach(f => { if (!f.dirty && f.sync) f.sync(); });
   const apply = () => {
-    fields.forEach(f => { if (f.dirty) { if (f.commit) f.commit(); f.dirty = false; } });
+    // commit() reaches postV1, which now rejects on a refused write instead of
+    // resolving silently. The failure is already logged and pushed to the
+    // activity list there, so absorb it here rather than leave one unhandled
+    // rejection per dirty field.
+    fields.forEach(f => {
+      if (!f.dirty) return;
+      if (f.commit) Promise.resolve(f.commit()).catch(() => {});
+      f.dirty = false;
+    });
     refreshBanner();
     if (opts.onApply) opts.onApply();
   };

@@ -3,7 +3,7 @@ import { injectStyle } from '../../core/style.js';
 import { ev, getDashboardValue, isEntityOn, subscribeDashboard, setDashboardValue, zoneLabel } from '../../core/store.js';
 import {
   emergencyStopMotors, fetchDiagnostics, fetchMotorTraceCsv,
-  openMotorTimed, closeMotorTimed, setDriversEnabled, setGlobalNumber, setManualMode,
+  openMotorTimed, closeMotorTimed, probeArmClock, setDriversEnabled, setGlobalNumber, setManualMode,
 } from '../../core/api.js';
 import { gkey } from '../../utils/keys.js';
 import { analyzeMotorTrace, overlayLevels, parseMotorTraceCsv, strokePhaseKey } from '../../utils/motor-trace.js';
@@ -12,6 +12,7 @@ import { localize, subscribeLanguage, t } from '../../core/i18n.js';
 
 const POLL_MS = 250;
 const CAPTURE_TIMEOUT_MS = 20000;
+const START_GRACE_MS = 2000;
 const STEPS = ['setup', 'arm', 'seat', 'open', 'close', 'review'];
 
 const css = `
@@ -266,6 +267,9 @@ const template = () => `
             <div class="lab-gauge"><span data-i18n="diagnostics.lab.drivers">Drivers</span><b data-k="drivers">—</b></div>
             <div class="lab-gauge"><span data-i18n="diagnostics.lab.busyFlag">Motor busy</span><b data-k="busy">—</b></div>
             <div class="lab-gauge"><span data-i18n="diagnostics.lab.armed">Armed</span><b data-k="armed">—</b></div>
+            <div class="lab-gauge"><span data-i18n="diagnostics.lab.pad10">Pad 10 ARM</span><b data-k="pad10">—</b></div>
+            <div class="lab-gauge"><span data-i18n="diagnostics.lab.pad9">Pad 9 STATE</span><b data-k="pad9">—</b></div>
+            <div class="lab-gauge"><span data-i18n="diagnostics.lab.pad11">Pad 11 EN</span><b data-k="pad11">—</b></div>
             <div class="lab-gauge"><span data-i18n="diagnostics.lab.backend">Backend</span><b data-k="backend">—</b></div>
             <div class="lab-gauge"><span data-i18n="diagnostics.lab.fault">Fault</span><b data-k="fault">—</b></div>
             <div class="lab-gauge"><span data-i18n="diagnostics.lab.invalidSamples">Invalid samples</span><b data-k="invalid">—</b></div>
@@ -324,6 +328,12 @@ function onOff(value) {
   return t(value ? 'common.on' : 'common.off');
 }
 
+function padLevel(value) {
+  if (value === 1) return 'HIGH';
+  if (value === 0) return 'LOW';
+  return '—';
+}
+
 function emptyLive() {
   return {
     current: null, mean: null, peak: null, slope: null,
@@ -331,6 +341,8 @@ function emptyLive() {
     pinSeen: false, pinAt: null, pinMa: null,
     tachoPeriodUs: null, tachoCadenceUs: null, cadenceHz: null,
     faultCode: 0, armed: false, backend: '—',
+    latchFaulted: false, driversEnabled: null,
+    latchArmLevel: null, latchStateLevel: null, motorEnableLevel: null,
     invalidSamples: 0, tachoRejected: 0,
   };
 }
@@ -380,6 +392,9 @@ export default component({
       stroke: el.querySelector('[data-k="stroke"]'),
       pin: el.querySelector('[data-k="pin"]'),
       armed: el.querySelector('[data-k="armed"]'),
+      pad10: el.querySelector('[data-k="pad10"]'),
+      pad9: el.querySelector('[data-k="pad9"]'),
+      pad11: el.querySelector('[data-k="pad11"]'),
       backend: el.querySelector('[data-k="backend"]'),
       fault: el.querySelector('[data-k="fault"]'),
       invalid: el.querySelector('[data-k="invalid"]'),
@@ -433,11 +448,17 @@ export default component({
       gauges.motion.textContent = liveDiag.motion ? String(liveDiag.motion) : '—';
       gauges.cadence.textContent = liveDiag.cadenceHz == null ? '—' : liveDiag.cadenceHz.toFixed(1) + ' /s';
       gauges.direction.textContent = liveDiag.direction;
-      gauges.drivers.textContent = onOff(isEntityOn(gkey.drivers));
+      gauges.drivers.textContent = onOff(
+        liveDiag.driversEnabled != null ? liveDiag.driversEnabled : isEntityOn(gkey.drivers));
       gauges.busy.textContent = onOff(liveDiag.busy);
       gauges.armed.textContent = onOff(liveDiag.armed);
+      if (gauges.pad10) gauges.pad10.textContent = padLevel(liveDiag.latchArmLevel);
+      if (gauges.pad9) gauges.pad9.textContent = padLevel(liveDiag.latchStateLevel);
+      if (gauges.pad11) gauges.pad11.textContent = padLevel(liveDiag.motorEnableLevel);
       gauges.backend.textContent = liveDiag.backend || '—';
-      gauges.fault.textContent = liveDiag.faultCode ? String(liveDiag.faultCode) : t('common.ok');
+      gauges.fault.textContent = liveDiag.latchFaulted
+        ? t('diagnostics.lab.faultLatch')
+        : (liveDiag.faultCode ? String(liveDiag.faultCode) : t('common.ok'));
       gauges.invalid.textContent = String(liveDiag.invalidSamples || 0);
       gauges.tachoRejected.textContent = String(liveDiag.tachoRejected || 0);
       gauges.stroke.textContent = t('diagnostics.lab.stroke.' + phaseKey);
@@ -623,13 +644,25 @@ export default component({
           pushLog('diagnostics.lab.log.manual');
         }
         if (run.aborted) return;
-        if (!isEntityOn(gkey.drivers)) {
-          await setDriversEnabled(true);
-          pushLog('diagnostics.lab.log.drivers');
-        }
+        pushLog('diagnostics.lab.log.armProbeWait');
+        const probePayload = await probeArmClock({ hz: 100, durationMs: 4000 });
         if (run.aborted) return;
-        liveDiag.busy = false;
-        liveDiag.armed = true;
+        const probe = probePayload && probePayload.data ? probePayload.data : {};
+        pushLog('diagnostics.lab.log.armProbe', {
+          hz: probe.hz || 100,
+          cycles: probe.cycles || 0,
+          armed: probe.armed ? t('common.on') : t('common.off'),
+          at: probe.armed_at_cycle || 0,
+        });
+        liveDiag.armed = !!probe.armed;
+        liveDiag.latchFaulted = !probe.armed;
+        paintGauges();
+        if (!probe.armed) {
+          showBanner(t('diagnostics.lab.latchBanner'));
+          throw new Error('latch');
+        }
+        await setDriversEnabled(true);
+        pushLog('diagnostics.lab.log.drivers');
         setPhase('armed', 'ok');
         pushLog('diagnostics.lab.log.armed');
         run.active = false;
@@ -637,7 +670,11 @@ export default component({
       } catch (err) {
         run.active = false;
         setPhase('failed', 'halt');
-        pushLog('diagnostics.lab.log.armFailed');
+        pushLog(err && err.message === 'arm_gpio'
+          ? 'diagnostics.lab.log.armGpio'
+          : (err && err.message === 'latch'
+            ? 'diagnostics.lab.log.latchFaulted'
+            : 'diagnostics.lab.log.armFailed'));
         paintStage();
       }
     }
@@ -740,7 +777,8 @@ export default component({
           if (run.aborted) return;
           try {
             const payload = await fetchDiagnostics();
-            const safety = payload && payload.data && payload.data.motor_safety ? payload.data.motor_safety : {};
+            const data = payload && payload.data ? payload.data : {};
+            const safety = data.motor_safety || {};
             const current = Number(safety.current_ma);
             const busy = !!safety.motor_busy;
             const driveOn = safety.drive_on != null ? !!safety.drive_on : busy;
@@ -759,6 +797,11 @@ export default component({
             liveDiag.cadenceHz = period > 0 ? 1e6 / period : null;
             liveDiag.faultCode = Number(safety.fault_code) || 0;
             liveDiag.armed = !!safety.armed;
+            liveDiag.latchFaulted = !!safety.latch_faulted;
+            liveDiag.latchArmLevel = safety.latch_arm_level;
+            liveDiag.latchStateLevel = safety.latch_state_level;
+            liveDiag.motorEnableLevel = safety.motor_enable_level;
+            liveDiag.driversEnabled = data.drivers_enabled != null ? !!data.drivers_enabled : liveDiag.driversEnabled;
             liveDiag.backend = safety.backend || liveDiag.backend;
             liveDiag.invalidSamples = Number(safety.invalid_samples) || 0;
             liveDiag.tachoRejected = Number(safety.tacho_rejected) || 0;
@@ -790,7 +833,21 @@ export default component({
               paintAnalysis(null, run.live, true);
             }
             paintGauges();
-            if ((sawBusy && !busy) || Date.now() - run.started > CAPTURE_TIMEOUT_MS) {
+            const elapsed = Date.now() - run.started;
+            if (!sawBusy && elapsed > START_GRACE_MS) {
+              stopPoll();
+              run.active = false;
+              setPhase('failed', 'halt');
+              if (safety.latch_faulted) {
+                showBanner(t('diagnostics.lab.latchBanner'));
+                pushLog('diagnostics.lab.log.latchFaulted');
+              } else {
+                pushLog('diagnostics.lab.log.neverStarted');
+              }
+              paintStage();
+              return;
+            }
+            if ((sawBusy && !busy) || elapsed > CAPTURE_TIMEOUT_MS) {
               stopPoll();
               liveDiag.busy = false;
               if (sawBusy) pushLog('diagnostics.lab.log.stopped');

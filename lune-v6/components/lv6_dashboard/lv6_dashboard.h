@@ -266,6 +266,8 @@ class LV6Dashboard : public Component, public AsyncWebHandler {
   void handle_authority_proposal_(AsyncWebServerRequest *request, const char *body);
   void handle_authority_proposal_approval_(AsyncWebServerRequest *request);
   void handle_authority_revoke_(AsyncWebServerRequest *request);
+  void handle_arm_clock_probe_(AsyncWebServerRequest *request, const char *body);
+  void handle_decoder_probe_(AsyncWebServerRequest *request, const char *body);
   void send_v1_(AsyncWebServerRequest *request, int code, const char *err_code = nullptr,
                 const char *err_message = nullptr);
   bool enqueue_action_(const DashboardAction &act);
