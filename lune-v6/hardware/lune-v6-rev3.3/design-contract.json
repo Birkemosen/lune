@@ -56,7 +56,7 @@
     "stall_debounce": "CADENCE x 3.0, CLAMPED 150-750MS; 750MS WHEN NO CADENCE IS ESTABLISHED",
     "endpoint_window": "IMPLEMENTED. CLOSING USES contact_to_stop_close_ripples FROM THE OBSERVED PIN CONTACT; OPENING USES THE TRAVEL ESTIMATED FOR THE MOVE. LOWER BOUND ONLY."
   },
-  "populated_placement_projection": 128,
+  "populated_placement_projection": 129,
   "second_source_dnp_placements": 0,
   "copper_only_pads": 12,
   "mechanical_items": 4,
@@ -453,7 +453,7 @@
       "TC78H660FNG": "Toshiba dual bridge, VM 2.5-16 V, 0.48 ohm, TSSOP16, with an error-flag output. Uses sense-resistor-less internal current detection, so the ceiling is a fixed ~2 A overcurrent protection with no programmable trip and no specified threshold - it removes the 1.5 ohm retune path and the specified-ceiling argument. VM floor is also 2.5 V against DRV8411's 1.65 V."
     },
     "selection_conclusion": "DRV8411 retained. It is simultaneously the cheapest, best-stocked and most capable part that meets the constraint set, so the original cost-down framing was inverted. Driver cost is 3.54 USD of a roughly 43 USD per-board budget, so chasing a cheaper bridge is not where prototype cost lives.",
-    "drv8411_populated_placements": 128,
+    "drv8411_populated_placements": 129,
     "devices": 3,
     "bridges_per_device": 2,
     "bridge_current_limit_ohm": 1.0,
@@ -559,11 +559,28 @@
     "sense_node_rationale": "An output-to-GND short bypasses the xISEN resistor entirely and the DRV8411 OCP is 4 A, so this comparator is the only fast protection for that fault. Sensing the unfiltered amplifier output removes the 100 us delay the 1k/100n ADC filter was adding.",
     "actuator_rated_max_ma": 120,
     "actuator_measured_peak_ma": 60,
-    "threshold_volts": 1.65,
-    "nominal_trip_ma": 165,
-    "estimated_worst_case_trip_min_ma": 157,
-    "estimated_worst_case_trip_max_ma": 173,
-    "trip_rationale": "Rev 3.3 moved R7 from 56k to 10k. At 280 mA the comparator only fired after the DRV8411's own 180-230 mA current regulation had already taken over, so it could catch nothing but failed regulation. 165 mA sits below that window and above everything a working actuator can draw: measured free travel 23.5 mA and end-stop stall 47-60 mA on Rev 3.2-D, against a 120 mA rating. Inrush is not a constraint - a DC motor's starting current is its locked-rotor current, ~3.2 V / 68 ohm, so it cannot reach the regulation point from this rail. See design-review R3.3-4.",
+    "actuator_locked_rotor_ma": 47,
+    "actuator_locked_rotor_basis": "3.2 V across the 68 ohm winding. A DC motor's starting current IS its locked-rotor current, so this is the ceiling on what the actuator can draw from this rail under any condition, stall included.",
+    "trip_margin_basis": "ACHIEVABLE_CURRENT_NOT_NAMEPLATE",
+    "min_margin_over_measured_peak": 2.0,
+    "trip_margin_eco": {
+      "eco": "rev3.3-P",
+      "what_changed": "The lower margin rule was restated. It required the worst-case trip to sit at least 20 percent above actuator_rated_max_ma (120 mA). It now requires at least 2.0x actuator_measured_peak_ma (60 mA), with the nameplate kept as a recorded sanity value.",
+      "why": "The two bounds on this threshold could not both be met. The window is 120 mA (nameplate) to 178.2 mA (DRV8411 regulation floor), only 1.485x wide. Requiring 20 percent above the bottom and 10 percent below the top leaves a nominal trip window of 151.6-152.7 mA, and no E24 divider lands inside 1.1 mA. That was checked across R6 = 8.2k to 22k against a fixed 10k R7: every value fails one rule or the other.",
+      "which_rule_gave_and_why": "The lower one, because it was the rule built on a number this actuator cannot reach. The nameplate 120 mA is a rating at the actuator's own drive voltage; from THIS rail the winding is 68 ohm across 3.2 V, so locked rotor is 47 mA and measured end-stop stall is 47-60 mA. The nuisance trip the 20 percent rule guards against is not physically available. The upper rule guards something real and was kept: above the regulation floor the bridge caps the current and the comparator can never fire at all, which is exactly what made the original 280 mA setting useless.",
+      "resulting_margins": "Worst-case low trip 142 mA is 2.4x the measured 60 mA peak and 3.0x the 47 mA locked-rotor limit. Worst-case high trip 158 mA sits 11 percent below the 178.2 mA regulation floor.",
+      "what_would_void_this": "A different actuator model with a lower winding resistance, or this one driven from a higher rail. Both raise the achievable current and the margin is stated against that current, not against a fixed number. The six-channel cold and loaded distribution required by design-review R3.3-4 is what confirms 60 mA is really the peak; until it exists this rests on Rev 3.2-D measurements."
+    },
+    "threshold_volts": 1.5,
+    "threshold_divider_refs": [
+      "R6",
+      "R7"
+    ],
+    "threshold_divider_rail_volts": 3.3,
+    "nominal_trip_ma": 150,
+    "estimated_worst_case_trip_min_ma": 142,
+    "estimated_worst_case_trip_max_ma": 158,
+    "trip_rationale": "Set by the R6/R7 divider on 3V3_ANALOG: 12k over 10k gives FLIM_REF 1.500 V, and at 10 V/A (INA180A1 x20 into a 0.5 ohm shunt) that is a 150 mA trip. The threshold must sit inside a window bounded at BOTH ends. Above the actuator's 120 mA rating, so a stiff or cold but healthy actuator never trips it. Below the DRV8411's 178.2 mA regulation floor, because above that the bridge regulates and the rail current can never reach the comparator - which is what made the original 280 mA setting able to catch nothing but failed regulation. 150 mA sits near the centre of that 120-178 mA window: worst case 142-158 mA leaves 22 mA over the rating and 21 mA under the regulation floor. History: rev3.3 first moved R7 from 56k to 10k, giving 165 mA, which cleared the rating by 37 mA but left only 5 mA under the regulation floor; R6 10k -> 12k rebalanced it. Measured free travel is 23.5 mA and end-stop stall 47-60 mA on Rev 3.2-D, so nothing a working actuator does comes near either setting. Inrush is not a constraint - a DC motor's starting current is its locked-rotor current, ~3.2 V / 68 ohm, so it cannot reach the regulation point from this rail. The six-channel cold and loaded distribution required by design-review R3.3-4 is still outstanding and is what finally settles this value",
     "comparator": "LMV393IDR",
     "comparator_supply": "VBUS_PROTECTED",
     "comparator_output_type": "OPEN_COLLECTOR",
@@ -742,13 +759,24 @@
       "U11"
     ],
     "fault_consumer_ref": "U6.9",
-    "rev33_note": "Rev 3.3 removed the latch (U2, Q1, R4, R5, C4). FAULT_N_RAW is now a wired-AND of the three DRV8411 nFAULT outputs and the TPS2553 fault pin, pulled up by R3 and read on GPIO16. U3 left the shared net for its own RAIL_OVERCURRENT net on GPIO17 with its own pull-up R41, so firmware can tell a bridge fault from a rail overcurrent - which the wired-AND could not (O12). DRIVER_N_SLEEP is driven from GPIO15 with R31 still defining the safe state on high-Z. See design-review R3.3-3 and the hazard decision recorded with it."
+    "rev33_note": "Rev 3.3 removed the latch (U2, Q1, R4, R5, C4). There are now THREE independent fault nets, each with its own pull-up and its own GPIO, which is the O12 fix: firmware can tell the three sources apart, and the wired-OR could not. FAULT_N_RAW is a wired-AND of the three DRV8411 nFAULT outputs only (U9.8, U10.8, U11.8), pulled up by R3, read on GPIO16 at U6.9. RAIL_OVERCURRENT is U3's open-collector comparator output alone, pulled up by R41, read on GPIO48 at U6.25. FAULT_USB_RAW is U24.4 alone, pulled up by R42, read on GPIO15 at U6.8 - it was split off deliberately because the TPS2553 asserts FAULT while current-limiting, so sharing the net would have misattributed a USB event as a bridge fault. DRIVER_N_SLEEP is the firmware-held drive permit on GPIO17 at U6.10, with R31 defining the safe state when the GPIO goes high-Z. See design-review R3.3-3 and the hazard decision recorded with it. Corrected 2026-09-13: this note previously placed the TPS2553 on FAULT_N_RAW and had RAIL_OVERCURRENT and DRIVER_N_SLEEP on each other's pins."
   },
   "usb_input": {
-    "part": "TPS2553DBVR-1",
+    "part": "TPS2553DBVR",
+    "lcsc": "C55266",
     "enable_polarity": "ACTIVE_HIGH",
-    "fault_response": "LATCH_OFF",
-    "latch_off_consequence": "AN_INPUT_FAULT_REMOVES_POWER_FROM_THE_ESP32_TOO_SO_THE_FAILURE_IS_SILENT_AND_NEEDS_A_PHYSICAL_REPLUG",
+    "fault_response": "CONSTANT_CURRENT_AUTO_RETRY",
+    "fault_response_consequence": "An input fault no longer removes power. The switch regulates at the current limit, asserts FAULT, and recovers by itself when the overload clears. FAULT_USB_RAW reaches GPIO15, so firmware can see, log and report the event - which is what the latch-off part made impossible.",
+    "fault_response_eco": {
+      "eco": "rev3.3-M",
+      "was": "TPS2553DBVR-1 (C111738), LATCH_OFF",
+      "now": "TPS2553DBVR (C55266), constant-current auto-retry",
+      "closes": "O6, which recorded the latch-off part as a silent unrecoverable whole-board failure and left the variant choice as a deferred production decision.",
+      "why": "Latch-off removes power from the ESP32 itself, so the failure had no LED, no API, no log and no recovery short of a physical replug - a truck roll for a controller in a manifold cabinet. R3.3-3 gave FAULT_USB_RAW its own GPIO, so the event is now observable; pairing that with a part that also recovers on its own turns the worst failure mode in the power path into a logged, self-clearing event.",
+      "what_is_given_up": "True circuit-breaker behaviour on a persistent downstream short. The constant-current part keeps regulating at roughly 1.2 A into a hard short, dissipating around 6 W, so it thermally cycles on its own protection rather than latching. The motor rail is separately protected and the DRV8411s self-protect, so no downstream node depends on the switch latching.",
+      "footprint_changed": true,
+      "footprint_warning": "This was NOT a BOM-only swap, despite being one part number. The library device brought its own land: SOT-23-6 ...-BL became ...-BR, pads grew from 1.072 x 0.532 mm to 1.100 x 0.600 mm and each row moved 0.20 mm outward, so the land span went 2.83 -> 3.30 mm. Pin pitch, pin-1 corner and orientation are unchanged, and the netlist is byte-identical at 408 entries, so the design is correct - but copper, paste and mask around U24 all moved. Re-run DRC before release; the clearance check is the editor's and check_design.py does not claim it."
+    },
     "ilim_ohm": 22000,
     "current_limit_window_a": [
       1.091,
@@ -762,7 +790,7 @@
         1.172
       ],
       "reason": "Deliberate. 23.7 kOhm existed only as Extended-class parts (C165751, C22912); 22 kOhm is Basic (C31850), which removes a per-order setup fee. The value move is the point of the change, not a side effect of it, so it is recorded here rather than under ilim_sourcing.",
-      "safety_argument": "The trip point rises 7.7 percent. That direction is the safe one for this part: the TPS2553-1 is LATCH-OFF, so a nuisance trip is a silent board death needing a physical replug (see latch_off_consequence and review O6). Raising the limit makes that outcome less likely, not more. 22 kOhm is well inside the datasheet's 15-232 kOhm programming range, and the worst-case 1269 mA with +-1% is carried by the 0.8 mm input tracks and by the USB-C connector's 1.25 A per-contact rating.",
+      "safety_argument": "The trip point rises 7.7 percent, which reduces nuisance trips. That mattered more when this change was made than it does now: rev3.3-J was argued against the LATCH-OFF part, where a nuisance trip was a silent board death needing a physical replug (O6). rev3.3-M has since moved U24 to the auto-retry variant, so a trip is recoverable and logged either way. The change stands on its own terms regardless: 22 kOhm is well inside the datasheet's 15-232 kOhm programming range, and the worst-case 1269 mA with +-1% is carried by the 0.8 mm input tracks and by the USB-C connector's 1.25 A per-contact rating.",
       "what_it_no_longer_protects": "A host port limited to 500 mA (USB 2.0) or 900 mA (USB 3.0) is no longer protected by this resistor - the TPS2553 will not intervene before such a host's own protection does. That was already true at 23.7 kOhm (1012 mA minimum) and is unchanged in kind, only in degree."
     },
     "downstream_capacitance_uf": 84,
@@ -810,7 +838,7 @@
       "footprint_rationale": "A supplier swap changes the BOM only, and leaves the Gerbers, drill and CPL untouched - but ONLY if the footprint is unchanged. Swapping by picking a different library device rather than editing the supplier part brings that device's own footprint with it, and a different pad geometry changes copper, paste and mask. R0603 is shared here by ten MPNs across Yageo, UNI-ROYAL and Vishay, so this swap moved nothing; check_design.py asserts it so a future one cannot move something quietly.",
       "fitted": "C31850"
     },
-    "auto_retry_option": "SLVS841F section 10.2.2.2 documents auto-retry built from the latching part: feed FAULT back to EN through R_FAULT with C_RETRY to GND, so a trip self-clears after R_FAULT x C_RETRY. On this board EN is tied to VBUS_RAW (permanently enabled), so taking this option is a schematic change, not a part change. It is the third answer to the deferred latch-off decision, alongside the auto-retry part variant and keeping the logic rail alive upstream."
+    "auto_retry_option": "RESOLVED by rev3.3-M, which took the auto-retry part variant. Recorded for history: SLVS841F section 10.2.2.2 documents building auto-retry from the latching part by feeding FAULT back to EN through R_FAULT with C_RETRY to GND. On this board EN is tied to VBUS_RAW, so that route would have been a schematic change rather than a part change; the part swap was cheaper and does not consume the FAULT pin, which R3.3-3 needs for FAULT_USB_RAW."
   },
   "display": {
     "default_population": false,
@@ -840,7 +868,9 @@
     "esd_protection": "TPD1E10B06DPYR",
     "esd_protection_ref": "U30",
     "supply_branch": "+3V3_EXT",
-    "supply_series_ohm": 33,
+    "supply_series_ohm": 4.7,
+    "supply_series_ref": "R43",
+    "supply_ptc_ref": "F1",
     "supply_esd_protection": "TPD1E10B06DPYR",
     "supply_esd_protection_ref": "U29",
     "esd_protection_eco": {
@@ -849,12 +879,57 @@
       "interim": "A single PSM712-LF-T7 (C32677) briefly replaced both to drop an Extended type. It was caught in BOM review and reverted before fabrication.",
       "why_the_interim_was_wrong": "PSM712 is an ASYMMETRICAL RS-485 array, not a logic clamp. Per ProTek 05094.R5, with pin 1 or 2 positive - which is the polarity a strike on a pulled-up 3.3 V net presents - V_WM is 12.0 V, V_BR is 13.3 V at 1 mA, and V_C reaches 30 V at 30 A. ESP32-S3 GPIO absolute maximum is VDD+0.3 = 3.6 V and the DS18B20 is 6.0 V, so the part was transparent in the direction that matters. Its 75 pF per line also loaded the 1-wire bus six times harder than the part it replaced.",
       "why_this_part": "TPD1E10B06DPYR was already a BOM line at 12 placements for motor_esd, so adding two costs no new part type and no setup fee. V_RWM 5.5 V clears the 3.3 V rail, V_BR 6 V minimum and V_C 10 V at 1 A put the clamp below both absolute maxima, and 12 pF leaves the 1-wire cable-length budget intact. It is the same GND-referenced single-line topology as the original D1/D2, so motor_esd.placement_rule applies unchanged.",
-      "topology": "U30 clamps ONEWIRE_BUS at J1.2; U29 clamps +3V3_EXT at J1.1. Both sit on the CONNECTOR side of their 33 ohm series resistors (R20 for the bus, R22 for the supply), so the resistor damps whatever the clamp lets through before it reaches the MCU.",
+      "topology": "U30 clamps ONEWIRE_BUS at J1.2; U29 clamps +3V3_EXT at J1.1. Both sit on the CONNECTOR side of their series element, so that element damps whatever the clamp lets through before it reaches the MCU. The bus keeps R20 at 33 ohm; the supply branch was reworked by rev3.3-N and its series element is now F1 plus R43, 5.6 ohm together when fresh.",
       "exposure_rationale": "ONEWIRE_BUS and +3V3_EXT leave the board on a cable to external probes. They are the most ESD-exposed nets in the design, which is why nominal protection is not acceptable here."
     },
-    "supply_drop_mv_at_two_probes": 100,
-    "supply_short_current_ma": 100,
-    "supply_protection_note": "At 0.33 W the 0603 series resistor is a one-shot fusible link; evaluate a resettable PTC for production.",
+    "max_probes": 8,
+    "probe_convert_current_ma_each": 1.5,
+    "probes_convert_simultaneously": true,
+    "probes_convert_rationale": "ESPHome issues a Skip-ROM Convert T, so every probe on the bus converts at once for 750 ms at 12-bit resolution. The branch must therefore be sized for max_probes x 1.5 mA, not for an average.",
+    "supply_load_ma_at_max_probes": 12.0,
+    "supply_drop_mv_at_max_probes_fresh": 67,
+    "supply_drop_mv_at_max_probes_post_trip": 152,
+    "supply_volts_at_probe_worst_case": 3.15,
+    "probe_minimum_supply_volts": 3.0,
+    "supply_short_current_ma": 589,
+    "supply_short_trip_multiple": 2.0,
+    "supply_protection_note": "F1 is a resettable PPTC, so a shorted external cable is now a self-clearing fault rather than the permanent loss of the probe supply that the 33 ohm one-shot fusible link produced.",
+    "supply_branch_eco": {
+      "eco": "rev3.3-N",
+      "was": "R22, a single 33 ohm 0603 (C23140), sized as a one-shot fusible link limiting a short to 100 mA",
+      "now": "F1 (BSMD0603-010-36V, C18377604, BHFUSE) in series with R43 (4.7 ohm 0603)",
+      "driver": "The probe count was fixed at 8. The old budget field was literally named supply_drop_mv_at_two_probes - the 100 mV was computed at TWO probes. At eight converting simultaneously the load is 12 mA, and 33 ohm drops 396 mV, putting the probe at 2.90 V against a DS18B20 minimum of 3.0 V. The branch was under specification before any cable resistance was counted.",
+      "why_not_a_resistor_alone": "Holding 100 mV at 12 mA needs 8.3 ohm or less, which raises the short current from 100 mA to over 400 mA and puts 1.3 W into an 0603. No single resistor satisfies both the drop budget and the fault budget at eight probes.",
+      "why_not_a_ptc_alone": "The 0603 PPTCs in this class have Ri_min of 0.9 ohm, so a dead short would demand 3.3 V / 0.9 ohm = 3.67 A. With the board's own ~400 mA that is 4.07 A against an SY8089 whose current limit is around 3.5 A: the logic rail would collapse and the ESP32 would brown out for the whole trip window, up to 500 ms. R43 is what keeps the fault inside the buck's headroom.",
+      "numbers": {
+        "load_ma": 12.0,
+        "fresh_ohm": 5.6,
+        "post_trip_ohm": 12.7,
+        "volts_at_probe_fresh": 3.23,
+        "volts_at_probe_post_trip": 3.15,
+        "short_current_ma": 589,
+        "trip_current_ma": 300,
+        "trip_multiple": 2.0,
+        "time_to_trip_max_ms": 500,
+        "buck_headroom_note": "SY8089AAAC is a 2 A part and the motor rail does NOT load it - U26 (AP2112K-3.3) feeds 3V3_MOTOR directly from VBUS_PROTECTED. 3V3_LOGIC carries the ESP32 and logic only, roughly 400 mA, so 589 mA of fault current is comfortably inside headroom."
+      },
+      "ptc_selection": {
+        "hold_ma": 100,
+        "hold_derated_at_60c_ma": 65,
+        "hold_margin_over_load": 5.4,
+        "trip_ma": 300,
+        "ri_min_ohm": 0.9,
+        "r1_max_ohm": 8.0,
+        "time_to_trip_max_ms": 500,
+        "v_max": 36,
+        "package": "0603",
+        "rejected": "C70048 (TECHFUSE) has R1_max 10 ohm and a 1 s trip; C2153881 (Littelfuse FEMTOASMDC010F) trips in 100 ms and has Ri 2 ohm, which would have allowed dropping R43, but its R1_max of 14 ohm gives only 80 mV of margin over the probe minimum and its stock was 238 pieces at ten times the price. With R43 fitted the fault is already inside the buck's headroom, so trip speed stops being the binding parameter and post-trip resistance becomes it.",
+        "note": "R1_max, not Ri, is the parameter that binds once R43 is present: it sets whether the probes stay in specification after any fault event, for the life of the board."
+      },
+      "accepted_trade": "The supply branch's ESD series impedance falls from 33 ohm to 5.6 ohm. U29 remains the primary clamp at the connector and 3V3_LOGIC is a low-impedance rail behind a 2 A buck, so this is acceptable - but it is a trade, not a free improvement.",
+      "adds_part_types": "F1 (C18377604) is Extended and adds one 3 USD setup fee. R43 (0603WAF470KT5E, C23164) is a new value on this BOM but is a Basic part, so it adds none. Net Extended-type saving for the revision therefore falls from 21 to 18 USD.",
+      "midpoint_net": "3V3_EXT_FUSED, between F1 and R43 - fused but not yet damped. Named rather than left as an editor-generated id so the node is legible in a fault trace."
+    },
     "sensor_addresses_must_be_bound": true,
     "freshness_timeout_required": true,
     "temperature_data_may_bypass_motor_safety": false
@@ -1151,7 +1226,7 @@
     "boot_switch": "BOOT",
     "test_point_device": "Test-Point"
   },
-  "populated_placement_board_count": 128,
+  "populated_placement_board_count": 129,
   "motor_output_ferrites": {
     "part": "GZ1608D601TF",
     "lcsc_part": "C1002",

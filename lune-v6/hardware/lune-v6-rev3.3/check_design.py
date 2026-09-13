@@ -778,9 +778,53 @@ def check_safety_topology(project: Project, contract: dict) -> None:
     supply = pin_net.get((onewire, "1"))
     check(supply not in (None, "3V3_LOGIC"),
           f"1-wire connector supply pin is a protected branch (is {supply})")
+    one_wire = contract["one_wire"]
     branch = {ref for ref, _ in net_pins.get(supply or "", set())}
-    check(any(r.startswith("R") for r in branch),
-          "the 1-wire supply branch includes a series element")
+    series_ref = one_wire["supply_series_ref"]
+    ptc_ref = one_wire["supply_ptc_ref"]
+
+    # rev3.3-N replaced the single 33 ohm feed with a PPTC plus a small series
+    # resistor.  Assert both by contracted designator, and assert the PPTC is
+    # actually in series rather than merely present somewhere: the old test
+    # looked for any ref starting with "R" on the supply net, which R43 alone
+    # satisfies, so a missing or bypassed F1 would have passed silently.
+    check(series_ref in branch,
+          f"the 1-wire supply branch carries its series resistor {series_ref} "
+          f"(branch: {', '.join(sorted(branch))})")
+    fitted_ohm = (parse_ohms(project.parts[series_ref].value)
+                  if series_ref in project.parts else None)
+    check(fitted_ohm is not None
+          and close(fitted_ohm, one_wire["supply_series_ohm"], 0.01),
+          f"{series_ref} is {one_wire['supply_series_ohm']} ohm as contracted "
+          f"(board: {project.parts[series_ref].value if series_ref in project.parts else 'ABSENT'})")
+    ptc_nets = {net for (ref, _), net in pin_net.items() if ref == ptc_ref}
+    series_nets = {net for (ref, _), net in pin_net.items() if ref == series_ref}
+    check("3V3_LOGIC" in ptc_nets and bool(ptc_nets & series_nets),
+          f"{ptc_ref} sits in series between 3V3_LOGIC and {series_ref} "
+          f"({ptc_ref} nets: {', '.join(sorted(ptc_nets)) or 'ABSENT'})")
+
+    # The branch is sized by the probe count, which is a product decision rather
+    # than a board one, and the old budget was computed at two probes while the
+    # product allows eight.  Re-derive both ends so that changing the count or
+    # either component value fails here instead of in an installation.
+    load_a = one_wire["max_probes"] * one_wire["probe_convert_current_ma_each"] / 1000.0
+    floor_v = one_wire["probe_minimum_supply_volts"]
+    numbers = one_wire["supply_branch_eco"]["numbers"]
+    for label, r_ohm, want_v in (
+            ("fresh", numbers["fresh_ohm"], numbers["volts_at_probe_fresh"]),
+            ("post-trip", numbers["post_trip_ohm"], numbers["volts_at_probe_post_trip"])):
+        volts = 3.3 - load_a * r_ohm
+        check(abs(volts - want_v) < 0.01 and volts >= floor_v,
+              f"{one_wire['max_probes']} probes through {r_ohm} ohm ({label}) leave "
+              f"{volts:.2f} V, at or above the {floor_v} V probe minimum")
+
+    # A dead external cable must not take the logic rail with it.  The motor
+    # rail is a separate LDO off VBUS_PROTECTED, so this budget is against the
+    # buck's headroom alone.
+    short_a = 3.3 / numbers["fresh_ohm"]
+    check(abs(short_a * 1000 - one_wire["supply_short_current_ma"]) < 5,
+          f"a shorted +3V3_EXT draws {short_a * 1000:.0f} mA, as contracted, and "
+          f"{short_a * 1000 / numbers['trip_current_ma']:.1f}x the PPTC trip current")
 
     # Both nets on this connector leave the board on a cable to external probes,
     # so both need a clamp - not just the supply.  Match on the contracted MPN
@@ -788,7 +832,6 @@ def check_safety_topology(project: Project, contract: dict) -> None:
     # from D to U designators, and a prefix test would have called that a
     # missing TVS while a PSM712 sitting on a D designator passed.  The part is
     # the thing being asserted, so assert the part.
-    one_wire = contract["one_wire"]
     for label, net, want in (
             ("supply", supply, one_wire["supply_esd_protection"]),
             ("bus", pin_net.get((onewire, "2")), one_wire["esd_protection"])):
@@ -868,6 +911,22 @@ def check_analog_numbers(project: Project, contract: dict) -> None:
     check(close(volts_per_amp, contract["current_sense_v_per_a"]),
           f"current sense scale {volts_per_amp:.1f} V/A matches the contract")
 
+    # Derive FLIM_REF from the fitted divider.  Checking threshold_volts against
+    # nominal_trip_ma only compares the contract with itself: R3.3-4 moved this
+    # threshold by changing R6 from 10k to 12k, and that edit passed the old
+    # check untouched, which is precisely the change it existed to catch.
+    top_ref, bottom_ref = rail["threshold_divider_refs"]
+    top = parse_ohms(project.parts[top_ref].value) if top_ref in project.parts else None
+    bottom = parse_ohms(project.parts[bottom_ref].value) if bottom_ref in project.parts else None
+    check(top is not None and bottom is not None,
+          f"the FLIM_REF divider {top_ref}/{bottom_ref} is populated and readable")
+    if top and bottom:
+        flim = rail["threshold_divider_rail_volts"] * bottom / (top + bottom)
+        check(close(flim, rail["threshold_volts"], 0.01),
+              f"FLIM_REF is {flim:.3f} V from the fitted {top_ref}/{bottom_ref} "
+              f"({top / 1000:g}k over {bottom / 1000:g}k), matching the contracted "
+              f"{rail['threshold_volts']} V")
+
     trip = rail["threshold_volts"] / volts_per_amp * 1000.0
     check(close(trip, rail["nominal_trip_ma"], 0.02),
           f"rail comparator nominal trip {trip:.0f} mA matches {rail['nominal_trip_ma']} mA")
@@ -890,13 +949,38 @@ def check_analog_numbers(project: Project, contract: dict) -> None:
     rated = rail.get("actuator_rated_max_ma")
     worst_trip = rail["estimated_worst_case_trip_min_ma"]
     if rated:
-        margin = worst_trip / rated
-        check(margin >= 1.20,
-              f"worst-case rail trip {worst_trip:.0f} mA is {(margin - 1) * 100:.0f}% "
-              f"above the actuator's {rated} mA rating (>=20% required); measured peak "
-              f"was {rail.get('actuator_measured_peak_ma', '?')} mA")
-        info(f"trip sits {(1 - worst_trip / high) * 100:.0f}% below the worst-case bridge "
-             f"ceiling {high:.0f} mA - intended, so it fires before the DRV8411 regulates")
+        # rev3.3-P restated this bound.  It used to demand 20% over the 120 mA
+        # nameplate, but the window between that and the 178 mA regulation floor
+        # is only 1.485x wide and no E24 divider fits both rules.  The nameplate
+        # is not reachable from this rail anyway - 3.2 V across a 68 ohm winding
+        # is 47 mA locked-rotor - so the margin is now stated against the current
+        # the actuator can actually draw.  The nameplate stays as a sanity figure.
+        peak = rail["actuator_measured_peak_ma"]
+        want = rail["min_margin_over_measured_peak"]
+        margin = worst_trip / peak
+        check(margin >= want,
+              f"worst-case rail trip {worst_trip:.0f} mA is {margin:.1f}x the measured "
+              f"{peak} mA peak (>={want}x required) and "
+              f"{worst_trip / rail['actuator_locked_rotor_ma']:.1f}x the "
+              f"{rail['actuator_locked_rotor_ma']} mA locked-rotor limit")
+        info(f"nameplate rating is {rated} mA and is NOT the basis for this margin - "
+             f"see rail_overcurrent.trip_margin_eco (worst-case trip is "
+             f"{worst_trip / rated:.2f}x it)")
+        # The upper bound is the regulation FLOOR, not the ceiling.  Once a bridge
+        # starts regulating at low (178 mA worst case), rail current is capped
+        # there and a trip set above it can never fire for the fault class the
+        # bridge does regulate.  Comparing against high (232 mA) flatters the
+        # design by 54 mA and was only an info line, so the 10k/10k divider's
+        # 5 mA of real headroom never showed up as a number anyone had to accept.
+        worst_trip_high = rail["estimated_worst_case_trip_max_ma"]
+        headroom = (low - worst_trip_high) / low
+        check(headroom >= 0.10,
+              f"worst-case rail trip {worst_trip_high:.0f} mA sits {headroom * 100:.0f}% "
+              f"below the {low:.0f} mA bridge regulation floor (>=10% required), so it "
+              f"still fires for a fault the bridge regulates")
+        info(f"trip window is {rated}-{low:.0f} mA; the setting spans "
+             f"{worst_trip:.0f}-{worst_trip_high:.0f} mA, leaving {worst_trip - rated:.0f} mA "
+             f"over the actuator rating and {low - worst_trip_high:.0f} mA under regulation")
     else:
         margin = worst_trip / high
         check(margin >= 1.10,

@@ -67,7 +67,7 @@ re-injected copies of each defect.
 | O3 | Overcurrent comparator on the filtered node | **Fixed** — senses `CURRENT_RAW`; nuisance margin re-derived | comparator sense-node check |
 | O4 | BAT54S ADC clamp | **Fixed** — removed | — |
 | O5 | Unprotected 3V3 pin on `J20` | **Fixed** — `R52` 33 Ω + `D7` TVS as `+3V3_EXT`; PTC flagged for production | 1-wire supply-branch checks |
-| O6 | TPS2553-1 latch-off is a silent board death | **Documented** — captured in architecture, contract and § 6 as a production decision (auto-retry variant, or keep the logic rail alive upstream) | — |
+| O6 | TPS2553-1 latch-off is a silent board death | **Fixed** — ECO `rev3.3-M` moved `U24` to `TPS2553DBVR` (C55266), the constant-current auto-retry variant. A trip now self-clears and, via `FAULT_USB_RAW` on GPIO15, is visible to firmware. Note the library device brought a different SOT-23-6 land with it; see `usb_input.fault_response_eco.footprint_warning` | — |
 | O7 | DRV8833 is the weaker choice at this rail | **Fixed** — DRV8411 is the population; DRV8833 demoted to shortage substitute with the reasoning recorded | — |
 | O8 | xISEN abs-max on a shorted cable | **Documented** — § 3 now scopes `V(xISEN)` explicitly | — |
 | O9 | No I2C pull-ups on the display pads | **Documented** — stated in README, architecture and the contract | — |
@@ -896,6 +896,95 @@ real values, characterise the current distribution across the six channels — f
 pin contact, under load, and against both end stops — and set `FLIM_REF` from that with a
 stated margin. This is § 3 of the validation plan and it is now unblocked.
 
+**Settled in two steps.** `R7` first went 56k → 10k, giving `FLIM_REF` 1.65 V and a 165 mA
+trip. That cleared the actuator by a wide margin but left only **5 mA** below the DRV8411's
+178.2 mA regulation floor — and above that floor the bridge caps the rail current, so the
+comparator can never fire for a fault the bridge regulates. The threshold had moved off one
+edge of the window onto the other. `R6` 10k → 12k (`C22790`, Basic) rebalanced it:
+`FLIM_REF` 1.500 V, trip **150 mA**, worst case 142–158 mA.
+
+| | Lower bound | Upper bound |
+|---|---|---|
+| What it guards | a healthy actuator must not trip it | it must fire before the bridge regulates |
+| Bound | 60 mA measured peak | 178.2 mA regulation floor |
+| Worst case | 142 mA = **2.4×** | 158 mA = **11% below** |
+
+**The margin rule had to be restated, and that is ECO `rev3.3-P`.** The two rules as written
+— 20 % above the 120 mA nameplate, 10 % below the regulation floor — cannot both be met. The
+window is only 1.485× wide, which pins the nominal trip into 151.6–152.7 mA, and no E24
+divider lands inside 1.1 mA. That was checked across `R6` = 8.2k…22k against a fixed 10k `R7`;
+every value fails one rule or the other.
+
+The lower rule gave, because it was the one built on a number this actuator cannot reach.
+120 mA is a rating at the actuator's own drive voltage; from *this* rail the winding is 68 Ω
+across 3.2 V, so locked rotor is **47 mA** and measured end-stop stall is 47–60 mA. The
+nuisance trip that rule guards against is not physically available. The upper rule was kept
+untouched, because it guards the failure that made the original 280 mA setting worthless.
+
+The margin is now stated against the current the actuator can actually draw, not a nameplate
+— so a different actuator model, or this one on a higher rail, moves the number rather than
+silently invalidating the rule. `check_design.py` derives `FLIM_REF` from the fitted `R6`/`R7`
+rather than from the contract's own `threshold_volts`, which is what let the 10k → 12k edit
+pass unnoticed the first time.
+
+### R3.3-5. `U24` to the auto-retry TPS2553 variant
+
+Closes O6, which had stood as a deferred production decision. `TPS2553DBVR-1` (C111738) is
+latch-off: a trip removes power from the ESP32 itself, so the failure had no LED, no API, no
+log and no recovery short of a physical replug. `TPS2553DBVR` (C55266) is the constant-current
+variant — it asserts `FAULT` and keeps regulating.
+
+R3.3-3 is what makes this the right trade rather than a wash. `FAULT_USB_RAW` now reaches
+GPIO15, so the event is observable; pairing an observable fault with a part that also
+self-clears turns the worst failure mode in the power path into a logged, recoverable one.
+What is given up is circuit-breaker behaviour on a persistent short, and the part's own
+thermal shutdown covers that: constant current into a hard short is roughly 6 W, so it
+thermally cycles rather than sitting there.
+
+**Watch the footprint.** The library device brought its own land — SOT-23-6 `…-BL` became
+`…-BR`, pads went 1.072 × 0.532 mm → 1.100 × 0.600 mm and each row moved 0.20 mm outward, so
+the land span went 2.83 → 3.30 mm. Pin pitch, pin-1 corner and orientation are unchanged and
+the netlist is identical, so the design is right — but copper, paste and mask around `U24`
+all moved, and this was **not** the BOM-only swap it looked like. Re-run DRC. ECO `rev3.3-M`.
+
+### R3.3-6. Rebuild the 1-wire supply branch for eight probes
+
+The probe count was fixed at eight. The old budget field was named
+`supply_drop_mv_at_two_probes` and meant it: 100 mV was computed at *two* probes. ESPHome
+issues a Skip-ROM `Convert T`, so all eight convert at once — 12 mA, and 33 Ω drops 396 mV,
+putting the probe at **2.90 V against a 3.0 V minimum**. The branch was out of specification
+before cable resistance was even counted.
+
+No single resistor fixes it. Holding 100 mV at 12 mA needs ≤ 8.3 Ω, which raises the short
+current from 100 mA to over 400 mA and puts 1.3 W into an 0603. And no PPTC fixes it alone
+either: the 0603 parts in this class have `Ri_min` 0.9 Ω, so a dead short demands 3.67 A,
+which with the board's own ~400 mA is 4.07 A against an SY8089 whose limit is near 3.5 A —
+the logic rail collapses and the ESP32 browns out for the whole trip window.
+
+`R22` is therefore replaced by **`F1`** (BSMD0603-010-36V, C18377604) in series with **`R43`**
+(4.7 Ω). `R43` is what keeps the fault inside the buck's headroom; `F1` is what makes a
+shorted cable self-clearing instead of the permanent loss of the probe supply that a one-shot
+fusible link produced.
+
+| | Fresh | After a trip |
+|---|---|---|
+| Series resistance | 5.6 Ω | 12.7 Ω |
+| Probe supply at 12 mA | 3.23 V | 3.15 V |
+
+Short current 589 mA, 2.0× `F1`'s 300 mA trip, well inside the 500 ms datasheet maximum. The
+motor rail does not load the buck — `U26` feeds `3V3_MOTOR` directly from `VBUS_PROTECTED` —
+so the headroom is the ESP32's alone.
+
+`R1_max`, not `Ri`, is the parameter that binds once `R43` is present, because it decides
+whether the probes stay in specification for the life of the board. That is why C2153881
+(Littelfuse, 100 ms trip, `Ri` 2 Ω) lost despite being the only part that could have dropped
+`R43`: its `R1_max` of 14 Ω leaves 80 mV of margin, and its stock was 238 pieces.
+
+**Accepted trade.** The supply branch's ESD series impedance falls from 33 Ω to 5.6 Ω. `U29`
+remains the clamp at the connector and `3V3_LOGIC` is low-impedance behind a 2 A buck, so this
+is acceptable — but `U29` now carries proportionally more of a strike, and the validation plan
+says to watch that. ECO `rev3.3-N`.
+
 ### Hazard decision: no hardware-independent drive cutoff
 
 Recorded deliberately, as `actuator_overrun_hazard` was.
@@ -911,9 +1000,14 @@ a fault. After R3.3-3, a fault is handled by an ISR reading GPIO16 or GPIO17 and
    `nFAULT` is a report, not the protection. Cutting `nSLEEP` afterwards protects nothing
    that is not already protected, and since the decoder selects one bridge at a time, a
    fault in one is not a reason to cut the others.
-2. **The USB switch source is moot.** `U24` (TPS2553-1) is latch-off and the ESP32 sits
-   downstream, so a trip removes power from the whole board including the MCU (O6).
-   Cutting `nSLEEP` changes nothing.
+2. **The USB switch source is firmware's to handle, and it now can.** This argument was
+   originally that the source was *moot*: `U24` was the latch-off `TPS2553DBVR-1`, so a trip
+   removed power from the whole board including the MCU (O6), and cutting `nSLEEP` changed
+   nothing. ECO `rev3.3-M` moved `U24` to the auto-retry variant, so that no longer holds —
+   the board now survives a USB overload with the switch regulating at its limit. The useful
+   response is therefore *load shedding*: drop the drive permit so the rail recovers. A latch
+   could not do that selectively; `FAULT_USB_RAW` on GPIO15 lets firmware do exactly it. The
+   conclusion is unchanged and the reasoning is stronger than when it was written.
 3. **The crash case is already covered elsewhere.** `MOTOR_ENABLE`'s 100 kΩ pulldown drives
    `DECODER_INHIBIT` high whenever the GPIOs go high-Z, and the 4514's inhibit turns every
    output off regardless of the drive permit.

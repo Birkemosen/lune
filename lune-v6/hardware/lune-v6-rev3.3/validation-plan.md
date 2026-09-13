@@ -1,10 +1,15 @@
-# Rev 3.2 validation and release plan
+# Rev 3.3 validation and release plan
 
 The design target is low risk, not a claim that schematic analysis can make an
 endpoint impossible to overrun. Fabrication release requires measured evidence.
 
-ECO level `rev3.2-H`. Source of truth is `EasyEdaPro/lune-v6-rev3.2.eprj`,
+ECO level `rev3.3-N`. Source of truth is `EasyEdaPro/lune-v6-rev3.3.eprj`,
 PCB document `pcb1_1`.
+
+Rev 3.3 removed the hardware timer and the fault latch, so § 4 no longer tests a
+cutoff that firmware cannot defeat — it tests the conditions the hazard decision
+that replaced it depends on. Read that section before treating this board as
+equivalent to Rev 3.2.
 
 ## 1. Electrical design gates
 
@@ -110,18 +115,25 @@ For each of five boards:
 ## 2a. Firmware integration gates
 
 - `make test-rev31-logic` and the complete Lune V6 host test suite pass.
-- A Rev 3.2 configuration validates and compiles; the legacy `drv8215_i2c`
-  configuration also compiles. **The Rev 3.1 entrypoint must not be flashed on
-  Rev 3.2 hardware**: it samples `GPIO5` as BEMF, which is now the amplified
-  tacho input, and it names `GPIO17` as an active-low `nFAULT` when the hardware
-  drives it as an active-high latched fault.
+- Both board configurations validate and compile — `lune-v6-rev32.yaml` and
+  `lune-v6-rev33.yaml` — and so does the legacy `drv8215_i2c` configuration.
+  **The Rev 3.1 entrypoint must not be flashed on either**: it samples `GPIO5` as
+  BEMF, which is now the amplified tacho input, and it names `GPIO17` as an
+  active-low `nFAULT` when Rev 3.2 drives it as an active-high latch arm and
+  Rev 3.3 drives it as `DRIVER_N_SLEEP`.
+- One image serves both revisions. Verify `probe_board_is_rev33_()` on **both**
+  assembled revisions: it applies internal pulldowns to GPIO48 and GPIO15, where
+  an external 10 kΩ wins and a floating pad does not. Confirm it selects the right
+  backend on each, and confirm a deliberately ambiguous state calls `mark_failed()`
+  rather than guessing — a misidentified board drives the wrong pins.
 - Generated sdkconfig proves 8 MB flash, Octal PSRAM and Quad PSRAM disabled.
 - Boot with motor power present and absent. `MOTOR_ENABLE` remains low until an
   explicit arm and command; automatic startup calibration remains disabled.
-- Confirm firmware arms the fault latch **per move**. Verify that an idle armed
-  latch self-disarming at the hardware cutoff is handled as a normal state and
-  re-armed, not reported as a fault, and that a genuine persistent fault is
-  still distinguished by a failed re-arm.
+- **Rev 3.2 only** — confirm firmware arms the fault latch per move, that an idle
+  armed latch self-disarming at the hardware cutoff is handled as a normal state
+  and re-armed rather than reported as a fault, and that a genuine persistent
+  fault is still distinguished by a failed re-arm. Rev 3.3 has no latch; its
+  equivalent gates are in § 4.
 - Inject missing, implausibly fast and implausibly slow tacho pulses while
   current is present. Firmware must inhibit drive and report a tacho sensor
   fault; no endpoint position may be recorded.
@@ -184,27 +196,88 @@ Release criteria:
   value. `1 ohm` is the prototype value and is a board-protection backstop
   only; `1.5 ohm` (118.8-154.9 mA) is the documented retune option.
 
-## 4. Independent timeout and fault latch
+## 4. Fault reporting and the firmware-held drive permit
 
-- Measure hardware timeout on every board across supply and temperature, and
-  trim `Rt` from the first measurement. Qualified interval must remain 50-90 s:
-  above the 45 s firmware limit plus arm-to-move latency, but short enough to
-  bound a frozen-controller stall.
-- Confirm the cutoff is referenced to armed time, not drive time: hold the
-  latch armed and chop `MOTOR_ENABLE` continuously, and separately insert brief
-  coasts every few seconds. The timeout must still expire in both cases. This
-  is the specific failure the `rev3.2-A` wiring allowed.
-- Verify `Ct` is the specified C0G/NP0 part on every assembled board; a class-2
-  substitution cannot hold the window and is not visually distinguishable.
-- Hold the ESP32 drive output active and stop all firmware servicing. Hardware
-  must pull raw fault low, latch shutdown, and require an explicit re-arm.
-- Assert driver fault and rail comparator fault separately. A stuck ESP output
-  must not defeat either shutdown.
-- Attempt re-arm while raw fault is held and while drive is enabled; both fail.
-- Ramp logic power at the slowest and fastest qualified rates; the Schmitt-input
-  latch must always reach the disarmed state before any drive permit is possible.
-- Power-cycle into every legal/illegal GPIO strap combination; no motor pulse is
-  permitted.
+ECO `rev3.3-C` removed the 74HC4060 timer and `rev3.3-D` removed the 74LVC1G74
+latch, so **this board has no hardware-independent drive cutoff**. That is a
+recorded hazard decision, not an oversight — see design-review § 6, *Hazard
+decision: no hardware-independent drive cutoff*, and the six arguments there. The
+purpose of this section is to test the things that decision depends on. If any
+of them fails, the decision is void and the latch has to come back.
+
+Do not carry any result forward from a Rev 3.2 board: `Rt`, `Ct`, the arm pulse,
+the 50–90 s window and the re-arm behaviour all belonged to circuits that no
+longer exist.
+
+**The three fault sources are independent and distinguishable.** This is the O12
+fix and it is the reason the latch could be removed at all.
+
+- Assert each source separately and confirm exactly one GPIO changes state:
+  a DRV8411 `nFAULT` → `FAULT_N_RAW`, GPIO16; the rail comparator → 
+  `RAIL_OVERCURRENT`, GPIO48; the TPS2553 → `FAULT_USB_RAW`, GPIO15.
+- Confirm firmware reports *which* source fired, not merely that something did.
+  Reporting a bridge fault as a rail overcurrent is a failure of this test.
+- Assert two sources at once and confirm both are reported.
+- `FAULT_USB_RAW` is on its own net precisely because the TPS2553 asserts `FAULT`
+  while it is current-limiting, before any latch-off. Verify with the USB switch
+  regulating that this shows up as a USB event and **not** as a bridge fault.
+- Confirm each net idles high through its own pull-up (`R3`, `R41`, `R42`) with
+  the source inactive, and that a disconnected or unpopulated source reads as
+  *no fault* rather than floating.
+
+**The drive permit.**
+
+- `DRIVER_N_SLEEP` (GPIO17) is the permit. Confirm `R31` holds the drivers in the
+  safe state whenever the GPIO is high-Z: at reset, during boot before the pin is
+  configured, and with the ESP32 held in reset.
+- Measure the latency from a fault edge to `MOTOR_ENABLE` deasserting. The hazard
+  decision accepts an ISR in microseconds against a latch in nanoseconds, on the
+  grounds that the actuator's mechanical and thermal constants are milliseconds
+  to seconds. Record the measured figure so that argument rests on data.
+- Confirm a fault drops the permit for the *selected* channel's move and that
+  recovery requires an explicit new command, not an automatic retry.
+
+**The crash case**, which is argument 3 of the hazard decision:
+
+- Hold the drive output active and stop all firmware servicing (halt the core,
+  or hold the watchdog). `MOTOR_ENABLE`'s 100 kΩ pulldown must drive
+  `DECODER_INHIBIT` high, and the 4514's inhibit must turn every output off
+  regardless of the permit. Verify at the motor terminals, not in firmware.
+- Repeat with the ESP32 in reset, and during a brownout ramp.
+
+**Residual risk**, stated in the hazard decision as firmware hung *and* a fault
+occurring *and* `MOTOR_ENABLE` left asserted:
+
+- Construct that state deliberately and record what the board does. The claim
+  under test is that the most likely fault in it — bridge overcurrent — is
+  self-protected by the DRV8411's own OCP, thermal shutdown and UVLO. Confirm the
+  driver does disable its outputs, and measure how long the actuator is energised
+  before it does.
+
+**The rail comparator must be able to fire at all.** This is R3.3-4, and the
+hazard decision is explicitly void if it is skipped.
+
+- The trip window is bounded on both sides: above the actuator's 120 mA rating so
+  a healthy stiff or cold actuator never trips it, and below the DRV8411's
+  178.2 mA regulation floor, because above that the bridge regulates and the rail
+  current can never reach the comparator. Measure the real trip point on every
+  board and confirm it sits inside that window with the contracted margin.
+- Characterise the current distribution across all six channels — free travel,
+  pin contact, under load, and against both end stops, cold and hot — and confirm
+  nothing a working actuator does comes near the trip. This is the § 3 measurement
+  that `FLIM_REF` is supposed to be set from; until it exists, the divider is set
+  from a rating and a partial measurement.
+- Verify the comparator fires for a fault the bridge *does* regulate, not only for
+  one that bypasses `xISEN`. The regulated case is the one with the least margin.
+
+**Power-up and straps.**
+
+- Ramp logic power at the slowest and fastest qualified rates. No motor pulse is
+  permitted at any ramp rate.
+- Power-cycle into every legal and illegal GPIO strap combination; no motor pulse
+  is permitted.
+- Boot with motor power present and absent, and confirm `MOTOR_ENABLE` stays low
+  until an explicit arm and command.
 
 ## 5. External 1-wire temperature probes
 
@@ -213,23 +286,36 @@ Release criteria:
   topology.
 - Verify discovery, unique address binding, resolution, conversion time and
   update cadence with one and two probes attached.
-- Measure the `+3V3_EXT` drop across `R22` at the maximum probe count and
-  conversion duty. The design budget is 100 mV at 3 mA against a DS18B20
-  minimum of 3.0 V; if the installed probe count or cable pushes it further,
-  lower `R22` or move to a resettable PTC.
+- Measure the `+3V3_EXT` drop across `F1` + `R43` with **eight** probes attached
+  and all of them converting, which is what a Skip-ROM `Convert T` produces. The
+  contracted budget is 67 mV fresh and 152 mV once `F1` has tripped at least
+  once, at 12 mA, against a DS18B20 minimum of 3.0 V — so 3.23 V and 3.15 V at
+  the probe, before cable resistance. Measure the cable contribution separately
+  at the intended maximum length and add it. ECO `rev3.3-N`; the pre-N branch was
+  a single 33 Ω `R22` whose budget was computed at *two* probes and which put the
+  probe at 2.90 V at eight.
 - Measure supply/return agreement in an isothermal fixture and characterize
   installed pipe-to-sensor lag and offset over the qualified temperature range.
 - Test open data wire, short to GND, short to 3.3 V, missing pull-up, swapped
   probes, duplicate/replacement addresses, CRC errors and a sensor frozen at a
   plausible value. Short the `+3V3_EXT` conductor to GND and confirm the ESP32
-  does not reset; note that `R22` is a one-shot fusible link at that current, so
-  record whether a PTC is required for production serviceability.
+  does not reset. The design predicts 589 mA into the short — 2.0x `F1`'s trip
+  current, and well inside the SY8089's headroom, since the motor rail is a
+  separate LDO off `VBUS_PROTECTED` and does not load the buck. Scope the logic
+  rail through the whole event: measure the actual trip time against the 500 ms
+  datasheet maximum, confirm `F1` latches into its high-resistance state, and
+  confirm it recovers when the short is removed. Then re-measure the probe supply
+  drop, because `F1`'s resistance rises permanently with each trip and 8 Ω is a
+  datasheet maximum, not a guarantee for the part fitted.
 - Enforce a bounded freshness timeout. Stale, missing or implausible
   temperatures must be reported explicitly and must not defeat local motor
   timeout, endstop or minimum-flow safety.
-- Apply cable ESD/EFT with the 33 ohm series resistors, 4.7k pull-up and both
-  `D1` and `D2` fitted. Confirm that the ESP32 pin and the logic rail remain
-  qualified and that faults on the external cable cannot energize a motor.
+- Apply cable ESD/EFT with `R20` (33 Ω) on the bus, `F1` + `R43` (5.6 Ω fresh) on
+  the supply, the 4.7k pull-up, and both `U29` and `U30` fitted. Confirm that the
+  ESP32 pin and the logic rail remain qualified and that faults on the external
+  cable cannot energize a motor. Note that `rev3.3-N` cut the supply branch's
+  series impedance from 33 Ω to 5.6 Ω, so the supply side is the one to watch:
+  `U29` now carries proportionally more of the strike than it used to.
 - Verify operation at minimum/maximum 3.3 V and with the cable capacitance of
   the supported installation; lower the bus rate or cable limit if rise time
   margin is inadequate.
