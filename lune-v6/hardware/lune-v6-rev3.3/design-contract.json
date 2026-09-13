@@ -56,7 +56,7 @@
     "stall_debounce": "CADENCE x 3.0, CLAMPED 150-750MS; 750MS WHEN NO CADENCE IS ESTABLISHED",
     "endpoint_window": "IMPLEMENTED. CLOSING USES contact_to_stop_close_ripples FROM THE OBSERVED PIN CONTACT; OPENING USES THE TRAVEL ESTIMATED FOR THE MOVE. LOWER BOUND ONLY."
   },
-  "populated_placement_projection": 130,
+  "populated_placement_projection": 128,
   "second_source_dnp_placements": 0,
   "copper_only_pads": 12,
   "mechanical_items": 4,
@@ -140,7 +140,7 @@
       "decoder_u24": "SOUTH_CENTRE, in the gap between the driver VM-cap clusters - keeps the twelve outputs in a band beside the drivers instead of 540 mm crossing the board. As built (31.75, 29.46).",
       "one_wire_terminal": "WEST edge beside USB-C - ONEWIRE_MCU sits on the module west row (pad 12) so the run stays west. As built (3.10, 33.14)."
     },
-    "easyeda_project": "EasyEdaPro/lune-v6-rev3.2.eprj",
+    "easyeda_project": "EasyEdaPro/lune-v6-rev3.3.eprj",
     "document": "pcb1_1",
     "schematic_sheets": [
       "analog",
@@ -333,10 +333,6 @@
       ],
       [
         "U6",
-        "25"
-      ],
-      [
-        "U6",
         "26"
       ],
       [
@@ -378,10 +374,6 @@
       [
         "U6",
         "7"
-      ],
-      [
-        "U6",
-        "8"
       ],
       [
         "U9",
@@ -461,7 +453,7 @@
       "TC78H660FNG": "Toshiba dual bridge, VM 2.5-16 V, 0.48 ohm, TSSOP16, with an error-flag output. Uses sense-resistor-less internal current detection, so the ceiling is a fixed ~2 A overcurrent protection with no programmable trip and no specified threshold - it removes the 1.5 ohm retune path and the specified-ceiling argument. VM floor is also 2.5 V against DRV8411's 1.65 V."
     },
     "selection_conclusion": "DRV8411 retained. It is simultaneously the cheapest, best-stocked and most capable part that meets the constraint set, so the original cost-down framing was inverted. Driver cost is 3.54 USD of a roughly 43 USD per-board budget, so chasing a cheaper bridge is not where prototype cost lives.",
-    "drv8411_populated_placements": 130,
+    "drv8411_populated_placements": 128,
     "devices": 3,
     "bridges_per_device": 2,
     "bridge_current_limit_ohm": 1.0,
@@ -565,10 +557,13 @@
     "amplifier_gain": 20,
     "sense_node": "CURRENT_RAW",
     "sense_node_rationale": "An output-to-GND short bypasses the xISEN resistor entirely and the DRV8411 OCP is 4 A, so this comparator is the only fast protection for that fault. Sensing the unfiltered amplifier output removes the 100 us delay the 1k/100n ADC filter was adding.",
-    "threshold_volts": 2.8,
-    "nominal_trip_ma": 280,
-    "estimated_worst_case_trip_min_ma": 267,
-    "estimated_worst_case_trip_max_ma": 293,
+    "actuator_rated_max_ma": 120,
+    "actuator_measured_peak_ma": 60,
+    "threshold_volts": 1.65,
+    "nominal_trip_ma": 165,
+    "estimated_worst_case_trip_min_ma": 157,
+    "estimated_worst_case_trip_max_ma": 173,
+    "trip_rationale": "Rev 3.3 moved R7 from 56k to 10k. At 280 mA the comparator only fired after the DRV8411's own 180-230 mA current regulation had already taken over, so it could catch nothing but failed regulation. 165 mA sits below that window and above everything a working actuator can draw: measured free travel 23.5 mA and end-stop stall 47-60 mA on Rev 3.2-D, against a 120 mA rating. Inrush is not a constraint - a DC motor's starting current is its locked-rotor current, ~3.2 V / 68 ohm, so it cannot reach the regulation point from this rail. See design-review R3.3-4.",
     "comparator": "LMV393IDR",
     "comparator_supply": "VBUS_PROTECTED",
     "comparator_output_type": "OPEN_COLLECTOR",
@@ -590,7 +585,9 @@
     "topology": "AC_COUPLED_NONINVERTING_BAND_PASS_THEN_LMV393_SCHMITT",
     "amplifier": "TLV9001IDBVR",
     "comparator": "SPARE_CHANNEL_OF_U34_LMV393IDR_POWERED_FROM_VBUS_PROTECTED",
-    "reference": "1k/1k MID-RAIL BYPASSED BY 22uF, SHARED BY THE BIAS, GAIN RETURN AND THRESHOLD",
+    "reference": "10k/4k7 DIVIDER BYPASSED BY 22uF, SHARED BY THE BIAS, GAIN RETURN AND THRESHOLD. Rev 3.3 lowered it from the 1k/1k mid-rail so TACHO_AMP fits the 6 dB ADC span; the whole chain is ratiometric to this node, so the comparator threshold moves with the signal and the digital count is unchanged. The 22uF keeps it stiff at signal frequencies (2.3 Hz corner) despite the higher DC impedance.",
+    "reference_divider_refs": ["R11", "R12"],
+    "reference_volt": 1.055,
     "added_mounted_parts": 14,
     "reused_functions": [
       "EXISTING_INA180_CURRENT_SENSE",
@@ -634,6 +631,8 @@
     "analog_monitor_net": "TACHO_AMP",
     "analog_monitor_gpio": 1,
     "analog_monitor_series_ohm": 1000,
+    "analog_monitor_atten_db": 6,
+    "analog_monitor_atten_rationale": "ESP-IDF rejects two attenuations on one ADC unit (adc_continuous.c:507-515, ESP_ERR_INVALID_ARG), which is design-review B8. ADC_TACHO must therefore match ADC_CURRENT. At 6 dB the span is 1.75 V, so the reference is centred low enough for the amplified ripple to swing: clipping starts at ~8 mV of input against the 7-30 mV band, and the design already declares clipping harmless for a zero-crossing detector.",
     "analog_monitor_purpose": "QUALIFICATION_WAVEFORM_CAPTURE_AND_DIGITAL_CROSS_CHECK_ON_COMM_TACHO_N",
     "test_points": [
       "COMM_TACHO_N",
@@ -728,35 +727,44 @@
     "raw_fault_async_reset_active_level": 0,
     "arm_clock_clamped_while_motor_enable_high": true,
     "arm_clock_edge_coupled": true,
-    "arm_series_ohm": 1000,
-    "arm_series_ref": "R4",
+    "arm_series_ohm": 10000,
     "arm_coupling_nf": 10,
     "arm_clock_pulldown_ohm": 100000,
     "arm_max_slew_ns_per_v": 10,
     "arm_clock_node_pf": 15,
-    "arm_slew_defect": "REV3.2-D: R4 at 10000 ohm slewed the clock edge to ~99 ns/V against the 10 ns/V limit in 74LVC1G74 data sheet rev 18 table 7, and the latch armed twice in ~30000 edges on two boards. The contract now specifies 1000 ohm (Yageo RC0603FR-071KL, LCSC C22548, already on the BOM as R1/R8/R23) per design-review B7 and R3.3-1. Every board built before that change carries 10k and cannot arm reliably; check_arm_series fails against them until R4 is replaced.",
+    "arm_slew_defect": "REV3.2-D: arm_series_ohm 10000 slews the clock edge to ~99 ns/V against the 10 ns/V limit in 74LVC1G74 data sheet rev 18 table 7. The latch armed twice in ~30000 edges on two boards. Set arm_series_ohm to 1000 (LCSC C22548, already on the BOM as R1/R8/R23) in Rev 3.3; check_arm_slew fails until then.",
     "power_on_state": "DISARMED",
     "firmware_cannot_clear_a_fault": true,
     "raw_fault_has_no_gpio": "LATCH_STATE_ONLY_DISTINGUISHES_ARMED_FROM_NOT_ARMED",
     "fault_source_refs": [
-      "U3",
       "U9",
       "U10",
-      "U11",
-      "U24"
+      "U11"
     ],
-    "fault_consumer_ref": "U2"
+    "fault_consumer_ref": "U6.9",
+    "rev33_note": "Rev 3.3 removed the latch (U2, Q1, R4, R5, C4). FAULT_N_RAW is now a wired-AND of the three DRV8411 nFAULT outputs and the TPS2553 fault pin, pulled up by R3 and read on GPIO16. U3 left the shared net for its own RAIL_OVERCURRENT net on GPIO17 with its own pull-up R41, so firmware can tell a bridge fault from a rail overcurrent - which the wired-AND could not (O12). DRIVER_N_SLEEP is driven from GPIO15 with R31 still defining the safe state on high-Z. See design-review R3.3-3 and the hazard decision recorded with it."
   },
   "usb_input": {
     "part": "TPS2553DBVR-1",
     "enable_polarity": "ACTIVE_HIGH",
     "fault_response": "LATCH_OFF",
     "latch_off_consequence": "AN_INPUT_FAULT_REMOVES_POWER_FROM_THE_ESP32_TOO_SO_THE_FAILURE_IS_SILENT_AND_NEEDS_A_PHYSICAL_REPLUG",
-    "ilim_ohm": 23700,
+    "ilim_ohm": 22000,
     "current_limit_window_a": [
-      1.012,
-      1.172
+      1.091,
+      1.257
     ],
+    "ilim_value_eco": {
+      "eco": "rev3.3-J",
+      "was_ohm": 23700,
+      "was_window_a": [
+        1.012,
+        1.172
+      ],
+      "reason": "Deliberate. 23.7 kOhm existed only as Extended-class parts (C165751, C22912); 22 kOhm is Basic (C31850), which removes a per-order setup fee. The value move is the point of the change, not a side effect of it, so it is recorded here rather than under ilim_sourcing.",
+      "safety_argument": "The trip point rises 7.7 percent. That direction is the safe one for this part: the TPS2553-1 is LATCH-OFF, so a nuisance trip is a silent board death needing a physical replug (see latch_off_consequence and review O6). Raising the limit makes that outcome less likely, not more. 22 kOhm is well inside the datasheet's 15-232 kOhm programming range, and the worst-case 1269 mA with +-1% is carried by the 0.8 mm input tracks and by the USB-C connector's 1.25 A per-contact rating.",
+      "what_it_no_longer_protects": "A host port limited to 500 mA (USB 2.0) or 900 mA (USB 3.0) is no longer protected by this resistor - the TPS2553 will not intervene before such a host's own protection does. That was already true at 23.7 kOhm (1012 mA minimum) and is unchanged in kind, only in degree."
+    },
     "downstream_capacitance_uf": 84,
     "data_series_resistors": "REMOVED_ESP32S3_NATIVE_USB_DRIVES_D_LINES_DIRECTLY",
     "ilim_ref": "R34",
@@ -780,33 +788,27 @@
         "k": 25230,
         "exponent": 1.016
       },
-      "note": "The equations do not account for resistor tolerance; the contracted window below is at nominal R. Including +-1% on R34 widens it to 1002-1184 mA."
+      "note": "The equations do not account for resistor tolerance; the contracted window below is at nominal R. Including +-1% on R34 widens it to 1081-1269 mA."
     },
     "current_limit_window_with_resistor_tolerance_a": [
-      1.002,
-      1.184
+      1.081,
+      1.269
     ],
     "ilim_sourcing": {
       "interchangeable_parts": [
         {
-          "lcsc": "C165751",
-          "mpn": "RC0603FR-0723K7L",
-          "manufacturer": "Yageo",
-          "footprint": "R0603"
-        },
-        {
-          "lcsc": "C22912",
-          "mpn": "0603WAF2372T5E",
+          "lcsc": "C31850",
+          "mpn": "0603WAF2202T5E",
           "manufacturer": "UNI-ROYAL",
           "footprint": "R0603"
         }
       ],
-      "equivalence_basis": "23.7 kOhm, +-1%, 0603, 100 mW, +-100 ppm/degC on both. Identical on every parameter the current-limit equation depends on, so the 1012-1172 mA window is unchanged.",
-      "both_are_extended_parts": true,
-      "warning": "R34 is not a generic passive. It programs the TPS2553-1 current limit, and the part is LATCH-OFF: a trip removes power from the ESP32 with no status LED and no API, recoverable only by unplugging USB. A substitution that changes the VALUE changes that trip point. check_design.py now asserts R34's value against ilim_ohm and re-derives the window from the datasheet equations, so a sourcing swap that moves the value fails the gate.",
+      "equivalence_basis": "22 kOhm, +-1%, 0603, 100 mW. Only the fitted part is declared. A second source is NOT pre-authorised here: the previous pair was declared equivalent on value, and the value is exactly what changed in rev3.3-J. Any alternate must be re-checked against ilim_equations before it is added to this list.",
+      "both_are_extended_parts": false,
+      "warning": "R34 is not a generic passive. It programs the TPS2553-1 current limit, and the part is LATCH-OFF: a trip removes power from the ESP32 with no status LED and no API, recoverable only by unplugging USB. A substitution that changes the VALUE changes that trip point. check_design.py asserts R34's value against ilim_ohm and re-derives the window from the datasheet equations, so a sourcing swap that moves the value fails the gate. rev3.3-J moved the value on purpose; see ilim_value_eco for the argument.",
       "footprint_must_not_change": "R0603",
       "footprint_rationale": "A supplier swap changes the BOM only, and leaves the Gerbers, drill and CPL untouched - but ONLY if the footprint is unchanged. Swapping by picking a different library device rather than editing the supplier part brings that device's own footprint with it, and a different pad geometry changes copper, paste and mask. R0603 is shared here by ten MPNs across Yageo, UNI-ROYAL and Vishay, so this swap moved nothing; check_design.py asserts it so a future one cannot move something quietly.",
-      "fitted": "C22912"
+      "fitted": "C31850"
     },
     "auto_retry_option": "SLVS841F section 10.2.2.2 documents auto-retry built from the latching part: feed FAULT back to EN through R_FAULT with C_RETRY to GND, so a trip self-clears after R_FAULT x C_RETRY. On this board EN is tied to VBUS_RAW (permanently enabled), so taking this option is a schematic change, not a part change. It is the third answer to the deferred latch-off decision, alongside the auto-retry part variant and keeping the logic rail alive upstream."
   },
@@ -835,10 +837,21 @@
     ],
     "series_resistor_ohm": 33,
     "pullup_ohm": 4700,
-    "esd_protection": "PESD3V3U1UA,115",
+    "esd_protection": "TPD1E10B06DPYR",
+    "esd_protection_ref": "U30",
     "supply_branch": "+3V3_EXT",
     "supply_series_ohm": 33,
-    "supply_esd_protection": "PESD3V3U1UA,115",
+    "supply_esd_protection": "TPD1E10B06DPYR",
+    "supply_esd_protection_ref": "U29",
+    "esd_protection_eco": {
+      "eco": "rev3.3-K",
+      "was": "D1 and D2, PESD3V3U1UA,115 (C403915, Extended)",
+      "interim": "A single PSM712-LF-T7 (C32677) briefly replaced both to drop an Extended type. It was caught in BOM review and reverted before fabrication.",
+      "why_the_interim_was_wrong": "PSM712 is an ASYMMETRICAL RS-485 array, not a logic clamp. Per ProTek 05094.R5, with pin 1 or 2 positive - which is the polarity a strike on a pulled-up 3.3 V net presents - V_WM is 12.0 V, V_BR is 13.3 V at 1 mA, and V_C reaches 30 V at 30 A. ESP32-S3 GPIO absolute maximum is VDD+0.3 = 3.6 V and the DS18B20 is 6.0 V, so the part was transparent in the direction that matters. Its 75 pF per line also loaded the 1-wire bus six times harder than the part it replaced.",
+      "why_this_part": "TPD1E10B06DPYR was already a BOM line at 12 placements for motor_esd, so adding two costs no new part type and no setup fee. V_RWM 5.5 V clears the 3.3 V rail, V_BR 6 V minimum and V_C 10 V at 1 A put the clamp below both absolute maxima, and 12 pF leaves the 1-wire cable-length budget intact. It is the same GND-referenced single-line topology as the original D1/D2, so motor_esd.placement_rule applies unchanged.",
+      "topology": "U30 clamps ONEWIRE_BUS at J1.2; U29 clamps +3V3_EXT at J1.1. Both sit on the CONNECTOR side of their 33 ohm series resistors (R20 for the bus, R22 for the supply), so the resistor damps whatever the clamp lets through before it reaches the MCU.",
+      "exposure_rationale": "ONEWIRE_BUS and +3V3_EXT leave the board on a cable to external probes. They are the most ESD-exposed nets in the design, which is why nominal protection is not acceptable here."
+    },
     "supply_drop_mv_at_two_probes": 100,
     "supply_short_current_ma": 100,
     "supply_protection_note": "At 0.33 W the 0603 series resistor is a one-shot fusible link; evaluate a resettable PTC for production.",
@@ -855,9 +868,11 @@
     "MOTOR_ADDR1": 11,
     "MOTOR_ADDR2": 14,
     "MOTOR_ENABLE": 18,
-    "LATCH_STATE": 16,
-    "LATCH_ARM": 17,
-    "USB_DM": 19,
+    "FAULT_USB_RAW": 15,
+    "FAULT_N_RAW": 16,
+    "DRIVER_N_SLEEP": 17,
+    "RAIL_OVERCURRENT": 48,
+            "USB_DM": 19,
     "USB_DP": 20,
     "COMM_TACHO_N": 38,
     "ONEWIRE_MCU": 8,
@@ -953,7 +968,7 @@
   },
   "source_of_truth": {
     "tool": "EasyEDA Pro",
-    "project": "EasyEdaPro/lune-v6-rev3.2.eprj",
+    "project": "EasyEdaPro/lune-v6-rev3.3.eprj",
     "pcb_document": "pcb1_1",
     "kicad_removed": true,
     "rationale": "Rev 3.2 was authored in KiCad through ECO rev3.2-B and every ECO from rev3.2-C onward was done in EasyEDA Pro, where the board is placed and routed. Keeping both live produced a schematic/PCB divergence that no gate could see, because check_design.py and netlist-golden.json read the KiCad side while the EasyEDA side is what becomes Gerbers. The KiCad sheets, generator, exported netlist and ERC report were deleted; they remain in git history.",
@@ -1088,9 +1103,7 @@
       "U11"
     ],
     "decoder": "U28",
-    "fault_latch": "U2",
     "permit_nand": "U7",
-    "arm_clamp": "Q1",
     "shunt_amplifier": "U1",
     "tacho_amplifier": "U5",
     "comparator": "U3",
@@ -1138,7 +1151,7 @@
     "boot_switch": "BOOT",
     "test_point_device": "Test-Point"
   },
-  "populated_placement_board_count": 130,
+  "populated_placement_board_count": 128,
   "motor_output_ferrites": {
     "part": "GZ1608D601TF",
     "lcsc_part": "C1002",

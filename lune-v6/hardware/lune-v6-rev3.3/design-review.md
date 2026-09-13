@@ -825,13 +825,29 @@ are already routed into that cluster, so this is the minimum layout churn availa
 
 | Signal | GPIO | Module pad | Was |
 |---|---|---|---|
-| `FAULT_N_RAW` (drivers + USB switch, wired-AND) | **16** | 9 | `LATCH_STATE` |
-| `RAIL_OVERCURRENT` (`U3` pin 1, separated) | **17** | 10 | `LATCH_ARM` |
+| `FAULT_USB_RAW` (`U24` pin 4, separated) | **15** | 8 | unused |
+| `FAULT_N_RAW` (three DRV8411 `nFAULT`, wired-AND) | **16** | 9 | `LATCH_STATE` |
+| `DRIVER_N_SLEEP` (drive permit, was `U2` pin 5) | **17** | 10 | `LATCH_ARM` |
+| `RAIL_OVERCURRENT` (`U3` pin 1, separated) | **48** | 25 | unused |
 
-Both are interrupt-capable, neither is a strapping pin (S3 straps are 0, 3, 45, 46),
-neither is octal PSRAM (33-37) or JTAG (39-42), and both sit outside GPIO1-10 so the
-analog reservation is untouched. `GPIO15` (pad 8) and `GPIO48` (pad 25) remain the only
-other free non-analog pins and stay spare.
+None is a strapping pin (S3 straps are 0, 3, 45, 46), octal PSRAM (33-37) or JTAG (39-42),
+and none sits in GPIO1-10, so the ADC1 reservation is untouched and needs no
+`adc1_digital_exceptions` entry. `GPIO9` (pad 17) and `GPIO10` (pad 18) stay free.
+
+`RAIL_OVERCURRENT` takes pad 25 rather than a neighbour of `FAULT_N_RAW` because the two
+arrive from opposite sides of the board — the drivers are along the south edge, `U3` sits
+in the analog island — and of the six free pads, five are on one module edge and only pad
+25 is on another. It is routed instead alongside `COMM_TACHO_N`, which leaves the same
+comparator for the same edge, with `R41` at the module end mirroring `R16`.
+
+Each of the three new fault nets carries its own pull-up to `3V3_LOGIC` and a 1 nF to
+ground at the module end: `R3`/`C3`, `R41`/`C43`, `R42`/`C42`. The pull-up is mandatory —
+all three sources are open-drain, which is what made the wired-AND possible in the first
+place — and must go to 3V3, not to the 5 V rail `U24` runs from, because the ESP32-S3 is
+not 5 V tolerant. The capacitor is insurance against coupling: `RAIL_OVERCURRENT` passes
+the buck switch node and `FAULT_USB_RAW` runs beside the USB data pair, and a 10 kohm
+open-drain net is high-impedance enough to care. It costs 10-100 us of response, which is
+immaterial now that firmware rather than a latch is the actor.
 
 **Implementation note:** `U3` is open-drain, which is what made the wired-AND possible.
 Taking its output onto a private net needs its own pull-up to `3V3_LOGIC`; `R3` stays with
@@ -853,69 +869,32 @@ that: three open-drain nets need three pull-ups instead of `R3` alone, and three
 from drivers spread along the south edge up to the module on a two-layer board already
 carrying 887 top segments. The three `DRV8411` `nFAULT` outputs therefore stay wired-OR.
 
-`U24`'s fault pin stays on the shared net for the same reason it contributes little to the
-hazard argument: a TPS2553-1 trip removes power from the whole board including the MCU
-(O6), so reading it separately is pointless today. It earns `GPIO15` only if O6 is resolved
-towards keeping the logic rail alive upstream. `GPIO15`, `GPIO48` and `GPIO1` stay spare,
-which is deliberate headroom on a revision that may yet have to do exactly that.
+`U24`'s fault pin **was** going to stay on the shared net, on the argument that a TPS2553-1
+trip removes power from the whole board including the MCU (O6), so reading it separately is
+pointless. That was too pessimistic. The part asserts FAULT during the current-limiting
+window *before* latch-off completes, and in that window the board is still alive — so a
+shared net would have reported a USB overcurrent as a bridge fault. It now has `GPIO15` and
+`FAULT_USB_RAW` of its own.
+
+The result is full attribution across all three fault classes, which closes O12 outright
+rather than halfway: `FAULT_N_RAW` low means a bridge, `RAIL_OVERCURRENT` low means total
+rail current, `FAULT_USB_RAW` low means the USB switch. `GPIO9` and `GPIO10` stay spare.
+
+One forward-looking note: if O6 is ever resolved by keeping the logic rail alive upstream,
+`3V3_LOGIC` can be powered while `VBUS_RAW` is dead, and `R42` would then push current into
+an unpowered `U24` through its substrate diodes. Harmless today — both rails die together
+because the whole board is fed through the switch — but it belongs in that decision.
 
 ### R3.3-4. Re-examine the rail comparator threshold
 
-**Decision: `R6` 10 kΩ / `R7` 56 kΩ → `R6` 10 kΩ / `R7` 10 kΩ, moving the trip from 280 mA
-to 166 mA.** Both values are already on this BOM, so no new feeder (O11).
+O1 records that every hardware current threshold sits 4-6× above anything this actuator
+produces, so the comparator may never fire in service. Removing the latch while keeping a
+protection that cannot trip would be the worst of both.
 
-**The chain.** `R2` is `HOYH1206-1W-500MR` (500 mΩ, 1 %) and `U1` is an INA180**A1**
-(20 V/V), so `CURRENT_RAW = I × 10 V/A`. `R6`/`R7` divide 3V3 to `FLIM_REF` on `U3` pin 3;
-`CURRENT_RAW` drives pin 2, so the comparator trips when current exceeds `FLIM_REF / 10`.
-As built: `3.3 × 56/66 = 2.80 V` → **280 mA**, matching the 2.82 V measured on board 2.
-
-**O1's yardstick was wrong, not its arithmetic.** It measured 280 mA against the actuator's
-draw and called it 4-6× too high. With driver protection as the stated intent the reference
-is the DRV8411's own current regulation: `RSA*`/`RSB*` are 1 Ω and `xISEN V_TRIP` is
-180/200/230 mV, so each bridge regulates at 180-230 mA. Against that, 280 mA sits only
-1.22× above the worst-case legitimate regulation point — thin, not high.
-
-**Measured distribution**, board 2, firmware v1.0.0-89, one actuator on zone 3, 10 s timed
-moves chained until `stroke_phase` reached 3:
-
-| Condition | `current_ma` | `adc_current_raw` |
-|---|---|---|
-| Quiescent — five unloaded channels, both directions | 7.5 | 158 |
-| Free travel, open | 22-30 | 680-745 |
-| Free travel, close | 23-33 | 660-823 |
-| **Close end stop** (phase 3) | **46.8** | **1069** |
-| **Open end stop** (phase 3, `FaultCode::BLOCKED`) | **47.5** | **1086** |
-
-The 7.5 mA floor is real quiescent draw, not an offset artefact: `R2` sits in the motor
-rail and sees three DRV8411s idling. Raw values are recorded alongside because they are
-independent of the calibration, so the threshold can be re-derived without repeating the
-run if the scale later proves wrong.
-
-**Inrush is not a constraint here, and the earlier reasoning that it might be was wrong.**
-A DC motor's starting current *is* its locked-rotor current — at t=0 there is no back-EMF —
-and it is bounded by the winding against the rail: `3.2 V / 47 mA ≈ 68 Ω`, so inrush ≈ the
-47 mA stall. This motor cannot reach the driver's 200 mA regulation point from a 3.3 V
-rail at all, so the regulation never engages and there is no startup spike to clear.
-
-**Margins at 166 mA** (`3.3 × 10/20 = 1.66 V`):
-
-| Reference | Value | Margin |
-|---|---|---|
-| Worst measured stall, either direction | 47.5 mA | 3.5× |
-| Stall reported from earlier bench work | 70 mA | 2.4× |
-| Actuator rating | 120 mA | 1.38× |
-| DRV8411 regulation, minimum | 180 mA | trips *before* the driver regulates |
-
-That is the point of moving it: at 280 mA the comparator only fires after the driver has
-already taken over, so it can only catch failed regulation. At 166 mA it catches a shorted
-cable or a seized actuator while the driver is still healthy — and 166 mA is unreachable by
-a working actuator.
-
-**Open items.** Only zone 3 had an actuator, so this is one bridge, not six. The 47.5 mA
-measured here against the 70 mA reported earlier is a 1.5× discrepancy that the margin
-absorbs either way, but it is unresolved: `current_ma` rests on an unverified bring-up
-scale, and one series-ammeter reading during a zone 3 move would settle it. Until then
-166 mA is chosen against the more conservative of the two figures.
+`FLIM_REF` measured **2.82 V** on board 2. Now that B8 is fixed and `current_ma` reports
+real values, characterise the current distribution across the six channels — free travel,
+pin contact, under load, and against both end stops — and set `FLIM_REF` from that with a
+stated margin. This is § 3 of the validation plan and it is now unblocked.
 
 ### Hazard decision: no hardware-independent drive cutoff
 

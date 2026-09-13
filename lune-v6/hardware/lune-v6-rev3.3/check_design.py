@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Lune V6 Rev 3.2 design checks, read from the EasyEDA Pro project.
+"""Lune V6 Rev 3.3 design checks, read from the EasyEDA Pro project.
 
 EasyEDA Pro is the source of truth for Rev 3.2.  The KiCad schematic that the
 first Rev 3.2 ECOs were authored in was deleted once layout moved here; it
@@ -603,7 +603,10 @@ def check_safety_topology(project: Project, contract: dict) -> None:
     pin_net = project.pin_net()
     net_pins = project.net_pins()
     comparator = d["comparator"]
-    latch = d["fault_latch"]
+    # Rev 3.3 removed the latch. Absence is a declared state, not a gap:
+    # designators.fault_latch is dropped with it, and the checks below that
+    # only make sense with a flip-flop present are skipped rather than failed.
+    latch = d.get("fault_latch")
 
     # Rail overcurrent comparator must see the unfiltered shunt amplifier
     # output, not the 1k/100n ADC node (100 us of avoidable trip delay).
@@ -611,8 +614,13 @@ def check_safety_topology(project: Project, contract: dict) -> None:
           "rail comparator inverting input senses CURRENT_RAW")
     check(pin_net.get((comparator, "3")) == "FLIM_REF",
           "rail comparator non-inverting input is FLIM_REF")
-    check(pin_net.get((comparator, "1")) == "FAULT_N_RAW",
-          "rail comparator output joins the wired-AND fault net")
+    # Rev 3.3 gave the rail comparator its own net so firmware can tell a bridge
+    # fault from a rail overcurrent; the wired-AND could not (O12). Assert
+    # whichever topology the contract declares rather than hard-coding one.
+    comparator_net = ("RAIL_OVERCURRENT"
+                      if "RAIL_OVERCURRENT" in contract["gpio"] else "FAULT_N_RAW")
+    check(pin_net.get((comparator, "1")) == comparator_net,
+          f"rail comparator output drives {comparator_net}")
 
     # Tacho comparator hysteresis must be positive feedback into the signal
     # (non-inverting) input.  Feeding it to the threshold input makes a
@@ -657,47 +665,87 @@ def check_safety_topology(project: Project, contract: dict) -> None:
     # consumer.  Deleting that consumer would silently strand the rail
     # comparator, all three DRV8411 nFAULT outputs and the TPS2553 fault pin.
     fault_pins = net_pins.get("FAULT_N_RAW", set())
-    check((latch, "6") in fault_pins,
-          "the fault latch async reset is the consumer of FAULT_N_RAW")
+    consumer = contract["fault_latch"]["fault_consumer_ref"]
+    if "." in consumer:
+        # Rev 3.3: firmware is the consumer, so the net has to reach the module pad.
+        cref, cpad = consumer.split(".")
+        check((cref, cpad) in fault_pins,
+              f"FAULT_N_RAW reaches its consumer {consumer}")
+    else:
+        check((consumer, "6") in fault_pins,
+              "the fault latch async reset is the consumer of FAULT_N_RAW")
     expected_sources = set(contract["fault_latch"]["fault_source_refs"])
     sources = {ref for ref, _ in fault_pins}
     check(sources >= expected_sources,
           "every fault source still reaches FAULT_N_RAW "
           f"(missing: {', '.join(sorted(expected_sources - sources)) or 'none'})")
 
-    check(pin_net.get((latch, "6")) == "FAULT_N_RAW", "latch async reset is FAULT_N_RAW")
-    check(pin_net.get((latch, "5")) == "DRIVER_N_SLEEP", "latch Q is DRIVER_N_SLEEP")
-    check(pin_net.get((latch, "3")) == "LATCH_STATE", "latch /Q is LATCH_STATE")
+    if latch:
+      check(pin_net.get((latch, "6")) == "FAULT_N_RAW", "latch async reset is FAULT_N_RAW")
+      check(pin_net.get((latch, "5")) == "DRIVER_N_SLEEP", "latch Q is DRIVER_N_SLEEP")
+      check(pin_net.get((latch, "3")) == "LATCH_STATE", "latch /Q is LATCH_STATE")
     # 74LVC1G74 (DP/SOT505-2) pinning, data sheet rev 18 table 3: 1 CP, 2 D,
     # 7 /SD.  These three went unchecked until Rev 3.2-D bring-up: swapping CP
     # and D, or leaving /SD floating, passes every other check in this file and
     # every net-level check above, yet the latch can then never arm.  Each of
     # them is a silent, board-wide brick.
-    check(pin_net.get((latch, "1")) == "ARM_CLK", "latch CP (pin 1) is the arm clock")
-    check(pin_net.get((latch, "2")) == "3V3_LOGIC",
-          "latch D (pin 2) is tied high, so a clock edge can only ever set Q")
-    check(pin_net.get((latch, "7")) == "3V3_LOGIC",
-          "latch /SD (pin 7) is tied high, so the set input stays inactive")
-    check(pin_net.get((d["arm_clamp"], "1")) == "MOTOR_ENABLE",
-          "arm-clock clamp is gated by MOTOR_ENABLE")
+      check(pin_net.get((latch, "1")) == "ARM_CLK", "latch CP (pin 1) is the arm clock")
+      check(pin_net.get((latch, "2")) == "3V3_LOGIC",
+            "latch D (pin 2) is tied high, so a clock edge can only ever set Q")
+      check(pin_net.get((latch, "7")) == "3V3_LOGIC",
+            "latch /SD (pin 7) is tied high, so the set input stays inactive")
+      check(pin_net.get((d["arm_clamp"], "1")) == "MOTOR_ENABLE",
+            "arm-clock clamp is gated by MOTOR_ENABLE")
+
+    # ESP-IDF refuses two attenuations on one ADC unit (adc_continuous.c:507-515,
+    # ESP_ERR_INVALID_ARG). ADC_CURRENT and ADC_TACHO are both on ADC1, so a
+    # mismatch here is not a tuning choice - it fails adc_continuous_config()
+    # outright, takes the whole stream down with it, and leaves the board with no
+    # current measurement at all. That is design-review B8; assert it.
+    tacho = contract["commutation_tacho"]
+    tacho_atten = tacho.get("analog_monitor_atten_db")
+    if tacho_atten is not None:
+        current_atten = contract["firmware"]["adc_current_attenuation"]
+        check(current_atten == f"{tacho_atten}dB",
+              f"ADC_TACHO attenuation ({tacho_atten} dB) matches ADC_CURRENT "
+              f"({current_atten}); one ADC unit cannot carry two")
+
+    # The amplifier reference sets where the amplified ripple sits inside that
+    # span. Assert the board's divider against the contracted voltage rather
+    # than trusting the prose.
+    ref_refs = tacho.get("reference_divider_refs")
+    ref_volt = tacho.get("reference_volt")
+    if ref_refs and ref_volt:
+        top, bottom = (parse_ohms(project.parts[r].value) for r in ref_refs)
+        if top and bottom:
+            derived = 3.3 * bottom / (top + bottom)
+            check(close(derived, ref_volt, 0.02),
+                  f"{ref_refs[0]}/{ref_refs[1]} put TACHO_REF at {derived:.3f} V, "
+                  f"contracted {ref_volt} V (board: {project.parts[ref_refs[0]].value}"
+                  f"/{project.parts[ref_refs[1]].value})")
+            # 6 dB full scale is 1.75 V on ESP32-S3. The reference has to leave
+            # room above it for the positive half of the ripple.
+            span = {6: 1.75, 12: 3.1, 2.5: 1.25, 0: 0.95}.get(tacho_atten)
+            if span:
+                headroom_mv = (span - derived) * 1000
+                gain = tacho.get("asymptotic_gain") or 85
+                check(headroom_mv > 0,
+                      f"TACHO_REF {derived:.3f} V sits inside the {span} V span at "
+                      f"{tacho_atten} dB")
+                info(f"clipping starts at {headroom_mv / gain:.1f} mV of input ripple "
+                     f"(band is {tacho['expected_ripple_ma'][0]}-"
+                     f"{tacho['expected_ripple_ma'][1]} mA = "
+                     f"{tacho['expected_ripple_ma'][0] * 10:.0f}-"
+                     f"{tacho['expected_ripple_ma'][1] * 10:.0f} mV)")
 
     # The arm edge has to satisfy the flip-flop's Delta-t/Delta-V limit, not just
     # reach VIH.  The clock node rises through the series resistor into the pin's
     # own capacitance, so an oversized R_series slews the edge past the data
     # sheet maximum while every DC measurement still looks perfect.  Rev 3.2-D
     # measured ~99 ns/V against a 10 ns/V limit; see design-review.md.
-    arm_series = contract["fault_latch"]["arm_series_ohm"]
-    # Assert the board against the contract, not just the contract against itself.
-    # arm_series_ohm feeds the slew check below, so lowering it in the contract
-    # would otherwise turn that check green while every assembled board still
-    # carried the old part — the exact class of silent drift this file exists for.
-    arm_ref = contract["fault_latch"].get("arm_series_ref")
-    if arm_ref:
-        r_arm = parse_ohms(project.parts[arm_ref].value)
-        check(r_arm is not None and close(r_arm, arm_series, 0.001),
-              f"{arm_ref} is {arm_series} ohm as contracted "
-              f"(board: {project.parts[arm_ref].value})")
-    max_slew_ns_per_v = contract["fault_latch"].get("arm_max_slew_ns_per_v")
+    arm_series = contract["fault_latch"]["arm_series_ohm"] if latch else None
+    max_slew_ns_per_v = (contract["fault_latch"].get("arm_max_slew_ns_per_v")
+                         if latch else None)
     if max_slew_ns_per_v is not None:
         clock_node_pf = contract["fault_latch"].get("arm_clock_node_pf", 15)
         pulldown = contract["fault_latch"]["arm_clock_pulldown_ohm"]
@@ -733,8 +781,23 @@ def check_safety_topology(project: Project, contract: dict) -> None:
     branch = {ref for ref, _ in net_pins.get(supply or "", set())}
     check(any(r.startswith("R") for r in branch),
           "the 1-wire supply branch includes a series element")
-    check(any(r.startswith("D") for r in branch),
-          "the 1-wire supply branch includes a local TVS")
+
+    # Both nets on this connector leave the board on a cable to external probes,
+    # so both need a clamp - not just the supply.  Match on the contracted MPN
+    # rather than on a reference-designator prefix: rev3.3-K moved these parts
+    # from D to U designators, and a prefix test would have called that a
+    # missing TVS while a PSM712 sitting on a D designator passed.  The part is
+    # the thing being asserted, so assert the part.
+    one_wire = contract["one_wire"]
+    for label, net, want in (
+            ("supply", supply, one_wire["supply_esd_protection"]),
+            ("bus", pin_net.get((onewire, "2")), one_wire["esd_protection"])):
+        refs = {ref for ref, _ in net_pins.get(net or "", set())}
+        fitted = sorted(r for r in refs
+                        if r in project.parts and project.parts[r].mpn == want)
+        check(bool(fitted),
+              f"the 1-wire {label} net ({net}) carries a {want} clamp"
+              + (f" ({', '.join(fitted)})" if fitted else ""))
 
     # I2C pull-ups are mandatory: without them SDA and SCL float on the ESP32
     # whenever no display is fitted.
@@ -817,10 +880,28 @@ def check_analog_numbers(project: Project, contract: dict) -> None:
           f"bridge ceiling minimum {low:.1f} mA matches the contract")
     check(close(high, driver["current_limit_max_ma"], 0.005),
           f"bridge ceiling maximum {high:.1f} mA matches the contract")
-    margin = rail["estimated_worst_case_trip_min_ma"] / high
-    check(margin >= 1.10,
-          f"worst-case rail trip is {(margin - 1) * 100:.0f}% above the worst-case "
-          "bridge ceiling (>=10% required)")
+    # Rev 3.3 deliberately inverted this. The old rule - rail trip at least 10%
+    # ABOVE the worst-case bridge ceiling - made the comparator a backstop for
+    # failed regulation, which is all it could ever catch. R3.3-4 moved it below
+    # the ceiling so it fires while the bridge is still healthy. The binding
+    # constraint is therefore the actuator, not the driver: the trip must clear
+    # anything a working actuator can draw, and this actuator cannot reach the
+    # regulation point at all (3.2 V / 68 ohm winding).
+    rated = rail.get("actuator_rated_max_ma")
+    worst_trip = rail["estimated_worst_case_trip_min_ma"]
+    if rated:
+        margin = worst_trip / rated
+        check(margin >= 1.20,
+              f"worst-case rail trip {worst_trip:.0f} mA is {(margin - 1) * 100:.0f}% "
+              f"above the actuator's {rated} mA rating (>=20% required); measured peak "
+              f"was {rail.get('actuator_measured_peak_ma', '?')} mA")
+        info(f"trip sits {(1 - worst_trip / high) * 100:.0f}% below the worst-case bridge "
+             f"ceiling {high:.0f} mA - intended, so it fires before the DRV8411 regulates")
+    else:
+        margin = worst_trip / high
+        check(margin >= 1.10,
+              f"worst-case rail trip is {(margin - 1) * 100:.0f}% above the "
+              f"worst-case bridge ceiling (>=10% required)")
 
     # The ferrites are series elements in the motor loop, so their DC resistance
     # eats motor voltage on a 3.3 V rail that already loses the shunt and xISEN.
@@ -1125,7 +1206,7 @@ def main() -> int:
         print(f"  FAIL  EasyEDA project not found: {project_path}")
         return 1
     project = Project(project_path, contract["pcb"]["document"])
-    print(f"Lune V6 Rev 3.2 design checks - {project_path.name}, "
+    print(f"Lune V6 Rev 3.3 design checks - {project_path.name}, "
           f"document {project.pcb_name}, {len(project.parts)} placements")
 
     check_project(project, contract)
