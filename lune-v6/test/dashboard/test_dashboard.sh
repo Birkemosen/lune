@@ -6,7 +6,6 @@ app="$root/web/dashboard-src/app/app-root.js"
 header="$root/web/dashboard-src/app/header.js"
 card="$root/web/dashboard-src/components/zone/zone-card.js"
 keys="$root/web/dashboard-src/utils/keys.js"
-flow="$root/web/dashboard-src/components/overview/flow-diagram.js"
 touch="$root/web/dashboard-src/components/settings/settings-touch-card.js"
 dashboard_cpp="$root/components/lv6_dashboard/lv6_dashboard.cpp"
 api="$root/web/dashboard-src/core/api.js"
@@ -21,15 +20,89 @@ logs="$root/web/dashboard-src/components/logs/logs-view.js"
 system_card="$root/web/dashboard-src/components/diagnostics/diag-system-card.js"
 store="$root/web/dashboard-src/core/store.js"
 
-grep -qF '<div class="main-panel"><div class="hdr"></div><main class="view-panel">' "$app" >/dev/null
+
+css="$root/web/dashboard.css"
+tokens_css="$root/web/tokens.generated.css"
+ui_kit="$root/web/dashboard-src/core/ui-kit.js"
+tokens_js="$root/web/dashboard-src/core/tokens.js"
+
+# ---- Lune Design System v2 (plan H) ----
+grep -qF '@import "tokens.generated.css"' "$css" >/dev/null
+grep -qF "import './core/tokens.js'" "$main" >/dev/null
+grep -qF "from '../../tokens.generated.css'" "$tokens_js" >/dev/null
+test -f "$tokens_css"
+test -f "$root/web/dashboard-src/core/lune-mark.generated.js"
+test -f "$root/web/brand/lune-v6-mark.svg"
+grep -qF 'luneMark' "$root/web/dashboard-src/core/canvas.js" >/dev/null
+grep -qF 'data-live-mark="sidebar"' "$app" >/dev/null
+grep -qF 'data-overview-manifold' "$app" >/dev/null
+grep -qF 'data-lds-int-split' "$root/web/dashboard-src/core/lds-int-split.generated.js" >/dev/null
+grep -qF 'intSplitHtml' "$app" >/dev/null
+grep -qF 'formShellHtml' "$app" >/dev/null
+grep -qF 'INT_SPLIT_CSS' "$app" >/dev/null
+grep -qF 'FORM_CSS' "$app" >/dev/null
+grep -qF 'data-lds-provision' "$root/web/dashboard-src/core/lds-form.generated.js" >/dev/null
+grep -qF 'data-lds-form' "$root/web/dashboard-src/core/lds-form.generated.js" >/dev/null
+grep -qF 'var(--fill-forest)' "$header" >/dev/null
+! grep -qF 'background:var(--bg-glow)' "$app" >/dev/null
+grep -qF 'nav-collapsed' "$app" >/dev/null
+grep -qF 'overrideBanner' "$root/web/dashboard-src/components/zone/zone-detail.js" >/dev/null
+grep -qF 'comfortSliderHtml' "$root/web/dashboard-src/components/zone/zone-detail.js" >/dev/null
+grep -qF 'luneMark({' "$root/web/dashboard-src/components/zone/zone-detail.js" >/dev/null
+! grep -qF 'luneV6Mark' "$app" >/dev/null
+! grep -rqF 'fonts.googleapis.com' "$root/web" >/dev/null
+! grep -rqF 'Montserrat' "$root/web/dashboard-src" >/dev/null
+! grep -qF 'fonts.googleapis.com' "$css" >/dev/null
+grep -qF 'var(--sidebar-width)' "$app" >/dev/null
+grep -qF '@media(max-width:900px)' "$app" >/dev/null
+grep -qF 'v6-more-toggle' "$header" >/dev/null
+grep -qF 'menu-label' "$header" >/dev/null
+grep -qF 'menu-icon' "$header" >/dev/null
+# Comfort control (LDS) + remaining ui-kit primitives
+comfort="$root/web/dashboard-src/core/lds-comfort-control.generated.js"
+grep -qF 'export function dial(' "$comfort" >/dev/null
+grep -qF 'export function comfortSliderHtml(' "$comfort" >/dev/null
+grep -qF 'linear-gradient(to right, var(--forest), var(--accent))' "$comfort" >/dev/null
+grep -qF 'role="group"' "$comfort" >/dev/null
+grep -qF 'aria-live="polite"' "$comfort" >/dev/null
+grep -qF 'export function overrideBanner(' "$comfort" >/dev/null
+grep -qF "from './lds-comfort-control.generated.js'" "$ui_kit" >/dev/null
+grep -qF 'export function zoneRow(' "$ui_kit" >/dev/null
+grep -qF 'export function planner(' "$ui_kit" >/dev/null
+grep -qF 'export function segmented(' "$ui_kit" >/dev/null
+grep -qF 'export function infoList(' "$ui_kit" >/dev/null
+grep -qF "'zone.override.remaining': 'Touch offset {offset} · {remaining} remaining'" "$i18n" >/dev/null
+grep -qF "'zone.override.remaining': 'Touch-offset {offset} · {remaining} tilbage'" "$i18n" >/dev/null
+# Hex / 0x colour literals are only allowed in generated artifacts.
+if grep -R --include='*.js' --include='*.css' -E '#[0-9A-Fa-f]{3,8}\b' "$root/web/dashboard-src" \
+  | grep -v 'lune-mark.generated.js' | grep -v 'tokens.generated.css' | grep -v 'lds-comfort-control.generated.js' | grep -v 'lds-manifold-row.generated.js' | grep -v 'lds-live-status.generated.js'; then
+  echo "hex colour literals outside generated files" >&2
+  exit 1
+fi
+grep -qF "from '../../core/ui-kit.js'" "$root/web/dashboard-src/components/zone/zone-detail.js" >/dev/null
+grep -qF 'zd-dial-slot' "$root/web/dashboard-src/components/zone/zone-detail.js" >/dev/null
+grep -qF 'zone-detail-dial' "$root/web/dashboard-src/components/zone/zone-detail.js" >/dev/null
+grep -qF 'zd-slider-slot' "$root/web/dashboard-src/components/zone/zone-detail.js" >/dev/null
+grep -qF 'paintComfortSlider' "$root/web/dashboard-src/components/zone/zone-detail.js" >/dev/null
+
+grep -qF 'class="main-panel"' "$app" >/dev/null
+grep -qF 'class="hdr"' "$app" >/dev/null
+grep -qF 'class="view-panel"' "$app" >/dev/null
 grep -qF 'overview-status status-summary' "$app" >/dev/null
 grep -qF 'Local heating status and current exceptions' "$header" >/dev/null
-grep -qF 'position:sticky;top:0;z-index:20' "$app" >/dev/null
-grep -qF 'Hydraulic overview' "$app" >/dev/null
+grep -qE 'position:sticky;top:0;z-index:20' "$app" >/dev/null
+grep -qF 'Flow history' "$app" >/dev/null
 grep -qF '24-hour activity' "$app" >/dev/null
-grep -qF 'dashboard-connection' "$app" >/dev/null
-grep -qF 'flow-diagram-slot' "$app" >/dev/null
+grep -qF 'data-panel="device"' "$app" >/dev/null
+grep -qF '<h3>Connection</h3>' "$app" >/dev/null
+! grep -qF 'dashboard-connection' "$app" >/dev/null
+grep -qF 'liveStatusHtml' "$header" >/dev/null
+grep -qF 'paintLiveStatus' "$header" >/dev/null
+grep -qF 'data-lds-live-status' "$root/web/dashboard-src/core/lds-live-status.generated.js" >/dev/null
+grep -qF 'connectivity-slot' "$app" >/dev/null
 grep -qF 'hydraulic-history-slot' "$app" >/dev/null
+grep -qF 'Flow history' "$app" >/dev/null
+! grep -qF 'flow-diagram-slot' "$app" >/dev/null
 grep -qF 'Needs attention' "$app" >/dev/null
 grep -qF 'aria-current' "$header" >/dev/null
 grep -qF 'v6-more-toggle' "$header" >/dev/null
@@ -124,9 +197,10 @@ grep -qF 'zoneTitleMarkup' "$app" >/dev/null
 grep -qF 'zone-label-compact' "$app" >/dev/null
 grep -qF 'zone-title-name' "$app" >/dev/null
 grep -qF '.zone-label-compact .zone-title-name,.mobile-zone-dock .zone-title-name{display:none}' "$app" >/dev/null
-# Actuator sits above Temperature/Identity so BLE scan expansion does not shove it down.
-grep -qF 'zone-detail-slot"></div><div class="zone-actuator-slot"></div><section class="zone-configuration-groups' "$app" >/dev/null
-! grep -qF 'zone-configuration-groups" aria-label="Zone configuration"><div class="zone-room-slot"></div><div class="zone-sensor-slot"></div><div class="zone-coordination-slot"></div></section><div class="zone-actuator-slot"' "$app" >/dev/null
+grep -qF 'zone-live"><p class="zone-kicker">Comfort control</p><div class="zone-detail-heading' "$app" >/dev/null
+grep -qF 'zone-configuration-groups" aria-label="Zone configuration"><div class="zone-room-slot"></div><div class="zone-sensor-slot"></div><div class="zone-coordination-slot"></div></section><div class="zone-actuator-slot"></div>' "$app" >/dev/null
+! grep -qF 'zone-detail-slot"></div><div class="zone-actuator-slot"></div><section class="zone-configuration-groups' "$app" >/dev/null
+! grep -qF 'zone-actuator-slot"></div><section class="zone-configuration-groups' "$app" >/dev/null
 ! grep -qF 'zo-name' "$app" >/dev/null
 ! grep -qF 'zo-room' "$app" >/dev/null
 ! grep -qF 'zo-id' "$app" >/dev/null
@@ -176,6 +250,23 @@ grep -qF "['ArrowLeft','ArrowRight','Home','End']" "$app" >/dev/null
 ! grep -rqF 'Pipe Spacing' "$root/web/dashboard-src" >/dev/null
 ! grep -rqF 'Pipe Type' "$root/web/dashboard-src" >/dev/null
 grep -qF 'Identity' "$root/web/dashboard-src/components/zone/zone-room-card.js" >/dev/null
+grep -qF 'navSwitchHtml' "$header" >/dev/null
+grep -qF 'data-toggle-zone' "$header" >/dev/null
+grep -qF 'v6-nav-row' "$header" >/dev/null
+grep -qF 'data-lds-nav-switch' "$root/web/dashboard-src/core/lds-nav-switch.generated.js" >/dev/null
+grep -qF 'kind: nav-switch-js' "$root/../lds.yaml" >/dev/null
+! grep -qF 'zr-enable' "$root/web/dashboard-src/components/zone/zone-room-card.js" >/dev/null
+! grep -qF 'ui-toggle' "$root/web/dashboard-src/components/zone/zone-room-card.js" >/dev/null
+! grep -qF 'toggleEnabled' "$root/web/dashboard-src/components/zone/zone-detail.js" >/dev/null
+grep -qF 'kind: settings-card-js' "$root/../lds.yaml" >/dev/null
+test -f "$root/web/dashboard-src/core/lds-settings-card.generated.js"
+grep -qF 'settingsCardHtml' "$root/web/dashboard-src/core/ui-kit.js" >/dev/null
+grep -qF 'settingsCardHtml' "$root/web/dashboard-src/components/settings/settings-minimum-flow-card.js" >/dev/null
+grep -qF 'navSwitchHtml' "$root/web/dashboard-src/components/settings/settings-minimum-flow-card.js" >/dev/null
+grep -qF 'settingsCardHtml' "$root/web/dashboard-src/components/settings/settings-control-card.js" >/dev/null
+! grep -qF '.settings-card{' "$root/web/dashboard-src/components/settings/settings-control-card.js" >/dev/null
+! grep -rqF 'ui-toggle' "$root/web/dashboard-src/components/settings" >/dev/null
+! grep -qF 'navSwitchHtml' "$root/web/dashboard-src/components/zone/zone-room-card.js" >/dev/null
 grep -qF 'Temperature' "$root/web/dashboard-src/components/zone/zone-sensor-card.js" >/dev/null
 grep -qF 'Coordination' "$root/web/dashboard-src/components/zone/zone-coordination-card.js" >/dev/null
 grep -qF "mountComponent('zone-coordination-card')" "$app" >/dev/null
@@ -213,22 +304,25 @@ grep -qF 'effectiveSetpoint' "$keys" >/dev/null
 grep -qF 'baseSetpoint' "$keys" >/dev/null
 grep -qF 'coordinatorOffset' "$keys" >/dev/null
 grep -qF 'coordinatorRemaining' "$keys" >/dev/null
-grep -qF -- '--flow-track:#596779' "$app" >/dev/null
-grep -qF 'class="flow-track"' "$flow" >/dev/null
-grep -qF "zoneRefs.track.setAttribute('stroke-dasharray', enabled ? 'none' : '5 7')" "$flow" >/dev/null
-grep -qF 'const flowing = enabled && pct != null && pct > 0' "$flow" >/dev/null
-! grep -qF 'desktop-boxgrad' "$flow" >/dev/null
-grep -qF 'fill="var(--flow-source-bg)" stroke="var(--accent)"' "$flow" >/dev/null
-grep -qF 'return pct > 0 ? COLOR_FLOW_ACTIVE : COLOR_FRIENDLY_ON' "$flow" >/dev/null
-! grep -qF '#021824' "$flow" >/dev/null
-! grep -qF 'stop-color="#7aa7ce"' "$flow" >/dev/null
-! grep -rqF 'fonts.googleapis.com' "$root/web/dashboard-src" >/dev/null
+grep -qF -- '--flow-track:' "$app" >/dev/null
+grep -qF 'eyebrow">ΔT</span>' "$app" >/dev/null
+grep -qF 'loopCellHtml' "$app" >/dev/null
+grep -qF 'MANIFOLD_ROW_CSS' "$app" >/dev/null
+grep -qF 'loop-demand-bar' "$root/web/dashboard-src/core/lds-manifold-row.generated.js" >/dev/null
+grep -qF 'demandBarLevel' "$app" >/dev/null
+grep -qF 'ΔT ${dt}' "$root/web/dashboard-src/core/canvas.js" >/dev/null
+! grep -qF 'flow-diagram-slot' "$app" >/dev/null
+! grep -qF "mountComponent('flow-diagram')" "$app" >/dev/null
+! test -f "$root/web/dashboard-src/components/overview/flow-diagram.js"
+# fonts.googleapis.com checked for all of web/ in LDS block above
 grep -qF 'grid-template-columns:repeat(3,1fr)' "$app" >/dev/null
 ! grep -qF 'Target Temperature' "$root/web/dashboard-src/components/zone/zone-detail.js" >/dev/null
+grep -qF 'bindDial' "$root/web/dashboard-src/components/zone/zone-detail.js" >/dev/null
+grep -qF 'effectiveSetpoint' "$root/web/dashboard-src/components/zone/zone-detail.js" >/dev/null
 grep -qF "const COLOR_SCHEME_QUERY = '(prefers-color-scheme: dark)'" "$theme" >/dev/null
 grep -qF 'root.dataset.colorScheme = scheme' "$theme" >/dev/null
 grep -qF "colorSchemeMedia.addEventListener('change', update)" "$theme" >/dev/null
-grep -qF ':root[data-color-scheme="light"]' "$app" >/dev/null
+grep -qF ':root[data-color-scheme="light"]' "$tokens_css" >/dev/null
 ! grep -qF 'Accent theme' "$header" >/dev/null
 ! grep -qF 'hdr-theme' "$header" >/dev/null
 grep -qF 'Appearance' "$app" >/dev/null
@@ -469,4 +563,4 @@ const series = motorTraceSeries(samples);
 if (!series.cadence.length || series.cadence[10].rate_hz < 500 || !series.slopes.length) process.exit(1);
 EOF
 
-echo 'PASS V6 dashboard HIG source contracts'
+echo 'PASS V6 dashboard LDS source contracts'

@@ -1,23 +1,24 @@
 import { component, subscribe } from '../../core/component.js';
-import { cardForm, helpBadgeI18n } from '../../core/ui-kit.js';
+import { cardForm, helpBadgeI18n, settingsCardHtml, navSwitchHtml } from '../../core/ui-kit.js';
 import { ev, isEntityOn, setEntity } from '../../core/store.js';
 import { setGlobalNumber, setGlobalSelect } from '../../core/api.js';
 import { gkey } from '../../utils/keys.js';
 import { localize, subscribeLanguage } from '../../core/i18n.js';
 
-const template = () => `
-  <div class="ui-card settings-minimum-flow-card">
-    <div class="ui-card-title"><span class="ui-title-text">Minimum active-loop opening${helpBadgeI18n('settings.minFlow.help')}</span></div>
+const template = () => settingsCardHtml({
+  className: 'settings-minimum-flow-card',
+  titleHtml: `Minimum active-loop opening${helpBadgeI18n('settings.minFlow.help')}`,
+  bodyHtml: `
     <div class="ui-row">
       <span class="ui-label"><span data-i18n="common.enabled">Enabled</span> <span class="ui-sublabel">Local V6 hydraulic safeguard; heat-source and pump coordination stays external.</span></span>
-      <span class="ui-field"><div class="ui-toggle smf-always" role="switch" data-i18n-label="settings.minFlow.title" aria-label="Enable minimum zone flow"></div></span>
+      <span class="ui-field">${navSwitchHtml({ on: false, label: 'Enable minimum zone flow', className: 'smf-always', attrs: 'data-i18n-label="settings.minFlow.title"' })}</span>
     </div>
     <div class="ui-row smf-pct-row">
       <span class="ui-label">Minimum total opening (%) <span class="ui-sublabel">Added only across loops already accepting heat; closed satisfied rooms stay closed.</span></span>
       <span class="ui-field"><input class="ui-input smf-pct" type="number" min="0" max="100" step="1" placeholder="0" /></span>
     </div>
-  </div>
-`;
+  `,
+});
 
 export default component({
   tag: 'settings-minimum-flow-card',

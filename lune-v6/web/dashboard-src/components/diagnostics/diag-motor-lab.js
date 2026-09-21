@@ -334,6 +334,10 @@ function padLevel(value) {
   return '—';
 }
 
+function hasFaultLatch(backend) {
+  return backend === 'rev32_gpio' || backend === 'rev31_gpio';
+}
+
 function emptyLive() {
   return {
     current: null, mean: null, peak: null, slope: null,
@@ -452,6 +456,11 @@ export default component({
         liveDiag.driversEnabled != null ? liveDiag.driversEnabled : isEntityOn(gkey.drivers));
       gauges.busy.textContent = onOff(liveDiag.busy);
       gauges.armed.textContent = onOff(liveDiag.armed);
+      const latch = hasFaultLatch(liveDiag.backend);
+      const pad10Label = gauges.pad10 && gauges.pad10.parentElement.querySelector('span');
+      const pad9Label = gauges.pad9 && gauges.pad9.parentElement.querySelector('span');
+      if (pad10Label) pad10Label.textContent = t(latch ? 'diagnostics.lab.pad10' : 'diagnostics.lab.pad10nsleep');
+      if (pad9Label) pad9Label.textContent = t(latch ? 'diagnostics.lab.pad9' : 'diagnostics.lab.pad9fault');
       if (gauges.pad10) gauges.pad10.textContent = padLevel(liveDiag.latchArmLevel);
       if (gauges.pad9) gauges.pad9.textContent = padLevel(liveDiag.latchStateLevel);
       if (gauges.pad11) gauges.pad11.textContent = padLevel(liveDiag.motorEnableLevel);
@@ -565,10 +574,12 @@ export default component({
       kicker.textContent = halted
         ? t('diagnostics.lab.halted')
         : t('diagnostics.lab.stepOf', { step: index + 1, total: STEPS.length });
-      titleEl.textContent = t('diagnostics.lab.' + (halted ? 'halt' : current) + '.title');
+      const guideKey = (!halted && current === 'arm' && !hasFaultLatch(liveDiag.backend))
+        ? 'enable' : (halted ? 'halt' : current);
+      titleEl.textContent = t('diagnostics.lab.' + guideKey + '.title');
       const finished = (step === 'seat' && captures.seat) || (step === 'open' && captures.open) || (step === 'close' && captures.close);
       const copyKey = halted ? 'diagnostics.lab.halt.copy'
-        : (finished ? 'diagnostics.lab.' + current + '.done' : 'diagnostics.lab.' + current + '.copy');
+        : (finished ? 'diagnostics.lab.' + current + '.done' : 'diagnostics.lab.' + guideKey + '.copy');
       copyEl.textContent = t(copyKey);
       const inSetup = step === 'setup';
       guideEl.dataset.setup = inSetup ? 'true' : 'false';
@@ -583,7 +594,11 @@ export default component({
       let primary = { key: 'diagnostics.lab.next', disabled: busy, action: 'next' };
       let secondary = null;
       if (step === 'setup') primary = { key: 'diagnostics.lab.setup.action', disabled: false, action: 'start' };
-      else if (step === 'arm') primary = { key: 'diagnostics.lab.arm.action', disabled: busy, action: 'arm' };
+      else if (step === 'arm') primary = {
+        key: hasFaultLatch(liveDiag.backend) ? 'diagnostics.lab.arm.action' : 'diagnostics.lab.enable.action',
+        disabled: busy,
+        action: 'arm',
+      };
       else if (step === 'seat') primary = { key: captures.seat ? 'diagnostics.lab.next' : 'diagnostics.lab.seat.action', disabled: busy, action: captures.seat ? 'next' : 'seat' };
       else if (step === 'open') primary = { key: captures.open ? 'diagnostics.lab.next' : 'diagnostics.lab.open.action', disabled: busy, action: captures.open ? 'next' : 'open' };
       else if (step === 'close') primary = { key: captures.close ? 'diagnostics.lab.next' : 'diagnostics.lab.close.action', disabled: busy, action: captures.close ? 'next' : 'close' };
@@ -644,25 +659,60 @@ export default component({
           pushLog('diagnostics.lab.log.manual');
         }
         if (run.aborted) return;
-        pushLog('diagnostics.lab.log.armProbeWait');
-        const probePayload = await probeArmClock({ hz: 100, durationMs: 4000 });
-        if (run.aborted) return;
-        const probe = probePayload && probePayload.data ? probePayload.data : {};
-        pushLog('diagnostics.lab.log.armProbe', {
-          hz: probe.hz || 100,
-          cycles: probe.cycles || 0,
-          armed: probe.armed ? t('common.on') : t('common.off'),
-          at: probe.armed_at_cycle || 0,
-        });
-        liveDiag.armed = !!probe.armed;
-        liveDiag.latchFaulted = !probe.armed;
+        const payload = await fetchDiagnostics();
+        const safety = payload && payload.data && payload.data.motor_safety
+          ? payload.data.motor_safety : {};
+        liveDiag.backend = safety.backend || liveDiag.backend;
         paintGauges();
-        if (!probe.armed) {
-          showBanner(t('diagnostics.lab.latchBanner'));
-          throw new Error('latch');
+        if (hasFaultLatch(liveDiag.backend)) {
+          pushLog('diagnostics.lab.log.armProbeWait');
+          const probePayload = await probeArmClock({ hz: 100, durationMs: 4000 });
+          if (run.aborted) return;
+          const probe = probePayload && probePayload.data ? probePayload.data : {};
+          pushLog('diagnostics.lab.log.armProbe', {
+            hz: probe.hz || 100,
+            cycles: probe.cycles || 0,
+            armed: probe.armed ? t('common.on') : t('common.off'),
+            at: probe.armed_at_cycle || 0,
+          });
+          liveDiag.armed = !!probe.armed;
+          liveDiag.latchFaulted = !probe.armed;
+          paintGauges();
+          if (!probe.armed) {
+            showBanner(t('diagnostics.lab.latchBanner'));
+            throw new Error('latch');
+          }
+        } else {
+          pushLog('diagnostics.lab.log.enableWait');
         }
         await setDriversEnabled(true);
         pushLog('diagnostics.lab.log.drivers');
+        const deadline = Date.now() + 4000;
+        let armedOk = false;
+        while (Date.now() < deadline) {
+          if (run.aborted) return;
+          const enabledPayload = await fetchDiagnostics();
+          const data = enabledPayload && enabledPayload.data ? enabledPayload.data : {};
+          const enabledSafety = data.motor_safety || {};
+          liveDiag.driversEnabled = data.drivers_enabled != null ? !!data.drivers_enabled : liveDiag.driversEnabled;
+          liveDiag.armed = !!enabledSafety.armed;
+          liveDiag.latchFaulted = !!enabledSafety.latch_faulted;
+          liveDiag.backend = enabledSafety.backend || liveDiag.backend;
+          liveDiag.latchArmLevel = enabledSafety.latch_arm_level;
+          liveDiag.latchStateLevel = enabledSafety.latch_state_level;
+          liveDiag.motorEnableLevel = enabledSafety.motor_enable_level;
+          paintGauges();
+          if (data.drivers_enabled && !enabledSafety.latch_faulted) {
+            armedOk = true;
+            break;
+          }
+          await new Promise((resolve) => setTimeout(resolve, POLL_MS));
+        }
+        if (!armedOk) {
+          const latch = hasFaultLatch(liveDiag.backend);
+          showBanner(t(latch ? 'diagnostics.lab.latchBanner' : 'diagnostics.lab.enableBanner'));
+          throw new Error(latch ? 'latch' : 'enable');
+        }
         setPhase('armed', 'ok');
         pushLog('diagnostics.lab.log.armed');
         run.active = false;
@@ -674,7 +724,9 @@ export default component({
           ? 'diagnostics.lab.log.armGpio'
           : (err && err.message === 'latch'
             ? 'diagnostics.lab.log.latchFaulted'
-            : 'diagnostics.lab.log.armFailed'));
+            : (err && err.message === 'enable'
+              ? 'diagnostics.lab.log.enableFailed'
+              : 'diagnostics.lab.log.armFailed')));
         paintStage();
       }
     }
@@ -950,6 +1002,19 @@ export default component({
     setPhase('idle');
     paintAnalysis(null, [], false);
     paintStage();
+    fetchDiagnostics().then((payload) => {
+      const safety = payload && payload.data && payload.data.motor_safety
+        ? payload.data.motor_safety : {};
+      liveDiag.backend = safety.backend || liveDiag.backend;
+      liveDiag.armed = !!safety.armed;
+      liveDiag.latchFaulted = !!safety.latch_faulted;
+      liveDiag.latchArmLevel = safety.latch_arm_level;
+      liveDiag.latchStateLevel = safety.latch_state_level;
+      liveDiag.motorEnableLevel = safety.motor_enable_level;
+      if (payload && payload.data && payload.data.drivers_enabled != null)
+        liveDiag.driversEnabled = !!payload.data.drivers_enabled;
+      paintStage();
+    }).catch(() => {});
     subscribe(gkey.drivers, paintGauges);
     subscribeDashboard('manualMode', paintGauges);
     subscribeDashboard('selectedZone', () => {

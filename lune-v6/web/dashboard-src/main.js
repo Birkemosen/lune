@@ -1,7 +1,8 @@
 import { mountComponent } from './core/component.js';
 import { connect } from './core/sse.js';
 
-// shared design system (must load before components that reference its classes)
+// LDS tokens, then shared design system (must load before components that reference its classes)
+import './core/tokens.js';
 import './core/ui-kit.js';
 
 // register components (side-effect imports)
@@ -16,7 +17,6 @@ import './components/zone/zone-sensor-card.js';
 import './components/zone/zone-coordination-card.js';
 import './components/zone/zone-room-card.js';
 import './components/zone/zone-actuator-card.js';
-import './components/overview/flow-diagram.js';
 import './components/logs/logs-view.js';
 import './components/diagnostics/diag-i2c.js';
 import './components/diagnostics/diag-manual-badge.js';

@@ -1,5 +1,5 @@
 import { component, subscribe } from '../../core/component.js';
-import { cardForm, helpBadgeI18n } from '../../core/ui-kit.js';
+import { cardForm, helpBadgeI18n, settingsCardHtml, navSwitchHtml } from '../../core/ui-kit.js';
 import { ev, es, isEntityOn, setEntity } from '../../core/store.js';
 import { command, setGlobalNumber, setGlobalSelect } from '../../core/api.js';
 import { gkey } from '../../utils/keys.js';
@@ -29,12 +29,13 @@ function lastSyncCopy() {
   return t('settings.bleClock.hoursAgo', { value: hours });
 }
 
-const template = () => `
-  <div class="ui-card settings-ble-clock-card">
-    <div class="ui-card-title"><span class="ui-title-text"><span data-i18n="settings.bleClock.title">Room clocks</span>${helpBadgeI18n('settings.bleClock.help')}</span></div>
+const template = () => settingsCardHtml({
+  className: 'settings-ble-clock-card',
+  titleHtml: `<span data-i18n="settings.bleClock.title">Room clocks</span>${helpBadgeI18n('settings.bleClock.help')}`,
+  bodyHtml: `
     <div class="ui-row">
       <span class="ui-label"><span data-i18n="common.enabled">Enabled</span> <span class="ui-sublabel" data-i18n="settings.bleClock.enabledSub">Broadcast time so nearby Shelly BLU displays can correct drift.</span></span>
-      <span class="ui-field"><div class="ui-toggle sbc-enabled" role="switch" data-i18n-label="settings.bleClock.title" aria-label="Enable room clock sync"></div></span>
+      <span class="ui-field">${navSwitchHtml({ on: false, label: 'Enable room clock sync', className: 'sbc-enabled', attrs: 'data-i18n-label="settings.bleClock.title"' })}</span>
     </div>
     <div class="ui-row sbc-interval-row">
       <span class="ui-label"><span data-i18n="settings.bleClock.interval">Broadcast interval</span> <span class="ui-sublabel" data-i18n="settings.bleClock.intervalSub">Short bursts. Displays usually apply time about once a day.</span></span>
@@ -44,8 +45,8 @@ const template = () => `
       <span class="ui-label"><span data-i18n="settings.bleClock.lastSync">Last broadcast</span> <span class="sbc-status ui-sublabel">—</span></span>
       <span class="ui-field"><button type="button" class="ui-btn sbc-now" data-i18n="settings.bleClock.syncNow">Sync now</button></span>
     </div>
-  </div>
-`;
+  `,
+});
 
 export default component({
   tag: 'settings-ble-clock-card',

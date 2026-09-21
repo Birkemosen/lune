@@ -1,40 +1,31 @@
 import { component } from '../../core/component.js';
 import { injectStyle } from '../../core/style.js';
+import { settingsCardHtml } from '../../core/ui-kit.js';
 import { command } from '../../core/api.js';
 import { localize, subscribeLanguage } from '../../core/i18n.js';
 
-// ========================================
-// CSS
-// ========================================
 const css = `
-.settings-card{background:var(--surface-raised);border:1px solid var(--separator);border-radius:10px;padding:18px;box-shadow:none}
-.settings-card .card-title{margin:0 0 12px;padding-bottom:10px;border-bottom:1px solid var(--separator);color:var(--text-strong);font-size:.92rem;font-weight:650}
-.settings-card .btn-row{display:grid;grid-template-columns:1fr;gap:8px}
-.settings-card .btn{width:100%;min-width:0;height:var(--control-height,44px);min-height:var(--control-height,44px);padding:0 14px;border:1px solid var(--control-border);border-radius:8px;background:var(--control-bg);box-shadow:none;color:var(--text-strong);font:inherit;font-weight:650;line-height:1.2;cursor:pointer}
-.settings-card .btn:hover{border-color:var(--control-border-hover);background:var(--control-bg-hover)}
-.settings-card .btn.warn{border-color:var(--danger-border);background:transparent;color:var(--danger-text)}
-.settings-card .btn.warn:hover{border-color:var(--danger-border-strong);background:var(--danger-bg-soft)}
+.settings-action-card .btn-row{display:grid;grid-template-columns:1fr;gap:8px}
+.settings-action-card .btn{width:100%;min-width:0;height:var(--control-height,44px);min-height:var(--control-height,44px);padding:0 14px;border:1px solid var(--control-border);border-radius:8px;background:var(--control-bg);box-shadow:none;color:var(--text-strong);font:inherit;font-weight:650;line-height:1.2;cursor:pointer}
+.settings-action-card .btn:hover{border-color:var(--control-border-hover);background:var(--control-bg-hover)}
+.settings-action-card .btn.warn{border-color:var(--danger-border);background:transparent;color:var(--danger-text)}
+.settings-action-card .btn.warn:hover{border-color:var(--danger-border-strong);background:var(--danger-bg-soft)}
 `;
 
 injectStyle('settings-control-card', css);
 
-// ========================================
-// TEMPLATE
-// ========================================
-const template = () => `
-  <div class="settings-card settings-action-card">
-    <div class="card-title">Recovery actions</div>
+const template = () => settingsCardHtml({
+  className: 'settings-action-card',
+  titleHtml: 'Recovery actions',
+  bodyHtml: `
     <div class="btn-row">
       <button class="btn sc-dump-1wire" data-i18n="settings.control.dump1wire">Dump 1-Wire Diagnostics</button>
       <button class="btn warn sc-reset-probe-map" data-i18n="settings.control.resetProbeMap">Reset 1-Wire Probe Map</button>
       <button class="btn warn sc-restart" data-i18n="settings.control.restart">Restart Device</button>
     </div>
-  </div>
-`;
+  `,
+});
 
-// ========================================
-// COMPONENT
-// ========================================
 export default component({
   tag: 'settings-control-card',
   render: template,

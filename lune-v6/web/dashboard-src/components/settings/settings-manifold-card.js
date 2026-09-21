@@ -1,6 +1,6 @@
 import { component, subscribe } from '../../core/component.js';
 import { injectStyle } from '../../core/style.js';
-import { cardForm, helpBadgeI18n } from '../../core/ui-kit.js';
+import { cardForm, helpBadgeI18n, settingsCardHtml } from '../../core/ui-kit.js';
 import { es, ev } from '../../core/store.js';
 import { setGlobalSelect } from '../../core/api.js';
 import { gkey, key } from '../../utils/keys.js';
@@ -57,9 +57,10 @@ const template = () => {
     probes += '<div class="probe-cell"><div class="probe-name">Probe ' + probe + '</div><div class="probe-temp" data-probe="' + probe + '">---</div></div>';
   }
 
-  return `
-    <div class="ui-card settings-manifold-card">
-      <div class="ui-card-title"><span class="ui-title-text"><span data-i18n="settings.manifold.title">Manifold Configuration</span>${helpBadgeI18n('settings.manifold.help')}</span></div>
+  return settingsCardHtml({
+    className: 'settings-manifold-card',
+    titleHtml: `<span data-i18n="settings.manifold.title">Manifold Configuration</span>${helpBadgeI18n('settings.manifold.help')}`,
+    bodyHtml: `
       <div class="ui-row">
         <span class="ui-label" data-i18n="settings.manifold.type">Manifold Type</span>
         <span class="ui-field"><select class="ui-select sm-type"><option value="NO (Normally Open)" data-i18n="settings.manifold.normallyOpen">Normally Open (NO)</option><option value="NC (Normally Closed)" data-i18n="settings.manifold.normallyClosed">Normally Closed (NC)</option></select></span>
@@ -74,8 +75,8 @@ const template = () => {
       </div>
       <div class="ui-section" data-i18n="settings.manifold.probeTemps">Probe Temperatures</div>
       <div class="probe-grid">${probes}</div>
-    </div>
-  `;
+    `,
+  });
 };
 
 // ========================================

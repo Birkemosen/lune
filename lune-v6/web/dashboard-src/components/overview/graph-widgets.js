@@ -31,49 +31,46 @@ const DEMAND_LINE = 'var(--series-solar)';
 const css = `
 .graph-widgets { display: grid; gap: 12px; }
 .graph-widgets .chart-card svg {
-  border-radius: 8px;
-  background: linear-gradient(145deg, rgba(255,255,255,.045), rgba(0,18,26,.34));
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.06);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
 }
 .graph-widgets .gw-controls {
   display: flex;
-  justify-content: center;
+  justify-content: flex-start;
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
-  margin: 2px 0 6px;
+  margin: 2px 0 10px;
 }
 .graph-widgets .gw-toggle {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  border: 1px solid var(--control-border);
-  background: linear-gradient(145deg, rgba(255,255,255,.075), rgba(255,255,255,.025));
-  color: var(--text-secondary);
-  border-radius: 8px;
-  padding: 4px 10px;
-  font-size: .68rem;
-  font-weight: 700;
-  letter-spacing: .3px;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  border-radius: 0;
+  padding: 0 2px;
+  font-size: .72rem;
+  font-weight: 650;
+  letter-spacing: .02em;
   cursor: pointer;
-  transition: background .14s ease, border-color .14s ease, color .14s ease, opacity .14s ease;
 }
 .graph-widgets .gw-toggle::before {
   content: '';
-  width: 9px;
-  height: 9px;
-  border-radius: 4px;
-  border: 2px solid currentColor;
-  background: color-mix(in srgb, currentColor 30%, transparent);
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  border: 0;
+  background: currentColor;
   flex-shrink: 0;
 }
 .graph-widgets .gw-toggle:hover {
-  border-color: rgba(255,133,49,.44);
   color: var(--text-strong);
 }
 .graph-widgets .gw-toggle.is-off {
-  opacity: .48;
-  background: transparent;
+  opacity: .4;
 }
 .graph-widgets .gw-toggle[data-layer="flow"] { color: var(--series-warm); }
 .graph-widgets .gw-toggle[data-layer="return"] { color: var(--series-cool); }

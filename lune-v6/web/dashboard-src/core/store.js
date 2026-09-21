@@ -11,6 +11,7 @@ const zoneNames = loadZoneNames();
 
 const D = {
   section: 'overview',
+  settingsPanel: 'touch',
   selectedZone: 1,
   live: false,
   pendingWrites: 0,
@@ -213,6 +214,13 @@ export function setSection(section) {
   if (D.section === next) return;
   D.section = next;
   notify(dashboardKey('section'));
+}
+
+export function setSettingsPanel(panel) {
+  const next = String(panel || 'touch');
+  if (D.settingsPanel === next) return;
+  D.settingsPanel = next;
+  notify(dashboardKey('settingsPanel'));
 }
 
 export function setSelectedZone(zone) {

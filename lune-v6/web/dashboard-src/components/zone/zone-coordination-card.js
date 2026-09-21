@@ -13,7 +13,7 @@ const template = () => `
   <div class="ui-card zone-coordination-card">
     <div class="ui-card-title" data-i18n="zone.coordination.title">Coordination</div>
     <div class="ui-row">
-      <span class="ui-label"><span data-i18n="zone.sensor.mergeWith">Merge With Zone</span> <span class="ui-sublabel" data-i18n="zone.sensor.mergeHelp">merge into one room - mean temperature, valves open equally</span></span>
+      <span class="ui-label" data-i18n="zone.sensor.mergeWith">Merge with zone</span>
       <span class="ui-field"><select class="ui-select zc-sync"></select></span>
     </div>
   </div>

@@ -1,24 +1,6 @@
-export const THEMES = Object.freeze({
-  refinedEmber: 'refined-ember',
-  deepForest: 'deep-forest',
-});
-
-const STORAGE_KEY = 'lune-dashboard-theme';
 const COLOR_SCHEME_QUERY = '(prefers-color-scheme: dark)';
 let colorSchemeMedia = null;
 let colorSchemeListenerBound = false;
-
-function normalize(theme) {
-  return Object.values(THEMES).includes(theme) ? theme : THEMES.refinedEmber;
-}
-
-export function getTheme() {
-  try {
-    return normalize(localStorage.getItem(STORAGE_KEY));
-  } catch {
-    return THEMES.refinedEmber;
-  }
-}
 
 export function getColorScheme() {
   if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return 'dark';
@@ -31,6 +13,8 @@ export function applySystemAppearance() {
   const root = document.documentElement;
   root.dataset.colorScheme = scheme;
   root.style.colorScheme = scheme;
+  root.classList.remove('theme-refined-ember', 'theme-deep-forest');
+  delete root.dataset.theme;
 
   if (!colorSchemeListenerBound && typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
     colorSchemeMedia = window.matchMedia(COLOR_SCHEME_QUERY);
@@ -47,26 +31,14 @@ export function applySystemAppearance() {
   return scheme;
 }
 
-export function applyTheme(theme = getTheme()) {
-  const selected = normalize(theme);
-  if (typeof document === 'undefined') return selected;
-  applySystemAppearance();
-  const root = document.documentElement;
-  Object.values(THEMES).forEach((name) => root.classList.remove(`theme-${name}`));
-  root.classList.add(`theme-${selected}`);
-  root.dataset.theme = selected;
-  return selected;
+export function applyTheme() {
+  return applySystemAppearance();
 }
 
-export function setTheme(theme) {
-  const selected = applyTheme(theme);
-  try {
-    localStorage.setItem(STORAGE_KEY, selected);
-  } catch {
-    // Storage may be unavailable in private or embedded browser contexts.
-  }
-  if (typeof window !== 'undefined') {
-    window.dispatchEvent(new CustomEvent('lune-theme-change', { detail: selected }));
-  }
-  return selected;
+export function getTheme() {
+  return 'product';
+}
+
+export function setTheme() {
+  return applyTheme();
 }

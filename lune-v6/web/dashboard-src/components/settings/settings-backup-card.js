@@ -1,6 +1,6 @@
 import { component } from '../../core/component.js';
 import { injectStyle } from '../../core/style.js';
-import { helpBadgeI18n } from '../../core/ui-kit.js';
+import { helpBadgeI18n, settingsCardHtml, navSwitchHtml, paintNavSwitch } from '../../core/ui-kit.js';
 import { exportSettings, importSettings, isSettingsBackup, saveSettingsBackup } from '../../core/api.js';
 import { localize, subscribeLanguage, t } from '../../core/i18n.js';
 
@@ -21,9 +21,10 @@ const css = `
 
 injectStyle('settings-backup-card', css);
 
-const template = () => `
-  <div class="ui-card settings-backup-card">
-    <div class="ui-card-title"><span class="ui-title-text"><span data-i18n="settings.backup.title">Backup and restore</span>${helpBadgeI18n('settings.backup.help')}</span></div>
+const template = () => settingsCardHtml({
+  className: 'settings-backup-card',
+  titleHtml: `<span data-i18n="settings.backup.title">Backup and restore</span>${helpBadgeI18n('settings.backup.help')}`,
+  bodyHtml: `
     <div class="ui-row">
       <span class="ui-label"><span data-i18n="settings.backup.save">Settings backup</span> <span class="ui-sublabel" data-i18n="settings.backup.saveSub">Downloads zones, manifold, motor and learned values as a JSON file.</span></span>
       <span class="ui-field"><button type="button" class="ui-btn sbk-save" data-i18n="settings.backup.saveBtn">Save backup</button></span>
@@ -32,7 +33,7 @@ const template = () => `
     <div class="ui-section" data-i18n="settings.backup.restore">Restore from file</div>
     <div class="ui-row">
       <span class="ui-label"><span data-i18n="settings.backup.restoreLearned">Restore learned motor values</span> <span class="ui-sublabel" data-i18n="settings.backup.restoreLearnedSub">Keeps endstop calibration from the backup instead of relearning every valve.</span></span>
-      <span class="ui-field"><div class="ui-toggle on sbk-learned" role="switch" aria-checked="true" data-i18n-label="settings.backup.restoreLearned" aria-label="Restore learned motor values"></div></span>
+      <span class="ui-field">${navSwitchHtml({ on: true, label: 'Restore learned motor values', className: 'sbk-learned', attrs: 'data-i18n-label="settings.backup.restoreLearned"' })}</span>
     </div>
     <div class="ui-row">
       <span class="ui-label"><span data-i18n="settings.backup.restoreFile">Backup file</span> <span class="ui-sublabel" data-i18n="settings.backup.restoreSub">Overwrites the local configuration on this controller.</span></span>
@@ -45,8 +46,8 @@ const template = () => `
     <div class="sbk-filename" data-i18n="settings.backup.noFile">No file selected</div>
     <div class="sbk-status" role="status"></div>
     <div class="sbk-result"></div>
-  </div>
-`;
+  `,
+});
 
 export default component({
   tag: 'settings-backup-card',
@@ -73,8 +74,7 @@ export default component({
 
     learnedToggle.addEventListener('click', () => {
       restoreLearned = !restoreLearned;
-      learnedToggle.classList.toggle('on', restoreLearned);
-      learnedToggle.setAttribute('aria-checked', restoreLearned ? 'true' : 'false');
+      paintNavSwitch(learnedToggle, { on: restoreLearned });
     });
 
     saveBtn.addEventListener('click', () => {

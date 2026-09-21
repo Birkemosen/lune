@@ -1,6 +1,6 @@
 import { component, subscribe } from '../../core/component.js';
 import { injectStyle } from '../../core/style.js';
-import { cardForm, helpBadgeI18n } from '../../core/ui-kit.js';
+import { cardForm, helpBadgeI18n, settingsCardHtml, navSwitchHtml } from '../../core/ui-kit.js';
 import { ev, es, isEntityOn } from '../../core/store.js';
 import { setGlobalNumber, setGlobalSelect, setDriversEnabled } from '../../core/api.js';
 import { gkey } from '../../utils/keys.js';
@@ -96,12 +96,13 @@ const template = () => {
       '</span></div>';
   }
 
-  return `
-    <div class="ui-card settings-motor-cal-card">
-      <div class="ui-card-title"><span class="ui-title-text"><span data-i18n="settings.motor.title">Motor Calibration &amp; Learning</span>${helpBadgeI18n('settings.motor.help')}</span></div>
+  return settingsCardHtml({
+    className: 'settings-motor-cal-card',
+    titleHtml: `<span data-i18n="settings.motor.title">Motor Calibration &amp; Learning</span>${helpBadgeI18n('settings.motor.help')}`,
+    bodyHtml: `
       <div class="ui-row">
         <span class="ui-label" data-i18n="settings.motor.drivers">Motor Drivers</span>
-        <span class="ui-field"><div class="ui-toggle mc-drivers-toggle" role="switch" data-i18n-label="settings.motor.toggleDrivers" aria-label="Toggle motor drivers"></div></span>
+        <span class="ui-field">${navSwitchHtml({ on: false, label: 'Toggle motor drivers', className: 'mc-drivers-toggle', attrs: 'data-i18n-label="settings.motor.toggleDrivers"' })}</span>
       </div>
       <div class="ui-note" data-i18n="settings.motor.note">Default starting thresholds and learning bounds used by the motor controller.</div>
 
@@ -123,8 +124,8 @@ const template = () => {
         <summary data-i18n="settings.motor.advanced">Advanced motor learning</summary>
         <div class="mc-advanced-body">${rows}</div>
       </details>
-    </div>
-  `;
+    `,
+  });
 };
 
 function isIntegerSetting(keyName) {

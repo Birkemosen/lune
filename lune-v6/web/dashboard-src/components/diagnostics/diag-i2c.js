@@ -15,7 +15,7 @@ const css = `
   padding: 18px;
   margin-bottom: 18px;
   box-shadow: var(--panel-shadow);
-  backdrop-filter: blur(16px) saturate(1.18);
+  
 }
 .diag-i2c .card-title {
   font-size: .84rem;

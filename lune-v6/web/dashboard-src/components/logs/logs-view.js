@@ -9,13 +9,13 @@ import { localize, subscribeLanguage, t } from '../../core/i18n.js';
 // 1=ERROR 2=WARN 3=INFO 4=CONFIG 5=DEBUG 6=VERBOSE 7=VERY_VERBOSE
 // ========================================
 const LEVELS = {
-  1: { label: 'E', color: '#ff6361' },
-  2: { label: 'W', color: '#ffd380' },
-  3: { label: 'I', color: '#79d17e' },
-  4: { label: 'C', color: '#7aa7ce' },
-  5: { label: 'D', color: 'rgba(214,228,255,.7)' },
-  6: { label: 'V', color: 'rgba(214,228,255,.5)' },
-  7: { label: 'VV', color: 'rgba(214,228,255,.4)' },
+  1: { label: 'E', color: 'var(--danger)' },
+  2: { label: 'W', color: 'var(--warn)' },
+  3: { label: 'I', color: 'var(--ok)' },
+  4: { label: 'C', color: 'var(--info)' },
+  5: { label: 'D', color: 'var(--text-muted)' },
+  6: { label: 'V', color: 'var(--text-faint)' },
+  7: { label: 'VV', color: 'var(--text-faint)' },
 };
 
 // ========================================
@@ -28,7 +28,7 @@ const css = `
   border-radius: 8px;
   padding: 18px;
   box-shadow: var(--panel-shadow);
-  backdrop-filter: blur(16px) saturate(1.18);
+  
 }
 
 .logs-view .actions {

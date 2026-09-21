@@ -11,28 +11,28 @@ import { localize, subscribeLanguage, t } from '../../core/i18n.js';
 // 0xFF (255) = unknown/empty slot → transparent
 // ========================================
 const STATE_PALETTE = {
-  0:   { labelKey: 'state.off',         color: '#2c4875' },
-  1:   { labelKey: 'state.manual',      color: '#7aa7ce' },
-  2:   { labelKey: 'state.calibrating', color: '#ffd380' },
-  3:   { labelKey: 'state.waitCal',     color: '#4e6977' },
-  4:   { labelKey: 'state.waitTemp',    color: '#4e6977' },
+  0:   { labelKey: 'state.off',         color: 'var(--disabled)' },
+  1:   { labelKey: 'state.manual',      color: 'var(--info)' },
+  2:   { labelKey: 'state.calibrating', color: 'var(--warn)' },
+  3:   { labelKey: 'state.waitCal',     color: 'var(--text-faint)' },
+  4:   { labelKey: 'state.waitTemp',    color: 'var(--text-faint)' },
   5:   { labelKey: 'state.heating',     color: 'var(--accent)' },
-  6:   { labelKey: 'state.idle',        color: '#39354c' },
-  7:   { labelKey: 'state.overheated',  color: '#ff6361' },
+  6:   { labelKey: 'state.idle',        color: 'var(--forest)' },
+  7:   { labelKey: 'state.overheated',  color: 'var(--danger)' },
   255: { labelKey: '',                  color: 'transparent' },
 };
 
 const PAST_WINDOW_S   = 24 * 3600;  // measured history window
 const TOTAL_WINDOW_S  = PAST_WINDOW_S;
-const ROW_H      = 18;
-const ROW_GAP    = 4;
-const LABEL_W    = 54;
-const AXIS_H     = 32;
-const PAD_TOP    = 4;
-const BAND_H     = 10;          // preheat-absorption band height
-const BAND_GAP   = 6;           // gap between zone rows and the absorption band
-const ABSORB_COLOR = '#ffc14d'; // gold — slab absorption / current-hour highlight
-const OBSERVED_BAR_H = 9;
+const ROW_H      = 28;
+const ROW_GAP    = 8;
+const LABEL_W    = 72;
+const AXIS_H     = 48;
+const PAD_TOP    = 8;
+const BAND_H     = 16;          // preheat-absorption band height
+const BAND_GAP   = 10;          // gap between zone rows and the absorption band
+const ABSORB_COLOR = 'var(--series-solar)';
+const OBSERVED_BAR_H = 14;
 const ABSORB_INDEX = NZ + 1;    // entry shape: [uptime_s, z0..z5, absorbing]
 const ZONES_BOTTOM = PAD_TOP + NZ * (ROW_H + ROW_GAP) - ROW_GAP;
 const BAND_Y       = ZONES_BOTTOM + BAND_GAP;
@@ -43,79 +43,79 @@ const CHART_H    = ZONES_BOTTOM + BAND_GAP + BAND_H + AXIS_H;
 // ========================================
 const css = `
 .timeline-card {
-  border: 1px solid var(--panel-border);
-  border-radius: 8px;
-  background: var(--panel-bg-vibrant);
-  padding: 14px 16px;
-  box-shadow: var(--panel-shadow);
-  backdrop-filter: blur(16px) saturate(1.18);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
+  box-shadow: none;
 }
 
 .timeline-head {
   display: flex;
   align-items: center;
-  gap: 9px;
-  margin-bottom: 10px;
+  gap: 10px;
+  margin-bottom: 14px;
 }
-.timeline-head::before { content:''; width:4px; height:13px; border-radius:4px; background:var(--accent); flex-shrink:0; }
+.timeline-head::before { display:none; }
 .timeline-head span {
-  color: var(--accent);
-  font-size: .74rem;
-  font-weight: 800;
-  letter-spacing: 1.4px;
+  color: var(--text-faint);
+  font-size: .72rem;
+  font-weight: 750;
+  letter-spacing: .08em;
   text-transform: uppercase;
 }
 
 .timeline-head strong {
   margin-left: auto;
-  color: var(--text-faint);
-  font-size: .70rem;
+  color: var(--text-muted);
+  font-size: .8rem;
   font-weight: 600;
-  letter-spacing: .4px;
+  letter-spacing: 0;
   text-transform: none;
 }
 
 .timeline-svg {
   width: 100%;
   display: block;
-  border-radius: 8px;
+  border-radius: 0;
   overflow: visible;
+  min-height: 280px;
 }
 
 .timeline-empty {
-  color: var(--text-faint);
-  font-size: .78rem;
-  padding: 12px 0;
-  text-align: center;
-  letter-spacing: .3px;
+  color: var(--text-muted);
+  font-size: .9rem;
+  padding: 24px 0;
+  text-align: left;
+  letter-spacing: 0;
 }
 
 .timeline-legend {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px 14px;
-  margin-top: 10px;
+  gap: 10px 18px;
+  margin-top: 14px;
 }
 
 .tl-legend-item {
   display: flex;
   align-items: center;
-  gap: 5px;
-  font-size: .67rem;
-  color: var(--text-secondary);
-  letter-spacing: .3px;
+  gap: 7px;
+  font-size: .8rem;
+  color: var(--text-muted);
+  letter-spacing: 0;
 }
 
 .tl-legend-dot {
-  width: 9px;
-  height: 9px;
+  width: 11px;
+  height: 11px;
   border-radius: 2px;
   flex-shrink: 0;
 }
 
 .tl-legend-dot.expected {
-  width: 14px;
-  height: 4px;
+  width: 16px;
+  height: 5px;
   opacity: .55;
   border-radius: 999px;
 }
@@ -174,8 +174,8 @@ function renderTimeline(histData, currentUptimeS) {
   bg.setAttribute('y', PAD_TOP);
   bg.setAttribute('width', chartW);
   bg.setAttribute('height', CHART_H - PAD_TOP - AXIS_H);
-  bg.setAttribute('fill', 'rgba(0,32,46,0.55)');
-  bg.setAttribute('rx', '4');
+  bg.setAttribute('fill', 'transparent');
+  bg.setAttribute('rx', '0');
   svg.appendChild(bg);
 
   const nowX = relToX(0);
@@ -188,24 +188,24 @@ function renderTimeline(histData, currentUptimeS) {
     line.setAttribute('y1', PAD_TOP);
     line.setAttribute('x2', x);
     line.setAttribute('y2', CHART_H - AXIS_H);
-    line.setAttribute('stroke', rel === 0 ? 'var(--series-solar)' : 'rgba(120,146,200,.16)');
+    line.setAttribute('stroke', rel === 0 ? 'var(--series-solar)' : 'var(--separator)');
     line.setAttribute('stroke-width', '1');
     if (rel === 0) {
-      line.setAttribute('stroke-dasharray', '2 3');
-      line.setAttribute('opacity', '.55');
+      line.setAttribute('stroke-dasharray', '3 4');
+      line.setAttribute('opacity', '.7');
       line.setAttribute('vector-effect', 'non-scaling-stroke');
     }
     svg.appendChild(line);
   }
 
   svg.appendChild(svgElLike(ns, 'text', {
-    x: nowX + 4,
-    y: PAD_TOP + 11,
+    x: nowX + 6,
+    y: PAD_TOP + 14,
     'text-anchor': 'start',
-    fill: 'rgba(255,211,128,.92)',
-    'font-size': '9',
-    'font-family': 'Montserrat, sans-serif',
-    'font-weight': '600',
+    fill: 'var(--accent)',
+    'font-size': '12',
+    'font-family': 'var(--font-ui)',
+    'font-weight': '650',
   }, 'now'));
 
   // ── Zone rows ─────────────────────────────────────────────────
@@ -219,20 +219,20 @@ function renderTimeline(histData, currentUptimeS) {
     rowBg.setAttribute('width', chartW);
     rowBg.setAttribute('height', ROW_H);
     rowBg.setAttribute('fill', zi % 2 === 0
-      ? 'rgba(124,155,208,0.05)'
-      : 'rgba(124,155,208,0.00)');
+      ? 'var(--inset)'
+      : 'transparent');
     svg.appendChild(rowBg);
 
     // Zone label
     const label = document.createElementNS(ns, 'text');
-    label.setAttribute('x', LABEL_W - 4);
+    label.setAttribute('x', LABEL_W - 8);
     label.setAttribute('y', y + ROW_H / 2 + 1);
     label.setAttribute('text-anchor', 'end');
     label.setAttribute('dominant-baseline', 'middle');
-    label.setAttribute('fill', 'rgba(233,222,210,.62)');
-    label.setAttribute('font-size', '9.5');
-    label.setAttribute('font-family', 'Montserrat, sans-serif');
-    label.setAttribute('font-weight', '600');
+    label.setAttribute('fill', 'var(--text-muted)');
+    label.setAttribute('font-size', '13');
+    label.setAttribute('font-family', 'var(--font-ui)');
+    label.setAttribute('font-weight', '650');
     label.textContent = 'Z' + (zi + 1);
     svg.appendChild(label);
 
@@ -288,19 +288,19 @@ function renderTimeline(histData, currentUptimeS) {
     bandBg.setAttribute('y', BAND_Y);
     bandBg.setAttribute('width', chartW);
     bandBg.setAttribute('height', BAND_H);
-    bandBg.setAttribute('fill', 'rgba(188,80,144,0.10)');
+    bandBg.setAttribute('fill', 'color-mix(in srgb, var(--series-solar) 12%, transparent)');
     bandBg.setAttribute('rx', '2');
     svg.appendChild(bandBg);
 
     const bandLabel = document.createElementNS(ns, 'text');
-    bandLabel.setAttribute('x', LABEL_W - 4);
+    bandLabel.setAttribute('x', LABEL_W - 8);
     bandLabel.setAttribute('y', BAND_Y + BAND_H / 2 + 1);
     bandLabel.setAttribute('text-anchor', 'end');
     bandLabel.setAttribute('dominant-baseline', 'middle');
-    bandLabel.setAttribute('fill', 'rgba(233,222,210,.62)');
-    bandLabel.setAttribute('font-size', '8.5');
-    bandLabel.setAttribute('font-family', 'Montserrat, sans-serif');
-    bandLabel.setAttribute('font-weight', '600');
+    bandLabel.setAttribute('fill', 'var(--text-muted)');
+    bandLabel.setAttribute('font-size', '12');
+    bandLabel.setAttribute('font-family', 'var(--font-ui)');
+    bandLabel.setAttribute('font-weight', '650');
     bandLabel.textContent = t('overview.timeline.absorb');
     svg.appendChild(bandLabel);
 
@@ -335,32 +335,30 @@ function renderTimeline(histData, currentUptimeS) {
     }
   }
 
-  // ── Hourly time axis labels ───────────────────────────────────
-  // Every local hour is visible, slanted, with the current hour highlighted.
-  const AXIS_Y = CHART_H - AXIS_H + 15;
+  // ── Time axis: every 2 hours, upright (readable at overview width) ──
+  const AXIS_Y = CHART_H - AXIS_H + 22;
   const HOUR_S = 3600;
   const firstHourEpoch = Math.ceil((nowEpoch - PAST_WINDOW_S) / HOUR_S) * HOUR_S;
   const lastHourEpoch = Math.floor(nowEpoch / HOUR_S) * HOUR_S;
   const currentHourEpoch = Math.floor(nowEpoch / HOUR_S) * HOUR_S;
   for (let epoch = firstHourEpoch; epoch <= lastHourEpoch; epoch += HOUR_S) {
+    const d = new Date(epoch * 1000);
+    const hour = d.getHours();
+    const isCurrent = epoch === currentHourEpoch;
+    if (!isCurrent && hour % 2 !== 0) continue;
     const rel = epoch - nowEpoch;
     const x = relToX(rel);
-    const d = new Date(epoch * 1000);
-    const hour = String(d.getHours()).padStart(2, '0');
-    const isCurrent = epoch === currentHourEpoch;
     const lbl = document.createElementNS(ns, 'text');
     lbl.setAttribute('x', x);
     lbl.setAttribute('y', AXIS_Y);
-    lbl.setAttribute('text-anchor', 'end');
-    lbl.setAttribute('fill', isCurrent ? 'rgba(255,211,128,.95)' : 'rgba(202,219,248,.72)');
-    lbl.setAttribute('font-size', '9');
-    lbl.setAttribute('font-family', '"Montserrat", sans-serif');
-    lbl.setAttribute('font-weight', '500');
+    lbl.setAttribute('text-anchor', 'middle');
+    lbl.setAttribute('fill', isCurrent ? 'var(--accent)' : 'var(--text-muted)');
+    lbl.setAttribute('font-size', '12');
+    lbl.setAttribute('font-family', 'var(--font-ui)');
+    lbl.setAttribute('font-weight', isCurrent ? '700' : '600');
     lbl.setAttribute('font-variant-numeric', 'tabular-nums lining-nums');
     lbl.setAttribute('font-feature-settings', '"tnum" 1, "lnum" 1');
-    lbl.setAttribute('letter-spacing', '0');
-    lbl.setAttribute('transform', `rotate(-45 ${x.toFixed(1)} ${AXIS_Y})`);
-    lbl.textContent = hour;
+    lbl.textContent = String(hour).padStart(2, '0');
     svg.appendChild(lbl);
   }
 

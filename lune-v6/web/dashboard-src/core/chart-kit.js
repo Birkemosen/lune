@@ -13,16 +13,15 @@ export const SVG_NS = 'http://www.w3.org/2000/svg';
 
 const css = `
 .chart-card {
-  border: 1px solid var(--panel-border);
-  border-radius: 8px;
-  background: var(--panel-bg-vibrant);
-  padding: 14px 16px;
-  box-shadow: var(--panel-shadow);
-  backdrop-filter: blur(16px) saturate(1.18);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 0;
+  box-shadow: none;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
-  position: relative;        /* tooltip anchor */
+  position: relative;
 }
 
 .chart-head {
@@ -32,19 +31,13 @@ const css = `
   margin-bottom: 4px;
 }
 .chart-head::before {
-  content: '';
-  width: 4px;
-  height: 13px;
-  border-radius: 4px;
-  background: linear-gradient(180deg, var(--accent), var(--state-warn));
-  box-shadow: 0 0 18px rgba(255,138,61,.34);
-  flex-shrink: 0;
+  display: none;
 }
 .chart-title {
-  color: var(--accent);
-  font-size: .74rem;
-  font-weight: 800;
-  letter-spacing: 1.4px;
+  color: var(--text-muted);
+  font-size: .68rem;
+  font-weight: 700;
+  letter-spacing: .08em;
   text-transform: uppercase;
 }
 .chart-head .chart-sub {
@@ -83,17 +76,17 @@ const css = `
 }
 
 .chart-card svg { width: 100%; height: auto; display: block; overflow: visible; }
-.chart-grid { stroke: rgba(218,231,238,.16); stroke-width: 1; vector-effect: non-scaling-stroke; }
-.chart-axis { stroke: rgba(218,231,238,.36); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.chart-grid { stroke: var(--separator); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.chart-axis { stroke: var(--separator); stroke-width: 1; vector-effect: non-scaling-stroke; }
 .chart-tick { fill: var(--chart-axis); font-size: 11px; opacity: .85; }
 .chart-axis-label {
   fill: var(--chart-axis); font-size: 9px; letter-spacing: .8px;
   text-transform: uppercase; opacity: .75;
 }
-/* Time labels use tabular Montserrat digits: equal width, no slashed zero. */
+/* Time labels use tabular UI digits. */
 .chart-hour {
-  fill: rgba(202,219,248,.78);
-  font-family: "Montserrat", sans-serif;
+  fill: var(--text-muted);
+  font-family: var(--font-ui);
   font-size: 9px;
   font-weight: 500;
   font-variant-numeric: tabular-nums lining-nums;
@@ -101,18 +94,18 @@ const css = `
   letter-spacing: 0;
 }
 .chart-hour.now { fill: var(--series-solar); }
-.chart-hour.day2 { fill: rgba(202,219,248,.5); }
+.chart-hour.day2 { fill: var(--text-faint); }
 .chart-empty { fill: var(--text-faint); font-size: 12px; letter-spacing: .3px; }
 
 /* hover cursor + tooltip */
-.chart-cursor-line { stroke: rgba(233,222,210,.45); stroke-width: 1; stroke-dasharray: 3 3; vector-effect: non-scaling-stroke; }
+.chart-cursor-line { stroke: var(--text-faint); stroke-width: 1; stroke-dasharray: 3 3; vector-effect: non-scaling-stroke; }
 .chart-cursor-dot { stroke: var(--card); stroke-width: 1.5; }
 .chart-tooltip {
   position: absolute;
   pointer-events: none;
   z-index: 20;
   background: var(--overlay-bg);
-  backdrop-filter: blur(12px) saturate(1.15);
+  
   border: 1px solid var(--panel-border);
   border-radius: 8px;
   padding: 7px 9px;

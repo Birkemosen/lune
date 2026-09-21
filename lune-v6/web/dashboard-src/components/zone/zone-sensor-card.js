@@ -9,6 +9,16 @@ import { localize, subscribeLanguage, t } from '../../core/i18n.js';
 const css = `
 .zone-sensor-card { height: 100%; }
 
+.zone-sensor-card .ui-row {
+  display: grid;
+  gap: 6px;
+  align-items: stretch;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+}
+.zone-sensor-card .ui-label { color: var(--text-muted); font-size: .72rem; font-weight: 650; }
+.zone-sensor-card .ui-field { width: 100%; display: block; }
 .zone-sensor-card .ble-row {
   display: flex;
   gap: 6px;
@@ -16,7 +26,8 @@ const css = `
   margin-top: 8px;
 }
 .zone-sensor-card .ble-row .ble-input,
-.zone-sensor-card .ext-input {
+.zone-sensor-card .ext-input,
+.zone-sensor-card .ui-select {
   flex: 1;
   min-width: 0;
   box-sizing: border-box;
@@ -24,33 +35,31 @@ const css = `
   background: var(--control-bg);
   color: var(--text);
   border-radius: 8px;
-  height: var(--control-height, 44px);
-  min-height: var(--control-height, 44px);
-  padding: 0 10px;
-  font-size: .875rem;
-  font-family: var(--mono);
+  height: var(--control-compact, 32px);
+  min-height: var(--control-compact, 32px);
+  padding: 0 9px;
+  font-size: .82rem;
   line-height: 1.2;
-  transition: border-color .15s ease;
 }
 .zone-sensor-card .ext-input { font-family: inherit; margin-top: 8px; width: 100%; }
 .zone-sensor-card .ble-row .ble-input:focus,
-.zone-sensor-card .ext-input:focus {
-  outline: 3px solid var(--focus-ring);
-  outline-offset: 2px;
-  border-color: var(--accent);
+.zone-sensor-card .ext-input:focus,
+.zone-sensor-card .ui-select:focus {
+  outline: 1px solid rgba(var(--accent-rgb), .45);
+  border-color: rgba(var(--accent-rgb), .45);
 }
 .zone-sensor-card .btn-scan {
   flex-shrink: 0;
   box-sizing: border-box;
-  height: var(--control-height, 44px);
-  min-height: var(--control-height, 44px);
-  padding: 0 13px;
+  height: var(--control-compact, 32px);
+  min-height: var(--control-compact, 32px);
+  padding: 0 10px;
   border-radius: 8px;
   border: 1px solid var(--control-border);
   background: var(--control-bg);
-  color: var(--accent);
-  font-size: .82rem;
-  font-weight: 700;
+  color: var(--text-strong);
+  font-size: .78rem;
+  font-weight: 650;
   line-height: 1.2;
   cursor: pointer;
   white-space: nowrap;
@@ -119,19 +128,26 @@ const template = () => `
         <span class="ui-field"><select class="ui-select zs-source"></select></span>
       </div>
       <div class="zs-row-ble">
-        <div class="ui-section" data-i18n="zone.sensor.bleSensor">BLE sensor</div>
-        <div class="ui-note" data-i18n="zone.sensor.bleNote">Pair a nearby BTHome sensor (Shelly BLU H&T) or enter MAC manually.</div>
-        <div class="ble-row">
-          <input class="ble-input zs-ble" maxlength="17" placeholder="AA:BB:CC:DD:EE:FF">
-          <button class="btn-scan zs-scan" data-i18n="zone.sensor.scan">Scan</button>
+        <div class="ui-row">
+          <span class="ui-label" data-i18n="zone.sensor.bleSensor">BLE sensor</span>
+          <span class="ui-field">
+            <div class="ble-row">
+              <input class="ble-input zs-ble" maxlength="17" placeholder="AA:BB:CC:DD:EE:FF">
+              <button class="btn-scan zs-scan" data-i18n="zone.sensor.scan">Scan</button>
+            </div>
+          </span>
         </div>
         <div class="ble-scan-list zs-scan-list" style="display:none"></div>
       </div>
       <div class="zs-row-ext" style="display:none">
-        <div class="ui-section" data-i18n="zone.sensor.externalTitle">External (Wi‑Fi)</div>
-        <div class="ui-note" data-i18n="zone.sensor.externalNote">Bind a stable sensor_id. Producers POST temperatures; zone mapping stays on V6.</div>
-        <input class="ext-input zs-sid" maxlength="47" placeholder="AA:BB:CC:DD:EE:FF or entity id" data-i18n-placeholder="zone.sensor.sensorIdPh">
-        <input class="ext-input zs-sname" maxlength="23" placeholder="Friendly name (optional)" data-i18n-placeholder="zone.sensor.sensorNamePh">
+        <div class="ui-row">
+          <span class="ui-label" data-i18n="zone.sensor.sensorId">Sensor id</span>
+          <span class="ui-field"><input class="ext-input zs-sid" maxlength="47" placeholder="AA:BB:CC:DD:EE:FF or entity id" data-i18n-placeholder="zone.sensor.sensorIdPh"></span>
+        </div>
+        <div class="ui-row">
+          <span class="ui-label" data-i18n="zone.sensor.sensorName">Sensor name</span>
+          <span class="ui-field"><input class="ext-input zs-sname" maxlength="23" placeholder="Friendly name (optional)" data-i18n-placeholder="zone.sensor.sensorNamePh"></span>
+        </div>
         <div class="ext-age zs-age"></div>
       </div>
     </div>

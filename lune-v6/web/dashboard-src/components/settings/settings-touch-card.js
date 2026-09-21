@@ -1,5 +1,6 @@
 import { component, subscribe } from '../../core/component.js';
 import { injectStyle } from '../../core/style.js';
+import { settingsCardHtml } from '../../core/ui-kit.js';
 import { approveTouchProposal, revokeTouchConnection } from '../../core/api.js';
 import { es, ev, isEntityOn } from '../../core/store.js';
 import { gkey } from '../../utils/keys.js';
@@ -26,9 +27,10 @@ const css = `
 
 injectStyle('settings-touch-card', css);
 
-const template = () => `
-  <div class="ui-card settings-touch-card">
-    <div class="ui-card-title"><span class="ui-title-text">Lune Touch connection</span></div>
+const template = () => settingsCardHtml({
+  className: 'settings-touch-card',
+  titleHtml: 'Lune Touch connection',
+  bodyHtml: `
     <div class="touch-status" role="status" aria-live="polite"><span class="touch-status-dot" aria-hidden="true"></span><span class="touch-status-copy"></span></div>
     <dl class="touch-identity" hidden>
       <div><dt>Touch</dt><dd class="touch-name">Lune Touch</dd></div>
@@ -39,7 +41,8 @@ const template = () => `
     <p class="touch-note"></p>
     <p class="touch-error" role="alert"></p>
     <div class="touch-actions"><button class="ui-btn touch-disconnect" type="button">Disconnect Touch</button><button class="ui-btn touch-approve" type="button">Approve Lune Touch</button></div>
-  </div>`;
+  `,
+});
 
 export default component({
   tag: 'settings-touch-card',

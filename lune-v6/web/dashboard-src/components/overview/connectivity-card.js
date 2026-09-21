@@ -15,7 +15,7 @@ const css = `
   border-radius: 8px;
   padding: 12px 14px;
   box-shadow: var(--panel-shadow);
-  backdrop-filter: blur(16px) saturate(1.18);
+  
   height: 100%;
   box-sizing: border-box;
 }

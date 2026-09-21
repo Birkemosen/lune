@@ -1,6 +1,6 @@
 import { component, subscribe } from '../../core/component.js';
 import { injectStyle } from '../../core/style.js';
-import { cardForm, helpBadgeI18n } from '../../core/ui-kit.js';
+import { cardForm, helpBadgeI18n, settingsCardHtml, navSwitchHtml } from '../../core/ui-kit.js';
 import { es, zoneTitleMarkup } from '../../core/store.js';
 import { setZoneSelect } from '../../core/api.js';
 import { key } from '../../utils/keys.js';
@@ -59,16 +59,17 @@ const template = () => {
       </div>`;
   }
 
-  return `
-    <div class="ui-card settings-return-temp-card">
-      <div class="ui-card-title"><span class="ui-title-text"><span data-i18n="settings.returnTemp.title">Return temperature</span>${helpBadgeI18n('settings.returnTemp.help')}</span></div>
+  return settingsCardHtml({
+    className: 'settings-return-temp-card',
+    titleHtml: `<span data-i18n="settings.returnTemp.title">Return temperature</span>${helpBadgeI18n('settings.returnTemp.help')}`,
+    bodyHtml: `
       <div class="ui-row">
         <span class="ui-label"><span data-i18n="common.enabled">Enabled</span> <span class="ui-sublabel" data-i18n="settings.returnTemp.enabledSub">Optional return probes for legacy return-temp balancing — not required for adaptive balancing.</span></span>
-        <span class="ui-field"><div class="ui-toggle srt-enabled" role="switch" data-i18n-label="settings.returnTemp.title" aria-label="Enable return temperature probes"></div></span>
+        <span class="ui-field">${navSwitchHtml({ on: false, label: 'Enable return temperature probes', className: 'srt-enabled', attrs: 'data-i18n-label="settings.returnTemp.title"' })}</span>
       </div>
       <div class="srt-zones">${zoneRows}</div>
-    </div>
-  `;
+    `,
+  });
 };
 
 export default component({

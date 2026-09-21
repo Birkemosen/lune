@@ -14,7 +14,7 @@ const css = `
 .zone-card + .zone-card{border-top:1px solid var(--separator)}
 .zone-card:hover{background:rgba(255,255,255,.025)}
 .zone-card:active{background:rgba(var(--accent-rgb),.08)}
-.zone-card.active{background:rgba(var(--accent-rgb),.10)}
+.zone-card.active{background:var(--fill-forest)}
 .zone-card.disabled{color:var(--text-muted)}
 .zone-card .zc-zone-name,.zone-card .zc-friendly,.zone-card .zc-reading,.zone-card .zc-valve,.zone-card .zc-state-row{min-width:0}
 .zone-card .zc-zone-name{grid-column:1;grid-row:1;color:var(--text-strong);font-size:.94rem;font-weight:650;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}

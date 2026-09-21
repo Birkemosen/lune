@@ -54,8 +54,9 @@ function seed() {
     setEntity(key.setpoint(zone), { value: state.setpoint[index] });
     setEntity(key.baseSetpoint(zone), { value: state.setpoint[index] });
     setEntity(key.effectiveSetpoint(zone), { value: state.setpoint[index] });
-    setEntity(key.coordinatorOffset(zone), { value: 0 });
-    setEntity(key.coordinatorRemaining(zone), { value: 0 });
+    setEntity(key.coordinatorOffset(zone), { value: zone === 1 ? 1.5 : 0 });
+    setEntity(key.coordinatorRemaining(zone), { value: zone === 1 ? 2400 : 0 });
+    if (zone === 1) setEntity(key.effectiveSetpoint(1), { value: state.setpoint[0] + 1.5 });
     setEntity(key.valve(zone), { value: state.valve[index] });
     setEntity(key.state(zone), { state: state.valve[index] > 5 ? 'heating' : 'idle' });
     setEntity(key.enabled(zone), { value: !!state.enabled[index], state: state.enabled[index] ? 'on' : 'off' });

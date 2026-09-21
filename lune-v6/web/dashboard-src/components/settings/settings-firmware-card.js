@@ -1,6 +1,6 @@
 import { component, subscribe } from '../../core/component.js';
 import { injectStyle } from '../../core/style.js';
-import { helpBadgeI18n } from '../../core/ui-kit.js';
+import { helpBadgeI18n, settingsCardHtml } from '../../core/ui-kit.js';
 import { E, es, getDashboardValue, setDashboardValue, subscribeDashboard } from '../../core/store.js';
 import { fetchLatestRelease, firmwareCheck, firmwareInstall, firmwarePrepare, ReleaseCheckError, releaseAssetFor, uploadFirmware } from '../../core/api.js';
 import { gkey } from '../../utils/keys.js';
@@ -42,9 +42,10 @@ const css = `
 
 injectStyle('settings-firmware-card', css);
 
-const template = () => `
-  <div class="ui-card settings-firmware-card">
-    <div class="ui-card-title"><span class="ui-title-text"><span data-i18n="settings.firmware.title">Firmware</span>${helpBadgeI18n('settings.firmware.help')}</span></div>
+const template = () => settingsCardHtml({
+  className: 'settings-firmware-card',
+  titleHtml: `<span data-i18n="settings.firmware.title">Firmware</span>${helpBadgeI18n('settings.firmware.help')}`,
+  bodyHtml: `
     <div class="ui-row">
       <span class="ui-label"><span data-i18n="settings.firmware.installed">Installed version</span> <span class="ui-sublabel sfw-status" role="status">—</span></span>
       <span class="ui-field"><span class="sfw-version">—</span><button type="button" class="ui-btn sfw-check" data-i18n="settings.firmware.check">Check for update</button></span>
@@ -75,8 +76,8 @@ const template = () => `
     <div class="sfw-filename" data-i18n="settings.firmware.noFile">No file selected</div>
     <div class="sfw-progress" hidden><i></i></div>
     <div class="ui-note sfw-upload-status" role="status"></div>
-  </div>
-`;
+  `,
+});
 
 // Compare the release triple only: development builds carry a -N suffix
 // (v1.0.0-42) that must not read as newer than the v1.0.0 release itself.
@@ -107,12 +108,10 @@ function truncateNotes(body) {
   return text.slice(0, NOTES_MAX_CHARS).replace(/\s+\S*$/, '') + '…';
 }
 
-// Open the sibling backup disclosure so a backup can be taken before flashing.
+// Scroll to the sibling backup card so a backup can be taken before flashing.
 function revealBackupCard() {
   const card = document.querySelector('.settings-backup-card');
   if (!card) return;
-  const disclosure = card.closest('details');
-  if (disclosure) disclosure.open = true;
   card.scrollIntoView({ behavior: 'smooth', block: 'center' });
   const button = card.querySelector('.sbk-save');
   if (button) button.focus({ preventScroll: true });

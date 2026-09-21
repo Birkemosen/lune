@@ -2664,7 +2664,7 @@ void LV6Dashboard::handle_v1_(AsyncWebServerRequest *request, const char *path) 
     return;
   }
   if (act.key == "drivers_enabled" && act.has_num && act.num_val != 0.0f &&
-      this->valve_controller_)
+      this->valve_controller_ && this->valve_controller_->has_fault_latch())
     this->valve_controller_->assert_latch_arm_high();
   if (!this->enqueue_action_(act)) {
     this->send_v1_(request, 503, "busy", "System busy, try again");
@@ -2853,6 +2853,11 @@ void LV6Dashboard::handle_arm_clock_probe_(AsyncWebServerRequest *request, const
   const bool clamp = parse_bool_param(request, body, "clamp", &flag) && flag;
 
   lv6::Rev32MotorBackend::ArmClockProbe probe{};
+  if (!this->valve_controller_->has_fault_latch()) {
+    this->send_v1_(request, 400, "no_latch",
+                   "Rev 3.3 has no LATCH_ARM; GPIO17 is DRIVER_N_SLEEP");
+    return;
+  }
   if (!this->valve_controller_->probe_arm_clock(hz, duration_ms, clamp, &probe)) {
     this->send_v1_(request, 503, "backend_unavailable", "Rev 3.2 motor backend is not active");
     return;

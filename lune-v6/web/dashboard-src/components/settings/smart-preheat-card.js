@@ -1,6 +1,6 @@
 import { component, subscribe } from '../../core/component.js';
 import { injectStyle } from '../../core/style.js';
-import { cardForm, helpBadgeI18n } from '../../core/ui-kit.js';
+import { cardForm, helpBadgeI18n, settingsCardHtml, navSwitchHtml } from '../../core/ui-kit.js';
 import { setGlobalSelect, setGlobalNumber } from '../../core/api.js';
 import { es, ev, isEntityOn, setEntity } from '../../core/store.js';
 import { gkey } from '../../utils/keys.js';
@@ -17,15 +17,15 @@ const css = `
   text-transform: uppercase;
   padding: 2px 8px;
   border-radius: 8px;
-  background: rgba(70,70,70,.28);
-  color: #ADADAD;
-  border: 1px solid rgba(150,150,150,.25);
+  background: color-mix(in srgb, var(--disabled) 28%, transparent);
+  color: var(--text-muted);
+  border: 1px solid var(--separator);
 }
 
 .smart-preheat-card .absorb-badge.active {
-  background: rgba(45,110,45,.36);
-  color: #CBFFD0;
-  border-color: rgba(100,255,100,.35);
+  background: color-mix(in srgb, var(--ok) 22%, transparent);
+  color: var(--ok);
+  border-color: color-mix(in srgb, var(--ok) 42%, transparent);
 }
 `;
 
@@ -34,12 +34,13 @@ injectStyle('smart-preheat-card', css);
 // ========================================
 // TEMPLATE
 // ========================================
-const template = () => `
-  <div class="ui-card smart-preheat-card">
-    <div class="ui-card-title"><span class="ui-title-text"><span data-i18n="settings.preheat.title">Preheat</span>${helpBadgeI18n('settings.preheat.help')}</span></div>
+const template = () => settingsCardHtml({
+  className: 'smart-preheat-card',
+  titleHtml: `<span data-i18n="settings.preheat.title">Preheat</span>${helpBadgeI18n('settings.preheat.help')}`,
+  bodyHtml: `
     <div class="ui-row">
       <span class="ui-label"><span data-i18n="settings.preheat.absorption">Preheat Absorption</span> <span class="absorb-badge">idle</span></span>
-      <span class="ui-field"><div class="ui-toggle absorb-toggle" role="switch" data-i18n-label="settings.preheat.toggle" aria-label="Toggle preheat absorption"></div></span>
+      <span class="ui-field">${navSwitchHtml({ on: false, label: 'Toggle preheat absorption', className: 'absorb-toggle', attrs: 'data-i18n-label="settings.preheat.toggle"' })}</span>
     </div>
     <div class="ui-note" data-i18n="settings.preheat.note">When an external optimizer pushes hot water with no zone demanding heat, keeps satisfied zones open so the slab soaks it up instead of fighting it. Releases the instant any zone calls for heat.</div>
     <div class="gated-body absorb-body">
@@ -52,8 +53,8 @@ const template = () => `
         <span class="ui-field"><input class="ui-input absorb-delta" type="number" min="2" max="25" step="0.5" placeholder="8.0" /></span>
       </div>
     </div>
-  </div>
-`;
+  `,
+});
 
 // ========================================
 // COMPONENT
