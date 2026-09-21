@@ -30,8 +30,14 @@ SECRETS_LINK ?= configurations/secrets.yaml
 SECRETS_TARGET ?= ../../secrets.yaml
 LANG ?= en
 DASHBOARD_COMPILED_LANG := $(if $(filter en da,$(LANG)),$(LANG),en)
+DESIGN_DIR ?= $(firstword $(wildcard \
+	$(abspath $(ROOT_ABS)/../lds) \
+	$(abspath $(CURDIR)/../../lds) \
+))
+LDS_DIR ?= $(DESIGN_DIR)
+LDS_CONSUMER ?= $(ROOT_ABS)
 
-.PHONY: help check ensure-secrets-link config compile build build-verify bump-build prepare-release release release-deploy release-firmware release-bundle upload deploy ota logs discover monitor erase erase-nvs clean dashboard dashboard-tooling dashboard-build dashboard-watch test test-dashboard test-ripple test-rev31-logic test-rev32-logic test-balance test-authority-lease test-preheat-policy test-hydraulic-policy test-hydraulic-diagnostics test-commissioning-schema test-request-guard test-ble-time-beacon test-settings-backup
+.PHONY: help check ensure-secrets-link config compile build build-verify bump-build prepare-release release release-deploy release-firmware release-bundle upload deploy ota logs discover monitor erase erase-nvs clean dashboard dashboard-tooling dashboard-build dashboard-watch design-tokens design-verify test test-dashboard test-ripple test-rev31-logic test-rev32-logic test-balance test-authority-lease test-preheat-policy test-hydraulic-policy test-hydraulic-diagnostics test-commissioning-schema test-request-guard test-ble-time-beacon test-settings-backup
 
 help:
 	@echo "Lune V6 ESPHome tasks"
@@ -254,7 +260,7 @@ test-settings-backup:
 test-dashboard:
 	sh test/dashboard/test_dashboard.sh
 
-test: test-dashboard test-ripple test-rev31-logic test-rev32-logic test-balance test-authority-lease test-preheat-policy test-hydraulic-policy test-hydraulic-diagnostics test-commissioning-schema test-request-guard test-ble-time-beacon test-settings-backup
+test: design-verify test-dashboard test-ripple test-rev31-logic test-rev32-logic test-balance test-authority-lease test-preheat-policy test-hydraulic-policy test-hydraulic-diagnostics test-commissioning-schema test-request-guard test-ble-time-beacon test-settings-backup
 
 ota: check
 	$(MAKE) build
@@ -338,6 +344,20 @@ dashboard-tooling:
 	mkdir -p $(ROOT_DIR)/.tools
 	cd $(ROOT_DIR)/.tools && curl -fsSL https://esbuild.github.io/dl/latest | sh
 
+design-tokens:
+	@if [ ! -f "$(LDS_DIR)/generate_tokens.py" ]; then \
+	  echo "LDS checkout not found at $(LDS_DIR)"; \
+	  exit 1; \
+	fi
+	$(PYTHON) $(LDS_DIR)/generate_tokens.py --install $(LDS_CONSUMER) --no-dist
+
+design-verify:
+	@if [ ! -f "$(LDS_DIR)/generate_tokens.py" ]; then \
+	  echo "WARNING: LDS checkout not found at $(LDS_DIR), skipping"; \
+	  exit 0; \
+	fi
+	$(PYTHON) $(LDS_DIR)/generate_tokens.py --install $(LDS_CONSUMER) --no-dist --check
+
 dashboard-build:
 	@command -v $(DASHBOARD_TOOL) >/dev/null 2>&1 || $(MAKE) dashboard-tooling
 	$(DASHBOARD_TOOL) $(DASHBOARD_SRC_DIR)/main.js \
@@ -347,9 +367,11 @@ dashboard-build:
 	--format=iife \
 	--target=es2018 \
 	--platform=browser \
+	--loader:.css=text \
 	--define:DEBUG=false \
 	--define:LV6_DASHBOARD_LANG=\"$(DASHBOARD_COMPILED_LANG)\" \
 	--outfile=$(DASHBOARD_OUT_FILE)
+	@echo "dashboard.js: $$(wc -c < $(DASHBOARD_OUT_FILE) | tr -d ' ') bytes raw, $$(gzip -9 -c $(DASHBOARD_OUT_FILE) | wc -c | tr -d ' ') bytes gzipped"
 
 dashboard-watch:
 	@echo "Watching dashboard source for changes... press (ctrl+c to stop)"

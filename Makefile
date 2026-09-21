@@ -6,6 +6,7 @@ LUNE_V6_DIR ?= lune-v6
 .PHONY: help \
         config build build-verify deploy ota logs discover monitor erase erase-nvs clean \
         dashboard dashboard-tooling dashboard-build dashboard-watch \
+        design-tokens design-verify \
 		help-v6 config-v6 build-v6 build-verify-v6 deploy-v6 ota-v6 logs-v6 discover-v6 monitor-v6 erase-v6 erase-nvs-v6 clean-v6 dashboard-v6 dashboard-tooling-v6 dashboard-build-v6 dashboard-watch-v6 test-v6 release-v6 release-deploy-v6 release-firmware-v6 \
         test test-ripple test-balance release release-deploy release-firmware
 
@@ -41,7 +42,7 @@ help:
 	@echo "Device-local help"
 	@echo "  make help-v6"
 
-config build build-verify deploy ota logs discover monitor erase erase-nvs clean dashboard dashboard-tooling dashboard-build dashboard-watch release release-deploy release-firmware:
+config build build-verify deploy ota logs discover monitor erase erase-nvs clean dashboard dashboard-tooling dashboard-build dashboard-watch design-tokens design-verify release release-deploy release-firmware:
 	$(MAKE) -C $(LUNE_V6_DIR) $@
 
 test-ripple test-balance:

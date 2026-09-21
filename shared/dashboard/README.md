@@ -1,9 +1,10 @@
-# Shared Dashboard Notes
+# Moved
 
-This folder is reserved for dashboard contracts, design guidance, and future shared UI
-patterns across Birkemosen devices.
+Lune Design System now lives in its own repository:
 
-There is intentionally no shared runtime dashboard code yet. Lune V6 and Lune Touch should
-keep their dashboard implementations separate until the component boundaries, release
-cadence, and hardware interaction model are stable enough to justify an actual shared
-package.
+https://github.com/Birkemosen/lds
+
+Clone it as a sibling of this repo (`../lds`). Product installs are declared in
+[`lds.yaml`](../../lds.yaml) at the repository root.
+
+API contracts remain in [`../contracts/`](../contracts/).

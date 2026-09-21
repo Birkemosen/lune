@@ -1,0 +1,24 @@
+# Lune V6 — LDS consumer manifest.
+# Destinations are relative to this repository root.
+schema: 1
+artifacts:
+  - kind: css
+    dest: lune-v6/web/tokens.generated.css
+  - kind: brand-svg
+    dest: lune-v6/web/brand
+  - kind: brand-js
+    dest: lune-v6/web/dashboard-src/core/lune-mark.generated.js
+  - kind: live-status-js
+    dest: lune-v6/web/dashboard-src/core/lds-live-status.generated.js
+  - kind: manifold-row-js
+    dest: lune-v6/web/dashboard-src/core/lds-manifold-row.generated.js
+  - kind: comfort-control-js
+    dest: lune-v6/web/dashboard-src/core/lds-comfort-control.generated.js
+  - kind: nav-switch-js
+    dest: lune-v6/web/dashboard-src/core/lds-nav-switch.generated.js
+  - kind: form-js
+    dest: lune-v6/web/dashboard-src/core/lds-form.generated.js
+  - kind: int-split-js
+    dest: lune-v6/web/dashboard-src/core/lds-int-split.generated.js
+  - kind: settings-card-js
+    dest: lune-v6/web/dashboard-src/core/lds-settings-card.generated.js

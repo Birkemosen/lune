@@ -115,6 +115,8 @@ and clamps every command locally.
 
 ## Dashboard Sharing
 
-`shared/dashboard/` is for contracts and design notes only. Keep Lune V6 and future Lune
-Touch dashboard implementations separate until shared runtime components are deliberately
-introduced.
+Design tokens, brand marks, and shell helpers (sidebar live status, manifold row,
+comfort control) live in the sibling [`lds`](https://github.com/Birkemosen/lds)
+repository. Keep Lune V6 and Lune Touch dashboard implementations separate until
+shared runtime components are deliberately introduced. Install generated artifacts
+with `make design-tokens` (see `lds.yaml`).

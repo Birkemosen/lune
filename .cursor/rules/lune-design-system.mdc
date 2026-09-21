@@ -1,0 +1,29 @@
+---
+description: Lune Design System v2 is the authority for Lune V6 dashboard UI
+globs: lune-v6/web/**,lune-v6/web/dashboard-src/**
+alwaysApply: false
+---
+
+# Lune Design System v2
+
+When designing, building, or changing UI in the Lune V6 dashboard, treat the
+sibling `lds` repository (`../lds/design-system.md` and `../lds/tokens.json`) as
+the authority. Do not cite external platform guidelines.
+
+## Required
+
+1. Use generated tokens (`--accent`, `--forest`, `--control-*`, `--text-*`, `--separator`, `--surface-*`, `--fill-forest`, `--bg-glow`). Do not invent parallel palettes or hardcode hex / `0x` colours.
+2. Product colour is amber for heat/action and forest for healthy state and selected navigation. Light/dark follows `prefers-color-scheme`.
+3. Touch targets: `--control-height` (44px) for primary controls, `--control-compact` (32px) for provision forms, `--nav-item-height` (36px) for sidebar rows, `--nav-row-height` (52px) for the compact tab bar.
+4. Contrast: meet WCAG AA. Never convey status with colour alone — pair with label, icon, or shape.
+5. Match shared kit classes (`.ui-btn`, `.ui-input`, `.ui-select`, `.ui-row`) and LDS primitives (`dial()`, `luneMark()`, `liveStatusHtml()`, `loopCellHtml()` / `manifoldRowHtml()`, `comfortSliderHtml()`, live|provision split).
+6. Compact breakpoint is 900px. Selected destinations use shape plus forest fill.
+7. Thermal glow belongs only on the brand mark and halo dial. The only page atmosphere is tokenised `--bg-glow`.
+8. Token changes happen in `lds`. This repo only installs via `lds.yaml` and `make design-tokens`.
+
+## Do not
+
+- Nested cards, equally prominent metric-card grids, or decorative glass/gradient chrome
+- Network font fetches (including Google Fonts) or Montserrat
+- Separate light/dark or accent preferences
+- Hover-only help or invisible keyboard focus
