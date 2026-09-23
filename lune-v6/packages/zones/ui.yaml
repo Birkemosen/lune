@@ -860,7 +860,7 @@ number:
           id(hv6_valves).reload_motor_config();
 
   - platform: template
-    name: "HmIP Runtime Limit"
+    name: "HmIP Close Runtime Limit"
     id: hmip_runtime_limit_seconds
     icon: "mdi:timer-alert-outline"
     entity_category: config
@@ -868,7 +868,9 @@ number:
     mode: box
     unit_of_measurement: "s"
     min_value: 10
-    max_value: 40
+    # 40 s of close travel puts the plunger at the housing exit, so the entity
+    # must not be able to reach it. Default is 34.
+    max_value: 36
     step: 1
     optimistic: false
     lambda: |-

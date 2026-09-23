@@ -451,7 +451,11 @@ struct MotorConfig {
   // Ripple safety limit for opening: learned_open_ripples × factor (0 = disabled)
   float open_ripple_limit_factor = 1.10f;
   // Pin engagement detection (calibration)
-  float pin_engage_step_ma = 3.0f;              // Current increase to detect pin contact
+  // 2.0, not 3.0: this is now wired into StrokeTracker (it used to be inert),
+  // and the measured pin ramp is ~1 mA/s against a FROZEN baseline. At 3.0 the
+  // NVS value silently overrode StrokeConfig's retuned default and the tracker
+  // missed the very ramps it was retuned for.
+  float pin_engage_step_ma = 2.0f;              // Current increase to detect pin contact
   uint16_t pin_engage_margin_ripples = 50;       // Offset toward open from detected point
 
   // --- Rev 3.2 endstop policy -------------------------------------------------

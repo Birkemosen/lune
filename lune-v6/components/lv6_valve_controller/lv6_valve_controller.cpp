@@ -1106,8 +1106,12 @@ bool Lv6ValveController::reset_learned_factors(uint8_t zone) {
   t.learned_close_confidence = 0;
   t.last_open_candidate_factor = 0.0f;
   t.last_close_candidate_factor = 0.0f;
-  t.last_open_peak_ma = 0.0f;
-  t.last_close_peak_ma = 0.0f;
+  // last_*_peak_ma is deliberately NOT cleared. It is no longer just an input to
+  // the (now disabled) factor learning - it is the endpoint current that
+  // learned_stall_ma_() feeds to the open trip. Motor Lab calls this before
+  // every stroke, so clearing it here made every lab open capture fall back to
+  // the legacy ratio path, i.e. measure a code path production no longer uses.
+  // A full reset_and_relearn() still clears it.
   t.last_learning_sample_valid = false;
   xSemaphoreGive(telemetry_mutex_);
   save_telemetry_(zone);

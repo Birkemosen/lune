@@ -97,7 +97,7 @@ function seed() {
   setEntity(gkey.openSlopeCurrentFactor, { value: 1.3 });
   setEntity(gkey.openRippleLimitFactor, { value: 1.0 });
   setEntity(gkey.genericRuntimeLimitSeconds, { value: 45 });
-  setEntity(gkey.hmipRuntimeLimitSeconds, { value: 40 });
+  setEntity(gkey.hmipRuntimeLimitSeconds, { value: 34 });
   setEntity(gkey.relearnAfterMovements, { value: 2000 });
   setEntity(gkey.relearnAfterHours, { value: 168 });
   setEntity(gkey.learnedFactorMinSamples, { value: 3 });

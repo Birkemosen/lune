@@ -114,7 +114,7 @@ const template = () => {
           <option value="HmIP VdMot">HmIP VdMot</option>
         </select></span>
       </div>
-      <div class="runtime-note" data-i18n="settings.motor.runtimeNote">HmIP-VDMot safety: runtime is fixed to 40s to prevent piston overtravel. Generic allows editable runtime.</div>
+      <div class="runtime-note" data-i18n="settings.motor.runtimeNote">HmIP-VDMot safety: the close stroke is capped at 34s and 2600 commutations — 40s is where the plunger leaves its housing. Opening is capped separately at 45s.</div>
       <div class="ui-row">
         <span class="ui-label"><span data-i18n="settings.motor.maxSafeRuntime">Max Safe Runtime</span> (s)</span>
         <span class="ui-field"><input type="number" class="ui-input smc-safe-runtime" value="0" step="1"></span>
@@ -147,7 +147,11 @@ export default component({
 
     function enforceProfileRuntime(profile) {
       if (profile === 'HmIP VdMot') {
-        setGlobalNumber('hmip_runtime_limit_seconds', 40);
+        // 34 s, not 40. 40 s of CLOSE travel is where the plunger reaches the
+        // housing exit and the anti-rotation tap snaps - it is the destruction
+        // boundary, not a safe limit. Writing 40 here silently reverted the
+        // firmware's close ceiling every time this card mounted.
+        setGlobalNumber('hmip_runtime_limit_seconds', 34);
       }
       if (profile === 'Generic') {
         const genericRuntime = Number(ev(gkey.genericRuntimeLimitSeconds));
@@ -175,7 +179,11 @@ export default component({
     form.num(safeRuntimeEl, {
       read: () => {
         const profile = es(gkey.motorProfileDefault) || 'HmIP VdMot';
-        return profile === 'HmIP VdMot' ? 40 : ev(gkey.genericRuntimeLimitSeconds);
+        // Show the value the device actually holds rather than a hardcoded
+        // constant, so a clamped or retuned ceiling is visible to the operator.
+        return profile === 'HmIP VdMot'
+          ? ev(gkey.hmipRuntimeLimitSeconds)
+          : ev(gkey.genericRuntimeLimitSeconds);
       },
       // Only writes a generic runtime when the staged profile is Generic.
       commit: (v) => { if (profileEl.value === 'Generic') setGlobalNumber('generic_runtime_limit_seconds', v); }
