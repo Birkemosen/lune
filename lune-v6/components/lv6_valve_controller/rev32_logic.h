@@ -2,20 +2,24 @@
 
 #include <cstdint>
 
+#include "endpoint_logic.h"
+
 namespace lv6 {
 
-// Pure, host-testable contract for the Rev 3.2 one-hot decoder, its per-move
-// fault latch and the commutation-tacho endpoint decision.  Keep this file free
-// of ESP-IDF so the safety invariants can be exercised in CI.
+// Pure, host-testable contract for the discrete one-hot decoder and its
+// commutation-tacho qualifier.  Shared by Rev 3.2 and Rev 3.3 board packages.
+// Keep this file free of ESP-IDF so the safety invariants can be exercised in
+// CI.  Stroke-phase / endpoint *detection* lives in endpoint_logic.h so it is
+// not tied to a PCB revision name.
 //
-// Rev 3.2 differs from Rev 3.1 in three ways that matter here:
+// The GPIO-bridge path differs from Rev 3.1 in three ways that matter here:
 //
 //   1. All four address lines are plain address bits.  No bit encodes
 //      direction, so the channel/direction pair maps to a decoder output
 //      through a twelve-entry table rather than a formula.  See
 //      decoder.address_bit0_rationale in design-contract.json.
-//   2. The runtime cutoff is referenced to LATCH_STATE rather than to decoder
-//      inhibit, so it bounds total armed time.  The latch is armed per move.
+//   2. Rev 3.2 referenced the runtime cutoff to LATCH_STATE (armed time).
+//      Rev 3.3 dropped the latch; DRIVER_N_SLEEP is the firmware drive permit.
 //   3. The BEMF mux is gone.  Motion evidence comes from COMM_TACHO_N, a
 //      digital comparator output counted continuously while driving.
 enum class Rev32Direction : uint8_t { FORWARD = 0, REVERSE = 1 };
@@ -266,248 +270,26 @@ class Rev32TachoQualifier {
   bool have_hw_count_{false};
 };
 
-// Closing a manifold valve is four mechanically distinct phases, and phases 2
-// and 4 look nearly identical in the current domain - both are a rise under
-// load. Telling them apart is the whole problem:
-//
-//   1 FREE_TRAVEL  the plunger has not reached the pin. Flat current, steady
-//                  cadence.
-//   2 CONTACT      pin contact. There is an initial resistance to overcome and
-//                  then the resistance FALLS AGAIN. The motor slows and then
-//                  RECOVERS.
-//   3 UNDER_LOAD   pressing the pin down. Sustained, slowly rising resistance.
-//   4 STOPPING     the pin is fully down. The motor slows and does NOT recover.
-//                  Failing to find this phase is what pops the actuator head off.
-//
-// Opening mirrors it with no pressure phase: free travel back toward the
-// housing, then the motor's own gear train bottoming out. That stop is a
-// materially SMALLER resistance than the closing hard stop, which is why the
-// opening endpoint cannot reuse the closing current threshold - and why the
-// contract names opening as the damaging direction.
-//
-// Cadence recovery is the discriminator, and it is magnitude-independent, so it
-// works equally well on the gentle opening stop where the current barely moves.
-enum class Rev32StrokePhase : uint8_t {
-  FREE_TRAVEL,
-  CONTACT,
-  UNDER_LOAD,
-  STOPPING,
-};
+// Stroke-phase + endpoint decision live in endpoint_logic.h (revision-neutral).
+// Keep the Rev32* aliases so older call sites and design-contract references
+// keep compiling while controllers move to the shared names.
+using Rev32StrokePhase = StrokePhase;
+using Rev32StrokeConfig = StrokeConfig;
+using Rev32StrokeTracker = StrokeTracker;
+using Rev32EndpointDecision = EndpointDecision;
+using Rev32EndpointEvidence = EndpointEvidence;
 
-struct Rev32StrokeConfig {
-  // Current step above the free-travel baseline that marks pin contact.
-  float contact_step_ma{3.0f};
-  // Commutations the cadence has to recover within for a current bump to read
-  // as contact rather than a stop.
-  uint16_t contact_recovery_ripples{15};
-  // Gap-to-cadence ratio (x10) that counts as the motor slowing.
-  uint16_t slowdown_x10{15};
-  // ...and the ratio that counts as it stopping.
-  uint16_t stall_x10{30};
-};
-
-// Tracks which phase a stroke is in. Pure state machine over (count, current,
-// cadence) - no timing anchors, because on Rev 3.2 position is measured in
-// commutations, not milliseconds.
-class Rev32StrokeTracker {
- public:
-  explicit Rev32StrokeTracker(const Rev32StrokeConfig &cfg = {}) : cfg_(cfg) {}
-
-  void reset(bool direction_is_open) {
-    direction_is_open_ = direction_is_open;
-    phase_ = Rev32StrokePhase::FREE_TRAVEL;
-    baseline_ma_ = 0.0f;
-    have_baseline_ = false;
-    peak_ma_ = 0.0f;
-    contact_count_ = 0;
-    contact_seen_ = false;
-    contact_recovered_ = false;
-  }
-
-  // `stretch_x10` is Rev32TachoQualifier::stretch_x10(): how far the current
-  // silence has stretched past the established cadence. `count` is the
-  // qualified commutation count.
-  void observe(uint32_t count, float current_ma, uint16_t stretch_x10) {
-    if (!have_baseline_) {
-      // The first settled reading of free travel is the reference everything
-      // else is measured against.
-      baseline_ma_ = current_ma;
-      have_baseline_ = true;
-      return;
-    }
-
-    const bool stopping = stretch_x10 >= cfg_.stall_x10;
-    const bool slowing = stretch_x10 >= cfg_.slowdown_x10;
-    const bool stepped = current_ma >= baseline_ma_ + cfg_.contact_step_ma;
-
-    if (stopping) {
-      phase_ = Rev32StrokePhase::STOPPING;
-      return;
-    }
-
-    switch (phase_) {
-      case Rev32StrokePhase::FREE_TRAVEL:
-        // A current step alone is not contact; the motor has to feel it too.
-        if (stepped && slowing) {
-          phase_ = Rev32StrokePhase::CONTACT;
-          contact_count_ = count;
-          contact_seen_ = true;
-          peak_ma_ = current_ma;
-        } else if (!stepped) {
-          // Track the free-travel level so a drifting baseline does not make
-          // the step test progressively easier.
-          baseline_ma_ = baseline_ma_ * 0.95f + current_ma * 0.05f;
-        }
-        break;
-
-      case Rev32StrokePhase::CONTACT:
-        peak_ma_ = current_ma > peak_ma_ ? current_ma : peak_ma_;
-        if (count - contact_count_ > cfg_.contact_recovery_ripples) {
-          // The bump outlasted the recovery window: this is real seating, not
-          // the pin-contact transient.
-          phase_ = Rev32StrokePhase::UNDER_LOAD;
-        } else if (!stepped && !slowing) {
-          // The resistance fell again and the motor picked its speed back up.
-          // This is phase 2 completing, not an endpoint.
-          contact_recovered_ = true;
-          phase_ = Rev32StrokePhase::FREE_TRAVEL;
-          baseline_ma_ = current_ma;
-        }
-        break;
-
-      case Rev32StrokePhase::UNDER_LOAD:
-        peak_ma_ = current_ma > peak_ma_ ? current_ma : peak_ma_;
-        if (!stepped && !slowing) {
-          // Load released without ever stopping - back to free travel.
-          phase_ = Rev32StrokePhase::FREE_TRAVEL;
-          baseline_ma_ = current_ma;
-        }
-        break;
-
-      case Rev32StrokePhase::STOPPING:
-        // Recovering from a stall means it was not one.
-        if (!slowing)
-          phase_ = contact_seen_ ? Rev32StrokePhase::UNDER_LOAD
-                                 : Rev32StrokePhase::FREE_TRAVEL;
-        break;
-    }
-  }
-
-  Rev32StrokePhase phase() const { return phase_; }
-  bool direction_is_open() const { return direction_is_open_; }
-  bool contact_seen() const { return contact_seen_; }
-  bool contact_recovered() const { return contact_recovered_; }
-  uint32_t contact_count() const { return contact_count_; }
-  float baseline_ma() const { return baseline_ma_; }
-  float peak_ma() const { return peak_ma_; }
-
- private:
-  Rev32StrokeConfig cfg_;
-  Rev32StrokePhase phase_{Rev32StrokePhase::FREE_TRAVEL};
-  float baseline_ma_{0.0f};
-  float peak_ma_{0.0f};
-  uint32_t contact_count_{0};
-  bool direction_is_open_{false};
-  bool have_baseline_{false};
-  bool contact_seen_{false};
-  bool contact_recovered_{false};
-};
-
-enum class Rev32EndpointDecision : uint8_t {
-  CONTINUE,
-  ENDPOINT,
-  JAM,
-  OVERCURRENT,
-  DISCONNECTED,
-  TACHO_FAULT,
-  BLOCKED_OR_UNKNOWN,
-};
-
-struct Rev32EndpointEvidence {
-  bool blanking_elapsed{false};
-  bool current_present{false};
-  // Point 5 of the endpoint list: "current/load evidence".  Any of the
-  // current-domain detectors, or the magnitude-independent rotation-stall
-  // plateau, which is itself load evidence.
-  bool load_evidence{false};
-  bool current_over_cap{false};
-  bool commutation_observed{false};
-  bool commutation_plateau{false};
-  bool endpoint_window{false};
-  bool commanded_endpoint{false};
-  // Where in the stroke this is happening. See Rev32StrokePhase.
-  Rev32StrokePhase phase{Rev32StrokePhase::FREE_TRAVEL};
-  bool direction_is_open{false};
-};
-
-// The load-bearing pair is the DC current step and the runtime limit.  The
-// commutation count is an enhancement and must never be the sole reason to
-// declare an endpoint, so every ENDPOINT path below also requires current
-// evidence and a commanded endpoint context.
 constexpr Rev32EndpointDecision classify_rev32_endpoint(
     const Rev32EndpointEvidence &e) {
-  if (!e.blanking_elapsed)
-    return Rev32EndpointDecision::CONTINUE;
-
-  // Nothing drawing and nothing turning: the actuator is not connected.
-  if (!e.current_present && !e.commutation_observed)
-    return Rev32EndpointDecision::DISCONNECTED;
-
-  // The absolute cap trips regardless of what the tacho says, unless the tacho
-  // has already qualified a stop - in which case it is a stall, classified
-  // below on its merits.
-  if (e.current_over_cap && !e.commutation_plateau)
-    return Rev32EndpointDecision::OVERCURRENT;
-
-  // Phase 2: the motor is inside the pin-contact bump. Current is elevated and
-  // the rotor has slowed, which is exactly what an endpoint looks like - and at
-  // this instant the two are genuinely indistinguishable. Wait for the window
-  // to resolve: the tracker leaves CONTACT either by recovering (phase 2 was
-  // just the pin), by outlasting the window (real seating, UNDER_LOAD), or by
-  // the rotor actually stopping (STOPPING). No endpoint may be accepted while
-  // the question is still open, however strong the load evidence is.
-  if (e.phase == Rev32StrokePhase::CONTACT)
-    return Rev32EndpointDecision::CONTINUE;
-
-  // Current with no commutation at all is ambiguous: a genuine already-at-stop
-  // and a pre-existing obstruction are identical in two-wire signals.  Stop
-  // early, report it, and do not record an endpoint.
-  if (e.current_present && !e.commutation_observed)
-    return Rev32EndpointDecision::BLOCKED_OR_UNKNOWN;
-
-  // Commutation was seen and then stopped.
-  if (e.commutation_observed && e.commutation_plateau) {
-    if (!e.current_present)
-      return Rev32EndpointDecision::TACHO_FAULT;
-    if (!e.load_evidence)
-      return Rev32EndpointDecision::CONTINUE;
-    // Closing: stopping under load before the plunger ever reached the pin is
-    // something in the way, not the valve seat. The seat is only reachable
-    // through phases 2 and 3. Opening has no contact phase - the gear-train
-    // stop is reached straight out of free travel - so this rule is closing
-    // only.
-    if (!e.direction_is_open && e.phase == Rev32StrokePhase::FREE_TRAVEL)
-      return Rev32EndpointDecision::JAM;
-    if (e.commanded_endpoint && e.endpoint_window)
-      return Rev32EndpointDecision::ENDPOINT;
-    return Rev32EndpointDecision::JAM;
-  }
-
-  // Turning but drawing nothing measurable is a current-sense fault, not
-  // proof of anything about the endpoint.
-  if (e.commutation_observed && !e.current_present)
-    return Rev32EndpointDecision::TACHO_FAULT;
-
-  return Rev32EndpointDecision::CONTINUE;
+  return classify_endpoint(e);
 }
 
-// Only ENDPOINT may update the stored position.  A timeout must not.
 constexpr bool rev32_decision_records_endpoint(Rev32EndpointDecision decision) {
-  return decision == Rev32EndpointDecision::ENDPOINT;
+  return endpoint_decision_records_position(decision);
 }
 
 constexpr bool rev32_decision_stops_drive(Rev32EndpointDecision decision) {
-  return decision != Rev32EndpointDecision::CONTINUE;
+  return endpoint_decision_stops_drive(decision);
 }
 
 }  // namespace lv6

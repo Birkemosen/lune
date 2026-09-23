@@ -1,38 +1,64 @@
 # Endstop Detection Algorithms
 
+> **Measured data, Rev 3.3.** Everything below is anchored to two captured Motor Lab
+> traces, kept as CI fixtures in `test/fixtures/` and replayed by
+> `make test-stall-model`. Numbers that are *not* from those traces are marked
+> provisional. The close trace is the run that destroyed an actuator; the open trace
+> was captured on that same, already-broken unit, so **no healthy open endstop has
+> ever been measured on this hardware**.
+
 ## The mechanics being detected
 
 Closing a manifold valve is four mechanically distinct phases, and **phases 2 and 4
 look nearly identical in the current domain** — both are a rise under load. Separating
 them is the whole problem:
 
-| Phase | What is happening | Current | Rotation |
+| Phase | What is happening | Current (measured) | Rotation |
 |---|---|---|---|
-| 1 Free travel | The actuator plunger has not reached the valve pin | flat, ~14 mA | steady |
-| 2 **Pin contact** | An initial resistance to overcome, **after which the resistance falls again** | steps up ~5 mA, then partly back | slows, then **recovers** |
-| 3 Pressure | Pressing the pin down against the valve spring | elevated, slowly rising | slowly stretching |
-| 4 **Hard stop** | The pin cannot be pressed further | sharp rise, 33–50 mA | stops and **does not recover** |
+| 1 Free travel | The actuator plunger has not reached the valve pin | flat, **24.2 mA** | steady, **78 Hz** |
+| 2 **Pin contact** | Initial resistance, after which it partly falls back | ramps **~1 mA/s** to 32.5 mA | barely changes |
+| 3 Pressure | Pressing the pin down against the valve spring | **plateau 31–32.5 mA for 17.5 s** | ~77 Hz |
+| 4 **Hard stop** | The pin cannot be pressed further | ramps **~2 mA/s** | slows 80 → 34 Hz |
 
-Opening mirrors it, **with no pressure phase**: free travel back toward the housing,
-then the motor's own gear train bottoming out because the plunger cannot be drawn any
-further into the housing.
+Three consequences drive everything below.
 
-Two consequences drive everything below.
+**The commutation counter does not stop at a stop — it inflates.** Through the grind
+the measured count rate *rose* to 88 Hz while the current said the rotor was
+stationary. Brush arcing produces edges that PCNT cannot distinguish from
+commutations. So `commutation_plateau`, `StrokePhase::STOPPING` and the stall
+debounce are **all structurally defeated on this actuator**, and a current-domain
+trip must never be withheld pending a plateau. This is also why a count *ceiling*
+is fail-safe: inflation makes it fire early.
 
-**Missing phase 4 while closing is pop-off.** The stop is rigid and the motor keeps
-pressing, so the actuator socket pops off the pin. It is a high-current, abrupt stop —
-easy to see, expensive to miss, and every millisecond of latency is force into it.
+**The closing hazard is over-travel, not over-current.** Pop-off current is roughly
+4× running and is never reached; the plunger simply keeps extending until its
+anti-rotation tap leaves its guide and snaps. 40 s of close travel — 3120 counts at
+78 Hz — puts it at the housing exit. Current detection is only *how you stop before
+the travel limit*, which is why the unconditional ceiling in
+`safety_limits.h` is the load-bearing guarantee and not a backstop.
 
-**The opening stop is a smaller resistance than pop-off.** The gear train bottoming out
-is gentle: 23–27 mA against 14–15 mA running, where closing gives 33–50 mA against
-19 mA. Current magnitude barely separates it from normal travel. Overrunning it strips
-the gear train over tens of seconds, which is the direction the design contract names
-as the damaging one (`actuator_overrun_hazard.damaging_direction: OPENING_ONLY`).
+**Closing is the harder direction to detect, not opening.** Instrumented
+measurements of this actuator (3.3 V, 1 Ω shunt) give:
 
-**Rotation is the discriminator, and it is magnitude-independent.** At pin contact the
-motor slows and picks its speed back up; at either physical stop it slows and does not.
-That test works equally well on the gentle opening stop where the current hardly moves,
-which is exactly where the current-domain tests are weakest.
+| | Opening | Closing |
+|---|---|---|
+| Duration | ~45 s | ~71 s |
+| Running current | 15–20 mA, **flat** | 15–20 mA **ramping to ~90 mA** against the valve spring |
+| At the endstop | ~100 mA — a clean **5× step** | ~100 mA — only a **~10 mA step** on an already-elevated baseline |
+
+Earlier revisions of this document claimed the opposite ("the opening stop is a
+smaller resistance"), quoting Rev 3.1 measurements taken at 70 % PWM hold duty which
+this document itself invalidates for continuous drive. That claim drove a change
+that accepted an opening endpoint with *no* current evidence at all; it has been
+reverted.
+
+The practical consequence is that the two directions need **structurally different
+references**, not merely different constants:
+
+| Direction | Reference | Primary detector |
+|---|---|---|
+| **Open** — flat baseline, clean step | `I_free`, the frozen running minimum | fraction of the stall span, `open_endstop_stall_fraction` |
+| **Close** — continuously rising baseline | **trailing window**, `I(t) − I(t−2 s)` | `TrailingStepDetector`, 2.5 mA sustained 1 s |
 
 ## Hardware generations
 
@@ -80,20 +106,74 @@ Key implications of the single-signal design:
 > stroke time and commutation count here is invalid on it until re-measured** — see
 > `hardware/lune-v6-rev3.2/design-contract.json`.
 
+## The mechanical ceiling — the one guarantee that does not depend on detection
+
+`safety_limits.h::compute_move_ceiling()` bounds every move in **both commutation
+counts and milliseconds**, computed once at `start_motor_()` and enforced in
+`process_tick_()` regardless of phase, evidence, plateau or classifier verdict.
+Whichever limit is reached first wins.
+
+```
+expected = remaining_fraction x learned_stroke(dir)
+ceiling  = expected x (1 + stroke_uncertainty_pct/100) + overrun_budget(dir)
+limit    = clamp(ceiling, runtime_floor, min(bootstrap(dir), user_max, timed))
+```
+
+| | Close | Open |
+|---|---|---|
+| Destruction boundary | 40 s / **3120 counts** (plunger at housing exit) | none — gear wear is cumulative |
+| Bootstrap ceiling | **34 s / 2600 counts** | 45 s / 3600 counts |
+| Overrun budget | 2000 ms / 150 counts | 3000 ms / 250 counts |
+
+Counts are the mechanically meaningful currency: plunger extension follows
+commutations, not seconds. The millisecond ceiling covers the opposite failure —
+a tacho that has gone quiet while the motor still turns.
+
+`remaining_fraction` is applied only when `position_confident_[zone]` is set, which
+happens **only** on a confirmed endpoint and is cleared on boot, on any fault, on
+`set_drivers_enabled(false)` and on relearn. Travel scaling can therefore only ever
+*tighten* the window.
+
+Timing is wall-clock (`esp_timer_get_time()`), not a tick accumulator: an
+accumulator under-counts whenever the FSM task is starved, silently stretching every
+safety window exactly when the system is busiest. The VdMot project hit the same bug
+class and fixed it by moving their motor loop into a timer ISR.
+
+Notably, eQ-3's own FALMOT-C12 appears to have **no** run-time limit — field reports
+describe actuators that miss the endstop and grind for minutes — so this ceiling is
+the main respect in which this firmware is safer than the OEM controller.
+
 ## Detection Overview
 
-Four independent detection mechanisms work together. The first three run in the 10ms
-tick loop; the fourth operates at the move-execution level. **Any single mechanism
-triggering stops the motor.**
+Mechanisms work together in the 10 ms tick loop and at move-execution level.
 
-The current-based tick-loop paths (1–2) are gated by a **startup guard** — `pwm_boost_ms
-+ ENDSTOP_SETTLE_MS` (~650 ms), shrunk further for near-stop normal moves — to ignore the
-initial current transient from PWM boost and motor inrush. The rotation paths (5–6) use
-their own ripple-based timing instead and can fire sooner.
+**Simplified model (VdMot-aligned, Rev 3.2/3.3):**
 
-Because closing and opening have fundamentally different current profiles (see
-[Current Profiles](#current-profile-reference)), all threshold and slope parameters
-are **per-direction** — separately configurable for close and open.
+Primary method matches [Lenti84 VdMot Controller](https://github.com/Lenti84/VdMot_Controller)
+(`motor.cpp` `TimerHandler0`): after inrush debounce, **filtered current >
+free-travel mean × 1.7 → endstop immediately**. Commutation count is for position
+only and must not withhold a current trip. Absolute caps are the safety net.
+HmIP mechanical ceiling is **40 s** (plunger exits the housing at full close from
+a fully retracted open) — stricter than VdMot's 120 s `TIMEOUT_NORMALCURRENT`.
+
+| Role | Mechanism | Notes |
+|---|---|---|
+| Primary | Threshold (free-travel mean × 1.7) | VdMot `currentbound_*_fac = 17` |
+| Close absolute | Seat cap ~38 mA (UNDER_LOAD) | Our sense scale; VdMot logs used ~65–70 mA |
+| Working cap | Raw > 60 mA sustained | VdMot `overcnt` at 60 mA |
+| Safety | Hard cap raw > 100 mA | VdMot ±100 mA |
+| Open backup | Stall / STOPPING + open-fast | Gentle gear-train stop |
+| Close withhold | Stroke-phase CONTACT | Pin ≠ seat |
+| Hard wall | HmIP ≤ 40 s | Housing-exit mechanical limit |
+
+**Slope is telemetry only** — it duplicated threshold+stall (both still need a
+plateau on Rev 3.2) and false-tripped on pin engagement. Config fields remain for
+Motor Lab diagnostics but do not trip the drive.
+
+Current-based paths are gated by a **startup guard** — `pwm_boost_ms +
+ENDSTOP_SETTLE_MS` (~650 ms), shrunk further for near-stop normal moves. Rotation
+paths use their own ripple-based timing and can fire sooner. Threshold factors are
+**per-direction**.
 
 ```
                         ┌─────────────────────────────────────┐
@@ -103,15 +183,13 @@ are **per-direction** — separately configurable for close and open.
                         │  │  current > mean × factor    │    │
                         │  │  sustained 6 ticks (60ms)   │────┤
                         │  └─────────────────────────────┘    │
-                        │                                     │
-                        │  ┌─── Path 2: Slope (dI/dt) ──┐    │     ┌──────────┐
-                        │  │  slope > threshold AND      │    │     │          │
-                        │  │  current > mean × floor     │────┼────►│  STOP    │
-                        │  │  2 consecutive 500ms windows│    │     │  MOTOR   │
-                        │  └─────────────────────────────┘    │     │          │
-                        │                                     │     └──────────┘
-                        │  ┌─── Path 3: Hard Cap ────────┐    │         ▲
-                        │  │  current > 100 mA (instant) │────┤         │
+                        │                                     │     ┌──────────┐
+                        │  ┌─── Path 3: Hard Cap ────────┐    │     │          │
+                        │  │  current > 100 mA (instant) │────┼────►│  STOP    │
+                        │  └─────────────────────────────┘    │     │  MOTOR   │
+                        │                                     │     │          │
+                        │  ┌─── Path 5: Stall plateau ───┐    │     └──────────┘
+                        │  │  ripples stopped + connected│────┤         ▲
                         │  └─────────────────────────────┘    │         │
                         └─────────────────────────────────────┘         │
                                                                         │
@@ -120,6 +198,14 @@ are **per-direction** — separately configurable for close and open.
      (open only)        │  ripples > learned × factor         │─────────┘
                         └─────────────────────────────────────┘
 ```
+
+Rev 3.2/3.3 route evidence through `classify_endpoint()` in `endpoint_logic.h`
+(revision-neutral; aliases remain in `rev32_logic.h` for older references):
+
+- **Open:** plateau + current present → ENDPOINT (no current-rise required);
+  STOPPING cadence also accepts in a commanded window.
+- **Close:** CONTACT withholds; FREE_TRAVEL + plateau → JAM; UNDER_LOAD/STOPPING
+  + load evidence + window → ENDPOINT.
 
 ## Detection Paths
 
@@ -151,52 +237,18 @@ reading, so the overcurrent must be genuinely sustained.
 close endstop ramps to 35–50 mA and triggers cleanly.
 
 **Open direction:** With 1.7× factor and ~15 mA open mean → threshold ≈ 26 mA. The
-open endstop reaches 23–27 mA, so with the per-direction mean this path now triggers
-near the top of the open ramp (previously, a blended ~20 mA mean put the threshold at
-~34 mA — unreachable — and detection fell back to the slow slope path).
+open endstop reaches 23–27 mA, so with the per-direction mean this path can confirm
+when a current bite exists. When it does not (flat ~24 mA free travel), Path 5 /
+STOPPING cadence owns the open stop.
 
-### Path 2: Slope Detection (Secondary)
+### Path 2: Slope (telemetry only — not an endstop trip)
 
-Detects a sustained positive rate-of-change (dI/dt) in the current signal, combined
-with a floor check to avoid false triggers during mid-travel steps.
-
-```
-condition:  dI/dt > slope_threshold  AND
-            current_filtered > mean_current × slope_current_factor
-debounce:   2 consecutive 500 ms windows (1 s of rising current)
-```
-
-| Parameter | Close Default | Open Default | Config Field |
-|-----------|--------------|-------------|--------------|
-| Slope threshold | 0.6 mA/s | 0.15 mA/s | `close_slope_threshold_ma_per_s` / `open_slope_threshold_ma_per_s` |
-| Slope floor factor | 1.3× | 1.3× | `close_slope_current_factor` / `open_slope_current_factor` |
-| Window size | 500ms | 500ms | `SLOPE_WINDOW_TICKS` (compile-time) |
-| Required windows | 2 (1 s) | 1 (~500 ms) | `ENDSTOP_SLOPE_WINDOWS` / `ENDSTOP_SLOPE_WINDOWS_OPEN` |
-
-Every 500 ms, the slope is computed as:
-
-```
-dI/dt = (current_now - current_prev) / 0.5 s
-```
-
-A window is marked "rising" only if BOTH conditions hold:
-1. Slope exceeds the direction-specific threshold
-2. Current is above `mean × slope_floor_factor`
-
-The floor condition prevents false triggers on the mid-travel current step (~14 → 19 mA
-during closing) where current rises briefly but at low absolute level.
-
-Closing requires 2 consecutive qualifying windows (1 s of sustained rising current);
-opening requires only 1 (~500 ms), because the open ramp is gentle and slow and a full
-second of grinding past the stop is what produces the audible clicking. A single
-non-qualifying window resets the counter.
-
-**Close direction:** The steep ramp (19 → 50 mA) easily produces slopes >0.6 mA/s,
-but Path 1 usually fires first due to the high peak.
-
-**Open direction:** The gentle ramp (15 → 25 mA) produces slopes of ~0.15–0.3 mA/s.
-With the lower 0.15 mA/s threshold, slope detection is often the **first** trigger
-for the open endstop.
+dI/dt is still computed every 500 ms for logs and Motor Lab overlays, but **it no
+longer stops the motor**. On Rev 3.2 both threshold and stall already require a
+commutation plateau before an endpoint is accepted, so slope added no unique stop
+path — and it false-tripped on pin-engagement ramps. Config fields
+(`*_slope_threshold_ma_per_s`, `*_slope_current_factor`) remain writable for
+diagnostics / future tuning experiments.
 
 ### Path 3: Hard Safety Cap (Fast, low-latency)
 
@@ -212,8 +264,8 @@ This is a pure catastrophic-fault guard (shorted winding, hard stall). A lower,
 direction-aware *open* cap (`mean_open × factor`, floored) was tried and reverted: the
 open **breakaway/early-travel** current (~45 mA measured) sits well above the gentle open
 stall, so a low open cap fired ~600 ms into the open pass and killed it ("travel too
-short"). The open endstop is handled by Path 1/2 (threshold/slope) and the
-magnitude-independent Path 5 rotation-stall instead, so the hard cap stays a safety net.
+short"). The open endstop is handled by Path 5 (stall / STOPPING) plus optional
+threshold/open-fast when a current bite exists; the hard cap stays a safety net.
 
 ### Path 4: Ripple Safety Limit (Open Direction Only)
 
@@ -385,7 +437,7 @@ second.
 
 ### The stroke phase model
 
-`Rev32StrokeTracker` (in `rev32_logic.h`, host-tested by `make test-rev32-logic`) tracks
+`StrokeTracker` (in `endpoint_logic.h`, host-tested by `make test-rev32-logic`) tracks
 which of the four phases the stroke is in, from `(count, current, cadence stretch)`:
 
 | Transition | Condition |
@@ -395,7 +447,7 @@ which of the four phases the stroke is in, from `(count, current, cadence stretc
 | contact → under load | the bump outlasts `contact_recovery_ripples` (15) — *real seating* |
 | any → stopping | the silence exceeds `stall_plateau_factor` × cadence |
 
-Two rules follow, both in `classify_rev32_endpoint()`:
+Two rules follow, both in `classify_endpoint()`:
 
 - **No endpoint is accepted while the phase is `CONTACT`.** At that instant phase 2 and
   phase 4 are genuinely indistinguishable, however strong the load evidence is. The
@@ -415,7 +467,7 @@ on current magnitude.
 | | Closing | Opening |
 |---|---|---|
 | The stop is | a pin in a seat, rigid | the gear train bottoming out |
-| Current factor | `close_current_factor` 1.7× | **`open_endstop_current_factor` 1.25×** |
+| Current factor | `close_current_factor` **1.7×** (VdMot) | **`open_endstop_current_factor` 1.25×** |
 | Missing it costs | pop-off | a stripped gear train over tens of seconds |
 
 The load-evidence requirement is *not* relaxed in either direction: the contract records
@@ -503,7 +555,25 @@ NVS (`mean_open_current_ma` / `mean_close_current_ma`) and reloaded on boot.
 
 ## Current Profile Reference
 
-Measured with HmIP VDMOT actuator + Danfoss RA-N valve body (Normally Open manifold):
+### Rev 3.3, measured (`test/fixtures/`)
+
+| Quantity | Close | Open |
+|---|---|---|
+| Free travel | **24.2 mA** | **24.4 mA** |
+| Free-travel cadence | **78 Hz** | **85 Hz** |
+| Breakaway | — | **57–59 mA for ~4 s**, decaying below 28 mA only at ~5.3 s |
+| Pin contact | count ~1000, ramp ~1 mA/s | n/a |
+| Pressure plateau | 31–32.5 mA, 17.5 s | n/a |
+| Total counts observed | 3966 (over-travelled) | 3417 (no stop reached) |
+| Stall (regressed) | **60–62 mA** | — |
+
+The design contract previously recorded 659 / 1048 counts and a 20–40 Hz band; both
+were wrong by large factors and have been corrected. `actuator_locked_rotor_ma` was
+47 (3.2 V / 68 Ω); measurement puts it at 60–62 mA.
+
+### Rev 3.0 / 3.1, historical — **not valid on Rev 3.2/3.3**
+
+Measured with HmIP VDMOT + Danfoss RA-N at 70 % PWM hold duty:
 
 | Phase       | Steady-state | Endstop peak | Ripple count |
 |-------------|-------------|-------------|--------------|
@@ -555,7 +625,7 @@ Motor Start
 | Parameter | Close | Open | Rationale |
 |-----------|-------|------|-----------|
 | Threshold mean | `mean_close` | `mean_open` | Per-direction; close runs hotter than open |
-| Threshold factor | 1.7× (tolerant) | 1.7× (tolerant) | Close has high peak; open barely rises |
+| Threshold factor | **1.7×** (VdMot `currentbound_*_fac`) | 1.7× / open_endstop 1.25× on Rev 3.2 | Lenti84 VdMot Controller |
 | Slope threshold | 0.6 mA/s | 0.15 mA/s | Close ramps steeply; open ramps gently |
 | Slope floor | 1.3× | 1.3× | Same mid-travel step protection both ways |
 | Slope windows | 2 (1 s) | 1 (~500 ms) | Open ramp is slow; long grind = clicking |
@@ -666,7 +736,7 @@ to NVS.
 | Motor N Open Endstop Threshold | 1.1× – 3.0× | 1.7× | 0.1 |
 | Motor N Open Endstop Slope | 0.05 – 5.0 mA/s | 0.15 | 0.05 |
 | Motor N Open Endstop Slope Floor | 1.0× – 2.5× | 1.3× | 0.1 |
-| Motor N Open Endstop Ripple Limit | 0.0× – 2.0× | 1.2× | 0.1 |
+| Motor N Open Endstop Ripple Limit | 0.0× – 2.0× | 1.10× | 0.1 |
 | Pin Engage Step | 1.0 – 10.0 mA | 3.0 | 0.5 |
 | Pin Engage Margin | 0 – 200 ripples | 50 | 10 |
 

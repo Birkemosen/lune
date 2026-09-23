@@ -16,9 +16,9 @@
 #     polarity is inverted; a backend that reads one as the other is wrong in
 #     the dangerous direction.
 #   * The rail overcurrent comparator left the wired-AND for its own net on
-#     GPIO17, pulled up by R41, so a bridge fault and a rail overcurrent are
+#     GPIO48, pulled up by R41, so a bridge fault and a rail overcurrent are
 #     finally distinguishable (O12).
-#   * DRIVER_N_SLEEP is driven from GPIO15. R31 still pulls it down, so GPIOs in
+#   * DRIVER_N_SLEEP is driven from GPIO17. R31 still pulls it down, so GPIOs in
 #     high-Z put the drivers to sleep and U7's NAND inhibits the decoder — the
 #     same failsafe the latch's Q output used to define.
 #   * ADC_TACHO is back in the continuous stream at 6 dB, matching ADC_CURRENT.
@@ -26,7 +26,7 @@
 #     amplified ripple fits the 1.75 V span. Two attenuations on one ADC unit is
 #     what ESP-IDF rejects and what took the whole stream down as design-review
 #     B8; they must stay equal.
-#   * R7 56k -> 10k moves the rail overcurrent trip from 280 mA to 165 mA.
+#   * R6 10k -> 12k sets the rail overcurrent trip to 150 mA (ECO rev3.3-P).
 #
 # Automatic motion stays disabled. The current calibration and the tacho
 # qualification band are still bring-up values from measured actuator data, not
@@ -36,7 +36,7 @@
 substitutions:
   motor_hardware_backend: rev33_gpio
 
-  # I2C — 4k7 pull-ups fitted (R16/R17)
+  # I2C — 4k7 pull-ups fitted (R37/R38)
   pin_i2c_sda: GPIO21
   pin_i2c_scl: GPIO47
   # Protected external bus; a declared ADC1 exception
@@ -58,7 +58,7 @@ substitutions:
   pin_fault_usb: "15"
   # RAIL_OVERCURRENT, U3 pin 1 on its own net (R41 pull-up, C43). ACTIVE LOW.
   # Routed parallel to COMM_TACHO_N from U3 down the east edge, both pulled up
-  # at the module end. Trip is 165 mA after R7 56k -> 10k; see design-review
+  # at the module end. Trip is 150 mA nominal (142-158 worst case); see design-review
   # R3.3-4 for why that sits below the DRV8411's own 180-230 mA regulation.
   pin_rail_overcurrent: "48"
   # There is no LATCH_ARM on Rev 3.3 — U2, Q1, R4, R5 and C4 are gone. This

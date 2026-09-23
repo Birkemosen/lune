@@ -19,6 +19,9 @@
 #include "rev31_motor_backend.h"
 #include "rev32_motor_backend.h"
 #include "rev33_motor_backend.h"
+#include "endpoint_logic.h"
+#include "safety_limits.h"
+#include "stall_model.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/queue.h"
@@ -58,7 +61,7 @@ struct MotorTraceSample {
   uint8_t invalid_bemf_samples = 0;
   uint8_t armed = 0;
   uint8_t direction_open = 0;
-  /// Rev32StrokePhase. Reading a closing trace without it is guesswork: the pin
+  /// StrokePhase. Reading a closing trace without it is guesswork: the pin
   /// contact bump and the seat both show up as a current rise.
   uint8_t stroke_phase = 0;
 };
@@ -95,6 +98,12 @@ struct MotorSafetyDiagnostics {
   int8_t latch_arm_level{-1};
   int8_t latch_state_level{-1};
   int8_t motor_enable_level{-1};
+  /// Rev 3.3 only. -1 when the backend has no such pin. All three fault nets
+  /// are active LOW (0 = asserted). driver_nsleep_level is the firmware-held
+  /// drive permit (1 = awake).
+  int8_t driver_nsleep_level{-1};
+  int8_t rail_overcurrent_level{-1};
+  int8_t fault_usb_level{-1};
   uint8_t decoder_address{0};
   uint32_t tacho_period_us{0};
   uint32_t tacho_cadence_us{0};
@@ -105,8 +114,8 @@ struct MotorSafetyDiagnostics {
   /// against tacho_hardware_count is how the missed- and false-edge rate is
   /// measured, which is § 2 of the validation plan's release gate.
   uint32_t tacho_adc_count{0};
-  /// Rev32StrokePhase as an integer: 0 free travel, 1 pin contact, 2 under
-  /// load, 3 stopping.
+  /// StrokePhase as an integer: 0 free travel, 1 pin contact, 2 under
+  /// load, 3 stopping. See endpoint_logic.h.
   uint8_t stroke_phase{0};
   /// Bring-up instrumentation for the continuous ADC, which delivered nothing
   /// on either channel through a full energised move during Rev 3.2-D. These
@@ -201,6 +210,11 @@ class Lv6ValveController : public esphome::Component {
 
   // Thread-safe public API
   bool request_position(uint8_t zone, float target_pct);
+  /// Zone controller hook: suppress re-homing while closing a zone would breach
+  /// minimum flow. Re-homing falls back to a relative move for that request.
+  void set_rehome_inhibited(bool inhibited) {
+    rehome_inhibited_.store(inhibited, std::memory_order_relaxed);
+  }
   bool request_timed_open(uint8_t zone, uint16_t duration_ms, bool override_drivers = false);
   bool request_timed_close(uint8_t zone, uint16_t duration_ms, bool override_drivers = false);
   bool request_stop(uint8_t zone);
@@ -228,16 +242,20 @@ class Lv6ValveController : public esphome::Component {
   void set_drivers_enabled(bool enabled);
   bool are_drivers_enabled() const { return drivers_enabled_.load(std::memory_order_acquire); }
   // Drive LATCH_ARM high on the HTTP thread so pad 10 is high before loop()
-  // drains the queued enable. Bring-up only.
+  // drains the queued enable. Bring-up only, and a no-op on Rev 3.3: GPIO17
+  // is DRIVER_N_SLEEP there.
   void assert_latch_arm_high();
-  // Bring-up only: square-wave LATCH_ARM so the AC-coupled arm path can be
-  // measured with a multimeter. False when the Rev 3.2 backend is not active.
+  bool has_fault_latch() const {
+    return rev32_backend_ != nullptr && rev33_backend_ == nullptr;
+  }
   // Reads the board revision from the hardware rather than trusting the YAML.
   // On Rev 3.3 RAIL_OVERCURRENT and FAULT_USB_RAW carry external 10k pull-ups;
   // on Rev 3.2 those pads are unconnected. An internal pull-down loses to the
   // external pull-up and wins against a floating pad, so the two revisions are
   // distinguishable with no extra hardware.
   bool probe_board_is_rev33_();
+  // Bring-up only: square-wave LATCH_ARM so the AC-coupled arm path can be
+  // measured with a multimeter. False when there is no Rev 3.2 latch.
   bool probe_arm_clock(uint32_t hz, uint32_t duration_ms, bool clamp,
                        Rev32MotorBackend::ArmClockProbe *out);
   // Bring-up only: hold one decoder address with the bridges coasting so the
@@ -257,27 +275,61 @@ class Lv6ValveController : public esphome::Component {
   static constexpr BaseType_t CORE = 1;
   static constexpr uint8_t CMD_QUEUE_LEN = 12;
   static constexpr float CURRENT_FILTER_ALPHA = 0.05f;
+  // --- Free-travel baseline (see move_baseline_ma_) --------------------------
+  static constexpr uint32_t BASELINE_SEARCH_START_MS = 400;   ///< past blanking + a primed filter
+  static constexpr uint32_t BASELINE_STABLE_MS = 300;         ///< unchanged this long = settled
+  static constexpr float BASELINE_EPSILON_MA = 0.5f;          ///< ~12 LSB; above the noise floor
+  static constexpr float BASELINE_FLOOR_MA = 8.0f;            ///< below this it is an open circuit
+  static constexpr float BASELINE_CEILING_MA = 32.0f;         ///< above this it is a stuck breakaway
+  /// Arm the open cap even if the minimum never settles, so a fault cannot
+  /// leave the open direction permanently unprotected.
+  static constexpr uint32_t OPEN_ARM_FALLBACK_MS = 8000;
+  /// A real endpoint cannot be reached without travel. Without this floor an
+  /// uncalibrated move satisfied the endpoint window from t=0, so any cadence
+  /// hiccup could write a learned position - which is how a Motor Lab jog ended
+  /// up able to record one.
+  static constexpr uint32_t ENDPOINT_MIN_RIPPLES = 50;
+  /// Weak load evidence for the opening direction: half the measured pin step,
+  /// a sixth of the open stop's rise. Enough to show the motor is loaded without
+  /// requiring the full trip.
+  static constexpr float OPEN_WEAK_STEP_MA = 4.0f;
+  static constexpr float OPEN_WEAK_FACTOR = 1.15f;
   static constexpr uint8_t DEBOUNCE_TICKS = 50;
   static constexpr float INITIAL_MEAN_CURRENT_MA = 20.0f;
   static constexpr uint32_t ENDSTOP_MIN_RUNTIME_MS = 1200;      ///< Conservative blind window (calibration)
   static constexpr uint32_t ENDSTOP_SETTLE_MS = 300;            ///< Post-boost settle before threshold/slope detection
   static constexpr uint8_t ENDSTOP_HIGH_TICKS = 6;
   static constexpr float ENDSTOP_HARD_CAP_MA = 100.0f;          ///< Safety cap: immediate endstop above this
+  /// LMV393 rail comparator trip (design-contract rev3.3-P: 150 mA nominal,
+  /// 142-158 worst case). Firmware must always see a fault before the hardware.
+  static constexpr float RAIL_COMPARATOR_TRIP_MA = 150.0f;
   static constexpr uint8_t HARD_CAP_TICKS = 2;                  ///< Consecutive raw-current ticks above cap to stop
+  /// Hard mechanical ceiling for HmIP-VDMOT (design-contract runtime_limit_ms).
+  static constexpr uint32_t HMIP_VDMOT_RUNTIME_LIMIT_MAX_S = 40;
   // Fast open hard-stop cap: the open retract stop is a sharp ~47-52 mA raw bite, but the
   // slope path only updates once per 500 ms window, so the gears grind for up to ~500 ms
   // (1-3 ticks) before it reacts. A raw-current trip catches it in ~30 ms. To dodge the
   // ~45 mA open BREAKAWAY current (which false-fired a naive open cap at ~600 ms), arm
   // only AFTER the current has settled back below the free-travel band — then only the
-  // end-stop bite can trip it. No travel estimate needed; degrades to slope if never armed.
+  // end-stop bite can trip it. No travel estimate needed; degrades to stall/STOPPING if never armed.
   static constexpr float OPEN_FAST_CAP_MA = 40.0f;             ///< Raw-current fast trip for the open hard stop
   static constexpr float OPEN_FAST_CAP_ARM_BELOW_MA = 28.0f;   ///< Arm only after post-breakaway settle below this
   static constexpr uint8_t OPEN_FAST_CAP_TICKS = 3;            ///< ~30 ms raw debounce
-  static constexpr uint32_t SLOPE_WINDOW_TICKS = 50;             ///< 500ms window for dI/dt estimation
-  static constexpr float ENDSTOP_SLOPE_MA_PER_S = 0.4f;         ///< Slope threshold (mA/s) for ramp detection
-  static constexpr float ENDSTOP_SLOPE_CURRENT_FACTOR = 1.3f;   ///< Current must exceed mean×1.3 for slope trigger
-  static constexpr uint8_t ENDSTOP_SLOPE_WINDOWS = 2;           ///< Consecutive windows with rising slope required (close)
-  static constexpr uint8_t ENDSTOP_SLOPE_WINDOWS_OPEN = 1;      ///< Open ramp is gentle/slow — halve slope latency to ~500ms
+  // Close seat absolute (our continuous-drive sense path). VdMot's published
+  // absolute experiments used ~65–70 mA on their ADC; with our INA/ADC scale the
+  // same mechanical seat sits near ~38 mA (free ~24 mA, pin plateau ~31–33 mA).
+  // Arm only in UNDER_LOAD/STOPPING so pin contact cannot trip.
+  // HmIP mechanical hard wall remains 40 s — plunger is at housing exit by then.
+  static constexpr float CLOSE_FAST_CAP_MA = 38.0f;
+  static constexpr uint8_t CLOSE_FAST_CAP_TICKS = 4;           ///< ~40 ms at 10 ms FSM tick
+  /// VdMot-style intermediate absolute (their TimerHandler0 overcnt at 60 mA).
+  static constexpr float VDMOT_WORKING_CAP_MA = 60.0f;
+  static constexpr uint8_t VDMOT_WORKING_CAP_TICKS = 2;        ///< ~20 ms
+  static constexpr uint32_t SLOPE_WINDOW_TICKS = 50;             ///< 500ms window for dI/dt telemetry (not a trip)
+  static constexpr float ENDSTOP_SLOPE_MA_PER_S = 0.4f;         ///< Legacy; slope no longer stops the drive
+  static constexpr float ENDSTOP_SLOPE_CURRENT_FACTOR = 1.3f;   ///< Legacy; slope no longer stops the drive
+  static constexpr uint8_t ENDSTOP_SLOPE_WINDOWS = 2;           ///< Legacy; slope no longer stops the drive
+  static constexpr uint8_t ENDSTOP_SLOPE_WINDOWS_OPEN = 1;      ///< Legacy; slope no longer stops the drive
   static constexpr uint32_t RIPPLE_STALL_MS = 750;             ///< Ripple-plateau (rotation stall) endstop: no commutation this long = stalled
   static constexpr uint32_t RIPPLE_STALL_MIN_COUNT = 20;      ///< Require real rotation first, so a never-started motor isn't called "stalled"
   static constexpr uint32_t ALREADY_AT_STOP_MS = 100;         ///< After boost, zero ripples + current present = valve already against the commanded stop (fast, pop-off-safe)
@@ -356,7 +408,7 @@ class Lv6ValveController : public esphome::Component {
 
   // Current sensing
   float read_current_ma_();
-  /// Rev 3.2 endpoint condition 6: has the move covered the commutation count a
+  /// Endpoint window: has the move covered the commutation count a
   /// real endpoint takes? Closing measures the learned seating depth from the
   /// observed pin contact; opening has no contact phase, so it uses the travel
   /// estimated for the move. Uncalibrated, it cannot withhold an endpoint.
@@ -367,6 +419,22 @@ class Lv6ValveController : public esphome::Component {
   void check_relearn_triggers_();
   MotorProfile effective_motor_profile_(uint8_t zone) const;
   uint32_t effective_runtime_limit_s_(uint8_t zone) const;
+  /// Assemble the per-move mechanical ceiling from config + learned telemetry.
+  MoveCeilingInputs build_ceiling_inputs_(uint8_t zone, MotorDirection dir,
+                                          bool drive_to_endstop, bool calibrating,
+                                          uint32_t timed_duration_ms) const;
+  /// Recompute the move ceiling once the caller has set drive_to_endstop_active_
+  /// / timed state. start_motor_() installs a conservative bootstrap limit first,
+  /// so a caller that forgets is still bounded.
+  void refresh_move_limit_(uint32_t timed_duration_ms);
+  /// Stall current learned at this zone's last confirmed endpoint in this
+  /// direction, or 0 when none has been recorded. Measured where the motor is
+  /// known to be stalled, so it needs no on-line fitting.
+  float learned_stall_ma_(uint8_t zone, MotorDirection dir) const;
+  /// Whether this move should re-establish its datum at the close endstop.
+  bool rehome_required_(uint8_t zone) const;
+  CapLadder cap_ladder_() const;
+  StallModelConfig stall_model_cfg_() const;
   float effective_current_factor_(uint8_t zone, MotorDirection dir) const;
   void update_learned_factor_(uint8_t zone, MotorDirection dir, float average_ma, float peak_ma, bool sample_valid);
   uint32_t get_motion_count_() const;
@@ -499,6 +567,7 @@ class Lv6ValveController : public esphome::Component {
   uint8_t hard_cap_high_count_ = 0;  ///< Consecutive raw-current ticks above the hard cap
   bool open_fast_cap_armed_ = false;  ///< Open fast cap arms only after post-breakaway current settle
   uint8_t open_fast_cap_count_ = 0;   ///< Consecutive raw-current ticks above the fast open cap
+  uint8_t close_fast_cap_count_ = 0;  ///< Consecutive raw-current ticks above the close seat cap
   int low_current_count_ = 0;
   uint32_t oc_last_ripple_count_ = 0;  ///< Ripple count at last open-circuit check (rotation = connected)
   uint32_t stall_last_ripple_count_ = 0;  ///< Highest ripple count seen this move (rotation-stall endstop)
@@ -509,6 +578,67 @@ class Lv6ValveController : public esphome::Component {
   // re-learn. Endstop = current rising above this fresh baseline.
   float cal_baseline_ma_ = 0.0f;
   bool cal_baseline_set_ = false;
+  /// This-stroke free-travel baseline (VdMot: meancurrent measured while turning normally).
+  /// The stroke's free-travel reference: a running MINIMUM of the filtered
+  /// current taken while the tracker is in FREE_TRAVEL, clamped, and treated as
+  /// settled once it has stopped falling. Every mechanical feature on this
+  /// actuator is ABOVE free travel, so a minimum is the only estimator a
+  /// feature cannot drag toward itself - which is what an EMA did, hiding the
+  /// 1-2 mA/s pin and seat ramps entirely.
+  float move_baseline_ma_ = 0.0f;
+  bool move_baseline_set_ = false;   ///< settled: safe to arm thresholds
+  bool baseline_valid_ = false;      ///< a minimum exists: safe to phase-track
+  uint32_t baseline_last_drop_ms_ = 0;
+  bool current_filter_primed_ = false;
+  /// Trailing-step detector for the CLOSE trip. Closing has no flat baseline -
+  /// the valve spring drives the current up continuously and the endstop adds
+  /// only ~10% on top - so a free-travel reference would trip mid-travel.
+  /// Host-tested against the measured fixtures by `make test-stall-model`.
+  TrailingStepDetector close_step_{};
+  uint8_t vdmot_working_cap_count_ = 0;
+
+  // --- Mechanical ceiling for the move in flight -----------------------------
+  // Computed once in start_motor_() rather than per tick: it must not shift
+  // mid-move if the operator edits settings, and effective_runtime_limit_s_()
+  // was copying the whole config struct at 100 Hz to derive it.
+  MoveCeiling move_limit_{};
+  /// Wall-clock origin. motor_run_time_ms_ used to be a tick accumulator, which
+  /// under-counts whenever the FSM task is starved — so every safety window
+  /// silently stretched in real time under load. VdMot hit the same class of bug
+  /// (changelog 1.0.9, "correct motor drive and stopping during high system
+  /// loads") and moved their motor loop into a timer ISR.
+  uint32_t move_start_ms_ = 0;
+  /// Position is only trusted after a confirmed endpoint. Runtime-only: cleared
+  /// on boot, on any fault and on relearn, so travel scaling can only tighten
+  /// the ceiling, never widen it on stale data.
+  bool position_confident_[NUM_ZONES] = {};
+  /// Anti-drift: position is derived, never accumulated. A move to an
+  /// intermediate target first drives to the close endstop and then opens by a
+  /// ripple count, so error cannot compound across moves.
+  uint32_t moves_since_rehome_[NUM_ZONES] = {};
+  uint32_t last_rehome_ms_[NUM_ZONES] = {};
+  /// Guards the one level of recursion in execute_move_().
+  bool rehoming_ = false;
+  /// Set by the zone controller while closing this zone would breach minimum
+  /// flow. eQ-3 shipped a fix for exactly this: their weekly adaptation closed
+  /// every valve at once and tripped heat-pump flow alarms.
+  std::atomic<bool> rehome_inhibited_{false};
+  /// Free-travel commutation cadence for this stroke, used as the reference for
+  /// the spurious-count physics check.
+  float free_cadence_hz_ = 0.0f;
+  uint32_t last_cadence_count_ = 0;
+  uint32_t last_cadence_ms_ = 0;
+  SpuriousCountDetector spurious_{};
+  CapCounters cap_counters_{};
+  /// Sanitized once per move so the ripple task never reads motor_cfg_ and a
+  /// mid-move settings edit cannot reorder the ladder under it.
+  CapLadder cap_ladder_cached_{};
+  /// Rung that the fast path cut the drive for, classified on the next FSM tick.
+  /// Motor-task only; the cross-thread channel is fast_trip_.
+  uint8_t last_fast_trip_ = 0;
+  /// Set when the fast path has taken the drive off. apply_drive_output_() would
+  /// otherwise re-energise the bridge on the very next tick.
+  bool drive_inhibited_ = false;
 
   // Per-move context for soft-approach + adaptive endstop guard (set at move start)
   bool drive_to_endstop_active_ = false;  ///< Current move targets a mechanical limit
@@ -525,11 +655,12 @@ class Lv6ValveController : public esphome::Component {
   bool slope_initialized_ = false;
   uint8_t slope_endstop_windows_ = 0;
 
-  // Rev 3.2 stroke-phase model. Closing is free travel, pin contact, pressure,
-  // hard stop; opening is free travel then the gear train bottoming out. Phases
-  // 2 and 4 are near-identical in the current domain, so the tracker separates
-  // them on whether the rotor recovers. See rev32_logic.h.
-  Rev32StrokeTracker stroke_{};
+  // Stroke-phase tracker for the GPIO-bridge path (Rev 3.2/3.3). Closing is
+  // free travel → pin contact → pressure → hard stop; opening is free travel
+  // then the gear train bottoming out. Phases 2 and 4 are near-identical in
+  // the current domain, so the tracker separates them on cadence recovery.
+  // See endpoint_logic.h.
+  StrokeTracker stroke_{};
 
   // Pin engagement detection (calibration close passes)
   bool pin_detect_enabled_ = false;
@@ -599,6 +730,14 @@ class Lv6ValveController : public esphome::Component {
   // motor_loop_() at 1 ms. On the closing hard stop every millisecond past the
   // cap is force into a rigid stop, so this does not wait for the 10 ms FSM tick.
   std::atomic<bool> hard_cap_tripped_{false};
+  /// Severity-ordered fast trip raised by the ripple task and consumed exactly
+  /// once by motor_loop_(). One atomic rather than one per rung, so a circuit
+  /// fault arriving in the same frame as a seat trip cannot be lost.
+  std::atomic<uint8_t> fast_trip_{0};
+  /// Context the ripple task needs, published by the motor task. Single writer,
+  /// single reader, one word — no mutex, no torn state.
+  /// bit0 dir_is_open, bit1 past_blanking, bit2 seat_phase, bit3 open_cap_armed.
+  std::atomic<uint8_t> cap_ctx_{0};
 
   // DMA task state
   TaskHandle_t ripple_task_handle_ = nullptr;

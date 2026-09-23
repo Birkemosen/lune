@@ -1,10 +1,13 @@
 # Rev 3.3 firmware integration
 
 The Lune V6 firmware entrypoint is `lune-v6/configurations/lune-v6.yaml`
-(hostname `lune-v6-<mac>`). The Rev 3.2 PCB lives in
-`packages/board/lune-v6-rev32.yaml` and selects the `rev32_gpio` motor backend
-(`components/lv6_valve_controller/rev32_motor_backend.{h,cpp}` over the pure
-contract in `rev32_logic.h`) plus the single-LED status package.
+(hostname `lune-v6-<mac>`). The current PCB package is
+`packages/board/lune-v6-rev33.yaml` and selects the `rev33_gpio` motor backend
+(`components/lv6_valve_controller/rev33_motor_backend.{h,cpp}`). Decoder, tacho
+and current-sense *drivers* share code with Rev 3.2 (`rev32_motor_backend` /
+`rev32_logic.h`). Stroke-phase and endpoint *detection* are revision-neutral in
+`endpoint_logic.h` (`StrokeTracker`, `classify_endpoint`). The Rev 3.2 PCB
+remains in `packages/board/lune-v6-rev32.yaml`.
 
 Build it from `lune-v6` with:
 
@@ -27,10 +30,12 @@ Rev 3.1 and Rev 3.2 pin maps collide. Do not flash this firmware on a Rev 3.1 bo
 | motion evidence | BEMF mux across a coast | `COMM_TACHO_N` on GPIO38 |
 
 GPIO4 is `STATUS_LED_N` on Rev 3.2, so Rev 3.1's `ADC_CURRENT` would sit on the
-status LED. The component enforces what it can: `rev32_gpio` rejects
-`adc_bemf_pin`, `direction_pin` and `bemf_threshold_raw` outright, rejects any
-duplicate or forbidden motor GPIO, and requires `ipropi_pin` and `adc_tacho_pin`
-to be on ADC1. It cannot tell which board it is soldered to.
+status LED. The component enforces what it can: both `rev32_gpio` and
+`rev33_gpio` reject `adc_bemf_pin`, `direction_pin` and `bemf_threshold_raw`,
+reject any duplicate or forbidden motor GPIO, and require `ipropi_pin` and
+`adc_tacho_pin` to be on ADC1. `rev33_gpio` also refuses to start unless
+`RAIL_OVERCURRENT` and `FAULT_USB_RAW` read like they have external pull-ups,
+so a Rev 3.2 board cannot silently take a Rev 3.3 image.
 
 The N8R8 module is configured for 8 MB flash and Octal PSRAM. The generated
 ESP-IDF sdkconfig must contain `CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y` and
@@ -52,7 +57,7 @@ ESP-IDF sdkconfig must contain `CONFIG_ESPTOOLPY_FLASHSIZE_8MB=y` and
 | MOTOR_ENABLE | 18 | low (decoder inhibit via `U7`) |
 | DRIVER_N_SLEEP | 17 | low — the drive permit; `R31` holds it low on high-Z |
 | FAULT_N_RAW | 16 | input, **active LOW**, three DRV8411 `nFAULT` wired-AND |
-| RAIL_OVERCURRENT | 48 | input, **active LOW**, `U3` rail comparator, 165 mA |
+| RAIL_OVERCURRENT | 48 | input, **active LOW**, `U3` rail comparator, 150 mA |
 | FAULT_USB_RAW | 15 | input, **active LOW**, `U24` TPS2553 fault |
 | ONEWIRE_MCU | 8 | protected external bus (declared ADC1 exception) |
 | UART_TX / UART_RX | 43 / 44 | ROM console; 1k series to `J9` |
@@ -107,7 +112,7 @@ What replaces it:
   | Net | GPIO | Low means |
   |---|---|---|
   | `FAULT_N_RAW` | 16 | one of the three DRV8411 bridges reported a fault |
-  | `RAIL_OVERCURRENT` | 48 | total rail current exceeded 165 mA |
+  | `RAIL_OVERCURRENT` | 48 | total rail current exceeded 150 mA |
   | `FAULT_USB_RAW` | 15 | the TPS2553 is current-limiting |
 
   That is full attribution, which the Rev 3.2 wired-AND could not give (O12).
@@ -122,7 +127,7 @@ nanoseconds; an ISR takes microseconds. Against an actuator drawing 23 mA in
 free travel and stalling at 47-60 mA, with mechanical and thermal constants in
 milliseconds to seconds, that difference is immaterial — and the DRV8411 still
 protects itself with its own overcurrent, thermal and UVLO shutdowns. The
-`RAIL_OVERCURRENT` comparator at 165 mA now fires *before* the driver's own
+`RAIL_OVERCURRENT` comparator at 150 mA now fires *before* the driver's own
 180-230 mA regulation engages, so it catches a shorted cable or a seized
 actuator while the bridge is still healthy.
 
@@ -274,8 +279,8 @@ latency past it is stall torque into a rigid stop.
 picks its speed back up; at either physical stop it slows and does not. That test
 is magnitude-independent, so it works just as well on the gentle opening stop
 where the current hardly moves - exactly where the current-domain tests are
-weakest. `Rev32StrokeTracker` in `rev32_logic.h` implements it, and
-`classify_rev32_endpoint()` refuses to accept an endpoint while the phase is
+weakest. `StrokeTracker` in `endpoint_logic.h` implements it, and
+`classify_endpoint()` refuses to accept an endpoint while the phase is
 `CONTACT`, because at that instant the question is genuinely unanswered.
 
 ## Endpoint evidence
@@ -307,7 +312,7 @@ current cap without qualified stopped-motion evidence is an overcurrent fault.
 A drive-to-endstop timeout can no longer update the stored position as though
 an endpoint was reached.
 
-That table is `classify_rev32_endpoint()` in `rev32_logic.h`, and it is the
+That table is `classify_endpoint()` in `endpoint_logic.h`, and it is the
 Rev 3.2 decision - `detect_endstop_()` supplies the evidence and acts on the
 verdict rather than carrying a second copy of the rules. Two gaps to know about:
 
@@ -352,11 +357,16 @@ successful compile proves integration and pin/config consistency; it does not
 qualify endpoint thresholds, analog integrity or safe energized time.
 
 During bench qualification, poll `GET /api/v1/diagnostics`. Its
-`motor_safety` object reports `backend`, `motion_evidence_count` (the qualified
-count), `tacho_period_us` (cadence), `tacho_rejected`, `tacho_hardware_count`
-(the raw PCNT total, so the rejection rate can be computed), `tacho_amp_raw`,
-`current_ma`, `motor_runtime_ms`, `armed`, `decoder_address` and
-`latch_faulted`. Record `sample_sequence` to detect missed polls; the API data is
+`motor_safety` object reports `backend` (`rev33_gpio` on this board),
+`motion_evidence_count` (the qualified count), `tacho_period_us` (cadence),
+`tacho_rejected`, `tacho_hardware_count` (the raw PCNT total, so the rejection
+rate can be computed), `tacho_amp_raw`, `current_ma`, `motor_runtime_ms`,
+`armed`, `decoder_address` and `latch_faulted` (true while any of the three
+active-LOW fault nets is asserted). Rev 3.3 also reports
+`driver_nsleep_level`, `rail_overcurrent_level` and `fault_usb_level` (0 =
+asserted). `latch_arm_level` / `latch_state_level` stay as aliases of
+`DRIVER_N_SLEEP` and `FAULT_N_RAW` so existing Motor Lab gauges keep working.
+Record `sample_sequence` to detect missed polls; the API data is
 observation-only and cannot bypass the local safety classifier.
 
 After a move has stopped, download

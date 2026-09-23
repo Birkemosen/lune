@@ -34,7 +34,8 @@ namespace lv6 {
 struct Rev33PinConfig : Rev32PinConfig {
   /// The drive permit. High wakes the bridges and un-inhibits the decoder.
   gpio_num_t driver_nsleep{GPIO_NUM_17};
-  /// U3's rail overcurrent comparator, active LOW, trips at 165 mA.
+  /// U3's rail overcurrent comparator, active LOW, trips at 150 mA nominal
+  /// (142-158 worst case) per design-contract ECO rev3.3-P.
   gpio_num_t rail_overcurrent{GPIO_NUM_48};
   /// U24 (TPS2553) fault, active LOW. Readable only during the current-limiting
   /// window before latch-off; a completed latch-off kills the ESP32 too (O6).
@@ -51,9 +52,15 @@ class Rev33MotorBackend : public Rev32MotorBackend {
   /// No latch to arm. Asserts the drive permit and reports whether the fault
   /// nets are clear, which is what the controller actually wants to know.
   bool arm_latch() override;
-  /// FAULT_N_RAW is active LOW here — the inverse of Rev 3.2's LATCH_STATE.
+  /// True while any of the three active-LOW fault nets is asserted. The
+  /// controller uses this to decide whether it may keep driving; attribution
+  /// is the per-net level accessors below.
   bool fault_latched() const override;
+  void poll_motion(uint32_t now_ms, bool drive_active) override;
   void set_drive_permit(bool permitted) override;
+  void assert_arm_high() override;
+  ArmClockProbe probe_arm_clock(uint32_t hz, uint32_t duration_ms,
+                               bool clamp = false) override;
   const char *backend_name() const override { return "rev33_gpio"; }
 
   /// Live levels for diagnostics. All three are active low, so 0 means asserted.

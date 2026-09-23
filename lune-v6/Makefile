@@ -37,7 +37,7 @@ DESIGN_DIR ?= $(firstword $(wildcard \
 LDS_DIR ?= $(DESIGN_DIR)
 LDS_CONSUMER ?= $(ROOT_ABS)
 
-.PHONY: help check ensure-secrets-link config compile build build-verify bump-build prepare-release release release-deploy release-firmware release-bundle upload deploy ota logs discover monitor erase erase-nvs clean dashboard dashboard-tooling dashboard-build dashboard-watch design-tokens design-verify test test-dashboard test-ripple test-rev31-logic test-rev32-logic test-balance test-authority-lease test-preheat-policy test-hydraulic-policy test-hydraulic-diagnostics test-commissioning-schema test-request-guard test-ble-time-beacon test-settings-backup
+.PHONY: help check ensure-secrets-link config compile build build-verify bump-build prepare-release release release-deploy release-firmware release-bundle upload deploy ota logs discover monitor erase erase-nvs clean dashboard dashboard-tooling dashboard-build dashboard-watch design-tokens design-verify test test-dashboard test-ripple test-rev31-logic test-rev32-logic test-safety-limits test-stall-model test-balance test-authority-lease test-preheat-policy test-hydraulic-policy test-hydraulic-diagnostics test-commissioning-schema test-request-guard test-ble-time-beacon test-settings-backup
 
 help:
 	@echo "Lune V6 ESPHome tasks"
@@ -57,7 +57,9 @@ help:
 	@echo "  make test          Run all host unit tests"
 	@echo "  make test-ripple   Run ripple-counter unit tests (5 rates × 5 cases)"
 	@echo "  make test-rev31-logic  Run Rev 3.1 one-hot and endpoint-evidence tests"
-	@echo "  make test-rev32-logic  Run Rev 3.2 decoder-map, latch and tacho tests"
+	@echo "  make test-rev32-logic  Run GPIO-bridge decoder/tacho + endpoint_logic tests"
+	@echo "  make test-safety-limits Run runtime-ceiling + current-cap-ladder tests"
+	@echo "  make test-stall-model  Replay measured motor traces against the stall model"
 	@echo "  make test-balance  Run adaptive-balancing step-math unit tests"
 	@echo ""
 	@echo "Examples:"
@@ -192,6 +194,10 @@ REV31_LOGIC_SRCS = test/rev31_logic/test_rev31_logic.cpp
 REV31_LOGIC_OUT  = /tmp/test_hv6_rev31_logic
 REV32_LOGIC_SRCS = test/rev32_logic/test_rev32_logic.cpp
 REV32_LOGIC_OUT  = /tmp/test_hv6_rev32_logic
+SAFETY_LIMITS_SRCS = test/safety_limits/test_safety_limits.cpp
+SAFETY_LIMITS_OUT  = /tmp/test_hv6_safety_limits
+STALL_MODEL_SRCS = test/stall_model/test_stall_model.cpp
+STALL_MODEL_OUT  = /tmp/test_hv6_stall_model
 
 test-ripple:
 	$(RIPPLE_CXX) $(RIPPLE_CXXFLAGS) $(RIPPLE_SRCS) -o $(RIPPLE_OUT) -lm
@@ -204,6 +210,16 @@ test-rev31-logic:
 test-rev32-logic:
 	$(RIPPLE_CXX) $(RIPPLE_CXXFLAGS) $(REV32_LOGIC_SRCS) -o $(REV32_LOGIC_OUT)
 	$(REV32_LOGIC_OUT)
+
+test-safety-limits:
+	$(RIPPLE_CXX) $(RIPPLE_CXXFLAGS) $(SAFETY_LIMITS_SRCS) -o $(SAFETY_LIMITS_OUT)
+	$(SAFETY_LIMITS_OUT)
+
+# Replays the two measured Motor Lab fixtures in test/fixtures/, so the trace
+# analysis behind the endstop thresholds is reproducible in CI.
+test-stall-model:
+	$(RIPPLE_CXX) $(RIPPLE_CXXFLAGS) $(STALL_MODEL_SRCS) -o $(STALL_MODEL_OUT)
+	$(STALL_MODEL_OUT) test/fixtures
 
 BALANCE_SRCS = test/adaptive_balance/test_adaptive_balance.cpp
 BALANCE_OUT  = /tmp/test_adaptive_balance
@@ -260,7 +276,7 @@ test-settings-backup:
 test-dashboard:
 	sh test/dashboard/test_dashboard.sh
 
-test: design-verify test-dashboard test-ripple test-rev31-logic test-rev32-logic test-balance test-authority-lease test-preheat-policy test-hydraulic-policy test-hydraulic-diagnostics test-commissioning-schema test-request-guard test-ble-time-beacon test-settings-backup
+test: design-verify test-dashboard test-ripple test-rev31-logic test-rev32-logic test-safety-limits test-stall-model test-balance test-authority-lease test-preheat-policy test-hydraulic-policy test-hydraulic-diagnostics test-commissioning-schema test-request-guard test-ble-time-beacon test-settings-backup
 
 ota: check
 	$(MAKE) build

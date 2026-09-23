@@ -256,8 +256,8 @@ latency past it is stall torque into a rigid stop.
 picks its speed back up; at either physical stop it slows and does not. That test
 is magnitude-independent, so it works just as well on the gentle opening stop
 where the current hardly moves - exactly where the current-domain tests are
-weakest. `Rev32StrokeTracker` in `rev32_logic.h` implements it, and
-`classify_rev32_endpoint()` refuses to accept an endpoint while the phase is
+weakest. `StrokeTracker` in `endpoint_logic.h` implements it, and
+`classify_endpoint()` refuses to accept an endpoint while the phase is
 `CONTACT`, because at that instant the question is genuinely unanswered.
 
 ## Endpoint evidence
@@ -289,7 +289,7 @@ current cap without qualified stopped-motion evidence is an overcurrent fault.
 A drive-to-endstop timeout can no longer update the stored position as though
 an endpoint was reached.
 
-That table is `classify_rev32_endpoint()` in `rev32_logic.h`, and it is the
+That table is `classify_endpoint()` in `endpoint_logic.h`, and it is the
 Rev 3.2 decision - `detect_endstop_()` supplies the evidence and acts on the
 verdict rather than carrying a second copy of the rules. Two gaps to know about:
 

@@ -1,6 +1,6 @@
 {
-  "hardware_revision": "lune-v6-rev3.2",
-  "eco": "rev3.2-H",
+  "hardware_revision": "lune-v6-rev3.3",
+  "eco": "rev3.3-P",
   "eco_summary": "Commutation-tacho correction (hysteresis to the comparator non-inverting input, band-pass matched to the measured 20-40 Hz commutation, 8x gain), runtime cutoff referenced to armed time instead of decoder inhibit, C0G timing capacitor, unfiltered rail-overcurrent sense, protected 1-wire supply branch, native DNP attributes, and removal of the ADC clamp, USB series resistors and motor-rail electrolytic.",
   "fabrication_status": "PCB_ROUTED_PENDING_DRC_FAB_EXPORT_AND_PHYSICAL_VALIDATION",
   "layers": 2,
@@ -47,12 +47,12 @@
       "PCNT_GLITCH_FILTER_TOPS_OUT_NEAR_12US_SO_THE_200US_MINIMUM_WIDTH_REJECTION_IS_NOT_IMPLEMENTED_RMT_WOULD_BE_NEEDED_BUT_THE_10KHZ_ADC_TACHO_STREAM_NOW_MAKES_THE_QUESTION_MEASURABLE",
       "PERIOD_REJECTION_IS_ON_THE_IMPLIED_CADENCE_OF_A_COUNT_DELTA_NOT_PER_EDGE"
     ],
-    "endpoint_classifier": "classify_rev32_endpoint IN rev32_logic.h, HOST-TESTED BY make test-rev32-logic",
+    "endpoint_classifier": "classify_endpoint IN endpoint_logic.h (shared; Rev32 aliases in rev32_logic.h), HOST-TESTED BY make test-rev32-logic",
     "analog_frontend": "ONE ADC1 CONTINUOUS DMA STREAM, 20KHZ AGGREGATE: ADC_CURRENT AT 6DB AND ADC_TACHO AT 12DB, 10KHZ EACH IN 512-BYTE FRAMES. THE ONESHOT AND CONTINUOUS DRIVERS CANNOT SHARE AN ADC UNIT, SO THE BACKEND DOES NOT READ ITS OWN ADC.",
     "absolute_current_cap_latency_ms": 1,
     "absolute_current_cap_path": "EVALUATED IN THE DMA TASK ON A FRAME PEAK, CONSUMED BY motor_loop_ AT 1MS",
     "duty_cycle_control": "NONE - CONTINUOUS DRIVE, NO SOFT-APPROACH",
-    "stroke_phase_model": "Rev32StrokeTracker IN rev32_logic.h: FREE_TRAVEL / CONTACT / UNDER_LOAD / STOPPING. PHASE 2 AND PHASE 4 ARE SEPARATED ON CADENCE RECOVERY, NOT ON CURRENT MAGNITUDE.",
+    "stroke_phase_model": "StrokeTracker IN endpoint_logic.h: FREE_TRAVEL / CONTACT / UNDER_LOAD / STOPPING. PHASE 2 AND PHASE 4 ARE SEPARATED ON CADENCE RECOVERY, NOT ON CURRENT MAGNITUDE.",
     "stall_debounce": "CADENCE x 3.0, CLAMPED 150-750MS; 750MS WHEN NO CADENCE IS ESTABLISHED",
     "endpoint_window": "IMPLEMENTED. CLOSING USES contact_to_stop_close_ripples FROM THE OBSERVED PIN CONTACT; OPENING USES THE TRAVEL ESTIMATED FOR THE MOVE. LOWER BOUND ONLY."
   },
@@ -559,7 +559,7 @@
     "sense_node_rationale": "An output-to-GND short bypasses the xISEN resistor entirely and the DRV8411 OCP is 4 A, so this comparator is the only fast protection for that fault. Sensing the unfiltered amplifier output removes the 100 us delay the 1k/100n ADC filter was adding.",
     "actuator_rated_max_ma": 120,
     "actuator_measured_peak_ma": 60,
-    "actuator_locked_rotor_ma": 47,
+    "actuator_locked_rotor_ma": 62,
     "actuator_locked_rotor_basis": "3.2 V across the 68 ohm winding. A DC motor's starting current IS its locked-rotor current, so this is the ceiling on what the actuator can draw from this rail under any condition, stall included.",
     "trip_margin_basis": "ACHIEVABLE_CURRENT_NOT_NAMEPLATE",
     "min_margin_over_measured_peak": 2.0,
@@ -586,7 +586,8 @@
     "comparator_output_type": "OPEN_COLLECTOR",
     "adc_series_ohm": 1000,
     "adc_filter_capacitance_nf": 100,
-    "adc_clamp": "REMOVED_INA180_RAIL_BOUNDS_THE_NODE"
+    "adc_clamp": "REMOVED_INA180_RAIL_BOUNDS_THE_NODE",
+    "actuator_locked_rotor_ma_note": "Was 47, derived as 3.2 V / 68 ohm. Firmware measurement puts the stall at 60-62 mA on the rail-total sense (implying ~52 ohm), and independent instrumented measurements report ~100 mA at a genuine hard stop. Any firmware cap above the true stall is dead code, which is why the old 60/100 mA caps never fired."
   },
   "removed_bemf_frontend": {
     "reason": "POSITION_AND_ROTATION_EVIDENCE_MOVE_TO_CONTINUOUS_COMMUTATION_TACHO",
@@ -603,7 +604,10 @@
     "amplifier": "TLV9001IDBVR",
     "comparator": "SPARE_CHANNEL_OF_U34_LMV393IDR_POWERED_FROM_VBUS_PROTECTED",
     "reference": "10k/4k7 DIVIDER BYPASSED BY 22uF, SHARED BY THE BIAS, GAIN RETURN AND THRESHOLD. Rev 3.3 lowered it from the 1k/1k mid-rail so TACHO_AMP fits the 6 dB ADC span; the whole chain is ratiometric to this node, so the comparator threshold moves with the signal and the digital count is unchanged. The 22uF keeps it stiff at signal frequencies (2.3 Hz corner) despite the higher DC impedance.",
-    "reference_divider_refs": ["R11", "R12"],
+    "reference_divider_refs": [
+      "R11",
+      "R12"
+    ],
     "reference_volt": 1.055,
     "added_mounted_parts": 14,
     "reused_functions": [
@@ -611,8 +615,8 @@
       "SPARE_U34_LMV393_CHANNEL"
     ],
     "measured_actuator_commutation_counts": {
-      "close": 659,
-      "open": 1048
+      "close": 3966,
+      "open": 3417
     },
     "commutation_band_hz": [
       20,
@@ -673,7 +677,13 @@
     "degradation_path": "If qualified commutation proves unreliable in the field, firmware degrades to stall-and-time: find both end stops from the DC current step, then position by elapsed time calibrated against the measured stroke. That needs NO hardware change - ADC_CURRENT on GPIO2 already carries it - which is what makes the sophisticated path safe to depend on provisionally.",
     "cannot_distinguish": "Rotation from brush chatter or rotor buzz against a hard stop. Both produce in-band current ripple and are indistinguishable in the current domain. The chopper (engages only at 178-232 mA against a 23-50 mA measured stall), the buck at 1.5 MHz and supply ripple at 100 Hz through the LDO's PSRR are all excluded quantitatively; mechanical chatter is not. A false-edge stall therefore reads as 'elevated current, still moving' - a heavy move continuing - and is caught by the runtime limit, not by the endpoint classifier.",
     "only_discriminator_would_be": "Back-EMF measured during a coast interruption: a turning rotor generates it, a stalled one does not. Rev3.1 carried that frontend and it was removed for ten parts, an ADC GPIO and the coast interruption. See architecture.md - the removal note claimed the ripple gives the same evidence less directly, which is not true on this one point.",
-    "test_points_are_nets_not_designators": true
+    "test_points_are_nets_not_designators": true,
+    "measured_actuator_commutation_counts_note": "Firmware-measured on Rev 3.3 (test/fixtures/motor-lab-z1-*.csv). The previous 659/1048 understated the real count by ~6x. The close figure is from a run that over-travelled and destroyed the actuator, so it is an upper bound on a healthy stroke, not a target.",
+    "qualified_commutation_band_hz": {
+      "min": 40,
+      "max": 110
+    },
+    "qualified_commutation_band_hz_note": "Measured free-travel cadence is 78-85 Hz, not the 20-40 Hz previously assumed. Anything derived from the old band was sized 2-4x too loosely."
   },
   "actuator_overrun_hazard": {
     "supersedes": "hardware_runtime_cutoff_74HC4060_ECO_rev3.2-B",
@@ -947,7 +957,7 @@
     "FAULT_N_RAW": 16,
     "DRIVER_N_SLEEP": 17,
     "RAIL_OVERCURRENT": 48,
-            "USB_DM": 19,
+    "USB_DM": 19,
     "USB_DP": 20,
     "COMM_TACHO_N": 38,
     "ONEWIRE_MCU": 8,
@@ -966,10 +976,11 @@
   ],
   "logic": {
     "safe_motor_enable": 0,
-    "fault_latch_faulted_level": 1,
+    "fault_latch_faulted_level": 0,
     "decoder_inhibit_equation": "NOT (MOTOR_ENABLE AND DRIVE_PERMIT)",
     "fault_net_active_level": 0,
-    "status_led_active_level": 0
+    "status_led_active_level": 0,
+    "fault_latch_faulted_level_note": "Rev 3.3 fault nets are ACTIVE LOW (0 = asserted). Rev 3.2's LATCH_STATE on the same GPIO16 was active HIGH; a backend carrying the old sense forward reports 'no fault' precisely when a driver has failed."
   },
   "prototype_budget": {
     "assembled_boards": 5,

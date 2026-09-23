@@ -61,7 +61,7 @@ class Rev32MotorBackend : public GpioMotorBackend {
   bool arm_latch() override;
   // Motor Lab / DMM: drive GPIO17 high immediately and hold it for seconds.
   bool arm_latch_probe();
-  void assert_arm_high();
+  virtual void assert_arm_high();
 
   // Bring-up only, and the substitute for an oscilloscope. A single arm edge is
   // a ~3 V spike that decays in about a millisecond, which no multimeter can
@@ -81,7 +81,8 @@ class Rev32MotorBackend : public GpioMotorBackend {
   // clamp=true holds MOTOR_ENABLE high for the whole run, which is the Q1
   // interlock test: Q1 must short ARM_CLK to ground so an arm pulse issued on a
   // live bridge is swallowed. The AC level on U2 pin 1 should collapse to ~0.
-  ArmClockProbe probe_arm_clock(uint32_t hz, uint32_t duration_ms, bool clamp = false);
+  virtual ArmClockProbe probe_arm_clock(uint32_t hz, uint32_t duration_ms,
+                                        bool clamp = false);
 
   // Holds one decoder address with MOTOR_ENABLE low so the 74HC4514 outputs can
   // be probed with a meter. This is the only way to verify the twelve-entry

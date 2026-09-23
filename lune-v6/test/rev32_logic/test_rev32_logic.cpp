@@ -3,17 +3,21 @@
 #include <cassert>
 #include <cstdio>
 #include <set>
+#include <type_traits>
 
-using lv6::classify_rev32_endpoint;
-using lv6::rev32_decision_records_endpoint;
+// Endpoint detection is revision-neutral (endpoint_logic.h). Rev32* aliases in
+// rev32_logic.h keep older call sites compiling; exercise the shared names here.
+using lv6::classify_endpoint;
+using lv6::endpoint_decision_records_position;
+using lv6::endpoint_decision_stops_drive;
+using lv6::EndpointDecision;
+using lv6::EndpointEvidence;
+using lv6::StrokeConfig;
+using lv6::StrokePhase;
+using lv6::StrokeTracker;
 using lv6::rev32_decoder_address;
 using lv6::Rev32DecoderSelection;
 using lv6::Rev32Direction;
-using lv6::Rev32EndpointDecision;
-using lv6::Rev32EndpointEvidence;
-using lv6::Rev32StrokeConfig;
-using lv6::Rev32StrokePhase;
-using lv6::Rev32StrokeTracker;
 using lv6::Rev32TachoQualifier;
 
 // decoder.channel_address_map, transcribed from design-contract.json.  If this
@@ -256,32 +260,40 @@ static void test_adaptive_plateau() {
 
 // Closing is four phases and two of them look the same in the current domain.
 // These are the traces that separate them.
-static void feed(Rev32StrokeTracker &t, uint32_t count, float ma, uint16_t stretch,
+// The baseline is injected by the caller in firmware (a frozen running minimum
+// of the free-travel current), so the harness supplies it here too.
+static float g_baseline = 14.0f;
+
+static void feed(StrokeTracker &t, uint32_t count, float ma, uint16_t stretch,
                  int ticks = 1) {
   for (int i = 0; i < ticks; ++i)
-    t.observe(count, ma, stretch);
+    t.observe(count, ma, g_baseline, stretch);
 }
 
 static void test_pin_contact_is_not_an_endstop() {
-  Rev32StrokeTracker tracker;
+  StrokeTracker tracker;
   tracker.reset(/*direction_is_open=*/false);
 
   // Phase 1: free travel, ~14 mA, steady cadence.
   feed(tracker, 0, 14.0f, 2);
   feed(tracker, 100, 14.0f, 2, 5);
-  assert(tracker.phase() == Rev32StrokePhase::FREE_TRAVEL);
+  assert(tracker.phase() == StrokePhase::FREE_TRAVEL);
   assert(!tracker.contact_seen());
 
   // Phase 2: pin contact.  Current steps up AND the rotor slows - at this
-  // instant it is indistinguishable from the hard stop.
+  // instant it is indistinguishable from the hard stop.  One tick must not be
+  // enough: observe() runs at 10 ms against a ~13 ms commutation period, and
+  // contact_count_ is the datum for the closing endpoint window.
   feed(tracker, 200, 18.0f, 18);
-  assert(tracker.phase() == Rev32StrokePhase::CONTACT);
+  assert(tracker.phase() == StrokePhase::FREE_TRAVEL);
+  feed(tracker, 200, 18.0f, 18, 2);
+  assert(tracker.phase() == StrokePhase::CONTACT);
   assert(tracker.contact_seen());
   assert(tracker.contact_count() == 200);
 
   // The classifier must refuse an endpoint for as long as that is unresolved,
   // even with full load evidence and a commanded endpoint.
-  Rev32EndpointEvidence e;
+  EndpointEvidence e;
   e.blanking_elapsed = true;
   e.current_present = true;
   e.load_evidence = true;
@@ -289,39 +301,77 @@ static void test_pin_contact_is_not_an_endstop() {
   e.commutation_plateau = true;
   e.endpoint_window = true;
   e.commanded_endpoint = true;
-  e.phase = Rev32StrokePhase::CONTACT;
-  assert(classify_rev32_endpoint(e) == Rev32EndpointDecision::CONTINUE);
+  e.phase = StrokePhase::CONTACT;
+  assert(classify_endpoint(e) == EndpointDecision::CONTINUE);
 
   // ...and it resolves: the resistance falls again and the rotor picks its
   // speed back up.  That is the pin, not the seat.
   feed(tracker, 205, 14.5f, 4);
-  assert(tracker.phase() == Rev32StrokePhase::FREE_TRAVEL);
+  assert(tracker.phase() == StrokePhase::FREE_TRAVEL);
   assert(tracker.contact_recovered());
 }
 
+// The measured pin ramp is ~1 mA/s.  An internally-tracked baseline chased it
+// and never produced a step, leaving the tracker stuck in one phase for a whole
+// stroke.  With the baseline frozen, the same ramp must reach CONTACT.
+static void test_slow_ramp_still_reaches_contact() {
+  StrokeTracker tracker;
+  tracker.reset(false);
+  g_baseline = 24.2f;  // measured free travel
+
+  feed(tracker, 0, 24.2f, 2);
+  feed(tracker, 100, 24.2f, 2, 10);
+  assert(tracker.phase() == StrokePhase::FREE_TRAVEL);
+
+  // ~1 mA/s over 4 s, which is the measured pin-contact ramp: far too slow for
+  // an internally-EMA'd baseline (tau ~200 ms) to ever register as a step.
+  uint32_t count = 100;
+  for (int i = 1; i <= 400; ++i) {
+    const float ma = 24.2f + static_cast<float>(i) * 0.01f;  // 0.01 mA per 10 ms tick
+    feed(tracker, count, ma, 18);
+    if (i % 2 == 0)
+      count += 1;
+  }
+  assert(tracker.phase() == StrokePhase::CONTACT ||
+         tracker.phase() == StrokePhase::UNDER_LOAD);
+  assert(tracker.contact_seen());
+  g_baseline = 14.0f;
+}
+
+static void test_no_phase_without_a_baseline() {
+  StrokeTracker tracker;
+  tracker.reset(false);
+  // Before the free-travel minimum has settled there is no reference, so no
+  // phase claim may be made however strong the signal looks.
+  for (int i = 0; i < 10; ++i)
+    tracker.observe(100, 50.0f, 0.0f, 40);
+  assert(tracker.phase() == StrokePhase::FREE_TRAVEL);
+  assert(!tracker.contact_seen());
+}
+
 static void test_seating_outlasts_the_contact_window() {
-  Rev32StrokeConfig cfg;
+  StrokeConfig cfg;
   cfg.contact_recovery_ripples = 15;
-  Rev32StrokeTracker tracker(cfg);
+  StrokeTracker tracker(cfg);
   tracker.reset(false);
 
   feed(tracker, 0, 14.0f, 2);
-  feed(tracker, 200, 18.0f, 18);
-  assert(tracker.phase() == Rev32StrokePhase::CONTACT);
+  feed(tracker, 200, 18.0f, 18, 3);
+  assert(tracker.phase() == StrokePhase::CONTACT);
 
   // Phase 3: the load does not release.  Past the recovery window this is real
   // seating, not the contact transient.
   feed(tracker, 216, 19.0f, 18);
-  assert(tracker.phase() == Rev32StrokePhase::UNDER_LOAD);
+  assert(tracker.phase() == StrokePhase::UNDER_LOAD);
   assert(!tracker.contact_recovered());
 
   // Phase 4: the rotor stops and stays stopped.
   feed(tracker, 216, 40.0f, 35);
-  assert(tracker.phase() == Rev32StrokePhase::STOPPING);
+  assert(tracker.phase() == StrokePhase::STOPPING);
 }
 
 static void test_opening_has_no_pressure_phase() {
-  Rev32StrokeTracker tracker;
+  StrokeTracker tracker;
   tracker.reset(/*direction_is_open=*/true);
   assert(tracker.direction_is_open());
 
@@ -329,142 +379,259 @@ static void test_opening_has_no_pressure_phase() {
   // current barely moves - 15 to 25 mA - so the rotor stopping is the evidence.
   feed(tracker, 0, 15.0f, 2);
   feed(tracker, 500, 15.0f, 3, 5);
-  assert(tracker.phase() == Rev32StrokePhase::FREE_TRAVEL);
+  assert(tracker.phase() == StrokePhase::FREE_TRAVEL);
   assert(!tracker.contact_seen());
 
   feed(tracker, 1040, 15.5f, 40);
-  assert(tracker.phase() == Rev32StrokePhase::STOPPING);
+  assert(tracker.phase() == StrokePhase::STOPPING);
 
-  // A stop out of free travel is the normal opening endpoint...
-  Rev32EndpointEvidence e;
+  // A rotor that has stopped while still drawing only free-travel current is
+  // physically impossible - a stalled motor has no back-EMF and must draw V/R -
+  // so this is instrument error, not an endpoint. It stops the drive but must
+  // not record a position.
+  EndpointEvidence e;
   e.blanking_elapsed = true;
   e.current_present = true;
-  e.load_evidence = true;
+  e.load_evidence = false;
+  e.load_evidence_weak = false;
   e.commutation_observed = true;
   e.commutation_plateau = true;
   e.endpoint_window = true;
   e.commanded_endpoint = true;
-  e.phase = Rev32StrokePhase::FREE_TRAVEL;
+  e.phase = StrokePhase::FREE_TRAVEL;
   e.direction_is_open = true;
-  assert(classify_rev32_endpoint(e) == Rev32EndpointDecision::ENDPOINT);
+  assert(classify_endpoint(e) == EndpointDecision::STOPPED_UNCONFIRMED);
+  assert(!endpoint_decision_records_position(classify_endpoint(e)));
+  assert(endpoint_decision_stops_drive(classify_endpoint(e)));
+
+  // Even a weak current rise is enough to make the same plateau a real stop.
+  e.load_evidence_weak = true;
+  assert(classify_endpoint(e) == EndpointDecision::ENDPOINT);
+
+  // STOPPING cadence alone, before the debounced plateau, is NOT sufficient:
+  // it pre-empted the plateau by ~60 ms while carrying no extra evidence.
+  e.commutation_plateau = false;
+  e.phase = StrokePhase::STOPPING;
+  e.load_evidence_weak = false;
+  assert(classify_endpoint(e) != EndpointDecision::ENDPOINT);
+
+  // Outside a commanded window a plateau is a jam, not an endpoint.
+  e.commutation_plateau = true;
+  e.phase = StrokePhase::FREE_TRAVEL;
+  e.load_evidence = true;
+  e.endpoint_window = false;
+  assert(classify_endpoint(e) == EndpointDecision::JAM);
+  e.endpoint_window = true;
+  e.load_evidence = false;
 
   // ...but on closing the seat is only reachable through contact, so the same
-  // evidence in free travel is something in the way.
+  // plateau evidence in free travel is something in the way.
+  e.commutation_plateau = true;
+  e.load_evidence = true;
+  e.phase = StrokePhase::FREE_TRAVEL;
   e.direction_is_open = false;
-  assert(classify_rev32_endpoint(e) == Rev32EndpointDecision::JAM);
+  assert(classify_endpoint(e) == EndpointDecision::JAM);
 }
 
 static void test_learned_window_withholds_an_endpoint() {
-  Rev32EndpointEvidence e;
+  EndpointEvidence e;
   e.blanking_elapsed = true;
   e.current_present = true;
   e.load_evidence = true;
   e.commutation_observed = true;
   e.commutation_plateau = true;
   e.commanded_endpoint = true;
-  e.phase = Rev32StrokePhase::UNDER_LOAD;
+  e.phase = StrokePhase::UNDER_LOAD;
 
   e.endpoint_window = true;
-  assert(classify_rev32_endpoint(e) == Rev32EndpointDecision::ENDPOINT);
+  assert(classify_endpoint(e) == EndpointDecision::ENDPOINT);
 
   // Stopped under load well short of the learned count: a jam, and it must not
   // update the stored position.
   e.endpoint_window = false;
-  assert(classify_rev32_endpoint(e) == Rev32EndpointDecision::JAM);
-  assert(!rev32_decision_records_endpoint(classify_rev32_endpoint(e)));
+  assert(classify_endpoint(e) == EndpointDecision::JAM);
+  assert(!endpoint_decision_records_position(classify_endpoint(e)));
+}
+
+// Measured HmIP close traces keep advancing motion_count through the seat grind
+// (brush chatter). Current-domain load evidence in UNDER_LOAD must still stop
+// the drive before the 40 s housing-exit wall — without requiring a tach plateau
+// (VdMot Controller method: current trip, count for position only).
+static void test_close_seat_without_tacho_plateau() {
+  EndpointEvidence e;
+  e.blanking_elapsed = true;
+  e.current_present = true;
+  e.load_evidence = true;
+  e.commutation_observed = true;
+  e.commutation_plateau = false;
+  e.endpoint_window = true;
+  e.commanded_endpoint = true;
+  e.direction_is_open = false;
+  e.phase = StrokePhase::UNDER_LOAD;
+  assert(classify_endpoint(e) == EndpointDecision::ENDPOINT);
+  assert(endpoint_decision_records_position(classify_endpoint(e)));
+
+  e.phase = StrokePhase::STOPPING;
+  assert(classify_endpoint(e) == EndpointDecision::ENDPOINT);
+
+  // Pin-contact ambiguity still withholds.
+  e.phase = StrokePhase::CONTACT;
+  assert(classify_endpoint(e) == EndpointDecision::CONTINUE);
+
+  // Closing under load before the plunger ever reached the pin is something in
+  // the way. This used to fall through to the plateau branch and return
+  // CONTINUE when there was no plateau - i.e. exactly when brush chatter kept
+  // the counter alive, which is the case this whole path exists for.
+  e.phase = StrokePhase::FREE_TRAVEL;
+  assert(classify_endpoint(e) == EndpointDecision::JAM);
+
+  // Opening: VdMot pure current trip (no tach plateau required).
+  e.direction_is_open = true;
+  e.phase = StrokePhase::FREE_TRAVEL;
+  assert(classify_endpoint(e) == EndpointDecision::ENDPOINT);
+
+  // No current-domain load signature → keep looking (do not invent an endpoint).
+  e.direction_is_open = false;
+  e.phase = StrokePhase::UNDER_LOAD;
+  e.load_evidence = false;
+  assert(classify_endpoint(e) == EndpointDecision::CONTINUE);
 }
 
 // A closing move that is past pin contact and pressing the pin down. This is
 // the phase a closing endpoint is actually reached in; a stop before contact is
 // covered by test_opening_has_no_pressure_phase().
-static Rev32EndpointEvidence moving_normally() {
-  Rev32EndpointEvidence e;
+static EndpointEvidence moving_normally() {
+  EndpointEvidence e;
   e.blanking_elapsed = true;
   e.current_present = true;
   e.commutation_observed = true;
-  e.phase = Rev32StrokePhase::UNDER_LOAD;
+  e.phase = StrokePhase::UNDER_LOAD;
   return e;
 }
 
 static void test_endpoint_classifier() {
   // Inside blanking nothing is decided.
-  Rev32EndpointEvidence blanked = moving_normally();
+  EndpointEvidence blanked = moving_normally();
   blanked.blanking_elapsed = false;
   blanked.commutation_plateau = true;
   blanked.load_evidence = true;
-  assert(classify_rev32_endpoint(blanked) == Rev32EndpointDecision::CONTINUE);
+  assert(classify_endpoint(blanked) == EndpointDecision::CONTINUE);
 
   // Healthy travel.
-  assert(classify_rev32_endpoint(moving_normally()) == Rev32EndpointDecision::CONTINUE);
+  assert(classify_endpoint(moving_normally()) == EndpointDecision::CONTINUE);
 
   // Nothing drawing, nothing turning.
-  Rev32EndpointEvidence dead;
+  EndpointEvidence dead;
   dead.blanking_elapsed = true;
-  assert(classify_rev32_endpoint(dead) == Rev32EndpointDecision::DISCONNECTED);
+  assert(classify_endpoint(dead) == EndpointDecision::DISCONNECTED);
 
   // Current but never any commutation: ambiguous, must not record an endpoint.
-  Rev32EndpointEvidence stuck = moving_normally();
+  EndpointEvidence stuck = moving_normally();
   stuck.commutation_observed = false;
   stuck.load_evidence = true;
   stuck.commanded_endpoint = true;
   stuck.endpoint_window = true;
-  assert(classify_rev32_endpoint(stuck) == Rev32EndpointDecision::BLOCKED_OR_UNKNOWN);
-  assert(!rev32_decision_records_endpoint(classify_rev32_endpoint(stuck)));
+  assert(classify_endpoint(stuck) == EndpointDecision::BLOCKED_OR_UNKNOWN);
+  assert(!endpoint_decision_records_position(classify_endpoint(stuck)));
 
   // The absolute cap trips before the tacho has qualified a stop.
-  Rev32EndpointEvidence over = moving_normally();
+  EndpointEvidence over = moving_normally();
   over.current_over_cap = true;
-  assert(classify_rev32_endpoint(over) == Rev32EndpointDecision::OVERCURRENT);
+  assert(classify_endpoint(over) == EndpointDecision::OVERCURRENT);
 
   // A real endpoint needs all of: plateau, elevated current, commanded
   // endpoint and the learned-count window.
-  Rev32EndpointEvidence endpoint = moving_normally();
+  EndpointEvidence endpoint = moving_normally();
   endpoint.commutation_plateau = true;
   endpoint.load_evidence = true;
   endpoint.commanded_endpoint = true;
   endpoint.endpoint_window = true;
-  assert(classify_rev32_endpoint(endpoint) == Rev32EndpointDecision::ENDPOINT);
-  assert(rev32_decision_records_endpoint(Rev32EndpointDecision::ENDPOINT));
+  assert(classify_endpoint(endpoint) == EndpointDecision::ENDPOINT);
+  assert(endpoint_decision_records_position(EndpointDecision::ENDPOINT));
 
   // Same stop, but not where an endpoint was commanded: that is a jam.
-  Rev32EndpointEvidence jam = endpoint;
+  EndpointEvidence jam = endpoint;
   jam.commanded_endpoint = false;
-  assert(classify_rev32_endpoint(jam) == Rev32EndpointDecision::JAM);
-  assert(!rev32_decision_records_endpoint(classify_rev32_endpoint(jam)));
+  assert(classify_endpoint(jam) == EndpointDecision::JAM);
+  assert(!endpoint_decision_records_position(classify_endpoint(jam)));
 
   // Stopped inside the command but outside the learned window is also a jam.
-  Rev32EndpointEvidence early = endpoint;
+  EndpointEvidence early = endpoint;
   early.endpoint_window = false;
-  assert(classify_rev32_endpoint(early) == Rev32EndpointDecision::JAM);
+  assert(classify_endpoint(early) == EndpointDecision::JAM);
 
-  // Plateau without a current step is just a slow patch, not a stop.
-  Rev32EndpointEvidence coasting = endpoint;
+  // Plateau without a current step is just a slow patch on closing, not a stop.
+  EndpointEvidence coasting = endpoint;
   coasting.load_evidence = false;
-  assert(classify_rev32_endpoint(coasting) == Rev32EndpointDecision::CONTINUE);
+  assert(classify_endpoint(coasting) == EndpointDecision::CONTINUE);
+
+  // Opening: the same plateau with no current evidence is not a stop either -
+  // it is a counter that disagrees with physics.
+  EndpointEvidence open_gentle = coasting;
+  open_gentle.direction_is_open = true;
+  open_gentle.phase = StrokePhase::FREE_TRAVEL;
+  assert(classify_endpoint(open_gentle) == EndpointDecision::STOPPED_UNCONFIRMED);
+  open_gentle.load_evidence_weak = true;
+  assert(classify_endpoint(open_gentle) == EndpointDecision::ENDPOINT);
 
   // Counter went quiet while current vanished: instrument fault, not endpoint.
-  Rev32EndpointEvidence sensor = endpoint;
+  EndpointEvidence sensor = endpoint;
   sensor.current_present = false;
-  assert(classify_rev32_endpoint(sensor) == Rev32EndpointDecision::TACHO_FAULT);
-  assert(!rev32_decision_records_endpoint(classify_rev32_endpoint(sensor)));
+  assert(classify_endpoint(sensor) == EndpointDecision::TACHO_FAULT);
+  assert(!endpoint_decision_records_position(classify_endpoint(sensor)));
 }
 
 static void test_only_endpoint_records_position() {
-  const Rev32EndpointDecision all[] = {
-      Rev32EndpointDecision::CONTINUE,   Rev32EndpointDecision::ENDPOINT,
-      Rev32EndpointDecision::JAM,        Rev32EndpointDecision::OVERCURRENT,
-      Rev32EndpointDecision::DISCONNECTED, Rev32EndpointDecision::TACHO_FAULT,
-      Rev32EndpointDecision::BLOCKED_OR_UNKNOWN,
+  const EndpointDecision all[] = {
+      EndpointDecision::CONTINUE,   EndpointDecision::ENDPOINT,
+      EndpointDecision::JAM,        EndpointDecision::OVERCURRENT,
+      EndpointDecision::DISCONNECTED, EndpointDecision::TACHO_FAULT,
+      EndpointDecision::BLOCKED_OR_UNKNOWN,
   };
   int recording = 0;
   for (const auto decision : all) {
-    if (rev32_decision_records_endpoint(decision))
+    if (endpoint_decision_records_position(decision))
       ++recording;
     // Everything except CONTINUE ends the move.
-    assert(lv6::rev32_decision_stops_drive(decision) ==
-           (decision != Rev32EndpointDecision::CONTINUE));
+    assert(endpoint_decision_stops_drive(decision) ==
+           (decision != EndpointDecision::CONTINUE));
   }
   assert(recording == 1);
+}
+
+// A board fault must never become a mechanical verdict, whatever the tacho says.
+static void test_circuit_fault_never_becomes_an_endpoint() {
+  EndpointEvidence e;
+  e.blanking_elapsed = true;
+  e.current_present = true;
+  e.load_evidence = true;
+  e.commutation_observed = true;
+  e.commutation_plateau = true;
+  e.endpoint_window = true;
+  e.commanded_endpoint = true;
+  e.phase = StrokePhase::UNDER_LOAD;
+  e.current_over_circuit_fault = true;
+  assert(classify_endpoint(e) == EndpointDecision::OVERCURRENT);
+  assert(!endpoint_decision_records_position(classify_endpoint(e)));
+  // ...and it outranks blanking: a short is a fault from the first frame.
+  e.blanking_elapsed = false;
+  assert(classify_endpoint(e) == EndpointDecision::OVERCURRENT);
+}
+
+static void test_rev32_aliases_still_match() {
+  // Compatibility shims in rev32_logic.h must track the shared types.
+  static_assert(std::is_same_v<lv6::Rev32StrokeTracker, StrokeTracker>);
+  static_assert(std::is_same_v<lv6::Rev32EndpointEvidence, EndpointEvidence>);
+  EndpointEvidence e = moving_normally();
+  e.commutation_plateau = true;
+  e.load_evidence = true;
+  e.commanded_endpoint = true;
+  e.endpoint_window = true;
+  e.direction_is_open = true;
+  e.phase = StrokePhase::FREE_TRAVEL;
+  assert(lv6::classify_rev32_endpoint(e) == classify_endpoint(e));
+  assert(lv6::rev32_decision_records_endpoint(EndpointDecision::ENDPOINT));
+  assert(lv6::rev32_decision_stops_drive(EndpointDecision::JAM));
 }
 
 int main() {
@@ -478,11 +645,16 @@ int main() {
   test_cadence_baseline();
   test_adaptive_plateau();
   test_pin_contact_is_not_an_endstop();
+  test_slow_ramp_still_reaches_contact();
+  test_no_phase_without_a_baseline();
   test_seating_outlasts_the_contact_window();
   test_opening_has_no_pressure_phase();
   test_learned_window_withholds_an_endpoint();
+  test_close_seat_without_tacho_plateau();
   test_endpoint_classifier();
   test_only_endpoint_records_position();
-  std::printf("rev32_logic: all assertions passed\n");
+  test_circuit_fault_never_becomes_an_endpoint();
+  test_rev32_aliases_still_match();
+  std::printf("endpoint_logic + rev32_logic: all assertions passed\n");
   return 0;
 }

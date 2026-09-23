@@ -88,15 +88,26 @@ int Rev33MotorBackend::driver_nsleep_level() const {
 }
 
 bool Rev33MotorBackend::fault_latched() const {
-  // ACTIVE LOW, and this is the inverse of Rev 3.2. Getting it backwards makes
-  // the firmware report "no fault" exactly when a bridge has failed.
-  return gpio_get_level(pins33_.latch_state) == 0;
+  // The controller asks "may I keep driving?". On this revision that is any of
+  // the three nets, not just FAULT_N_RAW. Attribution stays on the per-net
+  // accessors. ACTIVE LOW, and this is the inverse of Rev 3.2: getting the
+  // sense backwards reports "no fault" exactly when a driver has failed.
+  return any_fault();
 }
 
 bool Rev33MotorBackend::any_fault() const {
-  return fault_latched() ||
+  return gpio_get_level(pins33_.latch_state) == 0 ||
          gpio_get_level(pins33_.rail_overcurrent) == 0 ||
          gpio_get_level(pins33_.fault_usb) == 0;
+}
+
+void Rev33MotorBackend::poll_motion(uint32_t now_ms, bool drive_active) {
+  Rev32MotorBackend::poll_motion(now_ms, drive_active);
+  // The latch used to drop the permit in hardware. Firmware owns DRIVER_N_SLEEP
+  // now, so a fault net that asserts mid-move has to put the bridges back to
+  // sleep here — coasting MOTOR_ENABLE alone leaves them awake.
+  if (any_fault())
+    set_drive_permit(false);
 }
 
 void Rev33MotorBackend::set_drive_permit(bool permitted) {
@@ -125,7 +136,7 @@ bool Rev33MotorBackend::arm_latch() {
     set_drive_permit(false);
     ESP_LOGE(TAG,
              "Drive permit refused: FAULT_N_RAW=%d RAIL_OVERCURRENT=%d "
-             "FAULT_USB_RAW=%d (0 = asserted). A bridge fault, the 165 mA rail "
+             "FAULT_USB_RAW=%d (0 = asserted). A bridge fault, the 150 mA rail "
              "comparator, or the USB switch current-limiting — the three nets "
              "are separate so this is attributable, unlike Rev 3.2.",
              raw, rail, usb);
@@ -133,6 +144,19 @@ bool Rev33MotorBackend::arm_latch() {
   }
   // selection_.arm() takes "is the fault line asserted", not "is it high".
   return selection_.arm(false);
+}
+
+void Rev33MotorBackend::assert_arm_high() {
+  // GPIO17 is DRIVER_N_SLEEP on this revision. Forcing it high here would wake
+  // the bridges without going through arm_latch()'s fault check.
+  ESP_LOGW(TAG, "LATCH_ARM force-high ignored: GPIO17 is DRIVER_N_SLEEP on Rev 3.3");
+}
+
+Rev32MotorBackend::ArmClockProbe Rev33MotorBackend::probe_arm_clock(uint32_t,
+                                                                   uint32_t,
+                                                                   bool) {
+  ESP_LOGW(TAG, "ARM_CLK probe refused: Rev 3.3 has no fault latch");
+  return {};
 }
 
 }  // namespace lv6

@@ -314,7 +314,11 @@ static constexpr uint32_t PID_CONFIG_VERSION = 1;
 /// stall debounce, learned-count endpoint window, phase-2 contact recovery) and
 /// drops open_hard_cap_factor / open_hard_cap_floor_ma, which were persisted but
 /// never read after that detection path was reverted.
-static constexpr uint32_t MOTOR_CONFIG_VERSION = 2;
+/// v4 makes the mechanical ceiling direction-asymmetric and expresses it in
+/// commutation counts as well as milliseconds, adds the absolute current-cap
+/// ladder, and drops calibration_timeout_s / presence_test_duration_ms /
+/// adaptive_runtime_margin_ms (no read sites).
+static constexpr uint32_t MOTOR_CONFIG_VERSION = 4;
 static constexpr uint32_t MANIFOLD_CONFIG_VERSION = 1;
 /// v2 replaces unsafe per-zone "modulating heat source" floors with an explicit
 /// secondary-loop commissioning floor. Old values are safely invalidated.
@@ -382,6 +386,14 @@ struct PIDParams {
   float integral_limit = 50.0f;
 };
 
+/// How often a move re-establishes its datum at the close endstop.
+enum class RehomePolicy : uint8_t {
+  EVERY_MOVE = 0,   ///< every intermediate target re-homes first (default)
+  PERIODIC = 1,     ///< re-home after N moves or H hours, otherwise move relative
+  OPPORTUNISTIC = 2,///< only when a 0% target makes the close leg free anyway
+  NEVER = 3,        ///< relative moves only
+};
+
 struct MotorConfig {
   MotorProfile default_profile = MotorProfile::HMIP_VDMOT;
   uint32_t pwm_boost_ms = 350;
@@ -392,15 +404,38 @@ struct MotorConfig {
   // (prevents piston-lock / socket pop-off). 0 disables.
   uint8_t pwm_approach_duty_pct = 40;  // reduced hold duty during final approach
   uint8_t approach_zone_pct = 80;      // begin soft-approach at this % of the move
-  uint32_t max_runtime_s = 45;  // Reduced from 65s to prevent piston lock/socket pop-off (mechanical limit ~40s)
+  // --- Mechanical ceilings ----------------------------------------------------
+  // 40 s of CLOSE travel puts the HmIP-VDMOT plunger at the housing exit, where
+  // the anti-rotation tap leaves its guide and snaps. That is the destruction
+  // boundary, not a safe limit, so the operative ceiling sits ~15% inside it.
+  //
+  // Counts are the mechanically meaningful currency — plunger extension follows
+  // commutations, not seconds — and 40 s at the measured 78 Hz free-travel
+  // cadence is ~3120 counts. The millisecond ceiling covers the case where the
+  // tacho dies and the count stops advancing. Whichever is reached first wins.
+  //
+  // The two directions are NOT symmetric: closing ejects the plunger (abrupt,
+  // unrecoverable), opening bottoms out the gear train (cumulative, slow).
+  uint32_t max_runtime_s = 40;
   uint32_t generic_profile_runtime_limit_s = 45;
-  uint32_t hmip_vdmot_runtime_limit_s = 40;
-  // Margin added to the learned stroke time to form the adaptive runtime safety
-  // cap (caps a calibrated valve sooner than the per-profile limit). Smaller =
-  // tighter overrun protection.
-  uint32_t adaptive_runtime_margin_ms = 3000;
-  uint32_t calibration_timeout_s = 120;
-  // Close-direction endstop (higher current at mechanical stop)
+  /// CLOSE ceiling. UI/backup keep the historical field name.
+  uint32_t hmip_vdmot_runtime_limit_s = 34;
+  uint32_t hmip_vdmot_open_runtime_limit_s = 45;
+  uint32_t close_runtime_limit_counts = 2600;
+  uint32_t open_runtime_limit_counts = 3600;
+  /// Allowance added past the learned stroke before the ceiling bites.
+  uint32_t close_overrun_budget_ms = 2000;
+  uint32_t open_overrun_budget_ms = 3000;
+  uint32_t close_overrun_budget_counts = 150;
+  uint32_t open_overrun_budget_counts = 250;
+  /// Learned strokes are scaled by this before the budget is added.
+  uint8_t stroke_uncertainty_pct = 20;
+  /// Below this a move cannot clear blanking + guard + debounce.
+  uint32_t runtime_floor_ms = 2000;
+  // Close-direction endstop — VdMot Controller method (Lenti84): trip when
+  // filtered current exceeds free-travel mean × 1.7 after inrush debounce.
+  // Tach/commutation is for position only and must not withhold this trip.
+  // See https://github.com/Lenti84/VdMot_Controller (motor.cpp TimerHandler0).
   float close_current_factor = 1.7f;
   float close_slope_threshold_ma_per_s = 0.6f;
   float close_slope_current_factor = 1.3f;
@@ -442,14 +477,76 @@ struct MotorConfig {
   float low_current_threshold_ma = 5.0f;
   uint32_t low_current_window_ms = 1200;
   uint32_t calibration_min_travel_ms = 3000;
+  /// Minimum commutations per calibration pass. Derived, not copied from VdMot
+  /// (their 3000 is on a different encoder scale): 3000 ms at the slow end of
+  /// the qualified commutation band is ~60 counts, so 100 keeps margin while
+  /// staying well under a real stroke. This is the check that catches "motor
+  /// runs, tacho dead", which the time-only gate was blind to.
+  uint32_t calibration_min_travel_ripples = 100;
   uint8_t calibration_max_retries = 2;
   uint32_t relearn_after_movements = 2000;
   uint32_t relearn_after_hours = 168;
   float drift_relearn_threshold_pct = 15.0f;
-  uint32_t presence_test_duration_ms = 800;
   bool auto_apply_learned_factors = true;
   uint8_t learned_factor_min_samples = 3;
   float learned_factor_max_deviation_pct = 0.12f;
+
+  // --- Absolute current-cap ladder (evaluated on the DMA frame path) ---------
+  // Severity-ordered and enforced monotonic by sanitize_motor_cfg_(). Derived
+  // from our own measured trace, not from VdMot's or nliaudat's sense scale:
+  // free travel 24 mA, pin plateau 31-33 mA, destruction ramp crossing 34 mA at
+  // t=39.2 s against a 40 s wall. cap_circuit_fault_ma covers the 62-150 mA
+  // window no hardware sees (DRV8411 OCP is 4 A, rail comparator 150 mA).
+  float cap_close_seat_ma = 34.0f;
+  float cap_close_popoff_ma = 36.0f;
+  float cap_stall_ma = 54.0f;
+  float cap_circuit_fault_ma = 85.0f;
+  float cap_open_stop_ma = 40.0f;
+  uint8_t cap_close_seat_frames = 2;
+  uint8_t cap_close_popoff_frames = 2;
+  uint8_t cap_stall_frames = 3;
+  uint8_t cap_circuit_frames = 2;
+  uint8_t cap_open_frames = 3;
+  /// A frame straddling drive-start carries too few samples for a usable mean.
+  uint16_t cap_min_valid_samples = 16;
+
+  // --- Direction-specific endstop references --------------------------------
+  // OPEN has a flat running baseline and a clean ~5x step at the stop, so a
+  // fraction of the measured stall span works: trip = I_free + k*(I_stall-I_free).
+  // That form is offset-immune (our sense is rail-total), drive-voltage
+  // independent and self-scaling per actuator.
+  float open_endstop_stall_fraction = 0.30f;
+  // CLOSE has no flat baseline — the valve spring drives the current up
+  // continuously and the endstop adds only ~10% on top — so referencing free
+  // travel would trip mid-travel. It uses a trailing step instead.
+  uint32_t close_trailing_ref_ms = 2000;
+  float close_trailing_step_ma = 2.5f;
+  /// Sustain is the discriminator, not magnitude: the measured pin-contact ramp
+  /// produces one isolated qualifying sample, the endstop ramp holds for
+  /// seconds. Validated against test/fixtures/motor-lab-z1-close.csv.
+  uint32_t close_trailing_sustain_ms = 1000;
+
+  // --- Spurious-count detection ----------------------------------------------
+  // At a hard stop the commutation counter does not plateau; brush arcing keeps
+  // it advancing (measured: count rate RISING to 88 Hz while current said the
+  // rotor was stopped). Current and cadence rising together is impossible for
+  // one motor, and needs no calibrated constants.
+  uint32_t spurious_window_ms = 3000;
+  float spurious_current_rise_ma = 3.0f;
+  float spurious_cadence_rise_hz = 12.0f;
+  uint8_t spurious_confirm_samples = 2;
+
+  /// Cadence multiplier at which the stroke tracker calls the rotor "slowing"
+  /// (stall_plateau_factor_x10 is the "stopping" threshold).
+  uint16_t slowdown_plateau_factor_x10 = 15;
+
+  // --- Anti-drift -------------------------------------------------------------
+  // Position is derived, never accumulated: a move drives to the close endstop
+  // and then opens by a ripple count. Re-homing is serialised across zones and
+  // deferred while the zone controller reports minimum-flow pressure.
+  RehomePolicy rehome_policy = RehomePolicy::EVERY_MOVE;
+  uint32_t rehome_after_moves = 50;
+  uint32_t rehome_after_hours = 168;
 };
 
 struct MotorTelemetry {
@@ -482,6 +579,9 @@ struct MotorTelemetry {
   // repeatable than the full stroke, so it is the tighter endpoint window for
   // closing — the direction where missing the stop means pop-off.
   uint32_t contact_to_stop_close_ripples = 0;
+  /// Count-based deadzone (VdMot: opening_count - closing_count). Counts survive
+  /// a change in drive speed; deadzone_ms does not, and is never read.
+  uint32_t deadzone_ripples = 0;
   float learned_open_current_factor = 0.0f;
   float learned_close_current_factor = 0.0f;
   uint8_t learned_open_confidence = 0;
