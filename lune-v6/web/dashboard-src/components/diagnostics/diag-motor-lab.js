@@ -1,19 +1,36 @@
 import { component, subscribe } from '../../core/component.js';
 import { injectStyle } from '../../core/style.js';
-import { ev, getDashboardValue, isEntityOn, subscribeDashboard, setDashboardValue, zoneLabel } from '../../core/store.js';
+import { ev, es, getDashboardValue, isEntityOn, subscribeDashboard, setDashboardValue, zoneLabel } from '../../core/store.js';
 import {
   emergencyStopMotors, fetchDiagnostics, fetchMotorTraceCsv,
   openMotorTimed, closeMotorTimed, probeArmClock, setDriversEnabled, setGlobalNumber, setManualMode,
+  resetMotorLearnedFactors,
 } from '../../core/api.js';
 import { gkey } from '../../utils/keys.js';
-import { analyzeMotorTrace, overlayLevels, parseMotorTraceCsv, strokePhaseKey } from '../../utils/motor-trace.js';
+import {
+  analyzeMotorTrace, downloadMotorTraceCsv, downsampleMotorTraceMean, mergeMotorTraceSamples, overlayLevels,
+  parseMotorTraceCsv, strokePhaseKey, TRACE_PULL_MS, BROWSER_TRACE_HZ, BROWSER_TRACE_MAX_MS,
+} from '../../utils/motor-trace.js';
 import { renderMotorLabCharts } from './motor-lab-charts.js';
 import { localize, subscribeLanguage, t } from '../../core/i18n.js';
 
-const POLL_MS = 250;
-const CAPTURE_TIMEOUT_MS = 20000;
+// Diagnostics + chart rebuild must not pile up: an async setInterval at 100 ms
+// was saturating the device HTTP worker mid-stroke and freezing the whole UI.
+const POLL_MS = 400;
+const CHART_PAINT_MS = 500;
+const CAPTURE_TIMEOUT_MS = 45000;
 const START_GRACE_MS = 2000;
 const STEPS = ['setup', 'arm', 'seat', 'open', 'close', 'review'];
+
+const TUNE_FIELDS = [
+  { cls: 'close-factor', key: 'close_threshold_multiplier', id: gkey.closeThresholdMultiplier, labelKey: 'settings.motor.closeThreshold', unit: 'x', step: '0.1' },
+  { cls: 'close-slope', key: 'close_slope_threshold', id: gkey.closeSlopeThreshold, labelKey: 'settings.motor.closeSlope', unit: 'mA/s', step: '0.1' },
+  { cls: 'close-floor', key: 'close_slope_current_factor', id: gkey.closeSlopeCurrentFactor, labelKey: 'settings.motor.closeSlopeFloor', unit: 'x', step: '0.05' },
+  { cls: 'open-factor', key: 'open_threshold_multiplier', id: gkey.openThresholdMultiplier, labelKey: 'settings.motor.openThreshold', unit: 'x', step: '0.1' },
+  { cls: 'open-slope', key: 'open_slope_threshold', id: gkey.openSlopeThreshold, labelKey: 'settings.motor.openSlope', unit: 'mA/s', step: '0.05' },
+  { cls: 'open-floor', key: 'open_slope_current_factor', id: gkey.openSlopeCurrentFactor, labelKey: 'settings.motor.openSlopeFloor', unit: 'x', step: '0.05' },
+  { cls: 'open-ripple', key: 'open_ripple_limit_factor', id: gkey.openRippleLimitFactor, labelKey: 'settings.motor.openRippleLimit', unit: 'x', step: '0.05' },
+];
 
 const css = `
 .diag-motor-lab { color: var(--text-main); }
@@ -169,6 +186,12 @@ const css = `
 }
 .diag-motor-lab .lab-log div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .diag-motor-lab .lab-chart { margin: 0 0 14px; }
+.diag-motor-lab .lab-capture-bar {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 0 0 14px;
+}
+.diag-motor-lab .lab-capture-meta {
+  color: var(--text-faint); font-size: .74rem; font-variant-numeric: tabular-nums;
+}
 .diag-motor-lab .lab-metrics {
   display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; margin: 0 0 14px;
 }
@@ -184,6 +207,44 @@ const css = `
 .diag-motor-lab .lab-suggest th { color: var(--text-faint); font-size: .68rem; letter-spacing: .06em; text-transform: uppercase; }
 .diag-motor-lab .lab-suggest td { color: var(--text-strong); font-variant-numeric: tabular-nums; }
 .diag-motor-lab .lab-suggest .better { color: var(--state-ok); font-weight: 700; }
+.diag-motor-lab .lab-tune {
+  margin: 0 0 14px; padding: 12px 14px;
+  border: 1px solid var(--separator); border-radius: 12px;
+  background: var(--surface-raised);
+}
+.diag-motor-lab .lab-tune > summary {
+  list-style: none; cursor: pointer;
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  color: var(--text-strong); font-size: .88rem; font-weight: 700;
+}
+.diag-motor-lab .lab-tune > summary::-webkit-details-marker { display: none; }
+.diag-motor-lab .lab-tune > summary::after {
+  content: '+'; display: inline-flex; align-items: center; justify-content: center;
+  width: 24px; height: 24px; border-radius: 8px; border: 1px solid var(--control-border);
+  background: var(--control-bg); color: var(--accent); font-size: 1rem; line-height: 1;
+}
+.diag-motor-lab .lab-tune[open] > summary::after { content: '−'; }
+.diag-motor-lab .lab-tune-copy {
+  margin: 8px 0 12px; color: var(--text-muted); font-size: .8rem; line-height: 1.4;
+}
+.diag-motor-lab .lab-tune-grid {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 16px;
+}
+.diag-motor-lab .lab-tune-row {
+  display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(5.5rem, .8fr);
+  gap: 8px; align-items: center;
+}
+.diag-motor-lab .lab-tune-row label {
+  color: var(--text-muted); font-size: .72rem; font-weight: 650;
+}
+.diag-motor-lab .lab-tune-row input {
+  width: 100%; height: var(--control-compact, 32px); min-height: var(--control-compact, 32px);
+  padding: 0 8px; border: 1px solid var(--control-border); border-radius: 8px;
+  background: var(--control-bg); color: var(--text-strong); font-variant-numeric: tabular-nums;
+}
+@media (max-width: 720px) {
+  .diag-motor-lab .lab-tune-grid { grid-template-columns: 1fr; }
+}
 @media (max-width: 980px) {
   .diag-motor-lab .lab-instruments { grid-template-columns: 1fr; }
   .diag-motor-lab .lab-cluster { border-right: 0; border-bottom: 1px solid var(--separator); }
@@ -278,7 +339,32 @@ const template = () => `
         </section>
       </div>
     </section>
+    <section class="lab-board" aria-label="Kv curve">
+      <div class="lab-phase-row">
+        <small data-i18n="diagnostics.lab.kvCurve">Relative Kv (orifice model)</small>
+        <strong class="lab-kv-hint" data-i18n="diagnostics.lab.kvHint">Used by the flow allocator</strong>
+      </div>
+      <table class="lab-suggest lab-kv-table">
+        <thead><tr><th>%</th><th>Kv</th><th>%</th><th>Kv</th><th>%</th><th>Kv</th></tr></thead>
+        <tbody class="lab-kv-body"></tbody>
+      </table>
+    </section>
+    <details class="lab-tune" open>
+      <summary data-i18n="diagnostics.lab.tune.title">Endstop thresholds</summary>
+      <p class="lab-tune-copy" data-i18n="diagnostics.lab.tune.copy">Raise multipliers or slopes if the stroke stops too early. Changes apply immediately to this controller.</p>
+      <div class="lab-tune-grid">
+        ${TUNE_FIELDS.map((field) => `
+          <div class="lab-tune-row">
+            <label data-i18n="${field.labelKey}">${field.labelKey}</label>
+            <input type="number" class="lab-tune-input" data-tune-key="${field.key}" data-tune-id="${field.id}" step="${field.step}" inputmode="decimal" />
+          </div>`).join('')}
+      </div>
+    </details>
     <div class="lab-chart"></div>
+    <div class="lab-capture-bar">
+      <button type="button" class="ui-btn lab-download" hidden data-i18n="diagnostics.lab.downloadCsv">Download CSV</button>
+      <span class="lab-capture-meta" hidden></span>
+    </div>
     <div class="lab-metrics"></div>
     <table class="lab-suggest" hidden>
       <thead>
@@ -358,9 +444,10 @@ export default component({
     let zone = Number(getDashboardValue('selectedZone') || 1);
     let step = 'setup';
     let phase = 'idle';
-    let run = { active: false, aborted: false, direction: null, timer: null, live: [], started: 0 };
+    let run = { active: false, aborted: false, direction: null, timer: null, live: [], hiRes: [], started: 0, pullAt: 0, pullInFlight: false };
     let captures = { open: null, close: null, seat: null };
     let view = { samples: [], analysis: null, live: false };
+    let lastExportSamples = [];
     let chartVisible = { current: true, overlays: true, phase: true, cadence: true, slope: true };
     const logLines = [];
     let liveDiag = emptyLive();
@@ -377,11 +464,15 @@ export default component({
     const phaseEl = el.querySelector('.lab-phase-label');
     const logEl = el.querySelector('.lab-log');
     const chartEl = el.querySelector('.lab-chart');
+    const downloadBtn = el.querySelector('.lab-download');
+    const captureMeta = el.querySelector('.lab-capture-meta');
     const metricsEl = el.querySelector('.lab-metrics');
     const table = el.querySelector('.lab-suggest');
     const primaryBtn = el.querySelector('.lab-primary');
     const secondaryBtn = el.querySelector('.lab-secondary');
     const estopBtn = el.querySelector('.lab-estop');
+    const tuneInputs = Array.from(el.querySelectorAll('.lab-tune-input'));
+    const kvBody = el.querySelector('.lab-kv-body');
     const gauges = {
       current: el.querySelector('[data-k="current"]'),
       mean: el.querySelector('[data-k="mean"]'),
@@ -404,6 +495,48 @@ export default component({
       invalid: el.querySelector('[data-k="invalid"]'),
       tachoRejected: el.querySelector('[data-k="tachoRejected"]'),
     };
+
+    function paintCaptureBar(samples) {
+      lastExportSamples = samples && samples.length ? samples : [];
+      const n = lastExportSamples.length;
+      downloadBtn.hidden = n < 2;
+      captureMeta.hidden = n < 2;
+      if (n < 2) return;
+      const t0 = Number(lastExportSamples[0].t_ms) || 0;
+      const t1 = Number(lastExportSamples[n - 1].t_ms) || 0;
+      const seconds = Math.max(0, (t1 - t0) / 1000);
+      captureMeta.textContent = t('diagnostics.lab.captureMeta', {
+        n,
+        hz: BROWSER_TRACE_HZ,
+        seconds: seconds.toFixed(1),
+      });
+    }
+
+    function relativeKv(pct) {
+      const x = Math.max(0, Math.min(100, Number(pct) || 0)) / 100;
+      if (x < 0.30) return 0.30 * Math.pow(Math.max(x / 0.30, 0), 1.5);
+      return Math.pow(x, 1.5);
+    }
+
+    function paintKvTable() {
+      if (!kvBody) return;
+      const pts = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
+      let html = '';
+      for (let i = 0; i < pts.length; i += 3) {
+        const cells = [];
+        for (let j = 0; j < 3; j++) {
+          const p = pts[i + j];
+          if (p == null) {
+            cells.push('<td></td><td></td>');
+            continue;
+          }
+          cells.push(`<td>${p}</td><td>${relativeKv(p).toFixed(3)}</td>`);
+        }
+        html += `<tr>${cells.join('')}</tr>`;
+      }
+      kvBody.innerHTML = html;
+    }
+    paintKvTable();
 
     function stepIndex(id) {
       return STEPS.indexOf(id);
@@ -440,6 +573,76 @@ export default component({
       phase = next;
       phaseEl.dataset.kind = kind || '';
       phaseEl.textContent = t('diagnostics.lab.phase.' + next);
+    }
+
+    function paintTune() {
+      for (const input of tuneInputs) {
+        const value = ev(input.dataset.tuneId);
+        if (value == null || Number.isNaN(Number(value))) continue;
+        if (document.activeElement === input) continue;
+        input.value = String(Number(value));
+      }
+    }
+
+    function bindTune() {
+      for (const input of tuneInputs) {
+        const commit = () => {
+          const next = Number(input.value);
+          if (!Number.isFinite(next)) {
+            paintTune();
+            return;
+          }
+          setGlobalNumber(input.dataset.tuneKey, next);
+          pushLog('diagnostics.lab.log.tune', {
+            key: t(TUNE_FIELDS.find((field) => field.key === input.dataset.tuneKey)?.labelKey || input.dataset.tuneKey),
+            value: next,
+          });
+          if (view.analysis) paintCharts();
+        };
+        input.addEventListener('change', commit);
+        input.addEventListener('keydown', (event) => {
+          if (event.key === 'Enter') {
+            event.preventDefault();
+            input.blur();
+            commit();
+          }
+        });
+      }
+    }
+
+    function captureDurationMs() {
+      const profile = es(gkey.motorProfileDefault) || 'HmIP VdMot';
+      let seconds;
+      if (profile === 'HmIP VdMot') {
+        seconds = Number(ev(gkey.hmipRuntimeLimitSeconds));
+        // HmIP-VDMOT mechanical ceiling is 40 s — never request headroom past it.
+        if (!Number.isFinite(seconds) || seconds <= 0) seconds = 40;
+        seconds = Math.min(40, seconds);
+      } else {
+        seconds = Number(ev(gkey.genericRuntimeLimitSeconds));
+        if (!Number.isFinite(seconds) || seconds <= 0) seconds = 45;
+      }
+      return Math.min(BROWSER_TRACE_MAX_MS, Math.round(seconds * 1000));
+    }
+
+    async function pullHiResTrace() {
+      if (!run.active || run.aborted || run.pullInFlight) return;
+      const now = Date.now();
+      if (now - (run.pullAt || 0) < TRACE_PULL_MS) return;
+      run.pullAt = now;
+      run.pullInFlight = true;
+      try {
+        const csv = await fetchMotorTraceCsv();
+        const chunk = parseMotorTraceCsv(csv);
+        if (chunk.length) {
+          run.hiRes = mergeMotorTraceSamples(run.hiRes || [], chunk);
+          paintCaptureBar(run.hiRes);
+        }
+      } catch (err) {
+        // Ring may be empty mid-move; keep polling.
+      } finally {
+        run.pullInFlight = false;
+      }
     }
 
     function paintGauges() {
@@ -508,6 +711,7 @@ export default component({
         samples: samples || [],
         live: !!live,
       };
+      paintCaptureBar(view.samples);
       if (view.analysis) {
         liveDiag.mean = view.analysis.mean_ma;
         liveDiag.peak = view.analysis.peak_ma;
@@ -628,8 +832,12 @@ export default component({
       }
     }
 
+    function holdHttpForLab(on) {
+      setDashboardValue('motorLabBusy', !!on);
+    }
+
     function stopPoll() {
-      if (run.timer) clearInterval(run.timer);
+      if (run.timer) clearTimeout(run.timer);
       run.timer = null;
     }
 
@@ -637,10 +845,12 @@ export default component({
       step = next;
       if (next === 'arm' || next === 'setup') showBanner('');
       if (next === 'review') {
+        holdHttpForLab(false);
         const latest = captures.close || captures.open;
         paintAnalysis(latest, latest ? latest.samples : [], false);
         setPhase('done', 'ok');
       } else if (next === 'setup') {
+        holdHttpForLab(false);
         paintAnalysis(null, [], false);
       }
       paintStage();
@@ -731,17 +941,149 @@ export default component({
       }
     }
 
-    async function ingestCsv(text, direction, storeKey) {
-      setPhase('analyzing', 'run');
+    async function armController() {
+      if (run.active) return;
+      holdHttpForLab(true);
+      run.active = true;
+      setPhase('arming', 'run');
       paintStage();
-      const samples = parseMotorTraceCsv(text);
-      const analysis = analyzeMotorTrace(samples, direction);
-      const used = analysis.ok ? analysis.samples : samples;
+      pushLog('diagnostics.lab.log.arming', { zone });
+      try {
+        if (!getDashboardValue('manualMode')) {
+          setDashboardValue('manualMode', true);
+          await setManualMode(true);
+          pushLog('diagnostics.lab.log.manual');
+        }
+        if (run.aborted) return;
+        const payload = await fetchDiagnostics();
+        const safety = payload && payload.data && payload.data.motor_safety
+          ? payload.data.motor_safety : {};
+        liveDiag.backend = safety.backend || liveDiag.backend;
+        paintGauges();
+        if (hasFaultLatch(liveDiag.backend)) {
+          pushLog('diagnostics.lab.log.armProbeWait');
+          const probePayload = await probeArmClock({ hz: 100, durationMs: 4000 });
+          if (run.aborted) return;
+          const probe = probePayload && probePayload.data ? probePayload.data : {};
+          pushLog('diagnostics.lab.log.armProbe', {
+            hz: probe.hz || 100,
+            cycles: probe.cycles || 0,
+            armed: probe.armed ? t('common.on') : t('common.off'),
+            at: probe.armed_at_cycle || 0,
+          });
+          liveDiag.armed = !!probe.armed;
+          liveDiag.latchFaulted = !probe.armed;
+          paintGauges();
+          if (!probe.armed) {
+            showBanner(t('diagnostics.lab.latchBanner'));
+            throw new Error('latch');
+          }
+        } else {
+          pushLog('diagnostics.lab.log.enableWait');
+        }
+        await setDriversEnabled(true);
+        pushLog('diagnostics.lab.log.drivers');
+        const deadline = Date.now() + 4000;
+        let armedOk = false;
+        while (Date.now() < deadline) {
+          if (run.aborted) return;
+          const enabledPayload = await fetchDiagnostics();
+          const data = enabledPayload && enabledPayload.data ? enabledPayload.data : {};
+          const enabledSafety = data.motor_safety || {};
+          liveDiag.driversEnabled = data.drivers_enabled != null ? !!data.drivers_enabled : liveDiag.driversEnabled;
+          liveDiag.armed = !!enabledSafety.armed;
+          liveDiag.latchFaulted = !!enabledSafety.latch_faulted;
+          liveDiag.backend = enabledSafety.backend || liveDiag.backend;
+          liveDiag.latchArmLevel = enabledSafety.latch_arm_level;
+          liveDiag.latchStateLevel = enabledSafety.latch_state_level;
+          liveDiag.motorEnableLevel = enabledSafety.motor_enable_level;
+          paintGauges();
+          if (data.drivers_enabled && !enabledSafety.latch_faulted) {
+            armedOk = true;
+            break;
+          }
+          await new Promise((resolve) => setTimeout(resolve, POLL_MS));
+        }
+        if (!armedOk) {
+          const latch = hasFaultLatch(liveDiag.backend);
+          showBanner(t(latch ? 'diagnostics.lab.latchBanner' : 'diagnostics.lab.enableBanner'));
+          throw new Error(latch ? 'latch' : 'enable');
+        }
+        setPhase('armed', 'ok');
+        pushLog('diagnostics.lab.log.armed');
+        run.active = false;
+        go('seat');
+      } catch (err) {
+        run.active = false;
+        holdHttpForLab(false);
+        setPhase('failed', 'halt');
+        pushLog(err && err.message === 'arm_gpio'
+          ? 'diagnostics.lab.log.armGpio'
+          : (err && err.message === 'latch'
+            ? 'diagnostics.lab.log.latchFaulted'
+            : (err && err.message === 'enable'
+              ? 'diagnostics.lab.log.enableFailed'
+              : 'diagnostics.lab.log.armFailed')));
+        paintStage();
+      }
+    }
+
+    async function finishCapture(direction, storeKey) {
+      const liveSamples = run.live.slice();
+      let csvSamples = [];
+      for (let attempt = 0; attempt < 6; attempt++) {
+        if (run.aborted) return;
+        try {
+          setPhase('fetching', 'run');
+          paintStage();
+          const csv = await fetchMotorTraceCsv();
+          pushLog('diagnostics.lab.log.trace');
+          csvSamples = parseMotorTraceCsv(csv);
+          break;
+        } catch (err) {
+          if (err && err.code === 'motor_busy') {
+            await new Promise((resolve) => setTimeout(resolve, 250));
+            continue;
+          }
+          pushLog('diagnostics.lab.log.traceFailed');
+          break;
+        }
+      }
+
+      if (csvSamples.length)
+        run.hiRes = mergeMotorTraceSamples(run.hiRes || [], csvSamples);
+
+      const hiRes = run.hiRes || [];
+      const liveEnd = liveSamples.length ? Number(liveSamples[liveSamples.length - 1].t_ms) || 0 : 0;
+      const csvEnd = csvSamples.length ? Number(csvSamples[csvSamples.length - 1].t_ms) || 0 : 0;
+      const hiEnd = hiRes.length ? Number(hiRes[hiRes.length - 1].t_ms) || 0 : 0;
+      // Prefer the accumulated ~2 Hz browser log (full stroke); fall back to live
+      // diagnostics samples, then the short device ring.
+      const displaySamples = hiRes.length ? hiRes : (liveSamples.length ? liveSamples : csvSamples);
+      const analysisSamples = (csvSamples.length >= 8 && csvEnd >= Math.max(400, Math.max(liveEnd, hiEnd) * 0.45))
+        ? csvSamples
+        : displaySamples;
+
+      if (!displaySamples.length) {
+        setPhase('failed', 'halt');
+        pushLog('diagnostics.lab.log.traceFailed');
+        paintAnalysis(null, [], false);
+        return;
+      }
+
+      const analysis = analyzeMotorTrace(analysisSamples, direction);
       if (storeKey) captures[storeKey] = analysis.ok ? analysis : null;
-      paintAnalysis(analysis, used, false);
+      paintAnalysis(analysis, displaySamples, false);
       if (!analysis.ok) {
         setPhase('failed', 'halt');
-        pushLog(storeKey === 'seat' ? 'diagnostics.lab.log.seatShort' : 'diagnostics.lab.log.weak');
+        if (analysis.reason === 'no_endstop') {
+          pushLog('diagnostics.lab.log.noEndstop', {
+            direction: t('diagnostics.lab.dir.' + direction),
+            seconds: ((analysis.runtime_ms || 0) / 1000).toFixed(0),
+          });
+        } else {
+          pushLog(storeKey === 'seat' ? 'diagnostics.lab.log.seatShort' : 'diagnostics.lab.log.weak');
+        }
         if (storeKey === 'seat') {
           captures.seat = { short: true };
           pushLog('diagnostics.lab.log.seatContinue');
@@ -768,31 +1110,12 @@ export default component({
         } else if (storeKey === 'close' || storeKey === 'seat') {
           pushLog('diagnostics.lab.log.pinMissing');
         }
-      }
-    }
-
-    async function finishCapture(direction, storeKey) {
-      for (let attempt = 0; attempt < 6; attempt++) {
-        if (run.aborted) return;
-        try {
-          setPhase('fetching', 'run');
-          paintStage();
-          const csv = await fetchMotorTraceCsv();
-          pushLog('diagnostics.lab.log.trace');
-          await ingestCsv(csv, direction, storeKey);
-          return;
-        } catch (err) {
-          if (err && err.code === 'motor_busy') {
-            await new Promise((resolve) => setTimeout(resolve, 250));
-            continue;
-          }
-          setPhase('failed', 'halt');
-          pushLog('diagnostics.lab.log.traceFailed');
-          paintAnalysis(null, run.live, true);
-          return;
+        if (hiEnd > csvEnd + 250 || liveEnd > csvEnd + 250) {
+          pushLog('diagnostics.lab.log.browserLog', {
+            seconds: (Math.max(hiEnd, liveEnd) / 1000).toFixed(1),
+          });
         }
       }
-      setPhase('failed', 'halt');
     }
 
     function updateLiveMeans(samples) {
@@ -811,24 +1134,45 @@ export default component({
 
     async function capture(direction, storeKey) {
       if (run.active) return;
-      run = { active: true, aborted: false, direction, timer: null, live: [], started: Date.now() };
+      run = { active: true, aborted: false, direction, timer: null, live: [], hiRes: [], started: Date.now(), pullAt: 0, pullInFlight: false, chartAt: 0 };
+      holdHttpForLab(true);
       liveDiag = emptyLive();
       liveDiag.direction = t('diagnostics.lab.dir.' + direction);
       setPhase('starting', 'run');
       paintStage();
       paintAnalysis(null, [], true);
+      paintCaptureBar([]);
       pushLog('diagnostics.lab.log.starting', { direction: t('diagnostics.lab.dir.' + direction), zone });
       try {
-        if (direction === 'open') await openMotorTimed(zone, 10000);
-        else await closeMotorTimed(zone, 10000);
+        // Clear learned means so a short false trip does not make the next retry slam.
+        try {
+          await resetMotorLearnedFactors(zone);
+          pushLog('diagnostics.lab.log.resetLearned');
+        } catch (err) {
+          pushLog('diagnostics.lab.log.resetLearnedFailed');
+        }
+        if (run.aborted) return;
+        const durationMs = captureDurationMs();
+        const captureDeadlineMs = durationMs + 8000;
+        pushLog('diagnostics.lab.log.duration', { seconds: (durationMs / 1000).toFixed(0) });
+        if (direction === 'open') await openMotorTimed(zone, durationMs);
+        else await closeMotorTimed(zone, durationMs);
         if (run.aborted) return;
         setPhase('waiting', 'run');
         paintStage();
         let sawBusy = false;
+        let finished = false;
+
+        const schedulePoll = () => {
+          if (finished || run.aborted || !run.active) return;
+          run.timer = setTimeout(poll, POLL_MS);
+        };
+
         const poll = async () => {
-          if (run.aborted) return;
+          if (finished || run.aborted || !run.active) return;
           try {
             const payload = await fetchDiagnostics();
+            if (finished || run.aborted || !run.active) return;
             const data = payload && payload.data ? payload.data : {};
             const safety = data.motor_safety || {};
             const current = Number(safety.current_ma);
@@ -882,11 +1226,22 @@ export default component({
                 backend: liveDiag.backend,
               });
               updateLiveMeans(run.live);
-              paintAnalysis(null, run.live, true);
             }
+            // Occasional ring pull only — full CSV mid-stroke saturates HTTP.
+            // Live charts use mean-bucketed diagnostics samples instead.
+            if (busy) pullHiResTrace();
             paintGauges();
-            const elapsed = Date.now() - run.started;
+            const now = Date.now();
+            if (now - (run.chartAt || 0) >= CHART_PAINT_MS) {
+              run.chartAt = now;
+              const chartSamples = run.hiRes.length
+                ? run.hiRes
+                : downsampleMotorTraceMean(run.live, BROWSER_TRACE_HZ);
+              paintAnalysis(null, chartSamples, true);
+            }
+            const elapsed = now - run.started;
             if (!sawBusy && elapsed > START_GRACE_MS) {
+              finished = true;
               stopPoll();
               run.active = false;
               setPhase('failed', 'halt');
@@ -899,25 +1254,29 @@ export default component({
               paintStage();
               return;
             }
-            if ((sawBusy && !busy) || elapsed > CAPTURE_TIMEOUT_MS) {
+            if ((sawBusy && !busy) || elapsed > captureDeadlineMs) {
+              finished = true;
               stopPoll();
               liveDiag.busy = false;
               if (sawBusy) pushLog('diagnostics.lab.log.stopped');
               run.active = false;
               await finishCapture(direction, storeKey);
               paintStage();
+              return;
             }
           } catch (err) {
-            if (Date.now() - run.started > CAPTURE_TIMEOUT_MS) {
+            if (Date.now() - run.started > captureDeadlineMs) {
+              finished = true;
               stopPoll();
               run.active = false;
               setPhase('failed', 'halt');
               pushLog('diagnostics.lab.log.traceFailed');
               paintStage();
+              return;
             }
           }
+          schedulePoll();
         };
-        run.timer = setInterval(poll, POLL_MS);
         poll();
       } catch (err) {
         run.active = false;
@@ -929,12 +1288,14 @@ export default component({
 
     function restart() {
       stopPoll();
-      run = { active: false, aborted: false, direction: null, timer: null, live: [], started: 0 };
+      holdHttpForLab(false);
+      run = { active: false, aborted: false, direction: null, timer: null, live: [], hiRes: [], started: 0, pullAt: 0, pullInFlight: false, chartAt: 0 };
       captures = { open: null, close: null, seat: null };
       liveDiag = emptyLive();
       logLines.length = 0;
       logEl.innerHTML = '';
       showBanner('');
+      paintCaptureBar([]);
       setPhase('idle');
       go('setup');
     }
@@ -943,6 +1304,7 @@ export default component({
       run.aborted = true;
       run.active = false;
       stopPoll();
+      holdHttpForLab(false);
       liveDiag.busy = false;
       showBanner(t('diagnostics.lab.estopDone'));
       setPhase('halted', 'halt');
@@ -961,6 +1323,7 @@ export default component({
 
     function onAction(action) {
       if (action === 'start') {
+        holdHttpForLab(true);
         pushLog('diagnostics.lab.log.selected', { zone });
         go('arm');
         return;
@@ -985,6 +1348,11 @@ export default component({
     primaryBtn.addEventListener('click', () => onAction(primaryBtn.dataset.action));
     secondaryBtn.addEventListener('click', () => onAction(secondaryBtn.dataset.action));
     estopBtn.addEventListener('click', estop);
+    downloadBtn.addEventListener('click', () => {
+      if (!lastExportSamples.length) return;
+      const dir = run.direction || 'trace';
+      downloadMotorTraceCsv(lastExportSamples, 'motor-lab-z' + zone + '-' + dir + '.csv');
+    });
     zoneSelect.addEventListener('change', () => {
       zone = Number(zoneSelect.value || 1);
       zoneChip.textContent = motorZoneLabel();
@@ -999,6 +1367,8 @@ export default component({
     window.addEventListener('keydown', onKey);
 
     rebuildZones();
+    bindTune();
+    paintTune();
     setPhase('idle');
     paintAnalysis(null, [], false);
     paintStage();
@@ -1016,6 +1386,7 @@ export default component({
       paintStage();
     }).catch(() => {});
     subscribe(gkey.drivers, paintGauges);
+    for (const field of TUNE_FIELDS) subscribe(field.id, () => { paintTune(); if (view.analysis) paintCharts(); });
     subscribeDashboard('manualMode', paintGauges);
     subscribeDashboard('selectedZone', () => {
       if (step !== 'setup') return;
@@ -1025,6 +1396,7 @@ export default component({
     subscribeLanguage(() => {
       rebuildZones();
       localize(el);
+      paintTune();
       paintStage();
       paintAnalysis(view.analysis, view.samples, view.live);
     });

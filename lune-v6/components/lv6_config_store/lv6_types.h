@@ -241,9 +241,14 @@ struct ControlConfig {
 
 struct ProbeConfig {
   // Probe indices are 0-based (Probe 1 = index 0).
-  int8_t manifold_flow_probe = 6;    // Probe 7
-  int8_t manifold_return_probe = 7;  // Probe 8
-  int8_t zone_return_probe[NUM_ZONES] = {0, 1, 2, 3, 4, 5};  // Zone N -> Probe N
+  // Defaults: P1 flow, P2 manifold return. Zone return probes stay unassigned
+  // until return-temperature mode is enabled (then Zone N → Probe N+2).
+  int8_t manifold_flow_probe = 0;    // Probe 1
+  int8_t manifold_return_probe = 1;  // Probe 2
+  int8_t zone_return_probe[NUM_ZONES] = {
+      PROBE_UNASSIGNED, PROBE_UNASSIGNED, PROBE_UNASSIGNED,
+      PROBE_UNASSIGNED, PROBE_UNASSIGNED, PROBE_UNASSIGNED,
+  };
 };
 
 static constexpr uint8_t BLE_MAC_LEN = 18;  // "AA:BB:CC:DD:EE:FF" + null

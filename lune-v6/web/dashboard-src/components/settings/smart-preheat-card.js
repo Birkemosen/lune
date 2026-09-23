@@ -38,12 +38,12 @@ const template = () => settingsCardHtml({
   className: 'smart-preheat-card',
   titleHtml: `<span data-i18n="settings.preheat.title">Preheat</span>${helpBadgeI18n('settings.preheat.help')}`,
   bodyHtml: `
-    <div class="ui-row">
-      <span class="ui-label"><span data-i18n="settings.preheat.absorption">Preheat Absorption</span> <span class="absorb-badge">idle</span></span>
-      <span class="ui-field">${navSwitchHtml({ on: false, label: 'Toggle preheat absorption', className: 'absorb-toggle', attrs: 'data-i18n-label="settings.preheat.toggle"' })}</span>
-    </div>
-    <div class="ui-note" data-i18n="settings.preheat.note">When an external optimizer pushes hot water with no zone demanding heat, keeps satisfied zones open so the slab soaks it up instead of fighting it. Releases the instant any zone calls for heat.</div>
-    <div class="gated-body absorb-body">
+    ${navSwitchHtml({ on: false, label: 'Toggle preheat absorption', className: 'absorb-toggle', attrs: 'data-i18n-label="settings.preheat.toggle"' })}
+    <div class="absorb-body">
+      <div class="ui-row">
+        <span class="ui-label"><span data-i18n="settings.preheat.absorption">Preheat Absorption</span> <span class="absorb-badge">idle</span></span>
+      </div>
+      <div class="ui-note" data-i18n="settings.preheat.note">When an external optimizer pushes hot water with no zone demanding heat, keeps satisfied zones open so the slab soaks it up instead of fighting it. Releases the instant any zone calls for heat.</div>
       <div class="ui-row">
         <span class="ui-label" data-i18n="settings.preheat.absorbBand">Absorb band (°C)</span>
         <span class="ui-field"><input class="ui-input absorb-band" type="number" min="0" max="5" step="0.1" placeholder="1.0" /></span>
@@ -63,16 +63,28 @@ export default component({
   tag: 'smart-preheat-card',
   render: template,
   onMount(ctx, el) {
+    const block = el.closest('[data-collapse-block="preheat"]');
+    const host = block?.querySelector('[data-toggle-host="preheat"]');
     const absorbToggle = el.querySelector('.absorb-toggle');
+    if (host && absorbToggle) host.appendChild(absorbToggle);
+
     const absorbBadge = el.querySelector('.absorb-badge');
     const absorbBandEl = el.querySelector('.absorb-band');
     const absorbDeltaEl = el.querySelector('.absorb-delta');
     const absorbBody = el.querySelector('.absorb-body');
 
-    const form = cardForm(el);
+    const form = cardForm(el, { immediate: true });
 
     // --- preheat absorption (external pre-buffering coordinated by Lune Touch) ---
-    const gate = (on) => { if (absorbBody) absorbBody.classList.toggle('is-disabled', !on); };
+    const gate = (on) => {
+      block?.classList.toggle('is-collapsed', !on);
+      if (absorbBody) {
+        absorbBody.hidden = !on;
+        absorbBody.setAttribute('aria-hidden', on ? 'false' : 'true');
+      }
+      absorbBandEl.disabled = !on;
+      absorbDeltaEl.disabled = !on;
+    };
     form.toggle(absorbToggle, {
       read: () => isEntityOn(gkey.preheatAbsorbEnabled),
       onChange: gate,
@@ -91,11 +103,16 @@ export default component({
       commit: (v) => { setEntity(gkey.preheatDetectDeltaC, { value: v }); setGlobalNumber('preheat_detect_delta_c', v); }
     });
 
-    // Live "absorbing" badge reflects the running device state.
+    // Live absorb badge: idle | reactive | armed
     function updateBadge() {
-      const absorbing = String(es(gkey.preheatAbsorbing) || '').toLowerCase() === 'active';
-      absorbBadge.textContent = absorbing ? t('common.active') : t('common.idle');
-      absorbBadge.classList.toggle('active', absorbing);
+      const raw = String(es(gkey.preheatAbsorbing) || 'idle').toLowerCase();
+      const mode = (raw === 'armed' || raw === 'reactive' || raw === 'active') ? (raw === 'active' ? 'reactive' : raw) : 'idle';
+      const labelKey = mode === 'armed' ? 'settings.preheat.armed'
+        : mode === 'reactive' ? 'settings.preheat.reactive'
+        : 'common.idle';
+      absorbBadge.textContent = t(labelKey);
+      absorbBadge.classList.toggle('active', mode !== 'idle');
+      absorbBadge.dataset.mode = mode;
     }
 
     subscribe(gkey.preheatAbsorbEnabled, form.refresh);

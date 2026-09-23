@@ -866,7 +866,7 @@ ImportResult apply_import_json(const char *json, lv6::DeviceConfig &cfg, bool re
               result.applied);
     apply_int(node, "generic_profile_runtime_limit_s", m.generic_profile_runtime_limit_s, 5, 300,
               result.applied);
-    apply_int(node, "hmip_vdmot_runtime_limit_s", m.hmip_vdmot_runtime_limit_s, 5, 300,
+    apply_int(node, "hmip_vdmot_runtime_limit_s", m.hmip_vdmot_runtime_limit_s, 5, 40,
               result.applied);
     apply_int(node, "relearn_after_movements", m.relearn_after_movements, 0, 1000000,
               result.applied);

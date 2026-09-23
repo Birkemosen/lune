@@ -33,17 +33,16 @@ const template = () => settingsCardHtml({
   className: 'settings-ble-clock-card',
   titleHtml: `<span data-i18n="settings.bleClock.title">Room clocks</span>${helpBadgeI18n('settings.bleClock.help')}`,
   bodyHtml: `
-    <div class="ui-row">
-      <span class="ui-label"><span data-i18n="common.enabled">Enabled</span> <span class="ui-sublabel" data-i18n="settings.bleClock.enabledSub">Broadcast time so nearby Shelly BLU displays can correct drift.</span></span>
-      <span class="ui-field">${navSwitchHtml({ on: false, label: 'Enable room clock sync', className: 'sbc-enabled', attrs: 'data-i18n-label="settings.bleClock.title"' })}</span>
-    </div>
-    <div class="ui-row sbc-interval-row">
-      <span class="ui-label"><span data-i18n="settings.bleClock.interval">Broadcast interval</span> <span class="ui-sublabel" data-i18n="settings.bleClock.intervalSub">Short bursts. Displays usually apply time about once a day.</span></span>
-      <span class="ui-field"><select class="ui-select sbc-interval"></select></span>
-    </div>
-    <div class="ui-row">
-      <span class="ui-label"><span data-i18n="settings.bleClock.lastSync">Last broadcast</span> <span class="sbc-status ui-sublabel">—</span></span>
-      <span class="ui-field"><button type="button" class="ui-btn sbc-now" data-i18n="settings.bleClock.syncNow">Sync now</button></span>
+    ${navSwitchHtml({ on: false, label: 'Enable room clock sync', className: 'sbc-enabled', attrs: 'data-i18n-label="settings.bleClock.title"' })}
+    <div class="sbc-body">
+      <div class="ui-row sbc-interval-row">
+        <span class="ui-label"><span data-i18n="settings.bleClock.interval">Broadcast interval</span> <span class="ui-sublabel" data-i18n="settings.bleClock.intervalSub">Short bursts. Displays usually apply time about once a day.</span></span>
+        <span class="ui-field"><select class="ui-select sbc-interval"></select></span>
+      </div>
+      <div class="ui-row">
+        <span class="ui-label"><span data-i18n="settings.bleClock.lastSync">Last broadcast</span> <span class="sbc-status ui-sublabel">—</span></span>
+        <span class="ui-field"><button type="button" class="ui-btn sbc-now" data-i18n="settings.bleClock.syncNow">Sync now</button></span>
+      </div>
     </div>
   `,
 });
@@ -52,11 +51,16 @@ export default component({
   tag: 'settings-ble-clock-card',
   render: template,
   onMount(ctx, el) {
+    const block = el.closest('[data-collapse-block="ble-clock"]');
+    const host = block?.querySelector('[data-toggle-host="ble-clock"]');
     const toggleEl = el.querySelector('.sbc-enabled');
+    if (host && toggleEl) host.appendChild(toggleEl);
+
+    const bodyEl = el.querySelector('.sbc-body');
     const intervalEl = el.querySelector('.sbc-interval');
     const statusEl = el.querySelector('.sbc-status');
     const nowBtn = el.querySelector('.sbc-now');
-    const form = cardForm(el);
+    const form = cardForm(el, { immediate: true });
 
     const fillIntervals = () => {
       const current = intervalEl.value;
@@ -70,9 +74,20 @@ export default component({
       statusEl.textContent = lastSyncCopy();
     };
 
+    const showBody = (enabled) => {
+      block?.classList.toggle('is-collapsed', !enabled);
+      if (bodyEl) {
+        bodyEl.hidden = !enabled;
+        bodyEl.setAttribute('aria-hidden', enabled ? 'false' : 'true');
+      }
+      intervalEl.disabled = !enabled;
+      nowBtn.disabled = !enabled;
+    };
+
     fillIntervals();
     form.toggle(toggleEl, {
       read: () => isEntityOn(gkey.bleClockSyncEnabled),
+      onChange: showBody,
       commit: (on) => {
         const next = on ? 'on' : 'off';
         setEntity(gkey.bleClockSyncEnabled, { state: next });

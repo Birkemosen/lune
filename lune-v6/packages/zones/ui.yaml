@@ -868,7 +868,7 @@ number:
     mode: box
     unit_of_measurement: "s"
     min_value: 10
-    max_value: 45
+    max_value: 40
     step: 1
     optimistic: false
     lambda: |-

@@ -103,6 +103,10 @@ struct DashboardSnapshot {
   float             preheat_absorb_band_c;
   float             preheat_detect_delta_c;
   bool              preheat_absorbing;
+  uint8_t           absorb_mode{0};  ///< 0 idle, 1 reactive, 2 armed
+  float             zone_loop_share_pct[6]{};
+  uint8_t           zone_absorb_capacity_rank[6]{};
+  float             zone_relative_kv[6]{};  ///< Kv at current commanded opening
 
   // --- Touch coordination authority (heat-source integration is external) ---
   lv6::AuthorityConfig authority;
@@ -160,7 +164,7 @@ static constexpr uint8_t  HISTORY_DEMAND_NONE   = 0xFF;      ///< demand: unknow
 struct HistoryEntry {
   uint32_t uptime_s;
   uint8_t  zone_state[lv6::NUM_ZONES];
-  uint8_t  absorbing;   ///< 1 if preheat absorption was active at sample time, else 0
+  uint8_t  absorbing;   ///< 0 idle, 1 reactive, 2 armed (preheat absorption mode)
   int16_t  flow_dc;     ///< manifold flow temp ×10 (deci-°C), HISTORY_TEMP_NONE = no reading
   int16_t  return_dc;   ///< manifold return temp ×10 (deci-°C), HISTORY_TEMP_NONE = no reading
   uint8_t  demand_pct;  ///< mean open-valve % over zones with a reading, HISTORY_DEMAND_NONE = unknown
@@ -266,13 +270,14 @@ class LV6Dashboard : public Component, public AsyncWebHandler {
   void handle_authority_proposal_(AsyncWebServerRequest *request, const char *body);
   void handle_authority_proposal_approval_(AsyncWebServerRequest *request);
   void handle_authority_revoke_(AsyncWebServerRequest *request);
+  void handle_absorb_window_(AsyncWebServerRequest *request, const char *body);
   void handle_arm_clock_probe_(AsyncWebServerRequest *request, const char *body);
   void handle_decoder_probe_(AsyncWebServerRequest *request, const char *body);
   void send_v1_(AsyncWebServerRequest *request, int code, const char *err_code = nullptr,
                 const char *err_message = nullptr);
   bool enqueue_action_(const DashboardAction &act);
-  /// Same local-credential + CSRF gate the generic write path applies. Sends the
-  /// 403 itself and returns false when the request must be refused.
+  /// CSRF gate for local writes (custom header required). Sends 403 itself and
+  /// returns false when the request must be refused.
   bool authorize_write_(AsyncWebServerRequest *request);
   /// Park the H-bridges before an OTA write: disable the drivers and wait for
   /// any in-flight stroke or calibration to finish, so a reboot mid-flash can
@@ -325,6 +330,13 @@ class LV6Dashboard : public Component, public AsyncWebHandler {
   uint8_t write_rate_count_{0};
   uint32_t coordinator_command_expires_at_ms_[lv6::NUM_ZONES]{};
   float coordinator_command_offsets_c_[lv6::NUM_ZONES]{};
+
+  // Absorb-window command ledger (runtime-only; last accepted envelope).
+  char absorb_ledger_request_id_[48]{};
+  char absorb_ledger_source_[32]{};
+  char absorb_ledger_reason_[80]{};
+  float absorb_ledger_ttl_s_{0.0f};
+  uint32_t absorb_ledger_at_ms_{0};
 
   SemaphoreHandle_t snapshot_lock_{nullptr};
   DashboardSnapshot snapshot_{};

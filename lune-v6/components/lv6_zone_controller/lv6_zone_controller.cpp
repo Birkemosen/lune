@@ -9,7 +9,11 @@
 // =============================================================================
 
 #include "lv6_zone_controller.h"
+#include "flow_allocator.h"
+#include "preheat_absorb_logic.h"
 #include "preheat_policy.h"
+#include "probe_mapping.h"
+#include "thermal_model.h"
 #include "esphome/core/log.h"
 #include "esp_timer.h"
 #include <algorithm>
@@ -387,22 +391,29 @@ ControlAlgorithm Lv6ZoneController::get_control_algorithm() const {
   return config_store_->get_config().zones[0].algorithm;
 }
 
-void Lv6ZoneController::set_zone_probe(uint8_t zone, int8_t probe) {
+bool Lv6ZoneController::set_zone_probe(uint8_t zone, int8_t probe) {
   if (zone >= NUM_ZONES || !config_store_)
-    return;
+    return false;
   if (probe != PROBE_UNASSIGNED && (probe < 0 || probe >= MAX_PROBES))
-    return;
+    return false;
 
-  auto cfg = config_store_->get_config();
-  if (cfg.probes.zone_return_probe[zone] == probe)
-    return;
-  cfg.probes.zone_return_probe[zone] = probe;
-  config_store_->update_probes(cfg.probes);
+  const auto probes = config_store_->get_config().probes;
+  const int8_t previous = probes.zone_return_probe[zone];
+  if (previous == probe)
+    return true;
+  if (probe != PROBE_UNASSIGNED &&
+      !probe_mapping::is_free(probes, probe, static_cast<int8_t>(zone))) {
+    ESP_LOGW(TAG, "Zone %d probe %d rejected: already assigned to another role",
+             zone + 1, probe + 1);
+    return false;
+  }
+  config_store_->set_zone_return_probe(zone, probe);
   if (probe == PROBE_UNASSIGNED) {
     ESP_LOGI(TAG, "Zone %d return probe disabled (None)", zone + 1);
   } else {
     ESP_LOGI(TAG, "Zone %d now uses probe %d", zone + 1, probe + 1);
   }
+  return true;
 }
 
 int8_t Lv6ZoneController::get_zone_probe(uint8_t zone) const {
@@ -412,18 +423,23 @@ int8_t Lv6ZoneController::get_zone_probe(uint8_t zone) const {
   return (probe >= 0 && probe < MAX_PROBES) ? probe : PROBE_UNASSIGNED;
 }
 
-void Lv6ZoneController::set_manifold_flow_probe(int8_t probe) {
+bool Lv6ZoneController::set_manifold_flow_probe(int8_t probe) {
   if (!config_store_)
-    return;
+    return false;
   if (probe < 0 || probe >= MAX_PROBES)
-    return;
+    return false;
 
   auto cfg = config_store_->get_config();
   if (cfg.probes.manifold_flow_probe == probe)
-    return;
+    return true;
+  if (!probe_mapping::is_free(cfg.probes, probe, -1, /*ignore_manifold_flow=*/true, false)) {
+    ESP_LOGW(TAG, "Manifold flow probe %d rejected: already assigned", probe + 1);
+    return false;
+  }
   cfg.probes.manifold_flow_probe = probe;
   config_store_->update_probes(cfg.probes);
   ESP_LOGI(TAG, "Manifold flow now uses probe %d", probe + 1);
+  return true;
 }
 
 int8_t Lv6ZoneController::get_manifold_flow_probe() const {
@@ -433,18 +449,23 @@ int8_t Lv6ZoneController::get_manifold_flow_probe() const {
   return (probe >= 0 && probe < MAX_PROBES) ? probe : 0;
 }
 
-void Lv6ZoneController::set_manifold_return_probe(int8_t probe) {
+bool Lv6ZoneController::set_manifold_return_probe(int8_t probe) {
   if (!config_store_)
-    return;
+    return false;
   if (probe < 0 || probe >= MAX_PROBES)
-    return;
+    return false;
 
   auto cfg = config_store_->get_config();
   if (cfg.probes.manifold_return_probe == probe)
-    return;
+    return true;
+  if (!probe_mapping::is_free(cfg.probes, probe, -1, false, /*ignore_manifold_return=*/true)) {
+    ESP_LOGW(TAG, "Manifold return probe %d rejected: already assigned", probe + 1);
+    return false;
+  }
   cfg.probes.manifold_return_probe = probe;
   config_store_->update_probes(cfg.probes);
   ESP_LOGI(TAG, "Manifold return now uses probe %d", probe + 1);
+  return true;
 }
 
 int8_t Lv6ZoneController::get_manifold_return_probe() const {
@@ -1054,8 +1075,72 @@ void Lv6ZoneController::run_cycle_() {
   }
 
   // Detect external pre-buffering before classifying zones — when active, the
-  // overheat cutoff is raised (per zone, weighted by floor thermal mass).
+  // overheat cutoff is raised (per zone, weighted by absorb capacity rank).
   update_preheat_absorb_(cfg, zone_temps, zone_setpoints);
+
+  // Capacity ranking: thermal mass × floor seed (learned mass replaces seed later).
+  {
+    struct CapEntry { uint8_t zi; float cap; };
+    CapEntry caps[NUM_ZONES];
+    uint8_t ncap = 0;
+    for (uint8_t i = 0; i < NUM_ZONES; i++) {
+      absorb_capacity_rank_[i] = 0;
+      if (!cfg.zones[i].enabled)
+        continue;
+      const auto th = thermal_model::estimate(cfg.zones[i]);
+      float mass = std::isfinite(th.thermal_mass_kwh_per_k) ? th.thermal_mass_kwh_per_k : 1.0f;
+      caps[ncap++] = {i, mass * floor_absorb_factor(cfg.zones[i].floor_type)};
+    }
+    // Sort descending capacity (simple insertion — N≤6).
+    for (uint8_t a = 1; a < ncap; a++) {
+      CapEntry key = caps[a];
+      int b = static_cast<int>(a) - 1;
+      while (b >= 0 && caps[b].cap < key.cap) {
+        caps[b + 1] = caps[b];
+        b--;
+      }
+      caps[b + 1] = key;
+    }
+    for (uint8_t r = 0; r < ncap; r++)
+      absorb_capacity_rank_[caps[r].zi] = static_cast<uint8_t>(r + 1);  // 1 = highest
+  }
+
+  // Flow allocator: update debt/shares for enabled zones (A4).
+  {
+    flow_allocator::ZoneSample samples[flow_allocator::MAX_ZONES]{};
+    for (uint8_t i = 0; i < NUM_ZONES; i++) {
+      samples[i].enabled = cfg.zones[i].enabled;
+      const auto th = thermal_model::estimate(cfg.zones[i]);
+      samples[i].ua_w_per_k = th.plausible ? th.ua_w_per_k : (cfg.zones[i].area_m2 * 2.0f);
+      samples[i].temp_c = zone_temps[i];
+      samples[i].setpoint_c = zone_setpoints[i];
+      samples[i].max_opening_pct = cfg.zones[i].max_opening_pct;
+      if (valve_controller_) {
+        auto telem = valve_controller_->get_telemetry(i);
+        samples[i].learned_open_ripples = static_cast<float>(telem.learned_open_ripples);
+      }
+    }
+    const uint32_t now_ms = esphome::millis();
+    float dt_h = 0.0f;
+    if (flow_alloc_last_ms_ != 0 && now_ms > flow_alloc_last_ms_)
+      dt_h = static_cast<float>(now_ms - flow_alloc_last_ms_) / 3600000.0f;
+    flow_alloc_last_ms_ = now_ms;
+    float target_total = cfg.balancing.secondary_min_total_opening_pct;
+    if (!(target_total > 10.0f))
+      target_total = 60.0f;  // keep pump on a workable Kv when floor unset
+    // Prefer natural demand total when higher than the commissioning floor.
+    float demand_hint = 0.0f;
+    for (uint8_t i = 0; i < NUM_ZONES; i++) {
+      if (!cfg.zones[i].enabled || std::isnan(zone_temps[i]))
+        continue;
+      if (zone_temps[i] < zone_setpoints[i] - cfg.control.comfort_band_c)
+        demand_hint += std::min(cfg.zones[i].max_opening_pct, 40.0f);
+    }
+    target_total = std::max(target_total, demand_hint);
+    flow_allocator::step(flow_alloc_, samples, dt_h, target_total);
+    for (uint8_t i = 0; i < NUM_ZONES; i++)
+      loop_share_pct_[i] = flow_alloc_.loop_share[i] * 100.0f;
+  }
 
   for (uint8_t i = 0; i < NUM_ZONES; i++) {
     if (!cfg.zones[i].enabled) {
@@ -1074,9 +1159,18 @@ void Lv6ZoneController::run_cycle_() {
 
     const bool allow_v6_preheat = preheat_policy::allow_v6_preheat(touch_authority_active_.load());
     float preheat_advance = allow_v6_preheat ? preheat_advance_c_[i] : 0.0f;
-    float absorb_band = preheat_absorb_active_.load()
-        ? cfg.control.preheat_absorb_band_c * floor_absorb_factor(cfg.zones[i].floor_type)
-        : 0.0f;
+    // Capacity-weighted absorb band: rank 1 (highest mass) keeps full band;
+    // lower ranks scale down so DEMAND zones reclaim flow first (redistribute).
+    float absorb_band = 0.0f;
+    if (preheat_absorb_active_.load()) {
+      float cap_scale = floor_absorb_factor(cfg.zones[i].floor_type);
+      if (absorb_capacity_rank_[i] > 0) {
+        const float rank_scale =
+            1.0f - 0.12f * static_cast<float>(absorb_capacity_rank_[i] - 1);
+        cap_scale *= std::clamp(rank_scale, 0.4f, 1.0f);
+      }
+      absorb_band = cfg.control.preheat_absorb_band_c * cap_scale;
+    }
     ZoneState state = classify_zone_(temp, setpoint, cfg.control.comfort_band_c, preheat_advance, absorb_band);
     zone_states[i] = state;
 
@@ -1089,11 +1183,21 @@ void Lv6ZoneController::run_cycle_() {
         was_overheated = true;
         break;
       case ZoneState::SATISFIED:
-        position = cfg.control.maintenance_base_pct;
+        // While absorbing, keep maintenance (or share-based) opening so the
+        // slab can take the buffer; otherwise maintenance base.
+        if (preheat_absorb_active_.load() && flow_alloc_.loop_share[i] > 0.0f)
+          position = std::max(cfg.control.maintenance_base_pct,
+                              flow_alloc_.opening_pct[i] * 0.5f);
+        else
+          position = cfg.control.maintenance_base_pct;
         break;
       case ZoneState::DEMAND:
-        position = compute_raw_position_(i, temp, setpoint);
-        position += cfg.control.demand_boost_pct;
+        // Heatpump path: continuous share from the flow allocator (A4).
+        position = flow_alloc_.opening_pct[i];
+        if (!(position > 1.0f)) {
+          position = compute_raw_position_(i, temp, setpoint);
+          position += cfg.control.demand_boost_pct;
+        }
         position = std::clamp(position, 0.0f, cfg.zones[i].max_opening_pct);
         break;
       case ZoneState::UNKNOWN:
@@ -1348,19 +1452,15 @@ static float floor_absorb_factor(FloorType type) {
   return 0.6f;
 }
 
-// Detect external pre-buffering (coordinated by Lune Touch): hot water arrives at the
-// manifold while no zone demands heat. While active, the overheat cutoff is
-// raised so satisfied zones keep their maintenance opening and the slab can
-// absorb the buffer instead of the valves closing and fighting the optimizer.
+// Detect external pre-buffering: hot water arrives at the manifold while no
+// zone demands heat. While active, the overheat cutoff is raised so satisfied
+// zones keep their maintenance opening and the slab can absorb the buffer.
+//
+// Fail-safe-on: auto-detection stays live under Touch authority. An armed
+// absorb window (coordinator command, P5) supersedes auto-detection when set.
 void Lv6ZoneController::update_preheat_absorb_(const DeviceConfig &cfg,
                                                const std::array<float, NUM_ZONES> &temps,
                                                const std::array<float, NUM_ZONES> &setpoints) {
-  if (!cfg.control.preheat_absorb_enabled || touch_authority_active_.load()) {
-    preheat_absorb_active_ = false;
-    preheat_absorb_detect_cycles_ = 0;
-    return;
-  }
-
   float flow = read_manifold_flow_();
   float temp_sum = 0.0f;
   uint8_t temp_count = 0;
@@ -1375,33 +1475,95 @@ void Lv6ZoneController::update_preheat_absorb_(const DeviceConfig &cfg,
       any_demand = true;
   }
 
-  if (temp_count == 0 || std::isnan(flow)) {
-    preheat_absorb_active_ = false;
-    preheat_absorb_detect_cycles_ = 0;
-    return;
+  preheat_absorb::DetectInput in{};
+  in.enabled = cfg.control.preheat_absorb_enabled;
+  in.arm_active = absorb_arm_active_();
+  in.flow_valid = temp_count > 0 && std::isfinite(flow);
+  in.flow_c = flow;
+  in.house_avg_c = temp_count > 0 ? temp_sum / static_cast<float>(temp_count) : NAN;
+  in.any_demand = any_demand;
+  in.detect_delta_c = cfg.control.preheat_detect_delta_c;
+  in.currently_active = preheat_absorb_active_.load();
+  in.detect_cycles = preheat_absorb_detect_cycles_;
+
+  const auto out = preheat_absorb::step(in);
+  preheat_absorb_detect_cycles_ = out.detect_cycles;
+  if (out.active != preheat_absorb_active_.load()) {
+    preheat_absorb_active_ = out.active;
+    if (out.active && !absorb_arm_active_())
+      absorb_arm_source_ = 2;  // reactive
+    else if (!out.active && !absorb_arm_active_())
+      absorb_arm_source_ = 0;
+    ESP_LOGI(TAG, "Preheat absorption %s (flow=%.1f°C house_avg=%.1f°C mode=%u)",
+             out.active ? "ACTIVE — satisfied zones stay open" : "ended",
+             flow, in.house_avg_c, static_cast<unsigned>(absorb_mode_code()));
   }
+}
 
-  const float house_avg = temp_sum / static_cast<float>(temp_count);
-  // 2 °C release hysteresis so the state doesn't flap on probe noise.
-  const float threshold = house_avg + cfg.control.preheat_detect_delta_c -
-                          (preheat_absorb_active_.load() ? 2.0f : 0.0f);
-  const bool condition = !any_demand && flow > threshold;
+bool Lv6ZoneController::absorb_arm_active_() const {
+  if (absorb_arm_expires_at_ms_ == 0)
+    return false;
+  const uint32_t now = esphome::millis();
+  return static_cast<int32_t>(absorb_arm_expires_at_ms_ - now) > 0;
+}
 
-  if (condition) {
-    if (preheat_absorb_detect_cycles_ < 255)
-      preheat_absorb_detect_cycles_++;
+float Lv6ZoneController::arm_absorb_window(uint32_t ttl_s, const char *request_id, const char *reason) {
+  ttl_s = std::clamp(ttl_s, uint32_t{60}, uint32_t{7200});  // 1 min .. 2 h
+  absorb_arm_expires_at_ms_ = esphome::millis() + ttl_s * 1000u;
+  absorb_arm_source_ = 1;
+  if (request_id && request_id[0]) {
+    std::strncpy(absorb_arm_request_id_, request_id, sizeof(absorb_arm_request_id_) - 1);
+    absorb_arm_request_id_[sizeof(absorb_arm_request_id_) - 1] = '\0';
   } else {
-    preheat_absorb_detect_cycles_ = 0;
+    absorb_arm_request_id_[0] = '\0';
   }
+  if (reason && reason[0]) {
+    std::strncpy(absorb_arm_reason_, reason, sizeof(absorb_arm_reason_) - 1);
+    absorb_arm_reason_[sizeof(absorb_arm_reason_) - 1] = '\0';
+  } else {
+    absorb_arm_reason_[0] = '\0';
+  }
+  preheat_absorb_active_ = true;
+  preheat_absorb_detect_cycles_ = 0;
+  ESP_LOGI(TAG, "Absorb window ARMED ttl=%lus request_id=%s",
+           static_cast<unsigned long>(ttl_s), absorb_arm_request_id_);
+  return static_cast<float>(ttl_s);
+}
 
-  // Require 2 consecutive cycles before activating; release immediately so a
-  // zone that drops into demand gets the full buffer routed to it.
-  const bool next = condition && (preheat_absorb_active_.load() || preheat_absorb_detect_cycles_ >= 2);
-  if (next != preheat_absorb_active_.load()) {
-    preheat_absorb_active_ = next;
-    ESP_LOGI(TAG, "Preheat absorption %s (flow=%.1f°C house_avg=%.1f°C)",
-             next ? "ACTIVE — satisfied zones stay open" : "ended", flow, house_avg);
+void Lv6ZoneController::clear_absorb_arm() {
+  absorb_arm_expires_at_ms_ = 0;
+  absorb_arm_source_ = 0;
+  absorb_arm_request_id_[0] = '\0';
+  absorb_arm_reason_[0] = '\0';
+}
+
+uint8_t Lv6ZoneController::absorb_mode_code() const {
+  if (!preheat_absorb_active_.load())
+    return 0;
+  if (absorb_arm_active_())
+    return 2;  // armed
+  return 1;    // reactive
+}
+
+float Lv6ZoneController::get_loop_share_pct(uint8_t zone) const {
+  if (zone >= NUM_ZONES)
+    return NAN;
+  return loop_share_pct_[zone];
+}
+
+uint8_t Lv6ZoneController::get_absorb_capacity_rank(uint8_t zone) const {
+  if (zone >= NUM_ZONES)
+    return 0;
+  return absorb_capacity_rank_[zone];
+}
+
+float Lv6ZoneController::get_relative_kv(uint8_t zone, float opening_pct) const {
+  float ripples = 0.0f;
+  if (zone < NUM_ZONES && valve_controller_) {
+    auto telem = valve_controller_->get_telemetry(zone);
+    ripples = static_cast<float>(telem.learned_open_ripples);
   }
+  return flow_allocator::kv_at_pct(opening_pct, ripples);
 }
 
 ZoneState Lv6ZoneController::classify_zone_(float temp, float setpoint, float comfort_band, float preheat_advance_c,

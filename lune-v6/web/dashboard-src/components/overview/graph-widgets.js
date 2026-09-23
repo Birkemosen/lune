@@ -185,8 +185,15 @@ function drawChart(svg, card, defs, entries, windowStart, uptime) {
   svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
 
   const seriesList = defs.map((d) => seriesFromHistory(entries, d.index, windowStart));
-  if (!seriesList.some((s) => s.length)) {
-    svg.appendChild(svgEl('text', { x: CHART_W / 2, y: CHART_H / 2, 'text-anchor': 'middle', class: 'chart-empty' }, 'Collecting history…'));
+  const tempDefs = defs.filter((d) => d.unit === 'C');
+  const tempHasData = tempDefs.some((d) => seriesFromHistory(entries, d.index, windowStart).length > 0);
+  const anyHasData = seriesList.some((s) => s.length);
+  // Flow/return chart: a flat demand-% alone must not look like temperature data.
+  if (!anyHasData || (tempDefs.length && !tempHasData && !defs.some((d) => d.unit === '%' && seriesFromHistory(entries, d.index, windowStart).some((p) => p.v > 0)))) {
+    const label = tempDefs.length && !tempHasData
+      ? t('overview.graph.noData')
+      : t('overview.graph.collecting');
+    svg.appendChild(svgEl('text', { x: CHART_W / 2, y: CHART_H / 2, 'text-anchor': 'middle', class: 'chart-empty' }, label));
     return null;
   }
 

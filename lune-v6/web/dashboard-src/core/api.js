@@ -21,8 +21,19 @@ export const OTA_UPLOAD_PATH = '/update';
 // browser instead of reaching the device.
 export const SETTINGS_BACKUP_TYPE = 'lune-v6-settings';
 
+// Custom header CSRF token for local writes. Not a secret — browsers block
+// cross-site HTML forms from setting it; firmware rejects writes without it.
+const WRITE_CSRF = '1';
+
 function isMock() {
   return !!(window.LV6_DASHBOARD_CONFIG && window.LV6_DASHBOARD_CONFIG.mock);
+}
+
+function writeHeaders(extra) {
+  return Object.assign({
+    'X-Lune-CSRF': WRITE_CSRF,
+    'Idempotency-Key': crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
+  }, extra || {});
 }
 
 function queryUrl(path, params) {
@@ -49,33 +60,22 @@ function postV1(path, params, mockBody) {
     }
   }
 
-  let localKey = sessionStorage.getItem('hv6_local_access_key') || '';
   const body = new URLSearchParams();
   for (const [name, value] of Object.entries(params || {})) {
     if (value !== undefined && value !== null) body.append(name, String(value));
   }
-  const send = (accessKey) => fetch(BASE + path, {
+  return fetch(BASE + path, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8', 'X-Lune-Local-Key': accessKey, 'X-Lune-CSRF': accessKey,
-      'Idempotency-Key': crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) },
+    headers: writeHeaders({
+      'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8',
+    }),
     body: body.toString(),
-  });
-  return send(localKey).then(async resp => {
-    // Reads stay prompt-free. Ask only after an explicit write is rejected
-    // because the local access key is not accepted by this device. Prompting
-    // only when nothing was stored left a wrong or stale key failing forever
-    // with no way to correct it, so drop the bad key and re-ask.
-    if (resp.status === 403) {
-      if (localKey) sessionStorage.removeItem('hv6_local_access_key');
-      const entered = window.prompt('Enter the Lune commissioning key to change local settings') || '';
-      if (entered) {
-        sessionStorage.setItem('hv6_local_access_key', entered);
-        localKey = entered;
-        resp = await send(localKey);
-      }
-    }
+  }).then(async resp => {
     if (!resp.ok && [400, 404, 415].includes(resp.status)) {
-      resp = await fetch(queryUrl(path, params), { method: 'POST' });
+      resp = await fetch(queryUrl(path, params), {
+        method: 'POST',
+        headers: writeHeaders(),
+      });
     }
     // Never resolve on a failed write. Swallowing the status made a refused
     // request indistinguishable from a successful one, so callers waited on
@@ -95,25 +95,15 @@ function postV1(path, params, mockBody) {
   });
 }
 
-function localAccessKey() {
-  return sessionStorage.getItem('hv6_local_access_key') || '';
-}
-
 // POST a JSON document to a /api/v1 write endpoint. Only the settings
 // restore path uses this: a backup envelope is a nested document that does not
 // fit the flat form-urlencoded shape every other write endpoint uses. The
 // device reads the raw body from request->arg("plain").
 function postJsonV1(path, payload, params) {
   beginPendingWrite();
-  const accessKey = localAccessKey();
   return fetch(queryUrl(path, params), {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-Lune-Local-Key': accessKey,
-      'X-Lune-CSRF': accessKey,
-      'Idempotency-Key': crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
-    },
+    headers: writeHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify(payload),
   }).finally(() => {
     endPendingWrite();
@@ -254,10 +244,8 @@ export function approveTouchProposal() {
       const payload = typeof response.json === 'function' ? await response.json() : { data: {
         installation_id: es(gkey.authorityProposalInstallationId) || 'lune-mock',
         coordinator_id: es(gkey.authorityProposalCoordinatorId) || 'touch-mock',
-        local_access_key: 'mock-local-access-key',
       } };
       const data = payload?.data || {};
-      if (data.local_access_key) sessionStorage.setItem('hv6_local_access_key', data.local_access_key);
       if (data.installation_id) setEntity(gkey.authorityInstallationId, { state: data.installation_id });
       if (data.coordinator_id) setEntity(gkey.authorityCoordinatorId, { state: data.coordinator_id });
       setEntity(gkey.authorityConfigured, { state: 'on', value: true });
@@ -269,7 +257,6 @@ export function approveTouchProposal() {
 export function revokeTouchConnection() {
   return postV1('/authority/revoke', {}, { key: 'authority_revoke' }).then((response) => {
     if (!response?.ok) throw new Error('V6 could not disconnect Lune Touch.');
-    sessionStorage.removeItem('hv6_local_access_key');
     setEntity(gkey.authorityInstallationId, { state: '' });
     setEntity(gkey.authorityCoordinatorId, { state: '' });
     setEntity(gkey.authorityConfigured, { state: 'off', value: false });
@@ -298,14 +285,26 @@ export function setMotorTarget(zone, targetPct) {
   return postV1(`/motors/${zone}/target`, { value: clamped }, { key: 'motor_target', value: clamped, zone });
 }
 
+function clampTimedMotorMs(durationMs) {
+  const ms = Math.round(Number(durationMs));
+  if (!Number.isFinite(ms) || ms <= 0) return 10000;
+  // Generic profile ceiling is 45 s; HmIP is clamped to 40 s in captureDurationMs
+  // and again in firmware execute_timed_move_.
+  return Math.max(100, Math.min(45000, ms));
+}
+
 export function openMotorTimed(zone, durationMs = 10000) {
-  addActivity('Motor ' + zone + ' open for ' + durationMs + 'ms', zone);
-  return postV1(`/motors/${zone}/open_timed`, {}, { key: 'command', value: 'open_motor_timed', zone });
+  const ms = clampTimedMotorMs(durationMs);
+  addActivity('Motor ' + zone + ' open for ' + ms + 'ms', zone);
+  return postV1(`/motors/${zone}/open_timed`, { duration_ms: ms },
+    { key: 'command', value: 'open_motor_timed', zone, duration_ms: ms });
 }
 
 export function closeMotorTimed(zone, durationMs = 10000) {
-  addActivity('Motor ' + zone + ' close for ' + durationMs + 'ms', zone);
-  return postV1(`/motors/${zone}/close_timed`, {}, { key: 'command', value: 'close_motor_timed', zone });
+  const ms = clampTimedMotorMs(durationMs);
+  addActivity('Motor ' + zone + ' close for ' + ms + 'ms', zone);
+  return postV1(`/motors/${zone}/close_timed`, { duration_ms: ms },
+    { key: 'command', value: 'close_motor_timed', zone, duration_ms: ms });
 }
 
 export function stopMotor(zone) {
@@ -493,11 +492,9 @@ export function uploadFirmware(file, onProgress) {
     body.append('update', file, file.name);
     const request = new XMLHttpRequest();
     request.open('POST', OTA_UPLOAD_PATH);
-    const accessKey = localAccessKey();
-    if (accessKey) {
-      request.setRequestHeader('X-Lune-Local-Key', accessKey);
-      request.setRequestHeader('X-Lune-CSRF', accessKey);
-    }
+    // ESPHome's /update path is separate from /api/v1; CSRF is still sent for
+    // consistency when a future gate is added on that route.
+    request.setRequestHeader('X-Lune-CSRF', WRITE_CSRF);
     request.upload.onprogress = (event) => {
       if (onProgress && event.lengthComputable) {
         onProgress(Math.min(100, Math.round((event.loaded / event.total) * 100)));
@@ -529,7 +526,6 @@ export async function exportSettings(includeLearned = true) {
   if (isMock()) return unwrapBackup(mockSettingsExport(includeLearned));
   const response = await fetch(queryUrl('/settings/export', { include_learned: includeLearned ? 1 : 0 }), {
     cache: 'no-store',
-    headers: { 'X-Lune-Local-Key': localAccessKey() },
   });
   if (!response.ok) throw new Error('Settings export failed: ' + response.status);
   return unwrapBackup(await response.json());

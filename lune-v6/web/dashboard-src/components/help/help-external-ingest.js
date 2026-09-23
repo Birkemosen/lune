@@ -65,20 +65,15 @@ function hostBase() {
   return window.location.origin || 'http://lune-v6.local';
 }
 
-function accessKeyHint() {
-  return sessionStorage.getItem('hv6_local_access_key') || 'YOUR_LOCAL_ACCESS_KEY';
-}
-
 function shellyScript() {
   const base = hostBase();
-  const key = accessKeyHint();
   return `// Shelly script — POST BTHome temps to Lune V6 (no zone number).
 // 1) On V6: zone → External, set sensor_id to the BLU MAC.
 // 2) Paste this on Mini PM / BLU Gateway (Gen3+). Adjust SENSOR_ID if needed.
+// X-Lune-CSRF is required (any value); it is not a secret — LAN trust model.
 
 let CONFIG = {
   v6_url: "${base}/api/v1/room-temperatures",
-  access_key: "${key}",
   // Leave empty to use the BLU address from the event when available:
   sensor_id: "",
 };
@@ -89,8 +84,7 @@ function postTemp(sensorId, tempC) {
     url: CONFIG.v6_url,
     headers: {
       "Content-Type": "application/json",
-      "X-Lune-Local-Key": CONFIG.access_key,
-      "X-Lune-CSRF": CONFIG.access_key,
+      "X-Lune-CSRF": "1",
     },
     body: JSON.stringify({
       sensor_id: sensorId,
@@ -108,9 +102,9 @@ function postTemp(sensorId, tempC) {
 
 function haYaml() {
   const base = hostBase();
-  const key = accessKeyHint();
   return `# Home Assistant — rest_command + automation (no zone in payload).
 # On V6: External source + sensor_id matching the entity you map below.
+# X-Lune-CSRF is required (any value); LAN trust — not a shared secret.
 
 rest_command:
   lune_v6_room_temp:
@@ -118,8 +112,7 @@ rest_command:
     method: POST
     headers:
       Content-Type: application/json
-      X-Lune-Local-Key: "${key}"
-      X-Lune-CSRF: "${key}"
+      X-Lune-CSRF: "1"
     payload: >
       {"sensor_id":"{{ sensor_id }}","temp_c":{{ temp_c }},"observed_at_ms":{{ now().timestamp() * 1000 }},"producer_id":"homeassistant"}
 
@@ -138,12 +131,11 @@ automation:
 
 function homeyScript() {
   const base = hostBase();
-  const key = accessKeyHint();
   return `// HomeyScript — forward a Homey temperature capability to Lune V6.
 // On V6: External + sensor_id (use Homey device id or a stable string you choose).
+// X-Lune-CSRF is required (any value); LAN trust — not a shared secret.
 
 const V6_URL = "${base}/api/v1/room-temperatures";
-const ACCESS_KEY = "${key}";
 const SENSOR_ID = "homey-living-room"; // must match V6 bind
 const TEMP_C = 21.5; // replace with capability value
 
@@ -151,8 +143,7 @@ await fetch(V6_URL, {
   method: "POST",
   headers: {
     "Content-Type": "application/json",
-    "X-Lune-Local-Key": ACCESS_KEY,
-    "X-Lune-CSRF": ACCESS_KEY,
+    "X-Lune-CSRF": "1",
   },
   body: JSON.stringify({
     sensor_id: SENSOR_ID,

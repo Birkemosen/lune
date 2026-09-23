@@ -35,8 +35,8 @@ legacy bookmarks that redirect to `/`.
     includes `uptime_s` so the UI can keep device uptime current without a full snapshot.
   - `GET /api/v1/history` — 24 h ring buffer (288 slots @ 5 min). Each entry is
     `[uptime_s, z0, z1, z2, z3, z4, z5, absorbing, flow_c, return_c, demand_pct]` where
-    `z0..z5` are `ZoneDisplayState` codes (`0xFF` = unknown), `absorbing` is `1` when preheat
-    absorption was active at that sample (else `0`), `flow_c`/`return_c` are the manifold
+    `z0..z5` are `ZoneDisplayState` codes (`0xFF` = unknown), `absorbing` is `0` idle /
+    `1` reactive / `2` armed, `flow_c`/`return_c` are the manifold
     flow/return temps in °C (`null` if no reading), and `demand_pct` is the mean open-valve %
     above the active per-zone minimum-flow floor over zones with a reading (`null` if unknown).
     The trailing `flow_c`/`return_c`/`demand_pct`
@@ -53,6 +53,10 @@ legacy bookmarks that redirect to `/`.
   - `POST /api/v1/room-temperatures` — EXTERNAL room-temp ingest by `sensor_id` (V6 maps to zone)
   - `GET /api/v1/settings/export[?include_learned=0|1]` — configuration backup as a
     downloadable JSON document. See "Maintenance endpoints".
+  - `POST /api/v1/absorb-window` — house-level absorb arm (Touch). Auth + TTL like
+    setpoint-command; currently returns `501 not_implemented` after ledger write
+    (P3 stub). Runtime arm lands in P5. Fixtures under
+    `shared/contracts/absorb-command/`.
   - `POST /api/v1/authority/lease` — V6-A-only authenticated Touch lease acquisition
     and renewal. The URL-encoded form body contains `installation_id`, `coordinator_id`, `lease_id`,
     `sequence`, `issued_ms`, and a 30–120 second `duration_ms`; the request must supply the
@@ -86,10 +90,11 @@ legacy bookmarks that redirect to `/`.
     by `GET /settings/export`; the body is the JSON document. See "Maintenance endpoints".
 - `POST /api/v1/manual_mode?enabled=true|false`
 
-Local dashboard writes remain available while a V6 is standalone and no
-`authority.shared_key` has been provisioned. After Touch provisioning, the
-same writes require `X-Lune-Local-Key` and a matching `X-Lune-CSRF` header;
-coordinator commands always require the separate authority authentication
+Local dashboard and LAN hub writes require only an `X-Lune-CSRF` header (any
+non-empty value). This matches the Asgard/Odin LAN-trust model: no commissioning
+secret for Motor Lab or settings from a phone on the home network. The custom
+header blocks naive cross-site form POSTs; wildcard CORS is not emitted.
+Coordinator (Touch) commands always require the separate authority authentication
 described below.
 - Migration reads:
   - `GET /api/v1/overview`, `GET /api/v1/zones`,
@@ -229,6 +234,19 @@ with a different fingerprint as an identity mismatch.
 
 ### `GET /api/v1/zones`
 
+Returns all zones. Additive thermal fields (schema-compatible; older clients ignore):
+
+- `ua_w_per_k`, `thermal_mass_kwh_per_k`, `tau_h` — static estimate from area,
+  `heat_loss_w_m2`, and slab thickness (see `thermal_model.h`). Null when the
+  estimate fails plausibility (`τ` outside 8–80 h or rates > 3 °C/h).
+- `return_c` — zone return probe °C when mapped, else null.
+- `loop_share_pct` — flow-allocator share of total opening (0–100), Σ ≈ 100 across enabled zones.
+- `absorb_capacity_rank` — 1 = highest thermal absorb capacity (mass × floor seed).
+- `absorb_state` — `idle` | `reactive` | `armed`.
+
+Manifold overview/diagnostics expose both `flow_c` (legacy) and `flow_temp_c`
+(alias) so volume-flow fields can arrive later without renaming confusion.
+
 Returns all zones:
 
 ```json
@@ -248,7 +266,14 @@ Returns all zones:
         "setpoint_c": 22.0,
         "valve_pct": 47.0,
         "probe_temp_c": 21.2,
-        "temp_source": "local_probe"
+        "temp_source": "local_probe",
+        "ua_w_per_k": 35.0,
+        "thermal_mass_kwh_per_k": 1.21,
+        "tau_h": 34.5,
+        "return_c": null,
+        "loop_share_pct": 18.5,
+        "absorb_state": "idle",
+        "absorb_capacity_rank": 2
       }
     ]
   }
@@ -425,10 +450,9 @@ Returns dashboard-editable settings currently backed by config store and control
 Authenticated EXTERNAL room-temperature ingest. **Zone mapping is only on V6** via
 the zone's bound `sensor_id` (`temp_source=External`).
 
-Headers (when a local access key is provisioned):
+Headers:
 
-- `X-Lune-Local-Key: <key>`
-- `X-Lune-CSRF: <key>` (same value)
+- `X-Lune-CSRF: <any>` (required; CSRF boundary, not a shared secret)
 
 Body:
 
@@ -500,6 +524,36 @@ Request:
 
 `requested_offset_c` is accepted as an alias for `setpoint_offset_c`. Query parameters
 with the same names remain accepted during dashboard/coordinator migration.
+
+### `POST /api/v1/absorb-window`
+
+House-level absorb arm (coordinator-owned). Same authority authentication as
+setpoint-command (`X-Lune-Authority-Key`, `auth_timestamp_s`, single-use
+`auth_nonce`). TTL is clamped to 60–7200 s. The arm is **runtime-only** and does
+not survive reboot.
+
+Shared fixtures: [`shared/contracts/absorb-command/`](../../shared/contracts/absorb-command/).
+
+Request:
+
+```json
+{
+  "request_id": "absorb-fc-001",
+  "source": "lune-touch",
+  "reason": "odin preload hour",
+  "ttl_s": 1800,
+  "auth_timestamp_s": 1713111111,
+  "auth_nonce": "n-absorb-001"
+}
+```
+
+**P3 status:** after a successful auth + TTL parse + ledger write the route
+returns `501` with `error.code = "not_implemented"` (no runtime arm yet). Touch
+keeps its client behind a feature flag until P5 enables the effect.
+
+Auth failures use the normal v1 error envelope (`403` / `409` / `503`). Reactive
+auto-detection of preheat absorption remains live under a Touch lease when no
+arm is active (fail-safe-on).
 
 ### `POST /api/v1/commands`
 
@@ -595,7 +649,7 @@ NVS version bump:
 `config_versions` section numbers, which are recorded for diagnosis and migration.
 `metadata` is informational only and is never applied on import.
 
-Secrets are never exported: the authority shared key, local access keys and WiFi
+Secrets are never exported: the authority shared key and WiFi
 credentials are outside this document, so a backup file cannot grant control.
 
 Errors: `503 config_store_unavailable`, `503 out_of_memory` (the ~8 KB document is

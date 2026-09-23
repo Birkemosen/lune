@@ -55,12 +55,21 @@ const css = `
 .v6-side-link:hover { color:var(--text-strong); background:var(--inset); }
 .v6-side-link.active { color:var(--text-strong); background:var(--fill-forest); }
 .v6-side-link .dot {
-  width:8px; height:8px; border-radius:50%; background:var(--danger); flex:0 0 auto;
+  width:8px; height:8px; border-radius:50%; background:var(--ok); flex:0 0 auto;
+  box-shadow:0 0 8px var(--ok);
 }
 .v6-side-link .dot.is-online { background:var(--ok); box-shadow:0 0 8px var(--ok); }
 .v6-side-link .dot.is-heating { background:var(--accent); box-shadow:0 0 8px var(--accent); }
 .v6-side-link .dot.is-idle { background:var(--ok); opacity:.55; box-shadow:none; }
 .v6-side-link .dot.is-off { background:var(--text-faint); box-shadow:none; opacity:.45; }
+.v6-side-link .dot.is-overheated {
+  background:var(--state-warn); box-shadow:0 0 8px color-mix(in srgb,var(--state-warn) 55%,transparent);
+}
+.v6-side-link .dot.is-fault {
+  width:12px; height:12px; border-radius:4px; background:var(--danger); box-shadow:none;
+  color:#fff; font-size:9px; font-weight:800; line-height:12px; text-align:center;
+  display:inline-grid; place-items:center;
+}
 .v6-nav-dot { margin-left:auto; width:8px; height:8px; border-radius:50%; background:var(--accent); flex:0 0 auto; }
 .v6-nav-dot[hidden] { display:none !important; }
 .v6-nav-dot.is-warn { background:var(--state-warn); }
@@ -178,15 +187,39 @@ function attentionLabel(action) {
   return '';
 }
 
-function zoneDotClass(zone) {
-  if (!isEntityOn(key.enabled(zone))) return 'is-off';
-  const state = String(es(key.state(zone)) || '').toUpperCase();
+function zoneNavState(zone) {
+  if (!isEntityOn(key.enabled(zone))) return 'OFF';
+  const state = String(es(key.state(zone)) || '').toUpperCase() || 'OFF';
   const lastFault = String(es(key.motorLastFault(zone)) || '').toUpperCase();
   const hasFault = lastFault && lastFault !== 'NONE' && lastFault !== 'OK';
-  if (state === 'FAULT' || hasFault) return '';
+  if (state === 'FAULT' || hasFault) return 'FAULT';
+  return state;
+}
+
+function zoneDotClass(state) {
+  if (state === 'OFF') return 'is-off';
+  if (state === 'FAULT') return 'is-fault';
+  if (state === 'OVERHEATED') return 'is-overheated';
   if (state === 'HEATING' || state === 'CALLING') return 'is-heating';
   if (state === 'IDLE') return 'is-idle';
   return 'is-online';
+}
+
+function zoneNavStateLabel(state) {
+  if (state === 'HEATING' || state === 'CALLING') return t('state.heating');
+  if (state === 'IDLE') return t('state.idle');
+  if (state === 'FAULT') return t('common.fault');
+  if (state === 'MANUAL') return t('state.manual');
+  if (state === 'OVERHEATED') return t('state.overheated');
+  if (state === 'CALIBRATING') return t('state.calibrating');
+  return t('state.off');
+}
+
+function escapeAttr(value) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/"/g, '&quot;');
 }
 
 function zoneNavLabel(zone) {
@@ -341,8 +374,13 @@ component({ tag: 'hv6-sidebar', render: navTemplate, onMount(ctx, el) {
       const zone = i + 1;
       const active = inZones && selected === zone;
       const label = zoneNavLabel(zone);
-      const safe = label.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
-      const dot = zoneDotClass(zone);
+      const state = zoneNavState(zone);
+      const stateLabel = zoneNavStateLabel(state);
+      const fullLabel = `${label}: ${stateLabel}`;
+      const safe = escapeAttr(label);
+      const safeFull = escapeAttr(fullLabel);
+      const dot = zoneDotClass(state);
+      const mark = state === 'FAULT' ? '!' : '';
       const on = isEntityOn(key.enabled(zone));
       const enableTitle = on ? t('common.enabled') : t('common.disabled');
       const switchHtml = navSwitchHtml({
@@ -351,7 +389,7 @@ component({ tag: 'hv6-sidebar', render: navTemplate, onMount(ctx, el) {
         label: `${label}: ${enableTitle}`,
         attrs: `data-toggle-zone="${zone}"`,
       });
-      return `<div class="v6-nav-row"><button type="button" class="v6-side-link${active ? ' active' : ''}" data-section="zones" data-select-zone="${zone}" ${active ? 'aria-current="page"' : ''} title="${safe}" aria-label="${safe}"><span class="dot ${dot}" aria-hidden="true"></span><span class="menu-label">${safe}</span></button>${switchHtml}</div>`;
+      return `<div class="v6-nav-row"><button type="button" class="v6-side-link${active ? ' active' : ''}" data-section="zones" data-select-zone="${zone}" ${active ? 'aria-current="page"' : ''} title="${safeFull}" aria-label="${safeFull}"><span class="dot ${dot}" aria-hidden="true">${mark}</span><span class="menu-label">${safe}</span></button>${switchHtml}</div>`;
     }).join('');
   }
 

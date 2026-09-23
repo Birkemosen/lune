@@ -166,7 +166,7 @@ export default component({
       commit: (v) => { setGlobalSelect('motor_profile_default', v); enforceProfileRuntime(v); }
     });
 
-    // Safe runtime is fixed at 40 / disabled for HmIP, editable for Generic.
+    // Safe runtime is fixed for HmIP, editable for Generic.
     // Disabled state follows the *committed* profile.
     function updateRuntimeDisabled() {
       const profile = es(gkey.motorProfileDefault) || 'HmIP VdMot';

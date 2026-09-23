@@ -27,6 +27,7 @@ const css = `
 .zone-card .zc-state-label{overflow:hidden;color:var(--text-muted);font-size:.78rem;font-weight:600;text-overflow:ellipsis;white-space:nowrap}
 .zone-card.zs-heating .zc-dot{background:var(--accent)}.zone-card.zs-heating .zc-state-label{color:var(--accent)}
 .zone-card.zs-idle .zc-dot,.zone-card.zs-off .zc-dot{background:var(--state-disabled)}.zone-card.zs-idle .zc-state-label,.zone-card.zs-off .zc-state-label{color:var(--text-muted)}
+.zone-card.zs-overheated .zc-dot{background:var(--state-warn)}.zone-card.zs-overheated .zc-state-label{color:var(--state-warn)}
 .zone-card.zs-fault .zc-dot{background:var(--state-danger)}.zone-card.zs-fault .zc-state-label{color:var(--state-danger)}
 .zone-card::after{content:'›';grid-column:5;grid-row:1;color:var(--text-muted);font-size:1.35rem;text-align:right}
 `;
@@ -103,7 +104,8 @@ export default component({
 				if (active) el.setAttribute('aria-current', 'location'); else el.removeAttribute('aria-current');
 				el.setAttribute('aria-label', `${nameEl.textContent}, ${tempEl.textContent}, ${targetEl.textContent}, ${stateEl.textContent}. Open details.`);
 				el.classList.toggle('disabled', !enabled);
-				el.classList.toggle('zs-heating', enabled && displayState === 'HEATING');
+				el.classList.toggle('zs-heating', enabled && (displayState === 'HEATING' || displayState === 'CALLING'));
+				el.classList.toggle('zs-overheated', enabled && displayState === 'OVERHEATED');
 				el.classList.toggle('zs-fault', enabled && displayState === 'FAULT');
 				el.classList.toggle('zs-idle', enabled && displayState === 'IDLE');
 				el.classList.toggle('zs-off', !enabled || displayState === 'OFF');

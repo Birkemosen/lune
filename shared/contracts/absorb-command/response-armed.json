@@ -1,0 +1,14 @@
+{
+  "ok": true,
+  "version": "v1",
+  "data": {
+    "accepted": true,
+    "status": "armed",
+    "request_id": "absorb-fc-001",
+    "source": "lune-touch",
+    "reason": "odin preload hour",
+    "ttl_s": 1800,
+    "clamp_applied": false,
+    "survives_reboot": false
+  }
+}

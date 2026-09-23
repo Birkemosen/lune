@@ -47,6 +47,8 @@ class Lv6ConfigStore : public esphome::Component {
   void update_system(const SystemConfig &system);
   void update_control(const ControlConfig &ctrl);
   void update_probes(const ProbeConfig &probes);
+  /// Atomically set one zone return probe (avoids read-modify-write races).
+  void set_zone_return_probe(uint8_t zone, int8_t probe);
   void update_pid(const PIDParams &pid);
   void update_motor(const MotorConfig &motor);
   void update_sensor_config(const SensorConfig &sensor_config);

@@ -495,6 +495,9 @@ function decimalsOf(step) {
 // Field types: num (with − / + stepper + double-click-to-edit), text, select,
 // toggle (green pill), and custom (caller-managed control, e.g. wall buttons).
 export function cardForm(el, opts = {}) {
+  // immediate: commit on change/blur instead of staging behind Apply. Used by
+  // the zones provision panel, where the Apply banner is intentionally hidden.
+  const immediate = !!opts.immediate;
   const titleEl = el.querySelector(opts.title || '.ui-card-title');
   const banner = document.createElement('div');
   banner.className = 'ui-form-banner';
@@ -506,10 +509,24 @@ export function cardForm(el, opts = {}) {
     '</span>';
   if (titleEl) titleEl.insertAdjacentElement('afterend', banner);
   else el.insertAdjacentElement('afterbegin', banner);
+  if (immediate) banner.hidden = true;
 
   const fields = [];
-  const refreshBanner = () => banner.classList.toggle('show', fields.some(f => f.dirty));
-  const mark = (field, v) => { field.dirty = v; refreshBanner(); };
+  const refreshBanner = () => {
+    if (immediate) return;
+    banner.classList.toggle('show', fields.some(f => f.dirty));
+  };
+  const commitField = (field) => {
+    if (!field.dirty) return;
+    if (field.commit) Promise.resolve(field.commit()).catch(() => {});
+    field.dirty = false;
+    refreshBanner();
+  };
+  const mark = (field, v) => {
+    field.dirty = v;
+    if (immediate && v) commitField(field);
+    else refreshBanner();
+  };
 
   function attach(field) {
     field.markDirty = () => mark(field, true);
@@ -564,7 +581,22 @@ export function cardForm(el, opts = {}) {
 
   function text(input, cfg) {
     const field = { dirty: false, input };
-    input.addEventListener('input', () => mark(field, true));
+    // Stage on input; commit immediately on blur/Enter when immediate so we do
+    // not POST on every keystroke.
+    input.addEventListener('input', () => {
+      field.dirty = true;
+      refreshBanner();
+    });
+    const flush = () => {
+      if (!field.dirty) return;
+      if (immediate) commitField(field);
+    };
+    input.addEventListener('blur', flush);
+    input.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter') return;
+      e.preventDefault();
+      input.blur();
+    });
     field.sync = () => { const v = cfg.read(); input.value = v != null ? v : ''; };
     field.commit = () => cfg.commit(input.value.trim());
     return attach(field);

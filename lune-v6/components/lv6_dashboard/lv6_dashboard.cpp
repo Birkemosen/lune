@@ -1,5 +1,7 @@
 #include "lv6_dashboard.h"
 #include "../lv6_zone_controller/hydraulic_diagnostics.h"
+#include "../lv6_zone_controller/probe_mapping.h"
+#include "../lv6_zone_controller/thermal_model.h"
 #include "esphome/components/lv6_ble_time_beacon/lv6_ble_time_beacon.h"
 #include "esphome/components/nimble_hub/nimble_hub.h"
 #include "settings_backup.h"
@@ -61,9 +63,7 @@ bool appendf(char *buffer, size_t capacity, size_t &offset, const char *fmt, ...
 
 // Every code `send_v1_` can emit must appear here: an unmapped code silently
 // becomes 500, and the dashboard branches on the exact status. A missing 403
-// masked the local-auth rejection as a server error, so `postV1`'s
-// commissioning-key prompt (which fires only on 403) never ran and every write
-// failed with nothing but a console warning.
+// masked CSRF rejection as a server error.
 const char *http_status_line(int code) {
   switch (code) {
     case 200: return "200 OK";
@@ -435,6 +435,19 @@ void LV6Dashboard::update_snapshot_() {
     s.preheat_absorb_band_c  = ctrl_cfg.preheat_absorb_band_c;
     s.preheat_detect_delta_c = ctrl_cfg.preheat_detect_delta_c;
     s.preheat_absorbing = this->zone_controller_ && this->zone_controller_->is_preheat_absorbing();
+    s.absorb_mode = this->zone_controller_ ? this->zone_controller_->absorb_mode_code() : 0;
+    for (uint8_t i = 0; i < lv6::NUM_ZONES; i++) {
+      if (this->zone_controller_) {
+        s.zone_loop_share_pct[i] = this->zone_controller_->get_loop_share_pct(i);
+        s.zone_absorb_capacity_rank[i] = this->zone_controller_->get_absorb_capacity_rank(i);
+        s.zone_relative_kv[i] =
+            this->zone_controller_->get_relative_kv(i, s.zone_valve_pct[i]);
+      } else {
+        s.zone_loop_share_pct[i] = NAN;
+        s.zone_absorb_capacity_rank[i] = 0;
+        s.zone_relative_kv[i] = NAN;
+      }
+    }
     s.authority              = this->config_store_->get_authority_config();
     s.balancing              = this->config_store_->get_config().balancing;
     s.min_zone_flow_pct      = s.balancing.secondary_min_total_opening_pct;
@@ -1425,7 +1438,7 @@ void LV6Dashboard::handle_state_(AsyncWebServerRequest *request) {
       "\"text-preheat_absorbing\":{\"state\":\"%s\"},"
       "\"number-preheat_absorb_band_c\":{\"value\":%s},",
       snap->preheat_absorb_enabled ? "on" : "off",
-      snap->preheat_absorbing ? "active" : "idle",
+      snap->absorb_mode == 2 ? "armed" : (snap->absorb_mode == 1 ? "reactive" : "idle"),
       num_buf);
   format_float_token(num_buf, sizeof(num_buf), snap->preheat_detect_delta_c, 1);
   appendf(buf, BUF_SIZE, offset, "\"number-preheat_detect_delta_c\":{\"value\":%s},", num_buf);
@@ -1564,7 +1577,7 @@ void LV6Dashboard::handle_overview_(AsyncWebServerRequest *request) {
            "\"coordination\":{\"installation_id\":\"%s\",\"coordinator_id\":\"%s\","
            "\"control_approved\":%s},"
            "\"zones\":{\"count\":%u,\"enabled\":%u,\"active\":%u,\"open_valves\":%u},"
-           "\"manifold\":{\"flow_c\":%s,\"return_c\":%s,\"mean_valve_pct\":%s},"
+           "\"manifold\":{\"flow_c\":%s,\"flow_temp_c\":%s,\"return_c\":%s,\"mean_valve_pct\":%s},"
            "\"system\":{\"wifi_dbm\":%s,\"drivers_enabled\":%s,\"free_internal_kb\":%lu,"
            "\"free_dma_kb\":%lu,\"largest_internal_kb\":%lu,\"min_internal_kb\":%lu,"
            "\"free_psram_kb\":%lu,\"largest_psram_kb\":%lu,"
@@ -1581,7 +1594,7 @@ void LV6Dashboard::handle_overview_(AsyncWebServerRequest *request) {
                    snap->authority.shared_key[0] != '\0' ? "true" : "false",
            static_cast<unsigned>(lv6::NUM_ZONES), static_cast<unsigned>(enabled),
            static_cast<unsigned>(active), static_cast<unsigned>(active),
-           flow, ret, demand, wifi, snap->drivers_enabled ? "true" : "false",
+           flow, flow, ret, demand, wifi, snap->drivers_enabled ? "true" : "false",
            static_cast<unsigned long>(snap->free_internal_kb),
            static_cast<unsigned long>(snap->free_dma_kb),
            static_cast<unsigned long>(snap->largest_internal_kb),
@@ -1614,7 +1627,7 @@ void LV6Dashboard::handle_zones_(AsyncWebServerRequest *request) {
   size_t off = 0;
   appendf(buf, JSON_BUF_SIZE, off, "{\"ok\":true,\"version\":\"v1\",\"data\":{\"count\":%u,\"zones\":[",
           static_cast<unsigned>(lv6::NUM_ZONES));
-  for (uint8_t i = 0; i < lv6::NUM_ZONES && off + 360 < JSON_BUF_SIZE; i++) {
+  for (uint8_t i = 0; i < lv6::NUM_ZONES && off + 520 < JSON_BUF_SIZE; i++) {
     char temp[24], setpoint[24], valve[24], preload[24];
     format_float_token(temp, sizeof(temp), snap->zone_temp_c[i], 1);
     format_float_token(setpoint, sizeof(setpoint), snap->zones[i].setpoint_c, 1);
@@ -1624,6 +1637,27 @@ void LV6Dashboard::handle_zones_(AsyncWebServerRequest *request) {
     format_float_token(wind, sizeof(wind), snap->zones[i].wind_exposure, 2);
     format_float_token(solar, sizeof(solar), snap->zones[i].solar_gain_factor, 2);
     format_float_token(max_offset, sizeof(max_offset), snap->zones[i].max_offset_c, 2);
+    char ua[24], mass[24], tau[24], return_c[24];
+    const auto th = lv6::thermal_model::estimate(snap->zones[i]);
+    format_float_token(ua, sizeof(ua), th.ua_w_per_k, 1);
+    format_float_token(mass, sizeof(mass), th.thermal_mass_kwh_per_k, 2);
+    format_float_token(tau, sizeof(tau), th.tau_h, 1);
+    const int8_t zr = snap->probes.zone_return_probe[i];
+    if (zr >= 0 && zr < static_cast<int8_t>(lv6::MAX_PROBES))
+      format_float_token(return_c, sizeof(return_c), snap->probe_temp_c[zr], 1);
+    else
+      snprintf(return_c, sizeof(return_c), "null");
+    char share[24], rank[16];
+    if (std::isfinite(snap->zone_loop_share_pct[i]))
+      format_float_token(share, sizeof(share), snap->zone_loop_share_pct[i], 1);
+    else
+      snprintf(share, sizeof(share), "null");
+    if (snap->zone_absorb_capacity_rank[i] > 0)
+      snprintf(rank, sizeof(rank), "%u", static_cast<unsigned>(snap->zone_absorb_capacity_rank[i]));
+    else
+      snprintf(rank, sizeof(rank), "null");
+    const char *absorb_state =
+        snap->absorb_mode == 2 ? "armed" : (snap->absorb_mode == 1 ? "reactive" : "idle");
     appendf(buf, JSON_BUF_SIZE, off,
             "%s{\"zone\":%u,\"name\":\"",
             i ? "," : "", static_cast<unsigned>(i + 1));
@@ -1634,11 +1668,16 @@ void LV6Dashboard::handle_zones_(AsyncWebServerRequest *request) {
     appendf(buf, JSON_BUF_SIZE, off,
             "\",\"enabled\":%s,\"temperature_c\":%s,\"setpoint_c\":%s,\"valve_pct\":%s,"
             "\"preheat_c\":%s,\"state\":\"%s\",\"temp_source\":\"%s\",\"fresh\":%s,"
+            "\"ua_w_per_k\":%s,\"thermal_mass_kwh_per_k\":%s,\"tau_h\":%s,"
+            "\"return_c\":%s,\"loop_share_pct\":%s,\"absorb_state\":\"%s\","
+            "\"absorb_capacity_rank\":%s,"
             "\"forecast\":{\"wind_exposure\":%s,\"solar_gain\":%s,"
             "\"thermal_lead_h\":%u,\"max_offset_c\":%s}}",
             snap->zones[i].enabled ? "true" : "false", temp, setpoint, valve, preload,
             snap->zone_state[i], temp_source_to_dashboard_str(snap->zone_temp_source[i]),
             std::isfinite(snap->zone_temp_c[i]) ? "true" : "false",
+            th.plausible ? ua : "null", th.plausible ? mass : "null",
+            th.plausible ? tau : "null", return_c, share, absorb_state, rank,
             wind, solar,
             static_cast<unsigned>(snap->zones[i].thermal_lead_h), max_offset);
   }
@@ -1692,6 +1731,22 @@ void LV6Dashboard::handle_zone_(AsyncWebServerRequest *request, uint8_t zone) {
   else
     snprintf(probe, sizeof(probe), "null");
 
+  char ua[24], mass[24], tau[24], share[24], rank[16];
+  const auto th = lv6::thermal_model::estimate(z);
+  format_float_token(ua, sizeof(ua), th.ua_w_per_k, 1);
+  format_float_token(mass, sizeof(mass), th.thermal_mass_kwh_per_k, 2);
+  format_float_token(tau, sizeof(tau), th.tau_h, 1);
+  if (std::isfinite(snap->zone_loop_share_pct[i]))
+    format_float_token(share, sizeof(share), snap->zone_loop_share_pct[i], 1);
+  else
+    snprintf(share, sizeof(share), "null");
+  if (snap->zone_absorb_capacity_rank[i] > 0)
+    snprintf(rank, sizeof(rank), "%u", static_cast<unsigned>(snap->zone_absorb_capacity_rank[i]));
+  else
+    snprintf(rank, sizeof(rank), "null");
+  const char *absorb_state =
+      snap->absorb_mode == 2 ? "armed" : (snap->absorb_mode == 1 ? "reactive" : "idle");
+
   char *buf = this->json_buf_;
   size_t off = 0;
   char age_tok[16];
@@ -1709,6 +1764,9 @@ void LV6Dashboard::handle_zone_(AsyncWebServerRequest *request, uint8_t zone) {
           "\"temperature_c\":%s,\"setpoint_c\":%s,\"valve_pct\":%s,\"preheat_c\":%s,"
           "\"temp_source\":\"%s\",\"probe_index\":%d,\"probe_temp_c\":%s,\"ble_mac\":\"%s\","
           "\"sensor_id\":\"%s\",\"sensor_name\":\"%s\",\"external_temp_age_ms\":%s,"
+          "\"ua_w_per_k\":%s,\"thermal_mass_kwh_per_k\":%s,\"tau_h\":%s,"
+          "\"return_c\":%s,\"loop_share_pct\":%s,\"absorb_state\":\"%s\","
+          "\"absorb_capacity_rank\":%s,"
           "\"settings\":{\"area_m2\":%s,\"pipe_spacing_mm\":%s,\"pipe_type\":%u,"
           "\"sync_to_zone\":%d,\"abs_min_c\":%.1f,\"abs_max_c\":%.1f,"
           "\"min_offset_c\":%.2f,\"max_offset_c\":%.2f},"
@@ -1724,6 +1782,8 @@ void LV6Dashboard::handle_zone_(AsyncWebServerRequest *request, uint8_t zone) {
           temp, setpoint, valve, preload, temp_source_to_dashboard_str(snap->zone_temp_source[i]),
           probe_idx >= 0 ? static_cast<int>(probe_idx) + 1 : 0, probe, snap->zone_ble_mac[i],
           snap->zone_sensor_id[i], snap->zone_sensor_name[i], age_tok,
+          th.plausible ? ua : "null", th.plausible ? mass : "null",
+          th.plausible ? tau : "null", probe, share, absorb_state, rank,
           area, spacing, static_cast<unsigned>(z.pipe_type),
           z.sync_to_zone >= 0 ? static_cast<int>(z.sync_to_zone) + 1 : 0,
           z.abs_min_c, z.abs_max_c, z.min_offset_c, z.max_offset_c,
@@ -1919,6 +1979,53 @@ void LV6Dashboard::handle_diagnostics_(AsyncWebServerRequest *request) {
             freshness, evidence, alarm.action);
   }
   appendf(extras_json, sizeof(extras_json), extras_off, "]");
+
+  // Probe temperature plausibility under heating.
+  {
+    float zone_ret[lv6::NUM_ZONES];
+    for (uint8_t z = 0; z < lv6::NUM_ZONES; z++)
+      zone_ret[z] = NAN;
+    for (uint8_t z = 0; z < lv6::NUM_ZONES; z++) {
+      const int8_t pi = snap->probes.zone_return_probe[z];
+      if (pi >= 0 && pi < static_cast<int8_t>(lv6::MAX_PROBES) &&
+          std::isfinite(snap->probe_temp_c[pi]))
+        zone_ret[z] = snap->probe_temp_c[pi];
+    }
+    const auto plaus = lv6::probe_mapping::check_plausibility(
+        snap->manifold_flow_c, snap->manifold_return_c, zone_ret, snap->probes);
+    const char *state = "unavailable";
+    const char *action = "Map flow and return probes to enable heating plausibility checks.";
+    if (plaus.heating) {
+      if (!plaus.manifold_ok) {
+        state = "warning";
+        action = "Manifold return is at or above flow while heating — check probe mapping.";
+      } else if (!plaus.zones_ok) {
+        state = "warning";
+        action = "A zone return probe is outside the flow/return band — check mapping.";
+      } else {
+        state = "ok";
+        action = "Probe temperatures are consistent with heating flow.";
+      }
+    } else if (std::isfinite(snap->manifold_flow_c) &&
+               std::isfinite(snap->manifold_return_c)) {
+      state = "ok";
+      action = "Not in a clear heating regime; plausibility checks idle.";
+    }
+    char bad_zone_tok[8];
+    if (plaus.bad_zone >= 0)
+      snprintf(bad_zone_tok, sizeof(bad_zone_tok), "%d", static_cast<int>(plaus.bad_zone) + 1);
+    else
+      snprintf(bad_zone_tok, sizeof(bad_zone_tok), "null");
+    appendf(extras_json, sizeof(extras_json), extras_off,
+            ",\"probe_plausibility\":{\"state\":\"%s\",\"heating\":%s,"
+            "\"manifold_ok\":%s,\"zones_ok\":%s,\"bad_zone\":%s,"
+            "\"suggested_action\":\"%s\"}",
+            state, plaus.heating ? "true" : "false",
+            plaus.manifold_ok ? "true" : "false",
+            plaus.zones_ok ? "true" : "false",
+            bad_zone_tok, action);
+  }
+
   snprintf(this->json_buf_, JSON_BUF_SIZE,
            "{\"ok\":true,\"version\":\"v1\",\"data\":{\"heap\":{\"internal_kb\":%lu,"
            "\"dma_kb\":%lu,\"largest_internal_kb\":%lu,\"min_internal_kb\":%lu,"
@@ -1928,14 +2035,16 @@ void LV6Dashboard::handle_diagnostics_(AsyncWebServerRequest *request) {
            "\"cpu\":{\"core0_pct\":%s,\"core1_pct\":%s},"
            "\"ble\":{\"enabled\":%s,\"scanning\":%s,\"demanded\":%s,"
            "\"ads_per_sec\":%s,\"last_adv_age_ms\":%lu},"
-           "\"manifold\":{\"flow_c\":%s,\"return_c\":%s},\"drivers_enabled\":%s,"
+           "\"manifold\":{\"flow_c\":%s,\"flow_temp_c\":%s,\"return_c\":%s},\"drivers_enabled\":%s,"
            "\"motor_safety\":{\"backend\":\"%s\",\"motor_busy\":%s,\"drive_on\":%s,"
            "\"latch_faulted\":%s,\"fault_code\":%u,\"current_ma\":%.1f,"
            "\"bemf_raw_a\":%u,\"bemf_raw_b\":%u,\"bemf_differential_raw\":%d,"
            "\"sample_separation_us\":%u,\"bemf_threshold_raw\":%u,"
            "\"sample_valid\":%s,\"sample_moving\":%s,\"invalid_samples\":%u,"
            "\"armed\":%s,\"latch_arm_level\":%d,\"latch_state_level\":%d,"
-           "\"motor_enable_level\":%d,\"adc_notifies\":%lu,\"adc_frames\":%lu,"
+           "\"motor_enable_level\":%d,\"driver_nsleep_level\":%d,"
+           "\"rail_overcurrent_level\":%d,\"fault_usb_level\":%d,"
+           "\"adc_notifies\":%lu,\"adc_frames\":%lu,"
            "\"adc_read_errors\":%lu,\"adc_channel_mask\":%lu,\"adc_start_err\":%ld,"
            "\"adc_stream_ready\":%s,"
            "\"decoder_address\":%u,\"stroke_phase\":%u,"
@@ -1963,7 +2072,7 @@ void LV6Dashboard::handle_diagnostics_(AsyncWebServerRequest *request) {
            ble_ads, static_cast<unsigned long>(snap->ble_last_adv_age_ms == UINT32_MAX
                                                    ? 0
                                                    : snap->ble_last_adv_age_ms),
-           flow, ret,
+           flow, flow, ret,
            snap->drivers_enabled ? "true" : "false",
            motor_diag.backend,
            motor_diag.motor_busy ? "true" : "false",
@@ -1982,6 +2091,9 @@ void LV6Dashboard::handle_diagnostics_(AsyncWebServerRequest *request) {
            static_cast<int>(motor_diag.latch_arm_level),
            static_cast<int>(motor_diag.latch_state_level),
            static_cast<int>(motor_diag.motor_enable_level),
+           static_cast<int>(motor_diag.driver_nsleep_level),
+           static_cast<int>(motor_diag.rail_overcurrent_level),
+           static_cast<int>(motor_diag.fault_usb_level),
            static_cast<unsigned long>(motor_diag.adc_notifies),
            static_cast<unsigned long>(motor_diag.adc_frames),
            static_cast<unsigned long>(motor_diag.adc_read_errors),
@@ -2016,14 +2128,9 @@ void LV6Dashboard::handle_motor_trace_(AsyncWebServerRequest *request) {
                true, "no-cache");
     return;
   }
-  // Export only a stable, completed capture. Reading while the ring is being
-  // overwritten would silently mix different chronological windows.
-  if (this->valve_controller_->is_motor_busy()) {
-    send_text_(request, 409, "application/json",
-               "{\"ok\":false,\"error\":{\"code\":\"motor_busy\",\"message\":\"Stop the motor before exporting trace\"}}",
-               true, "no-cache");
-    return;
-  }
+  // Live export is allowed while the motor runs so the dashboard can merge
+  // successive ring windows into a longer browser-side capture (~40 s).
+  // Samples are read under the trace mutex; overlapping windows are fine.
 
   httpd_req_t *req = *request;
   httpd_resp_set_status(req, "200 OK");
@@ -2201,34 +2308,16 @@ bool LV6Dashboard::enqueue_action_(const DashboardAction &act) {
   return true;
 }
 
-// Once Touch has provisioned an authority key, same-origin dashboard writes
-// require that key and a matching CSRF header. During standalone V6
-// commissioning the key is intentionally empty; keep local setup usable in that
-// state and let Touch provisioning close the write gate later. Cross-origin
-// forms cannot add these headers because wildcard CORS is removed.
+// Local writes trust the LAN, same model as Asgard/Odin: no commissioning
+// secret for Motor Lab / settings from a phone on the home network. Touch
+// coordinator commands keep their own authority authentication. A custom CSRF
+// header is still required so naive cross-site form POSTs cannot mutate state
+// (simple HTML forms cannot set custom headers, and wildcard CORS is off).
 bool LV6Dashboard::authorize_write_(AsyncWebServerRequest *request) {
-  const auto local_key_header = request->get_header("X-Lune-Local-Key");
   const auto csrf_header = request->get_header("X-Lune-CSRF");
-  const auto local_cfg = this->config_store_ ? this->config_store_->get_authority_config() : lv6::AuthorityConfig{};
-  const char *local_key = local_key_header.has_value() ? local_key_header->c_str() : "";
-  const char *csrf = csrf_header.has_value() ? csrf_header->c_str() : "";
-  const size_t local_len = strlen(local_cfg.shared_key);
-  const size_t supplied_len = strlen(local_key);
-  unsigned char local_diff = static_cast<unsigned char>(local_len ^ supplied_len);
-  for (size_t i = 0; i < std::max(local_len, supplied_len); i++)
-    local_diff |= static_cast<unsigned char>((i < local_len ? local_cfg.shared_key[i] : '\0') ^
-                                             (i < supplied_len ? local_key[i] : '\0'));
-  if (local_len != 0 && (local_diff != 0 || strcmp(local_key, csrf) != 0)) {
-    // A silent rejection leaves no trace anywhere on the device: the browser only
-    // console.warns, so a mis-provisioned key looks exactly like dead hardware.
-    // Log the shape of the failure, never the key or any part of it.
-    ESP_LOGW(TAG,
-             "Write to %s rejected: local auth failed (key %s, csrf %s, %s)",
-             request->url().c_str(), supplied_len == 0 ? "absent" : "present",
-             csrf[0] == '\0' ? "absent" : "present",
-             supplied_len != 0 && strcmp(local_key, csrf) != 0 ? "key/csrf mismatch"
-                                                              : "wrong key");
-    this->send_v1_(request, 403, "local_auth_failed", "Local credential and CSRF header required");
+  if (!csrf_header.has_value() || csrf_header->empty()) {
+    ESP_LOGW(TAG, "Write to %s rejected: missing X-Lune-CSRF", request->url().c_str());
+    this->send_v1_(request, 403, "csrf_required", "X-Lune-CSRF header required");
     return false;
   }
   return true;
@@ -2375,13 +2464,15 @@ void LV6Dashboard::handle_v1_(AsyncWebServerRequest *request, const char *path) 
     return;
   }
   if (strcmp(path, "/authority/revoke") == 0) {
-    // Revoke clears shared_key, which opens every local write. Matched here, far
-    // above the generic write gate at the bottom of this function, it was the one
-    // endpoint that could disable authorization without presenting it — so it has
-    // to carry the check itself. Rotation via /authority/proposal already does.
+    // Revoke clears Touch authority (shared_key / lease). Still gated by the
+    // same CSRF header as every other local write.
     if (!this->authorize_write_(request))
       return;
     this->handle_authority_revoke_(request);
+    return;
+  }
+  if (strcmp(path, "/absorb-window") == 0) {
+    this->handle_absorb_window_(request, body);
     return;
   }
   // Bring-up instrument, not a control surface: it only wiggles LATCH_ARM while
@@ -2556,6 +2647,12 @@ void LV6Dashboard::handle_v1_(AsyncWebServerRequest *request, const char *path) 
     else
       act.value_str = "stop_motor";
     act.has_str = true;
+    // Motor Lab / zone jog pass duration_ms; default remains 10 s when omitted.
+    if ((act.value_str == "open_motor_timed" || act.value_str == "close_motor_timed") &&
+        parse_num_param(request, body, "duration_ms", &num) && num > 0.0f) {
+      act.num_val = num;
+      act.has_num = true;
+    }
     apply_zone(act, zone);
 
   } else if (strcmp(path, "/commands") == 0) {
@@ -2568,9 +2665,15 @@ void LV6Dashboard::handle_v1_(AsyncWebServerRequest *request, const char *path) 
     act.key = "command";
     act.value_str = cmd_buf;
     act.has_str = true;
-    if (!parse_num_param(request, body, "zone", &num))
-      num = 0.0f;
-    apply_zone(act, static_cast<int>(num));
+    float zone_num = 0.0f;
+    if (!parse_num_param(request, body, "zone", &zone_num))
+      zone_num = 0.0f;
+    if ((strcmp(cmd_buf, "open_motor_timed") == 0 || strcmp(cmd_buf, "close_motor_timed") == 0) &&
+        parse_num_param(request, body, "duration_ms", &num) && num > 0.0f) {
+      act.num_val = num;
+      act.has_num = true;
+    }
+    apply_zone(act, static_cast<int>(zone_num));
 
   } else if (strncmp(path, "/settings/", 10) == 0) {
     const char *kind = path + 10;
@@ -2666,6 +2769,28 @@ void LV6Dashboard::handle_v1_(AsyncWebServerRequest *request, const char *path) 
   if (act.key == "drivers_enabled" && act.has_num && act.num_val != 0.0f &&
       this->valve_controller_ && this->valve_controller_->has_fault_latch())
     this->valve_controller_->assert_latch_arm_high();
+
+  // Probe role uniqueness — reject before enqueue so the client sees 409.
+  if (this->config_store_ &&
+      (act.key == "zone_probe" || act.key == "manifold_flow_probe" ||
+       act.key == "manifold_return_probe") &&
+      act.has_str) {
+    int8_t probe = lv6::PROBE_UNASSIGNED;
+    if (parse_probe_option(act.value_str.c_str(), &probe) && probe != lv6::PROBE_UNASSIGNED) {
+      const auto probes = this->config_store_->get_config().probes;
+      const bool ignore_flow = (act.key == "manifold_flow_probe");
+      const bool ignore_ret = (act.key == "manifold_return_probe");
+      const int8_t ignore_zone =
+          (act.key == "zone_probe" && act.zone_valid) ? static_cast<int8_t>(act.zi)
+                                                      : static_cast<int8_t>(-1);
+      if (!lv6::probe_mapping::is_free(probes, probe, ignore_zone, ignore_flow, ignore_ret)) {
+        this->send_v1_(request, 409, "probe_conflict",
+                       "Probe already assigned to another role");
+        return;
+      }
+    }
+  }
+
   if (!this->enqueue_action_(act)) {
     this->send_v1_(request, 503, "busy", "System busy, try again");
     return;
@@ -2834,6 +2959,60 @@ void LV6Dashboard::handle_authority_revoke_(AsyncWebServerRequest *request) {
              false, "no-store");
 }
 
+void LV6Dashboard::handle_absorb_window_(AsyncWebServerRequest *request, const char *body) {
+  // P3: parse v1 envelope + auth + ledger, then 501. Runtime arm lands in P5.
+  // Touch builds its client against this stub behind a feature flag.
+  if (this->config_store_ == nullptr) {
+    this->send_v1_(request, 503, "auth_unavailable", "Authentication configuration unavailable");
+    return;
+  }
+  const auto auth_cfg = this->config_store_->get_authority_config();
+  const auto key_header = request->get_header("X-Lune-Authority-Key");
+  const char *provided_key = key_header.has_value() ? key_header->c_str() : "";
+  float auth_timestamp_s = 0.0f;
+  char auth_nonce[48]{};
+  parse_num_param(request, body, "auth_timestamp_s", &auth_timestamp_s);
+  parse_text_param(request, body, "auth_nonce", "", auth_nonce, sizeof(auth_nonce));
+  const time_t now_s = ::time(nullptr);
+  if (!touch_auth::request_is_authenticated(auth_cfg.shared_key, provided_key,
+                                            now_s, auth_timestamp_s, auth_nonce)) {
+    this->send_v1_(request, 403, "touch_auth_failed",
+                   "Absorb command requires provisioned key, valid UTC timestamp, and nonce");
+    return;
+  }
+  if (request_guard_.check(0, data_revision_, auth_nonce, millis()) == request_guard::Decision::DUPLICATE) {
+    this->send_v1_(request, 409, "replayed_nonce", "Absorb command nonce was already used");
+    return;
+  }
+
+  float ttl_s = 1800.0f;
+  parse_num_param(request, body, "ttl_s", &ttl_s);
+  if (!std::isfinite(ttl_s))
+    ttl_s = 1800.0f;
+  ttl_s = std::clamp(ttl_s, 60.0f, 7200.0f);
+
+  char request_id[48]{};
+  char source[32]{};
+  char reason[80]{};
+  parse_text_param(request, body, "request_id", "", request_id, sizeof(request_id));
+  parse_text_param(request, body, "source", "lune-touch", source, sizeof(source));
+  parse_text_param(request, body, "reason", "absorb window", reason, sizeof(reason));
+
+  // Ledger (runtime-only) — records the accepted envelope even though the arm
+  // effect is not implemented yet.
+  std::strncpy(this->absorb_ledger_request_id_, request_id, sizeof(this->absorb_ledger_request_id_) - 1);
+  this->absorb_ledger_request_id_[sizeof(this->absorb_ledger_request_id_) - 1] = '\0';
+  std::strncpy(this->absorb_ledger_source_, source, sizeof(this->absorb_ledger_source_) - 1);
+  this->absorb_ledger_source_[sizeof(this->absorb_ledger_source_) - 1] = '\0';
+  std::strncpy(this->absorb_ledger_reason_, reason, sizeof(this->absorb_ledger_reason_) - 1);
+  this->absorb_ledger_reason_[sizeof(this->absorb_ledger_reason_) - 1] = '\0';
+  this->absorb_ledger_ttl_s_ = ttl_s;
+  this->absorb_ledger_at_ms_ = millis();
+
+  this->send_v1_(request, 501, "not_implemented",
+                 "Absorb window accepted for ledger but effect not yet enabled");
+}
+
 // Square-waves LATCH_ARM for a few seconds. A single arm edge is a ~3 V spike
 // that decays in about a millisecond, so no multimeter can confirm whether it
 // survives R4/C4 and reaches U2's clock. A periodic edge can be read on U2
@@ -2965,9 +3144,16 @@ void LV6Dashboard::dispatch_set_(const DashboardAction &act) {
     if (strcmp(str_val, "i2c_scan") == 0) {
       if (this->valve_controller_) this->valve_controller_->log_i2c_scan();
     } else if (strcmp(str_val, "open_motor_timed") == 0 && zone_valid && this->valve_controller_) {
-      this->valve_controller_->request_timed_open(zi, 10000, true);
+      // Default 10 s for zone jog; Motor Lab sends profile runtime (≈40–45 s).
+      uint32_t hold_ms = 10000u;
+      if (has_num && num_val > 0.0f)
+        hold_ms = static_cast<uint32_t>(std::clamp(num_val, 100.0f, 60000.0f));
+      this->valve_controller_->request_timed_open(zi, static_cast<uint16_t>(hold_ms), true);
     } else if (strcmp(str_val, "close_motor_timed") == 0 && zone_valid && this->valve_controller_) {
-      this->valve_controller_->request_timed_close(zi, 10000, true);
+      uint32_t hold_ms = 10000u;
+      if (has_num && num_val > 0.0f)
+        hold_ms = static_cast<uint32_t>(std::clamp(num_val, 100.0f, 60000.0f));
+      this->valve_controller_->request_timed_close(zi, static_cast<uint16_t>(hold_ms), true);
     } else if (strcmp(str_val, "stop_motor") == 0 && zone_valid && this->valve_controller_) {
       this->valve_controller_->request_stop(zi);
     } else if (strcmp(str_val, "motor_reset_fault") == 0 && zone_valid && this->valve_controller_) {
@@ -3236,8 +3422,9 @@ void LV6Dashboard::sample_history_() {
   entry.uptime_s = millis() / 1000UL;
   for (uint8_t i = 0; i < lv6::NUM_ZONES; i++)
     entry.zone_state[i] = HISTORY_STATE_UNKNOWN;
-  entry.absorbing = (this->zone_controller_ != nullptr &&
-                     this->zone_controller_->is_preheat_absorbing()) ? 1 : 0;
+  entry.absorbing = this->zone_controller_ != nullptr
+                        ? this->zone_controller_->absorb_mode_code()
+                        : 0;
   entry.flow_dc = HISTORY_TEMP_NONE;
   entry.return_dc = HISTORY_TEMP_NONE;
   entry.demand_pct = HISTORY_DEMAND_NONE;
@@ -3375,7 +3562,7 @@ void LV6Dashboard::handle_history_(AsyncWebServerRequest *request) {
         static_cast<unsigned>(e.zone_state[3]),
         static_cast<unsigned>(e.zone_state[4]),
         static_cast<unsigned>(e.zone_state[5]),
-        static_cast<unsigned>(e.absorbing ? 1u : 0u),
+        static_cast<unsigned>(e.absorbing),
         flow_s, return_s, demand_s));
   }
 

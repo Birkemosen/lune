@@ -201,7 +201,8 @@ export default component({
       rowExt.style.display = v === 'External' ? '' : 'none';
     }
 
-    const form = cardForm(el);
+    // immediate: provision panel hides the Apply banner, so edits must write.
+    const form = cardForm(el, { immediate: true });
     setSourceOptions(sourceEl, 'Local Probe');
     form.select(sourceEl, { read: () => sourceToUiValue(String(es(key.tempSource(selectedZone())) || '')), commit: (v) => setZoneSelect(selectedZone(), 'zone_temp_source', uiValueToApiValue(v)) });
     form.text(bleEl, { read: () => es(key.ble(selectedZone())) || '', commit: (v) => setZoneText(selectedZone(), 'zone_ble_mac', v) });
@@ -270,9 +271,13 @@ export default component({
           scanList.querySelectorAll('.btn-assign').forEach((btn) => {
             btn.addEventListener('click', () => {
               const mac = btn.getAttribute('data-mac') || '';
+              const zone = selectedZone();
               bleEl.value = mac;
-              bleEl.dispatchEvent(new Event('change', { bubbles: true }));
-              setZoneText(selectedZone(), 'zone_ble_mac', mac);
+              sourceEl.value = 'BLE Sensor';
+              paintSourceRows();
+              setZoneText(zone, 'zone_ble_mac', mac);
+              setZoneSelect(zone, 'zone_temp_source', 'BLE');
+              form.refresh();
             });
           });
         })
@@ -287,14 +292,36 @@ export default component({
         });
     });
 
+    function refreshIfRelevant(id) {
+      const zone = selectedZone();
+      const watched = [
+        key.tempSource(zone), key.ble(zone), key.sensorId(zone),
+        key.sensorName(zone), key.externalAge(zone),
+      ];
+      if (watched.indexOf(id) >= 0 ||
+          /^select-zone_\d+_temp_source$/.test(id) ||
+          /^text-zone_\d+_(ble_mac|sensor_id|sensor_name)$/.test(id) ||
+          /^sensor-zone_\d+_external_temp_age_ms$/.test(id)) {
+        form.refresh();
+        paintSourceRows();
+        paintAge();
+      }
+    }
+
     update();
-    subscribeDashboard(update);
+    subscribeDashboard('selectedZone', update);
+    for (let zone = 1; zone <= 6; zone++) {
+      subscribe(key.tempSource(zone), refreshIfRelevant);
+      subscribe(key.ble(zone), refreshIfRelevant);
+      subscribe(key.sensorId(zone), refreshIfRelevant);
+      subscribe(key.sensorName(zone), refreshIfRelevant);
+      subscribe(key.externalAge(zone), refreshIfRelevant);
+    }
     subscribeLanguage(() => {
       localize(el);
       setSourceOptions(sourceEl, sourceEl.value);
       scanBtn.textContent = scanBtn.disabled ? scanBtn.textContent : t('zone.sensor.scan');
       paintAge();
     });
-    return subscribe(() => {});
   },
 });

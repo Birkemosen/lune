@@ -32,8 +32,10 @@ const PAD_TOP    = 8;
 const BAND_H     = 16;          // preheat-absorption band height
 const BAND_GAP   = 10;          // gap between zone rows and the absorption band
 const ABSORB_COLOR = 'var(--series-solar)';
+const ABSORB_ARMED_COLOR = 'var(--accent)';
 const OBSERVED_BAR_H = 14;
 const ABSORB_INDEX = NZ + 1;    // entry shape: [uptime_s, z0..z5, absorbing]
+// absorbing: 0 idle, 1 reactive, 2 armed
 const ZONES_BOTTOM = PAD_TOP + NZ * (ROW_H + ROW_GAP) - ROW_GAP;
 const BAND_Y       = ZONES_BOTTOM + BAND_GAP;
 const CHART_H    = ZONES_BOTTOM + BAND_GAP + BAND_H + AXIS_H;
@@ -305,11 +307,12 @@ function renderTimeline(histData, currentUptimeS) {
     svg.appendChild(bandLabel);
 
     const aEntries = entries
-      .map((e) => ({ rel: tToRel(e[0]), on: e.length > ABSORB_INDEX ? e[ABSORB_INDEX] : 0 }))
+      .map((e) => ({ rel: tToRel(e[0]), on: e.length > ABSORB_INDEX ? Number(e[ABSORB_INDEX] || 0) : 0 }))
       .filter((e) => e.rel >= -PAST_WINDOW_S && e.rel <= 0);
 
     if (aEntries.length) {
-      const drawBand = (rel0, rel1) => {
+      const drawBand = (rel0, rel1, mode) => {
+        if (!mode) return;
         const x0 = relToX(rel0);
         const w = Math.max(1, relToX(rel1) - x0);
         const rect = document.createElementNS(ns, 'rect');
@@ -317,21 +320,21 @@ function renderTimeline(histData, currentUptimeS) {
         rect.setAttribute('y', BAND_Y);
         rect.setAttribute('width', w);
         rect.setAttribute('height', BAND_H);
-        rect.setAttribute('fill', ABSORB_COLOR);
+        rect.setAttribute('fill', mode === 2 ? ABSORB_ARMED_COLOR : ABSORB_COLOR);
         rect.setAttribute('rx', '2');
-        rect.setAttribute('opacity', '0.9');
+        rect.setAttribute('opacity', mode === 2 ? '0.95' : '0.85');
         svg.appendChild(rect);
       };
       let segStart = aEntries[0].rel;
       let segOn = aEntries[0].on;
       for (let i = 1; i < aEntries.length; i++) {
         if (aEntries[i].on !== segOn) {
-          if (segOn) drawBand(segStart, aEntries[i].rel);
+          drawBand(segStart, aEntries[i].rel, segOn);
           segStart = aEntries[i].rel;
           segOn = aEntries[i].on;
         }
       }
-      if (segOn) drawBand(segStart, 0);
+      drawBand(segStart, 0, segOn);
     }
   }
 
@@ -396,8 +399,13 @@ function renderLegend(el) {
   const absorb = document.createElement('div');
   absorb.className = 'tl-legend-item';
   absorb.innerHTML =
-    '<span class="tl-legend-dot" style="background:' + ABSORB_COLOR + '"></span>' + t('overview.timeline.preheatAbsorption');
+    '<span class="tl-legend-dot" style="background:' + ABSORB_COLOR + '"></span>' + t('overview.timeline.absorbReactive');
   el.appendChild(absorb);
+  const absorbArmed = document.createElement('div');
+  absorbArmed.className = 'tl-legend-item';
+  absorbArmed.innerHTML =
+    '<span class="tl-legend-dot" style="background:' + ABSORB_ARMED_COLOR + '"></span>' + t('overview.timeline.absorbArmed');
+  el.appendChild(absorbArmed);
 
 }
 

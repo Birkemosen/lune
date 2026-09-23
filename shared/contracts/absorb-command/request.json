@@ -1,0 +1,8 @@
+{
+  "request_id": "absorb-fc-001",
+  "source": "lune-touch",
+  "reason": "odin preload hour",
+  "ttl_s": 1800,
+  "auth_timestamp_s": 1713111111,
+  "auth_nonce": "n-absorb-001"
+}

@@ -2,6 +2,12 @@ const SETTLE_MS = 650;
 const WINDOW_MS = 500;
 export const TRACE_MAX_SAMPLES = 2000;
 export const TRACE_SAMPLE_PERIOD_MS = 2;
+/** Browser-side capture window when merging successive device ring dumps. */
+export const BROWSER_TRACE_MAX_MS = 60000;
+/** Mean-bucket rate kept in the browser (avoids multi-MB high-rate dumps). */
+export const BROWSER_TRACE_HZ = 2;
+/** How often Motor Lab pulls the device ring while the motor is moving. */
+export const TRACE_PULL_MS = 5000;
 
 export const STROKE_PHASE = {
   FREE_TRAVEL: 0,
@@ -66,6 +72,141 @@ export function parseMotorTraceCsv(text) {
     });
   }
   return samples;
+}
+
+function meanFinite(values) {
+  const nums = values.filter((v) => Number.isFinite(v));
+  if (!nums.length) return null;
+  return nums.reduce((a, b) => a + b, 0) / nums.length;
+}
+
+function majorityBool(values) {
+  let yes = 0;
+  let no = 0;
+  for (const value of values) {
+    if (value === true) yes += 1;
+    else if (value === false) no += 1;
+  }
+  if (!yes && !no) return null;
+  return yes >= no;
+}
+
+/** Bucket high-rate samples into mean rows at ~hz (default 2/s). */
+export function downsampleMotorTraceMean(samples, hz = BROWSER_TRACE_HZ) {
+  const rows = (samples || []).filter((sample) => sample && Number.isFinite(sample.t_ms))
+    .slice()
+    .sort((a, b) => a.t_ms - b.t_ms);
+  if (!rows.length) return [];
+  const bucketMs = Math.max(1, Math.round(1000 / Math.max(0.1, hz)));
+  const out = [];
+  let i = 0;
+  while (i < rows.length) {
+    const bucketStart = Math.floor(rows[i].t_ms / bucketMs) * bucketMs;
+    const bucketEnd = bucketStart + bucketMs;
+    let j = i;
+    while (j < rows.length && rows[j].t_ms < bucketEnd) j += 1;
+    const bucket = rows.slice(i, j);
+    const last = bucket[bucket.length - 1];
+    out.push({
+      t_ms: bucketStart + Math.floor(bucketMs / 2),
+      motion_count: Math.max(...bucket.map((s) => Number(s.motion_count) || 0)),
+      current_ma: meanFinite(bucket.map((s) => s.current_ma)),
+      adc_current_raw: meanFinite(bucket.map((s) => s.adc_current_raw)),
+      drive_on: majorityBool(bucket.map((s) => !!s.drive_on)) === true,
+      direction_open: majorityBool(bucket.map((s) => !!s.direction_open)) === true,
+      armed: majorityBool(bucket.map((s) => !!s.armed)) === true,
+      stroke_phase: Math.max(...bucket.map((s) => Number(s.stroke_phase) || 0)),
+      tacho_period_us: meanFinite(bucket.map((s) => s.tacho_period_us)),
+      tacho_amp_raw: meanFinite(bucket.map((s) => s.tacho_amp_raw)),
+      bemf_raw_a: meanFinite(bucket.map((s) => s.bemf_raw_a)),
+      bemf_raw_b: meanFinite(bucket.map((s) => s.bemf_raw_b)),
+      bemf_differential_raw: meanFinite(bucket.map((s) => s.bemf_differential_raw)),
+      bemf_separation_us: meanFinite(bucket.map((s) => s.bemf_separation_us)),
+      bemf_valid: majorityBool(bucket.map((s) => s.bemf_valid)),
+      bemf_moving: majorityBool(bucket.map((s) => s.bemf_moving)),
+      invalid_bemf_samples: Math.max(
+        ...bucket.map((s) => Number(s.invalid_bemf_samples) || 0),
+        Number(last.invalid_bemf_samples) || 0),
+      _bucket_n: bucket.length,
+    });
+    i = j;
+  }
+  return out;
+}
+
+/**
+ * Merge successive device-ring dumps, mean-bucket to ~hz, keep last maxMs.
+ * Keeps browser memory small (~80 rows for 40 s at 2 Hz) instead of multi-MB CSV.
+ */
+export function mergeMotorTraceSamples(
+  existing, incoming, maxMs = BROWSER_TRACE_MAX_MS, hz = BROWSER_TRACE_HZ) {
+  const byTime = new Map();
+  for (const sample of existing || []) {
+    if (sample && Number.isFinite(sample.t_ms)) byTime.set(sample.t_ms, sample);
+  }
+  // Incoming high-rate rows are mean-bucketed before merge so we never retain
+  // the full device ring in the browser log.
+  for (const sample of downsampleMotorTraceMean(incoming || [], hz)) {
+    if (sample && Number.isFinite(sample.t_ms)) byTime.set(sample.t_ms, sample);
+  }
+  const merged = Array.from(byTime.values()).sort((a, b) => a.t_ms - b.t_ms);
+  if (!merged.length || !(maxMs > 0)) return merged;
+  const tEnd = merged[merged.length - 1].t_ms;
+  const tCut = tEnd - maxMs;
+  let start = 0;
+  while (start < merged.length && merged[start].t_ms < tCut) start += 1;
+  return start ? merged.slice(start) : merged;
+}
+
+const TRACE_CSV_HEADER =
+  't_ms,motion_count,current_ma,adc_current_raw,drive_on,direction_open,armed,' +
+  'stroke_phase,tacho_period_us,tacho_amp_raw,' +
+  'bemf_raw_a,bemf_raw_b,bemf_differential_raw,bemf_separation_us,' +
+  'bemf_valid,bemf_moving,invalid_bemf_samples';
+
+function csvCell(value) {
+  if (value == null || value === '') return '';
+  if (typeof value === 'boolean') return value ? '1' : '0';
+  if (typeof value === 'number') return Number.isFinite(value) ? String(value) : '';
+  return String(value);
+}
+
+export function motorTraceToCsv(samples) {
+  const rows = [TRACE_CSV_HEADER];
+  for (const sample of samples || []) {
+    rows.push([
+      csvCell(sample.t_ms),
+      csvCell(sample.motion_count),
+      Number.isFinite(sample.current_ma) ? sample.current_ma.toFixed(1) : '',
+      csvCell(sample.adc_current_raw),
+      sample.drive_on ? '1' : '0',
+      sample.direction_open ? '1' : '0',
+      sample.armed ? '1' : '0',
+      csvCell(sample.stroke_phase || 0),
+      csvCell(sample.tacho_period_us),
+      csvCell(sample.tacho_amp_raw),
+      csvCell(sample.bemf_raw_a),
+      csvCell(sample.bemf_raw_b),
+      csvCell(sample.bemf_differential_raw),
+      csvCell(sample.bemf_separation_us),
+      sample.bemf_valid == null ? '' : (sample.bemf_valid ? '1' : '0'),
+      sample.bemf_moving == null ? '' : (sample.bemf_moving ? '1' : '0'),
+      csvCell(sample.invalid_bemf_samples),
+    ].join(','));
+  }
+  return rows.join('\n') + '\n';
+}
+
+export function downloadMotorTraceCsv(samples, filename) {
+  const blob = new Blob([motorTraceToCsv(samples)], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = filename || 'lune-v6-motor-trace.csv';
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 function directionOf(samples) {
@@ -173,15 +314,22 @@ export function analyzeMotorTrace(samples, preferredDirection) {
   const travelSlope = percentile(freeSlopes.map(Math.abs), 0.9) || 0;
   const towardPeak = direction === 'close' ? 0.55 : 0.68;
   const ratio = mean > 0.5 ? stallPeak / mean : 0;
+  const phaseMax = Math.max(...driven.map((sample) => Number(sample.stroke_phase) || 0));
+  // Open stop is gentle: require a late current rise or a STOPPING phase. A flat
+  // free-travel capture (ratio≈1) means the timed window ended before the bite.
+  const endstopSeen = direction === 'open'
+    ? (ratio >= 1.12 || phaseMax >= STROKE_PHASE.STOPPING || maxStallSlope >= 0.2)
+    : (ratio >= 1.15 || phaseMax >= STROKE_PHASE.UNDER_LOAD || maxStallSlope >= 0.4);
   const suggestedFactor = round1(clamp(1 + towardPeak * Math.max(0, ratio - 1), 1.25, 2.4));
-  const suggestedSlope = round1(clamp(Math.max(travelSlope * 2.2, maxStallSlope * 0.42, 0.4), 0.4, 8));
+  const suggestedSlope = round1(clamp(Math.max(travelSlope * 2.2, maxStallSlope * 0.42, direction === 'open' ? 0.15 : 0.4), 0.15, 8));
   const suggestedSlopeFloor = round1(clamp(1 + 0.35 * Math.max(0, ratio - 1), 1.15, 1.8));
   const suggestedRippleLimit = direction === 'open' ? 1.15 : null;
   const pin = pinContactSample(driven);
 
   return {
     direction,
-    ok: true,
+    ok: endstopSeen,
+    reason: endstopSeen ? null : 'no_endstop',
     start_ms: startMs,
     end_ms: endMs,
     runtime_ms: endMs - startMs,
@@ -192,6 +340,7 @@ export function analyzeMotorTrace(samples, preferredDirection) {
     max_stall_slope_ma_s: round1(maxStallSlope),
     travel_slope_ma_s: round1(travelSlope),
     measured_factor: round1(ratio),
+    endstop_seen: endstopSeen,
     suggested_factor: suggestedFactor,
     suggested_slope: suggestedSlope,
     suggested_slope_floor: suggestedSlopeFloor,

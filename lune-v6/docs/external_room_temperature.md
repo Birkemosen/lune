@@ -16,7 +16,7 @@ Lune V6 heats from three room-temperature sources per zone:
 2. Set **sensor_id** (BLU MAC, HA entity id, Homey device id, …).
 3. Optional **friendly name** for the UI only.
 4. Copy an example from **Help → External room temperature** (Shelly / Home Assistant / Homey).
-5. Producer POSTs `{ "sensor_id", "temp_c", "observed_at_ms"? }` with `X-Lune-Local-Key` and `X-Lune-CSRF` (same key when local access is provisioned).
+5. Producer POSTs `{ "sensor_id", "temp_c", "observed_at_ms"? }` with header `X-Lune-CSRF: 1` (required; not a secret — LAN trust).
 
 Unbound `sensor_id` values are ignored (HTTP 200 with `applied: false`) so one Shelly script can forward every heard BLU.
 
@@ -48,7 +48,7 @@ Checklist:
 3. One hub script may POST all heard sensors; V6 applies only bound ids.
 4. After binding, confirm **Last ingest** on the zone Temperature card updates within a minute of a producer event.
 5. Confirm stale fail-safe: stop the producer and wait past the 15‑minute EXTERNAL window — zone temperature should go invalid / conservative.
-6. Keep the local access key on the hub only; rotate by changing V6 Settings and updating scripts.
+6. Hubs only need LAN reachability to V6 plus the CSRF header; there is no shared local-access secret to rotate.
 
 Do not hardcode zone numbers in customer scripts. Do not put MQTT on V6 or Touch for room temperature.
 

@@ -359,6 +359,25 @@ void Lv6ConfigStore::update_probes(const ProbeConfig &probes) {
   mark_dirty();
 }
 
+void Lv6ConfigStore::set_zone_return_probe(uint8_t zone, int8_t probe) {
+  if (zone >= NUM_ZONES)
+    return;
+  if (mutex_ == nullptr) {
+    if (config_.probes.zone_return_probe[zone] == probe)
+      return;
+    config_.probes.zone_return_probe[zone] = probe;
+    mark_dirty();
+    return;
+  }
+  xSemaphoreTake(mutex_, portMAX_DELAY);
+  const bool changed = config_.probes.zone_return_probe[zone] != probe;
+  if (changed)
+    config_.probes.zone_return_probe[zone] = probe;
+  xSemaphoreGive(mutex_);
+  if (changed)
+    mark_dirty();
+}
+
 void Lv6ConfigStore::update_pid(const PIDParams &pid) {
   if (mutex_ == nullptr) {
     config_.pid = pid;

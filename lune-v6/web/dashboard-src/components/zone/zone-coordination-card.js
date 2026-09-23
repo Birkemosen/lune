@@ -41,7 +41,8 @@ export default component({
       return getDashboardValue('selectedZone');
     }
 
-    const form = cardForm(el);
+    // immediate: provision panel hides the Apply banner, so edits must write.
+    const form = cardForm(el, { immediate: true });
     form.select(syncEl, {
       read: () => es(key.syncTo(selectedZone())) || 'None',
       commit: (v) => setZoneSelect(selectedZone(), 'zone_sync_to', v),

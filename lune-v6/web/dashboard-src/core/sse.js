@@ -1,7 +1,10 @@
 // core/sse.js
 
 import { startMock } from './mock.js';
-import { setEntity, setLive, sampleHistory, addActivity, setI2cResult, shouldSuppressStateUpdate } from './store.js';
+import {
+  setEntity, setLive, sampleHistory, addActivity, setI2cResult,
+  shouldSuppressStateUpdate, getDashboardValue, subscribeDashboard,
+} from './store.js';
 import { fetchHistory, fetchLogs } from './api.js';
 import { gkey } from '../utils/keys.js';
 
@@ -10,6 +13,11 @@ let historyRefreshTimer = null;
 let logsRefreshTimer = null;
 let revisionTimer = null;
 let lastRevision = null;
+let backgroundSuspended = false;
+
+function labOwnsHttp() {
+  return !!getDashboardValue('motorLabBusy') || backgroundSuspended;
+}
 
 async function fetchStateOnce() {
   if (pollAbortController) {
@@ -64,31 +72,40 @@ function onMessage(message) {
 
 function ensureAuxiliaryPollers() {
   // Fetch history on initial connection and then every 5 minutes.
-  fetchHistory();
+  if (!labOwnsHttp()) fetchHistory();
   if (!historyRefreshTimer) {
-    historyRefreshTimer = setInterval(fetchHistory, 5 * 60 * 1000);
+    historyRefreshTimer = setInterval(() => {
+      if (labOwnsHttp()) return;
+      fetchHistory();
+    }, 5 * 60 * 1000);
   }
   // Live device logs: poll fast (~3 s) so the Logs view feels live.
-  fetchLogs();
+  if (!labOwnsHttp()) fetchLogs();
   if (!logsRefreshTimer) {
-    logsRefreshTimer = setInterval(fetchLogs, 3000);
+    logsRefreshTimer = setInterval(() => {
+      if (labOwnsHttp()) return;
+      fetchLogs();
+    }, 3000);
   }
 }
 
 function pollStateCycle() {
+  if (labOwnsHttp()) return;
   fetchStateOnce()
     .then((message) => {
+      if (labOwnsHttp()) return;
       setLive(true);
       onMessage(message);
       ensureAuxiliaryPollers();
     })
     .catch(() => {
-      setLive(false);
+      if (!labOwnsHttp()) setLive(false);
     });
 }
 
 async function pollRevision() {
   try {
+    if (labOwnsHttp()) return;
     const response = await fetch('/api/v1/revision', { cache: 'no-store' });
     if (!response.ok) throw new Error('Revision fetch failed');
     const payload = await response.json();
@@ -105,8 +122,23 @@ async function pollRevision() {
     }
     setLive(true);
   } catch {
-    setLive(false);
+    if (!labOwnsHttp()) setLive(false);
   }
+}
+
+/** Abort in-flight background GETs so Motor Lab owns the HTTP worker. */
+function suspendBackgroundPolling_() {
+  backgroundSuspended = true;
+  if (pollAbortController) {
+    pollAbortController.abort();
+    pollAbortController = null;
+  }
+}
+
+function resumeBackgroundPolling_() {
+  backgroundSuspended = false;
+  // One immediate refresh so Overview/gauges catch up after a long capture.
+  pollStateCycle();
 }
 
 export function connect() {
@@ -116,6 +148,11 @@ export function connect() {
     startMock();
     return;
   }
+
+  subscribeDashboard('motorLabBusy', () => {
+    if (getDashboardValue('motorLabBusy')) suspendBackgroundPolling_();
+    else resumeBackgroundPolling_();
+  });
 
   pollStateCycle();
   if (!revisionTimer) revisionTimer = setInterval(pollRevision, 3000);

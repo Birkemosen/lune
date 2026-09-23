@@ -30,7 +30,10 @@ export function mountComponent(tag, props) {
   wrapper.innerHTML = def.render(ctx);
   const el = wrapper.firstElementChild;
 
-  if (def.onMount) def.onMount(ctx, el);
+  // Defer onMount until after the caller appends `el` into the document. Cards
+  // that relocate controls into a panel header need closest()/querySelector on
+  // an attached ancestor.
+  if (def.onMount) queueMicrotask(() => def.onMount(ctx, el));
 
   return el;
 }

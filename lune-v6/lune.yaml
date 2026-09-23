@@ -3,7 +3,7 @@
 # =============================================================================
 # This file is the shared firmware base. The device entrypoint is
 # configurations/lune-v6.yaml and `!include`s this file plus BLE.
-# PCB pins and the status LED come from packages/board/lune-v6-rev32.yaml;
+# PCB pins and the status LED come from packages/board/lune-v6-rev33.yaml;
 # the ESP32-S3-WROOM-1-N8R8 module comes from packages/board/esp32-s3.yaml.
 #
 # Build/deploy via the Makefile (`make build`). Do NOT add
@@ -81,7 +81,7 @@ packages:
   version:      !include version.yaml
   # Module (N8R8) then PCB revision (pins + status LED)
   mcu:          !include packages/board/esp32-s3.yaml
-  pcb:          !include packages/board/lune-v6-rev32.yaml
+  pcb:          !include packages/board/lune-v6-rev33.yaml
   # TEMPORARY — remove after investigation (standalone heap tracing + early start).
   # Disable by deleting this line and rebuilding; do not ship as production default.
   # heap_tracing: !include packages/debug/heap-tracing.yaml

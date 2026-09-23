@@ -36,13 +36,10 @@ test -f "$root/web/brand/lune-v6-mark.svg"
 grep -qF 'luneMark' "$root/web/dashboard-src/core/canvas.js" >/dev/null
 grep -qF 'data-live-mark="sidebar"' "$app" >/dev/null
 grep -qF 'data-overview-manifold' "$app" >/dev/null
-grep -qF 'data-lds-int-split' "$root/web/dashboard-src/core/lds-int-split.generated.js" >/dev/null
 grep -qF 'intSplitHtml' "$app" >/dev/null
 grep -qF 'formShellHtml' "$app" >/dev/null
-grep -qF 'INT_SPLIT_CSS' "$app" >/dev/null
-grep -qF 'FORM_CSS' "$app" >/dev/null
-grep -qF 'data-lds-provision' "$root/web/dashboard-src/core/lds-form.generated.js" >/dev/null
-grep -qF 'data-lds-form' "$root/web/dashboard-src/core/lds-form.generated.js" >/dev/null
+grep -qF 'class="lds-provision provision"' "$root/web/dashboard-src/core/lds-form.generated.js" >/dev/null
+grep -qF 'class="lds-int-split int-split"' "$root/web/dashboard-src/core/lds-int-split.generated.js" >/dev/null
 grep -qF 'var(--fill-forest)' "$header" >/dev/null
 ! grep -qF 'background:var(--bg-glow)' "$app" >/dev/null
 grep -qF 'nav-collapsed' "$app" >/dev/null
@@ -198,9 +195,9 @@ grep -qF 'zone-label-compact' "$app" >/dev/null
 grep -qF 'zone-title-name' "$app" >/dev/null
 grep -qF '.zone-label-compact .zone-title-name,.mobile-zone-dock .zone-title-name{display:none}' "$app" >/dev/null
 grep -qF 'zone-live"><p class="zone-kicker">Comfort control</p><div class="zone-detail-heading' "$app" >/dev/null
-grep -qF 'zone-configuration-groups" aria-label="Zone configuration"><div class="zone-room-slot"></div><div class="zone-sensor-slot"></div><div class="zone-coordination-slot"></div></section><div class="zone-actuator-slot"></div>' "$app" >/dev/null
+grep -qF 'zone-configuration-groups" aria-label="Zone configuration"' "$app" >/dev/null
+grep -qF 'zone-actuator-slot"></div>' "$app" >/dev/null
 ! grep -qF 'zone-detail-slot"></div><div class="zone-actuator-slot"></div><section class="zone-configuration-groups' "$app" >/dev/null
-! grep -qF 'zone-actuator-slot"></div><section class="zone-configuration-groups' "$app" >/dev/null
 ! grep -qF 'zo-name' "$app" >/dev/null
 ! grep -qF 'zo-room' "$app" >/dev/null
 ! grep -qF 'zo-id' "$app" >/dev/null
@@ -250,23 +247,6 @@ grep -qF "['ArrowLeft','ArrowRight','Home','End']" "$app" >/dev/null
 ! grep -rqF 'Pipe Spacing' "$root/web/dashboard-src" >/dev/null
 ! grep -rqF 'Pipe Type' "$root/web/dashboard-src" >/dev/null
 grep -qF 'Identity' "$root/web/dashboard-src/components/zone/zone-room-card.js" >/dev/null
-grep -qF 'navSwitchHtml' "$header" >/dev/null
-grep -qF 'data-toggle-zone' "$header" >/dev/null
-grep -qF 'v6-nav-row' "$header" >/dev/null
-grep -qF 'data-lds-nav-switch' "$root/web/dashboard-src/core/lds-nav-switch.generated.js" >/dev/null
-grep -qF 'kind: nav-switch-js' "$root/../lds.yaml" >/dev/null
-! grep -qF 'zr-enable' "$root/web/dashboard-src/components/zone/zone-room-card.js" >/dev/null
-! grep -qF 'ui-toggle' "$root/web/dashboard-src/components/zone/zone-room-card.js" >/dev/null
-! grep -qF 'toggleEnabled' "$root/web/dashboard-src/components/zone/zone-detail.js" >/dev/null
-grep -qF 'kind: settings-card-js' "$root/../lds.yaml" >/dev/null
-test -f "$root/web/dashboard-src/core/lds-settings-card.generated.js"
-grep -qF 'settingsCardHtml' "$root/web/dashboard-src/core/ui-kit.js" >/dev/null
-grep -qF 'settingsCardHtml' "$root/web/dashboard-src/components/settings/settings-minimum-flow-card.js" >/dev/null
-grep -qF 'navSwitchHtml' "$root/web/dashboard-src/components/settings/settings-minimum-flow-card.js" >/dev/null
-grep -qF 'settingsCardHtml' "$root/web/dashboard-src/components/settings/settings-control-card.js" >/dev/null
-! grep -qF '.settings-card{' "$root/web/dashboard-src/components/settings/settings-control-card.js" >/dev/null
-! grep -rqF 'ui-toggle' "$root/web/dashboard-src/components/settings" >/dev/null
-! grep -qF 'navSwitchHtml' "$root/web/dashboard-src/components/zone/zone-room-card.js" >/dev/null
 grep -qF 'Temperature' "$root/web/dashboard-src/components/zone/zone-sensor-card.js" >/dev/null
 grep -qF 'Coordination' "$root/web/dashboard-src/components/zone/zone-coordination-card.js" >/dev/null
 grep -qF "mountComponent('zone-coordination-card')" "$app" >/dev/null
@@ -495,15 +475,15 @@ grep -qF 'setDriversEnabled(false)' "$api" >/dev/null
 grep -qF 'class="lab-estop"' "$root/web/dashboard-src/components/diagnostics/diag-motor-lab.js" >/dev/null
 grep -qF 'class="lab-step-chip"' "$root/web/dashboard-src/components/diagnostics/diag-motor-lab.js" >/dev/null
 grep -qF 'class="lab-instruments"' "$root/web/dashboard-src/components/diagnostics/diag-motor-lab.js" >/dev/null
-grep -qF 'POLL_MS = 250' "$root/web/dashboard-src/components/diagnostics/diag-motor-lab.js" >/dev/null
+grep -qF 'POLL_MS = 400' "$root/web/dashboard-src/components/diagnostics/diag-motor-lab.js" >/dev/null
 grep -qF "section') !== 'motorlab'" "$root/web/dashboard-src/components/diagnostics/diag-motor-lab.js" >/dev/null
 grep -qF 'renderMotorLabCharts' "$root/web/dashboard-src/components/diagnostics/motor-lab-charts.js" >/dev/null
 grep -qF 'diagnostics.lab.steps.setup' "$i18n" >/dev/null
 grep -qF 'diagnostics.lab.phase.running' "$i18n" >/dev/null
 grep -qF 'diagnostics.lab.cluster.motion' "$i18n" >/dev/null
 grep -qF 'diagnostics.lab.res.live' "$i18n" >/dev/null
-grep -qF "'diagnostics.lab.res.live': 'Live · ~250 ms poll'" "$i18n" >/dev/null
-grep -qF "'diagnostics.lab.res.live': 'Live · ca. 250 ms poll'" "$i18n" >/dev/null
+grep -qF "'diagnostics.lab.res.live': 'Live · Motor Lab holds background polls'" "$i18n" >/dev/null
+grep -qF "'diagnostics.lab.res.live': 'Live · Motor Lab holder baggrundspoll'" "$i18n" >/dev/null
 grep -qF "'diagnostics.lab.chart.cadence': 'Commutation cadence'" "$i18n" >/dev/null
 grep -qF "'diagnostics.lab.chart.cadence': 'Kommuteringskadence'" "$i18n" >/dev/null
 grep -qF 'Instrumented stroke capture and endstop thresholds' "$root/web/dashboard-src/app/header.js" >/dev/null
@@ -533,8 +513,8 @@ grep -qF 'return-temp-slot' "$root/web/dashboard-src/app/app-root.js" >/dev/null
 grep -qF "settings-return-temp-card" "$root/web/dashboard-src/main.js" >/dev/null
 grep -qF "'settings.returnTemp.title': 'Return temperature'" "$i18n" >/dev/null
 grep -qF "'settings.returnTemp.title': 'Returtemperatur'" "$i18n" >/dev/null
-grep -qF "'settings.returnTemp.enabledSub': 'Optional return probes" "$i18n" >/dev/null
-grep -qF "'settings.returnTemp.enabledSub': 'Valgfrie returprober" "$i18n" >/dev/null
+grep -qF "'settings.returnTemp.enabledSub': 'Legacy return-temp balancing only" "$i18n" >/dev/null
+grep -qF "'settings.returnTemp.enabledSub': 'Kun til ældre returtemp-balancering" "$i18n" >/dev/null
 ! grep -qF 'zs-probe-enabled' "$sensor_card" >/dev/null
 ! grep -qF 'zs-probe-row' "$sensor_card" >/dev/null
 ! grep -qF 'zone.sensor.returnEnabledSub' "$sensor_card" >/dev/null

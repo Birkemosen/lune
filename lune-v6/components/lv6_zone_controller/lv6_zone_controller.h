@@ -15,6 +15,7 @@
 #include "../lv6_valve_controller/lv6_valve_controller.h"
 #include "control_algorithms.h"
 #include "adaptive_balance.h"
+#include "flow_allocator.h"
 #include "hydraulic_policy.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -86,11 +87,13 @@ class Lv6ZoneController : public esphome::Component {
   ControllerState get_controller_state() const { return controller_state_.load(std::memory_order_acquire); }
   SystemConditionState get_system_condition_state() const { return system_condition_state_.load(std::memory_order_acquire); }
 
-  void set_zone_probe(uint8_t zone, int8_t probe);
+  /// Assign a zone return probe. Returns false if the probe is already used by
+  /// another role (caller should surface a conflict error).
+  bool set_zone_probe(uint8_t zone, int8_t probe);
   int8_t get_zone_probe(uint8_t zone) const;
-  void set_manifold_flow_probe(int8_t probe);
+  bool set_manifold_flow_probe(int8_t probe);
   int8_t get_manifold_flow_probe() const;
-  void set_manifold_return_probe(int8_t probe);
+  bool set_manifold_return_probe(int8_t probe);
   int8_t get_manifold_return_probe() const;
 
   // External temperature source (BLE sensor or HTTP EXTERNAL ingest)
@@ -193,6 +196,17 @@ class Lv6ZoneController : public esphome::Component {
   void set_simple_preheat_enabled(bool enabled);
   bool is_simple_preheat_enabled() const;
   bool is_preheat_absorbing() const { return preheat_absorb_active_.load(); }
+  /// Armed absorb window from coordinator (P5). Runtime-only; never survives reboot.
+  bool is_absorb_arm_active() const { return absorb_arm_active_(); }
+  /// 0=idle, 1=reactive, 2=armed — for history / API absorb_state.
+  uint8_t absorb_mode_code() const;
+  /// Arm an absorb window. Returns clamped TTL seconds. Reboot clears the arm.
+  float arm_absorb_window(uint32_t ttl_s, const char *request_id, const char *reason);
+  void clear_absorb_arm();
+  float get_loop_share_pct(uint8_t zone) const;
+  uint8_t get_absorb_capacity_rank(uint8_t zone) const;
+  /// Relative Kv at opening percent for Motor lab / diagnostics.
+  float get_relative_kv(uint8_t zone, float opening_pct) const;
   void set_touch_authority_active(bool active) { touch_authority_active_.store(active, std::memory_order_release); }
   bool is_touch_authority_active() const { return touch_authority_active_.load(std::memory_order_acquire); }
   float get_zone_preheat_advance(uint8_t zone) const;
@@ -261,6 +275,18 @@ class Lv6ZoneController : public esphome::Component {
   // Runtime lease state only; no authority survives reboot.
   std::atomic<bool> touch_authority_active_{false};
   uint8_t preheat_absorb_detect_cycles_ = 0;
+  // Armed absorb window (coordinator command). Expiry is millis(); 0 = inactive.
+  // Never persisted — reboot clears the arm.
+  uint32_t absorb_arm_expires_at_ms_{0};
+  char absorb_arm_request_id_[48]{};
+  char absorb_arm_reason_[64]{};
+  uint8_t absorb_arm_source_{0};  ///< 0=none, 1=armed, 2=reactive (history code)
+
+  // Flow allocator (A4) — runtime energy debt + loop shares.
+  flow_allocator::State flow_alloc_{};
+  uint32_t flow_alloc_last_ms_{0};
+  std::array<float, NUM_ZONES> loop_share_pct_{};
+  std::array<uint8_t, NUM_ZONES> absorb_capacity_rank_{};
 
   // Simple response-based preheat (runtime only; not persisted)
   std::array<float, NUM_ZONES> preheat_advance_c_;
@@ -316,6 +342,7 @@ class Lv6ZoneController : public esphome::Component {
   void update_preheat_absorb_(const DeviceConfig &cfg,
                               const std::array<float, NUM_ZONES> &temps,
                               const std::array<float, NUM_ZONES> &setpoints);
+  bool absorb_arm_active_() const;
 
   // Hydraulic balancing
   void recalculate_balance_factors_();

@@ -60,7 +60,7 @@ function seed() {
     setEntity(key.valve(zone), { value: state.valve[index] });
     setEntity(key.state(zone), { state: state.valve[index] > 5 ? 'heating' : 'idle' });
     setEntity(key.enabled(zone), { value: !!state.enabled[index], state: state.enabled[index] ? 'on' : 'off' });
-    setEntity(key.probe(zone), { state: 'Probe ' + zone });
+    setEntity(key.probe(zone), { state: 'None' });
     setEntity(key.tempSource(zone), { state: zone % 2 ? 'Local Probe' : 'BLE' });
     setEntity(key.syncTo(zone), { state: 'None' });
     setEntity(key.ble(zone), { state: 'AA:BB:CC:DD:EE:0' + zone });
@@ -85,8 +85,8 @@ function seed() {
   setEntity(gkey.mac, { state: 'D8:3B:DA:12:34:56' });
   setEntity(gkey.firmware, { state: 'v1.0.0-1' });
   setEntity(gkey.resetReason, { state: 'Software reset (esp_restart)' });
-  setEntity(gkey.manifoldFlowProbe, { state: 'Probe 7' });
-  setEntity(gkey.manifoldReturnProbe, { state: 'Probe 8' });
+  setEntity(gkey.manifoldFlowProbe, { state: 'Probe 1' });
+  setEntity(gkey.manifoldReturnProbe, { state: 'Probe 2' });
   setEntity(gkey.manifoldType, { state: 'NC (Normally Closed)' });
   setEntity(gkey.motorProfileDefault, { state: 'HmIP VdMot' });
   setEntity(gkey.closeThresholdMultiplier, { value: 1.7 });
@@ -233,8 +233,8 @@ function simulate() {
 
   setEntity(gkey.flow, { value: Number(flow.toFixed(1)) });
   setEntity(gkey.ret, { value: Number(ret.toFixed(1)) });
-  setEntity(key.probeTemp(7), { value: Number((ret - 0.4).toFixed(1)) });
-  setEntity(key.probeTemp(8), { value: Number((flow + 0.2).toFixed(1)) });
+  setEntity(key.probeTemp(1), { value: Number((flow + 0.2).toFixed(1)) });
+  setEntity(key.probeTemp(2), { value: Number((ret - 0.4).toFixed(1)) });
   sampleHistory(true);
 
   // Keep history uptime_s current so the timeline x-axis tracks wall time.
