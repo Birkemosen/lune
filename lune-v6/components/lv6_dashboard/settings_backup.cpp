@@ -620,6 +620,55 @@ size_t write_export_json(char *out, size_t out_cap, const lv6::DeviceConfig &cfg
   b.key_num("open_endstop_current_factor", m.open_endstop_current_factor);
   b.addf(",");
   b.key_int("contact_recovery_ripples", m.contact_recovery_ripples);
+  // Rev 3.3 mechanical ceilings and endstop policy. These are the values that
+  // bound travel when detection fails, so a backup that omits them is not a
+  // backup of the safety configuration.
+  b.addf(",");
+  b.key_int("hmip_vdmot_open_runtime_limit_s", m.hmip_vdmot_open_runtime_limit_s);
+  b.addf(",");
+  b.key_int("close_runtime_limit_counts", m.close_runtime_limit_counts);
+  b.addf(",");
+  b.key_int("open_runtime_limit_counts", m.open_runtime_limit_counts);
+  b.addf(",");
+  b.key_int("close_overrun_budget_ms", m.close_overrun_budget_ms);
+  b.addf(",");
+  b.key_int("open_overrun_budget_ms", m.open_overrun_budget_ms);
+  b.addf(",");
+  b.key_int("close_overrun_budget_counts", m.close_overrun_budget_counts);
+  b.addf(",");
+  b.key_int("open_overrun_budget_counts", m.open_overrun_budget_counts);
+  b.addf(",");
+  b.key_int("stroke_uncertainty_pct", m.stroke_uncertainty_pct);
+  b.addf(",");
+  b.key_int("runtime_floor_ms", m.runtime_floor_ms);
+  b.addf(",");
+  b.key_num("open_endstop_stall_fraction", m.open_endstop_stall_fraction);
+  b.addf(",");
+  b.key_num("close_trailing_step_ma", m.close_trailing_step_ma);
+  b.addf(",");
+  b.key_int("close_trailing_ref_ms", m.close_trailing_ref_ms);
+  b.addf(",");
+  b.key_int("close_trailing_sustain_ms", m.close_trailing_sustain_ms);
+  b.addf(",");
+  b.key_num("cap_close_seat_ma", m.cap_close_seat_ma);
+  b.addf(",");
+  b.key_num("cap_close_popoff_ma", m.cap_close_popoff_ma);
+  b.addf(",");
+  b.key_num("cap_stall_ma", m.cap_stall_ma);
+  b.addf(",");
+  b.key_num("cap_circuit_fault_ma", m.cap_circuit_fault_ma);
+  b.addf(",");
+  b.key_num("cap_open_stop_ma", m.cap_open_stop_ma);
+  b.addf(",");
+  b.key_int("slowdown_plateau_factor_x10", m.slowdown_plateau_factor_x10);
+  b.addf(",");
+  b.key_int("calibration_min_travel_ripples", m.calibration_min_travel_ripples);
+  b.addf(",");
+  b.key_int("rehome_policy", static_cast<uint32_t>(m.rehome_policy));
+  b.addf(",");
+  b.key_int("rehome_after_moves", m.rehome_after_moves);
+  b.addf(",");
+  b.key_int("rehome_after_hours", m.rehome_after_hours);
   b.addf("}");
 
   const lv6::ControlConfig &c = cfg.control;
@@ -816,6 +865,21 @@ ImportResult apply_import_json(const char *json, lv6::DeviceConfig &cfg, bool re
   }
   const bool allow_hydraulic = file_zone_version >= lv6::ZONE_CONFIG_VERSION;
 
+  // Same reasoning for the motor blob. v4 made the mechanical ceiling
+  // direction-split and count-based; a file written under v3 carries neither,
+  // and its hmip_vdmot_runtime_limit_s is the old 40 s default - the value at
+  // which the plunger reaches the housing exit. Restoring v3 numbers alongside
+  // v4 defaults produces a combination that was never measured, so the v4
+  // safety policy is reset to its defaults rather than half-restored.
+  uint32_t file_motor_version = lv6::MOTOR_CONFIG_VERSION;
+  {
+    Span mv{};
+    double md = 0.0;
+    if (member(config_versions, "motor", &mv) && span_to_double(mv, &md))
+      file_motor_version = static_cast<uint32_t>(md);
+  }
+  const bool motor_policy_current = file_motor_version >= lv6::MOTOR_CONFIG_VERSION;
+
   static const char *const KNOWN_ROOT[] = {"_type",    "_version", "firmware", "config_versions",
                                            "metadata", "settings", "learned"};
   static const char *const KNOWN_SETTINGS[] = {"manifold",        "motor",  "control",
@@ -849,24 +913,32 @@ ImportResult apply_import_json(const char *json, lv6::DeviceConfig &cfg, bool re
       m.default_profile = profile;
       result.applied++;
     }
-    apply_float(node, "close_current_factor", m.close_current_factor, 1.0, 5.0, result.applied);
+    // [1.05, 2.5] mirrors sanitize_motor_cfg_(). Outside it the import used to
+    // report success and then get silently reset to 1.45 on the next reload.
+    apply_float(node, "close_current_factor", m.close_current_factor, 1.05, 2.5, result.applied);
     apply_float(node, "close_slope_threshold_ma_per_s", m.close_slope_threshold_ma_per_s, 0.0, 50.0,
                 result.applied);
     apply_float(node, "close_slope_current_factor", m.close_slope_current_factor, 1.0, 5.0,
                 result.applied);
-    apply_float(node, "open_current_factor", m.open_current_factor, 1.0, 5.0, result.applied);
+    apply_float(node, "open_current_factor", m.open_current_factor, 1.05, 2.5, result.applied);
     apply_float(node, "open_slope_threshold_ma_per_s", m.open_slope_threshold_ma_per_s, 0.0, 50.0,
                 result.applied);
     apply_float(node, "open_slope_current_factor", m.open_slope_current_factor, 1.0, 5.0,
                 result.applied);
     apply_float(node, "open_ripple_limit_factor", m.open_ripple_limit_factor, 0.0, 5.0,
                 result.applied);
-    apply_float(node, "pin_engage_step_ma", m.pin_engage_step_ma, 0.0, 100.0, result.applied);
+    // Now wired into StrokeTracker (it used to be inert, so any stored value was
+    // harmless). The measured pin ramp is ~1 mA/s, so a large step disables pin
+    // detection outright.
+    apply_float(node, "pin_engage_step_ma", m.pin_engage_step_ma, 1.0, 4.0, result.applied);
     apply_int(node, "pin_engage_margin_ripples", m.pin_engage_margin_ripples, 0, 5000,
               result.applied);
     apply_int(node, "generic_profile_runtime_limit_s", m.generic_profile_runtime_limit_s, 5, 300,
               result.applied);
-    apply_int(node, "hmip_vdmot_runtime_limit_s", m.hmip_vdmot_runtime_limit_s, 5, 40,
+    // Upper bound 36, not 40: 40 s of CLOSE travel is where the plunger reaches
+    // the housing exit. A v3 backup carries the old 40 s default, and accepting it
+    // would restore the destruction boundary as "applied".
+    apply_int(node, "hmip_vdmot_runtime_limit_s", m.hmip_vdmot_runtime_limit_s, 5, 36,
               result.applied);
     apply_int(node, "relearn_after_movements", m.relearn_after_movements, 0, 1000000,
               result.applied);
@@ -886,8 +958,76 @@ ImportResult apply_import_json(const char *json, lv6::DeviceConfig &cfg, bool re
               result.applied);
     apply_float(node, "open_endstop_current_factor", m.open_endstop_current_factor, 1.0, 5.0,
                 result.applied);
-    apply_int(node, "contact_recovery_ripples", m.contact_recovery_ripples, 0, 1000,
+    // Also newly live. 0 would make every current bump read as an endstop.
+    apply_int(node, "contact_recovery_ripples", m.contact_recovery_ripples, 5, 200,
               result.applied);
+
+    // --- Rev 3.3 mechanical ceilings and endstop policy (motor blob v4) ---
+    if (motor_policy_current) {
+      apply_int(node, "hmip_vdmot_open_runtime_limit_s", m.hmip_vdmot_open_runtime_limit_s, 5, 120,
+                result.applied);
+      apply_int(node, "close_runtime_limit_counts", m.close_runtime_limit_counts, 1, 3000,
+                result.applied);
+      apply_int(node, "open_runtime_limit_counts", m.open_runtime_limit_counts, 1, 20000,
+                result.applied);
+      apply_int(node, "close_overrun_budget_ms", m.close_overrun_budget_ms, 0, 10000, result.applied);
+      apply_int(node, "open_overrun_budget_ms", m.open_overrun_budget_ms, 0, 20000, result.applied);
+      apply_int(node, "close_overrun_budget_counts", m.close_overrun_budget_counts, 0, 2000,
+                result.applied);
+      apply_int(node, "open_overrun_budget_counts", m.open_overrun_budget_counts, 0, 5000,
+                result.applied);
+      apply_int(node, "stroke_uncertainty_pct", m.stroke_uncertainty_pct, 0, 50, result.applied);
+      apply_int(node, "runtime_floor_ms", m.runtime_floor_ms, 1000, 5000, result.applied);
+      apply_float(node, "open_endstop_stall_fraction", m.open_endstop_stall_fraction, 0.10, 0.60,
+                  result.applied);
+      apply_float(node, "close_trailing_step_ma", m.close_trailing_step_ma, 0.5, 20.0,
+                  result.applied);
+      apply_int(node, "close_trailing_ref_ms", m.close_trailing_ref_ms, 250, 10000, result.applied);
+      apply_int(node, "close_trailing_sustain_ms", m.close_trailing_sustain_ms, 0, 10000,
+                result.applied);
+      apply_float(node, "cap_close_seat_ma", m.cap_close_seat_ma, 5.0, 140.0, result.applied);
+      apply_float(node, "cap_close_popoff_ma", m.cap_close_popoff_ma, 5.0, 140.0, result.applied);
+      apply_float(node, "cap_stall_ma", m.cap_stall_ma, 5.0, 140.0, result.applied);
+      apply_float(node, "cap_circuit_fault_ma", m.cap_circuit_fault_ma, 5.0, 140.0, result.applied);
+      apply_float(node, "cap_open_stop_ma", m.cap_open_stop_ma, 5.0, 140.0, result.applied);
+      apply_int(node, "slowdown_plateau_factor_x10", m.slowdown_plateau_factor_x10, 1, 200,
+                result.applied);
+      apply_int(node, "calibration_min_travel_ripples", m.calibration_min_travel_ripples, 0, 5000,
+                result.applied);
+      uint32_t policy = static_cast<uint32_t>(m.rehome_policy);
+      if (apply_int(node, "rehome_policy", policy, 0, 3, result.applied))
+        m.rehome_policy = static_cast<lv6::RehomePolicy>(policy);
+      apply_int(node, "rehome_after_moves", m.rehome_after_moves, 1, 100000, result.applied);
+      apply_int(node, "rehome_after_hours", m.rehome_after_hours, 1, 100000, result.applied);
+    } else {
+      // Older file: keep the measured v4 defaults rather than pairing v3 values
+      // with a policy the file knows nothing about.
+      const lv6::MotorConfig d{};
+      m.hmip_vdmot_open_runtime_limit_s = d.hmip_vdmot_open_runtime_limit_s;
+      m.close_runtime_limit_counts = d.close_runtime_limit_counts;
+      m.open_runtime_limit_counts = d.open_runtime_limit_counts;
+      m.close_overrun_budget_ms = d.close_overrun_budget_ms;
+      m.open_overrun_budget_ms = d.open_overrun_budget_ms;
+      m.close_overrun_budget_counts = d.close_overrun_budget_counts;
+      m.open_overrun_budget_counts = d.open_overrun_budget_counts;
+      m.stroke_uncertainty_pct = d.stroke_uncertainty_pct;
+      m.runtime_floor_ms = d.runtime_floor_ms;
+      m.open_endstop_stall_fraction = d.open_endstop_stall_fraction;
+      m.close_trailing_step_ma = d.close_trailing_step_ma;
+      m.close_trailing_ref_ms = d.close_trailing_ref_ms;
+      m.close_trailing_sustain_ms = d.close_trailing_sustain_ms;
+      m.cap_close_seat_ma = d.cap_close_seat_ma;
+      m.cap_close_popoff_ma = d.cap_close_popoff_ma;
+      m.cap_stall_ma = d.cap_stall_ma;
+      m.cap_circuit_fault_ma = d.cap_circuit_fault_ma;
+      m.cap_open_stop_ma = d.cap_open_stop_ma;
+      m.slowdown_plateau_factor_x10 = d.slowdown_plateau_factor_x10;
+      m.calibration_min_travel_ripples = d.calibration_min_travel_ripples;
+      m.rehome_policy = d.rehome_policy;
+      m.rehome_after_moves = d.rehome_after_moves;
+      m.rehome_after_hours = d.rehome_after_hours;
+      result.skipped++;
+    }
   }
 
   if (member_inner(settings, "control", &node)) {

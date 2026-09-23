@@ -2168,22 +2168,27 @@ void LV6Dashboard::handle_motor_trace_(AsyncWebServerRequest *request) {
   httpd_resp_set_hdr(req, "Content-Disposition", "attachment; filename=lune-v6-motor-trace.csv");
   httpd_resp_set_hdr(req, "Connection", "close");
 
+  // The six bemf_* columns are gone. They were only ever populated by the Rev
+  // 3.1 BEMF backend, which no board package selects any more, so on the
+  // shipping hardware every row carried a constant 65535,65535,0,65535,0,0,0 -
+  // a quarter of the row width, against a fixed line buffer. The browser parser
+  // is header-keyed, so older captures still load.
   static constexpr char HEADER[] =
       "t_ms,motion_count,current_ma,adc_current_raw,drive_on,direction_open,armed,"
-      "stroke_phase,tacho_period_us,tacho_amp_raw,"
-      "bemf_raw_a,bemf_raw_b,bemf_differential_raw,bemf_separation_us,"
-      "bemf_valid,bemf_moving,invalid_bemf_samples\n";
+      "stroke_phase,tacho_period_us,tacho_amp_raw\n";
   if (httpd_resp_send_chunk(req, HEADER, sizeof(HEADER) - 1) != ESP_OK)
     return;
 
   const uint16_t count = this->valve_controller_->get_motor_trace_sample_count();
-  char line[224];
+  // Ten columns, widest plausible row well under 128. 160 leaves headroom for
+  // a future column without reintroducing the truncation hazard.
+  char line[160];
   for (uint16_t index = 0; index < count; index++) {
     lv6::MotorTraceSample sample{};
     if (!this->valve_controller_->get_motor_trace_sample(index, &sample))
       break;
     const int length = snprintf(
-        line, sizeof(line), "%lu,%lu,%.1f,%u,%u,%u,%u,%u,%lu,%u,%u,%u,%d,%u,%u,%u,%u\n",
+        line, sizeof(line), "%lu,%lu,%.1f,%u,%u,%u,%u,%u,%lu,%u\n",
         static_cast<unsigned long>(sample.t_ms),
         static_cast<unsigned long>(sample.ripple_count),
         static_cast<float>(sample.current_ma_x10) / 10.0f,
@@ -2193,17 +2198,17 @@ void LV6Dashboard::handle_motor_trace_(AsyncWebServerRequest *request) {
         static_cast<unsigned>(sample.armed),
         static_cast<unsigned>(sample.stroke_phase),
         static_cast<unsigned long>(sample.tacho_period_us),
-        static_cast<unsigned>(sample.tacho_amp_raw),
-        static_cast<unsigned>(sample.bemf_raw_a),
-        static_cast<unsigned>(sample.bemf_raw_b),
-        static_cast<int>(sample.bemf_differential_raw),
-        static_cast<unsigned>(sample.bemf_separation_us),
-        static_cast<unsigned>(sample.bemf_valid),
-        static_cast<unsigned>(sample.bemf_moving),
-        static_cast<unsigned>(sample.invalid_bemf_samples));
-    if (length <= 0 || length >= static_cast<int>(sizeof(line)) ||
-        httpd_resp_send_chunk(req, line, static_cast<size_t>(length)) != ESP_OK)
-      return;
+        static_cast<unsigned>(sample.tacho_amp_raw));
+    // A row that does not fit is a firmware bug, and returning here used to
+    // abandon the chunked response WITHOUT its terminator - the client saw a
+    // malformed download with nothing to diagnose it by.
+    if (length <= 0 || length >= static_cast<int>(sizeof(line))) {
+      ESP_LOGE(TAG, "motor trace row %u did not fit in %u bytes; truncating export",
+               static_cast<unsigned>(index), static_cast<unsigned>(sizeof(line)));
+      break;
+    }
+    if (httpd_resp_send_chunk(req, line, static_cast<size_t>(length)) != ESP_OK)
+      return;  // client went away; the connection is already unusable
   }
   httpd_resp_send_chunk(req, nullptr, 0);
 }

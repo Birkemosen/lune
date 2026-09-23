@@ -364,6 +364,11 @@ const template = () => `
             <div class="lab-gauge"><span data-i18n="diagnostics.lab.pad10">Pad 10 ARM</span><b data-k="pad10">—</b></div>
             <div class="lab-gauge"><span data-i18n="diagnostics.lab.pad9">Pad 9 STATE</span><b data-k="pad9">—</b></div>
             <div class="lab-gauge"><span data-i18n="diagnostics.lab.pad11">Pad 11 EN</span><b data-k="pad11">—</b></div>
+            <div class="lab-gauge"><span data-i18n="diagnostics.lab.railOc">Rail OC</span><b data-k="railOc">—</b></div>
+            <div class="lab-gauge"><span data-i18n="diagnostics.lab.usbFault">USB fault</span><b data-k="usbFault">—</b></div>
+            <div class="lab-gauge"><span data-i18n="diagnostics.lab.baseline">Baseline</span><b data-k="baseline">—</b></div>
+            <div class="lab-gauge"><span data-i18n="diagnostics.lab.ceiling">Ceiling</span><b data-k="ceiling">—</b></div>
+            <div class="lab-gauge"><span data-i18n="diagnostics.lab.openTrip">Open trip</span><b data-k="openTrip">—</b></div>
             <div class="lab-gauge"><span data-i18n="diagnostics.lab.backend">Backend</span><b data-k="backend">—</b></div>
             <div class="lab-gauge"><span data-i18n="diagnostics.lab.fault">Fault</span><b data-k="fault">—</b></div>
             <div class="lab-gauge"><span data-i18n="diagnostics.lab.invalidSamples">Invalid samples</span><b data-k="invalid">—</b></div>
@@ -469,6 +474,7 @@ function emptyLive() {
     latchFaulted: false, driversEnabled: null,
     latchArmLevel: null, latchStateLevel: null, motorEnableLevel: null,
     invalidSamples: 0, tachoRejected: 0,
+    railOvercurrentLevel: null, faultUsbLevel: null,
     // Rev 3.3 endstop architecture, reported live by the firmware so the lab
     // plots the limits that actually fire rather than hardcoded constants.
     caps: null, baselineMa: null, baselineSettled: false, countsSpurious: false,
@@ -532,6 +538,11 @@ export default component({
       pad10: el.querySelector('[data-k="pad10"]'),
       pad9: el.querySelector('[data-k="pad9"]'),
       pad11: el.querySelector('[data-k="pad11"]'),
+      railOc: el.querySelector('[data-k="railOc"]'),
+      usbFault: el.querySelector('[data-k="usbFault"]'),
+      baseline: el.querySelector('[data-k="baseline"]'),
+      ceiling: el.querySelector('[data-k="ceiling"]'),
+      openTrip: el.querySelector('[data-k="openTrip"]'),
       backend: el.querySelector('[data-k="backend"]'),
       fault: el.querySelector('[data-k="fault"]'),
       invalid: el.querySelector('[data-k="invalid"]'),
@@ -739,6 +750,29 @@ export default component({
       gauges.fault.textContent = liveDiag.latchFaulted
         ? t('diagnostics.lab.faultLatch')
         : faultDisplay();
+      // On Rev 3.3 these two nets are what actually stops a bench session, and
+      // the lab showed neither. Active LOW: 0 = asserted.
+      const faultNet = (lvl) => (lvl == null || lvl < 0 ? '—' : (lvl === 0 ? 'ASSERTED' : 'ok'));
+      if (gauges.railOc) gauges.railOc.textContent = faultNet(liveDiag.railOvercurrentLevel);
+      if (gauges.usbFault) gauges.usbFault.textContent = faultNet(liveDiag.faultUsbLevel);
+      if (gauges.baseline) {
+        gauges.baseline.textContent = liveDiag.baselineMa == null
+          ? '—'
+          : `${liveDiag.baselineMa.toFixed(1)} mA${liveDiag.baselineSettled ? '' : ' (settling)'}`;
+      }
+      if (gauges.ceiling) {
+        gauges.ceiling.textContent = liveDiag.ceilingMs
+          ? `${(liveDiag.ceilingMs / 1000).toFixed(1)} s / ${liveDiag.ceilingCounts || '—'} cnt`
+          : '—';
+      }
+      // The open trip is a fraction of the measured stall span, so the editable
+      // multiplier is superseded whenever an endpoint current has been learned.
+      // Showing it stops that looking like a no-op.
+      if (gauges.openTrip) {
+        gauges.openTrip.textContent = liveDiag.learnedStallMa
+          ? `${liveDiag.learnedStallMa.toFixed(1)} mA stall`
+          : 'ratio fallback';
+      }
       gauges.invalid.textContent = String(liveDiag.invalidSamples || 0);
       gauges.tachoRejected.textContent = String(liveDiag.tachoRejected || 0);
       gauges.stroke.textContent = t('diagnostics.lab.stroke.' + phaseKey);
@@ -926,90 +960,6 @@ export default component({
       paintStage();
     }
 
-    async function armController() {
-      if (run.active) return;
-      run.active = true;
-      setPhase('arming', 'run');
-      paintStage();
-      pushLog('diagnostics.lab.log.arming', { zone });
-      try {
-        if (!getDashboardValue('manualMode')) {
-          setDashboardValue('manualMode', true);
-          await setManualMode(true);
-          pushLog('diagnostics.lab.log.manual');
-        }
-        if (run.aborted) return;
-        const payload = await fetchDiagnostics();
-        const safety = payload && payload.data && payload.data.motor_safety
-          ? payload.data.motor_safety : {};
-        liveDiag.backend = safety.backend || liveDiag.backend;
-        paintGauges();
-        if (hasFaultLatch(liveDiag.backend)) {
-          pushLog('diagnostics.lab.log.armProbeWait');
-          const probePayload = await probeArmClock({ hz: 100, durationMs: 4000 });
-          if (run.aborted) return;
-          const probe = probePayload && probePayload.data ? probePayload.data : {};
-          pushLog('diagnostics.lab.log.armProbe', {
-            hz: probe.hz || 100,
-            cycles: probe.cycles || 0,
-            armed: probe.armed ? t('common.on') : t('common.off'),
-            at: probe.armed_at_cycle || 0,
-          });
-          liveDiag.armed = !!probe.armed;
-          liveDiag.latchFaulted = !probe.armed;
-          paintGauges();
-          if (!probe.armed) {
-            showBanner(t('diagnostics.lab.latchBanner'));
-            throw new Error('latch');
-          }
-        } else {
-          pushLog('diagnostics.lab.log.enableWait');
-        }
-        await setDriversEnabled(true);
-        pushLog('diagnostics.lab.log.drivers');
-        const deadline = Date.now() + 4000;
-        let armedOk = false;
-        while (Date.now() < deadline) {
-          if (run.aborted) return;
-          const enabledPayload = await fetchDiagnostics();
-          const data = enabledPayload && enabledPayload.data ? enabledPayload.data : {};
-          const enabledSafety = data.motor_safety || {};
-          liveDiag.driversEnabled = data.drivers_enabled != null ? !!data.drivers_enabled : liveDiag.driversEnabled;
-          liveDiag.armed = !!enabledSafety.armed;
-          liveDiag.latchFaulted = !!enabledSafety.latch_faulted;
-          liveDiag.backend = enabledSafety.backend || liveDiag.backend;
-          liveDiag.latchArmLevel = enabledSafety.latch_arm_level;
-          liveDiag.latchStateLevel = enabledSafety.latch_state_level;
-          liveDiag.motorEnableLevel = enabledSafety.motor_enable_level;
-          paintGauges();
-          if (data.drivers_enabled && !enabledSafety.latch_faulted) {
-            armedOk = true;
-            break;
-          }
-          await new Promise((resolve) => setTimeout(resolve, POLL_MS));
-        }
-        if (!armedOk) {
-          const latch = hasFaultLatch(liveDiag.backend);
-          showBanner(t(latch ? 'diagnostics.lab.latchBanner' : 'diagnostics.lab.enableBanner'));
-          throw new Error(latch ? 'latch' : 'enable');
-        }
-        setPhase('armed', 'ok');
-        pushLog('diagnostics.lab.log.armed');
-        run.active = false;
-        go('seat');
-      } catch (err) {
-        run.active = false;
-        setPhase('failed', 'halt');
-        pushLog(err && err.message === 'arm_gpio'
-          ? 'diagnostics.lab.log.armGpio'
-          : (err && err.message === 'latch'
-            ? 'diagnostics.lab.log.latchFaulted'
-            : (err && err.message === 'enable'
-              ? 'diagnostics.lab.log.enableFailed'
-              : 'diagnostics.lab.log.armFailed')));
-        paintStage();
-      }
-    }
 
     async function armController() {
       if (run.active) return;
@@ -1268,6 +1218,8 @@ export default component({
             liveDiag.latchArmLevel = safety.latch_arm_level;
             liveDiag.latchStateLevel = safety.latch_state_level;
             liveDiag.motorEnableLevel = safety.motor_enable_level;
+            liveDiag.railOvercurrentLevel = safety.rail_overcurrent_level;
+            liveDiag.faultUsbLevel = safety.fault_usb_level;
             liveDiag.driversEnabled = data.drivers_enabled != null ? !!data.drivers_enabled : liveDiag.driversEnabled;
             liveDiag.backend = safety.backend || liveDiag.backend;
             liveDiag.invalidSamples = Number(safety.invalid_samples) || 0;

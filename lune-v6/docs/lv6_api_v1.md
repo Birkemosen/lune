@@ -358,11 +358,27 @@ last HTTP ingest is within the 15‑minute EXTERNAL TTL).
 
 ### `GET /api/v1/motor-trace.csv`
 
-Downloads the most recently completed motor capture in chronological order.
-Rev 3.1 rows contain current, raw BEMF terminal A/B, differential BEMF,
-measured sample separation, validity/motion flags and consecutive invalid-sample
-count. The endpoint returns `409 motor_busy` while a motor is moving so a CSV
-can never mix an active, wrapping capture with older samples.
+Downloads the motor capture ring in chronological order. Columns:
+
+```
+t_ms,motion_count,current_ma,adc_current_raw,drive_on,direction_open,armed,
+stroke_phase,tacho_period_us,tacho_amp_raw
+```
+
+`stroke_phase` is the `StrokeTracker` state (0 free travel, 1 pin contact,
+2 under load, 3 stopping) and `tacho_period_us` / `tacho_amp_raw` are the
+commutation tacho — together these carry the information the endstop decision
+is actually made from.
+
+The six `bemf_*` columns were removed: only the Rev 3.1 BEMF backend populated
+them and no board package selects it, so on shipping hardware they were a
+constant sentinel block. Captures taken before the change still parse, because
+the browser-side parser keys off the header row rather than column position.
+
+Export is permitted **while a motor is running**, so the dashboard can merge
+successive ring windows into one longer browser-side capture. (An earlier
+version of this document claimed a `409 motor_busy`; the endpoint does not
+return one.)
 
 ### `GET /api/v1/settings`
 
@@ -396,9 +412,11 @@ Returns dashboard-editable settings currently backed by config store and control
       "return_probe": 8
     },
     "motor": {
+      "_comment": "hmip_runtime_limit_s is the CLOSE ceiling. 40 s of close travel is where the HmIP-VDMOT plunger reaches the housing exit, so it is bounded below that; opening has its own limit. Both are also bounded in commutations.",
       "default_profile": "HMIP_VDMOT",
       "generic_runtime_limit_s": 45,
-      "hmip_runtime_limit_s": 40,
+      "hmip_runtime_limit_s": 34,
+      "hmip_open_runtime_limit_s": 45,
       "relearn_after_movements": 120,
       "relearn_after_hours": 720
     },
@@ -623,7 +641,7 @@ NVS version bump:
   "_version": 1,
   "firmware": "v1.2.3",
   "config_versions": {
-    "zone": 4, "motor": 2, "sensor": 1, "system": 3, "control": 1,
+    "zone": 4, "motor": 4, "sensor": 1, "system": 3, "control": 1,
     "probe": 1, "pid": 1, "manifold": 1, "balancing": 2
   },
   "metadata": {

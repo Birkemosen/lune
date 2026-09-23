@@ -882,6 +882,73 @@ number:
           id(hv6_config).update_motor(cfg.motor);
           id(hv6_valves).reload_motor_config();
 
+  # --- Rev 3.3 mechanical ceilings ------------------------------------------
+  # Counts are the ceiling that actually fires first (plunger extension follows
+  # commutations, not seconds) and at a stall the counter inflates rather than
+  # stopping, so a count ceiling errs early. An operator reading commutation
+  # counts off a Motor Lab trace can set these; they cannot if they are hidden.
+  - platform: template
+    name: "HmIP Open Runtime Limit"
+    id: hmip_open_runtime_limit_seconds
+    icon: "mdi:timer-outline"
+    entity_category: config
+    disabled_by_default: false
+    mode: box
+    unit_of_measurement: "s"
+    min_value: 10
+    max_value: 120
+    step: 1
+    optimistic: false
+    lambda: |-
+      return id(hv6_config).get_config().motor.hmip_vdmot_open_runtime_limit_s;
+    set_action:
+      - lambda: |-
+          auto cfg = id(hv6_config).get_config();
+          cfg.motor.hmip_vdmot_open_runtime_limit_s = static_cast<uint32_t>(x);
+          id(hv6_config).update_motor(cfg.motor);
+          id(hv6_valves).reload_motor_config();
+
+  - platform: template
+    name: "Close Runtime Limit (commutations)"
+    id: close_runtime_limit_counts
+    icon: "mdi:counter"
+    entity_category: config
+    disabled_by_default: false
+    mode: box
+    min_value: 200
+    # 3120 counts is the measured housing-exit point at the free-travel cadence.
+    max_value: 3000
+    step: 10
+    optimistic: false
+    lambda: |-
+      return id(hv6_config).get_config().motor.close_runtime_limit_counts;
+    set_action:
+      - lambda: |-
+          auto cfg = id(hv6_config).get_config();
+          cfg.motor.close_runtime_limit_counts = static_cast<uint32_t>(x);
+          id(hv6_config).update_motor(cfg.motor);
+          id(hv6_valves).reload_motor_config();
+
+  - platform: template
+    name: "Open Runtime Limit (commutations)"
+    id: open_runtime_limit_counts
+    icon: "mdi:counter"
+    entity_category: config
+    disabled_by_default: false
+    mode: box
+    min_value: 200
+    max_value: 20000
+    step: 10
+    optimistic: false
+    lambda: |-
+      return id(hv6_config).get_config().motor.open_runtime_limit_counts;
+    set_action:
+      - lambda: |-
+          auto cfg = id(hv6_config).get_config();
+          cfg.motor.open_runtime_limit_counts = static_cast<uint32_t>(x);
+          id(hv6_config).update_motor(cfg.motor);
+          id(hv6_valves).reload_motor_config();
+
   - platform: template
     name: "Learned Factor Min Samples"
     id: learned_factor_min_samples
@@ -944,6 +1011,42 @@ select:
       - lambda: |-
           auto cfg = id(hv6_config).get_config();
           cfg.motor.default_profile = (x == "Generic") ? lv6::MotorProfile::GENERIC : lv6::MotorProfile::HMIP_VDMOT;
+          id(hv6_config).update_motor(cfg.motor);
+          id(hv6_valves).reload_motor_config();
+
+  # Re-homing drives to the close endstop before every intermediate target so
+  # position cannot drift. EVERY_MOVE therefore also means the maximum number of
+  # close-endstop events - the exact failure that destroyed an actuator - so
+  # while the thresholds are still provisional an operator needs a way down.
+  - platform: template
+    name: "Re-home Policy"
+    id: rehome_policy
+    entity_category: config
+    optimistic: false
+    options:
+      - "Every move"
+      - "Periodic"
+      - "Opportunistic"
+      - "Never"
+    lambda: |-
+      switch (id(hv6_config).get_config().motor.rehome_policy) {
+        case lv6::RehomePolicy::PERIODIC:
+          return std::string("Periodic");
+        case lv6::RehomePolicy::OPPORTUNISTIC:
+          return std::string("Opportunistic");
+        case lv6::RehomePolicy::NEVER:
+          return std::string("Never");
+        case lv6::RehomePolicy::EVERY_MOVE:
+        default:
+          return std::string("Every move");
+      }
+    set_action:
+      - lambda: |-
+          auto cfg = id(hv6_config).get_config();
+          if (x == "Periodic") cfg.motor.rehome_policy = lv6::RehomePolicy::PERIODIC;
+          else if (x == "Opportunistic") cfg.motor.rehome_policy = lv6::RehomePolicy::OPPORTUNISTIC;
+          else if (x == "Never") cfg.motor.rehome_policy = lv6::RehomePolicy::NEVER;
+          else cfg.motor.rehome_policy = lv6::RehomePolicy::EVERY_MOVE;
           id(hv6_config).update_motor(cfg.motor);
           id(hv6_valves).reload_motor_config();
 

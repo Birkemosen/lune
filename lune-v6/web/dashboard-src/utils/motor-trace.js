@@ -62,13 +62,6 @@ export function parseMotorTraceCsv(text) {
       stroke_phase: num('stroke_phase') || 0,
       tacho_period_us: optionalNum(cols, index, 'tacho_period_us'),
       tacho_amp_raw: optionalNum(cols, index, 'tacho_amp_raw'),
-      bemf_raw_a: optionalNum(cols, index, 'bemf_raw_a'),
-      bemf_raw_b: optionalNum(cols, index, 'bemf_raw_b'),
-      bemf_differential_raw: optionalNum(cols, index, 'bemf_differential_raw'),
-      bemf_separation_us: optionalNum(cols, index, 'bemf_separation_us'),
-      bemf_valid: index.bemf_valid != null ? num('bemf_valid') === 1 : null,
-      bemf_moving: index.bemf_moving != null ? num('bemf_moving') === 1 : null,
-      invalid_bemf_samples: optionalNum(cols, index, 'invalid_bemf_samples'),
     });
   }
   return samples;
@@ -118,15 +111,7 @@ export function downsampleMotorTraceMean(samples, hz = BROWSER_TRACE_HZ) {
       stroke_phase: Math.max(...bucket.map((s) => Number(s.stroke_phase) || 0)),
       tacho_period_us: meanFinite(bucket.map((s) => s.tacho_period_us)),
       tacho_amp_raw: meanFinite(bucket.map((s) => s.tacho_amp_raw)),
-      bemf_raw_a: meanFinite(bucket.map((s) => s.bemf_raw_a)),
-      bemf_raw_b: meanFinite(bucket.map((s) => s.bemf_raw_b)),
-      bemf_differential_raw: meanFinite(bucket.map((s) => s.bemf_differential_raw)),
-      bemf_separation_us: meanFinite(bucket.map((s) => s.bemf_separation_us)),
-      bemf_valid: majorityBool(bucket.map((s) => s.bemf_valid)),
-      bemf_moving: majorityBool(bucket.map((s) => s.bemf_moving)),
-      invalid_bemf_samples: Math.max(
-        ...bucket.map((s) => Number(s.invalid_bemf_samples) || 0),
-        Number(last.invalid_bemf_samples) || 0),
+
       _bucket_n: bucket.length,
     });
     i = j;
@@ -158,11 +143,14 @@ export function mergeMotorTraceSamples(
   return start ? merged.slice(start) : merged;
 }
 
+// Must match the device header in lv6_dashboard.cpp. The six bemf_* columns
+// were dropped: only the Rev 3.1 BEMF backend populated them and no board
+// package selects it, so they were a constant sentinel block making up a
+// quarter of every row. parseMotorTraceCsv() is header-keyed, so captures
+// taken before the change still load.
 const TRACE_CSV_HEADER =
   't_ms,motion_count,current_ma,adc_current_raw,drive_on,direction_open,armed,' +
-  'stroke_phase,tacho_period_us,tacho_amp_raw,' +
-  'bemf_raw_a,bemf_raw_b,bemf_differential_raw,bemf_separation_us,' +
-  'bemf_valid,bemf_moving,invalid_bemf_samples';
+  'stroke_phase,tacho_period_us,tacho_amp_raw';
 
 function csvCell(value) {
   if (value == null || value === '') return '';
@@ -185,13 +173,6 @@ export function motorTraceToCsv(samples) {
       csvCell(sample.stroke_phase || 0),
       csvCell(sample.tacho_period_us),
       csvCell(sample.tacho_amp_raw),
-      csvCell(sample.bemf_raw_a),
-      csvCell(sample.bemf_raw_b),
-      csvCell(sample.bemf_differential_raw),
-      csvCell(sample.bemf_separation_us),
-      sample.bemf_valid == null ? '' : (sample.bemf_valid ? '1' : '0'),
-      sample.bemf_moving == null ? '' : (sample.bemf_moving ? '1' : '0'),
-      csvCell(sample.invalid_bemf_samples),
     ].join(','));
   }
   return rows.join('\n') + '\n';

@@ -322,7 +322,7 @@ static constexpr uint32_t PID_CONFIG_VERSION = 1;
 /// v4 makes the mechanical ceiling direction-asymmetric and expresses it in
 /// commutation counts as well as milliseconds, adds the absolute current-cap
 /// ladder, and drops calibration_timeout_s / presence_test_duration_ms /
-/// adaptive_runtime_margin_ms (no read sites).
+/// adaptive_runtime_margin_ms / drift_relearn_threshold_pct (no read sites).
 static constexpr uint32_t MOTOR_CONFIG_VERSION = 4;
 static constexpr uint32_t MANIFOLD_CONFIG_VERSION = 1;
 /// v2 replaces unsafe per-zone "modulating heat source" floors with an explicit
@@ -495,7 +495,6 @@ struct MotorConfig {
   uint8_t calibration_max_retries = 2;
   uint32_t relearn_after_movements = 2000;
   uint32_t relearn_after_hours = 168;
-  float drift_relearn_threshold_pct = 15.0f;
   bool auto_apply_learned_factors = true;
   uint8_t learned_factor_min_samples = 3;
   float learned_factor_max_deviation_pct = 0.12f;

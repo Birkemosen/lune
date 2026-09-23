@@ -67,7 +67,7 @@ lv6::DeviceConfig make_known_config() {
   cfg.motor.pin_engage_step_ma = 4.5f;
   cfg.motor.pin_engage_margin_ripples = 60;
   cfg.motor.generic_profile_runtime_limit_s = 55;
-  cfg.motor.hmip_vdmot_runtime_limit_s = 38;
+  cfg.motor.hmip_vdmot_runtime_limit_s = 32;
   cfg.motor.relearn_after_movements = 1500;
   cfg.motor.relearn_after_hours = 200;
   cfg.motor.learned_factor_min_samples = 7;
@@ -201,7 +201,7 @@ int main() {
   expect_near(restored.motor.close_current_factor, 1.85f, "close current factor round-trips");
   expect_near(restored.motor.open_ripple_limit_factor, 1.25f, "open ripple limit round-trips");
   expect(restored.motor.generic_profile_runtime_limit_s == 55u, "generic runtime limit round-trips");
-  expect(restored.motor.hmip_vdmot_runtime_limit_s == 38u, "HmIP runtime limit round-trips");
+  expect(restored.motor.hmip_vdmot_runtime_limit_s == 32u, "HmIP close runtime limit round-trips");
   expect(restored.motor.relearn_after_movements == 1500u, "relearn movements round-trip");
   expect(restored.motor.relearn_after_hours == 200u, "relearn hours round-trip");
   expect(!restored.motor.auto_apply_learned_factors, "auto-apply learned factors round-trips");
@@ -391,6 +391,57 @@ int main() {
            "coordinator id is never overwritten by an import");
     expect(cfg.manifold_type == lv6::ManifoldType::NC,
            "settings around the credentials block still apply");
+  }
+
+  // --- Rev 3.3 mechanical-ceiling guards -----------------------------------
+  // apply_int/apply_float CLAMP into the accepted range rather than rejecting,
+  // so the property under test is that the accepted range itself can no longer
+  // reach the destruction boundary.
+  {
+    // 40 s of CLOSE travel is where the plunger reaches the housing exit, and a
+    // v3 backup carries exactly that as its default.
+    lv6::DeviceConfig cfg = make_known_config();
+    const char *json = "{\"_type\":\"lune-v6-settings\",\"_version\":1,"
+                       "\"config_versions\":{\"motor\":4},"
+                       "\"settings\":{\"motor\":{\"hmip_vdmot_runtime_limit_s\":40}}}";
+    sb::ImportResult r =
+        sb::apply_import_json(json, cfg, false, nullptr, nullptr, nullptr, nullptr);
+    expect(r.ok, "close-ceiling import completes");
+    expect(cfg.motor.hmip_vdmot_runtime_limit_s <= 36u,
+           "a 40 s close ceiling is clamped below the housing-exit boundary");
+    expect(cfg.motor.hmip_vdmot_runtime_limit_s < 40u,
+           "the destruction boundary is unreachable through a restore");
+  }
+  {
+    // A file predating the v4 motor blob knows nothing about the direction-split
+    // ceilings, so they must stay at their measured defaults rather than being
+    // paired with v3 values.
+    lv6::DeviceConfig cfg = make_known_config();
+    const char *json = "{\"_type\":\"lune-v6-settings\",\"_version\":1,"
+                       "\"config_versions\":{\"motor\":3},"
+                       "\"settings\":{\"motor\":{\"generic_profile_runtime_limit_s\":55,"
+                       "\"close_runtime_limit_counts\":9999}}}";
+    sb::ImportResult r =
+        sb::apply_import_json(json, cfg, false, nullptr, nullptr, nullptr, nullptr);
+    expect(r.ok, "older motor blob still imports");
+    expect(cfg.motor.generic_profile_runtime_limit_s == 55u,
+           "v3 fields still restore from a v3 file");
+    const lv6::MotorConfig d{};
+    expect(cfg.motor.close_runtime_limit_counts == d.close_runtime_limit_counts,
+           "v3 file leaves the v4 ceiling policy at its measured defaults");
+  }
+  {
+    // pin_engage_step_ma used to be inert, so stored garbage was harmless. It
+    // now configures StrokeTracker directly against a ~1 mA/s ramp.
+    lv6::DeviceConfig cfg = make_known_config();
+    const char *json = "{\"_type\":\"lune-v6-settings\",\"_version\":1,"
+                       "\"config_versions\":{\"motor\":4},"
+                       "\"settings\":{\"motor\":{\"pin_engage_step_ma\":8.0}}}";
+    sb::ImportResult r =
+        sb::apply_import_json(json, cfg, false, nullptr, nullptr, nullptr, nullptr);
+    expect(r.ok, "pin-step import completes");
+    expect(cfg.motor.pin_engage_step_ma <= 4.0f,
+           "an oversized pin step is clamped so pin detection still works");
   }
 
   if (failures == 0) {
