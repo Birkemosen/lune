@@ -1679,6 +1679,7 @@ bool Lv6ValveController::start_motor_(uint8_t zone, MotorDirection dir, bool ove
   cap_counters_ = CapCounters{};
   cap_ladder_cached_ = sanitize_cap_ladder(cap_ladder_(), RAIL_COMPARATOR_TRIP_MA);
   last_fast_trip_ = 0;
+  last_endpoint_decision_ = 0;
   drive_inhibited_ = false;
   free_cadence_hz_ = 0.0f;
   last_cadence_count_ = 0;
@@ -2885,7 +2886,9 @@ void Lv6ValveController::detect_endstop_() {
     evidence.phase = stroke_.phase();
     evidence.endpoint_window = endpoint_window_reached_();
 
-    switch (classify_endpoint(evidence)) {
+    const EndpointDecision decision = classify_endpoint(evidence);
+    last_endpoint_decision_ = static_cast<uint8_t>(decision);
+    switch (decision) {
       case EndpointDecision::CONTINUE:
         return;
       case EndpointDecision::ENDPOINT:
@@ -3907,6 +3910,27 @@ MotorSafetyDiagnostics Lv6ValveController::get_motor_safety_diagnostics() const 
   result.tacho_adc_count = tacho_adc_count_.load(std::memory_order_relaxed);
   result.stroke_phase = motor_diag_stroke_phase_.load(std::memory_order_relaxed);
   result.fault = current_fault_code_.load(std::memory_order_acquire);
+
+  // --- Rev 3.3 endstop architecture ---
+  result.baseline_ma = move_baseline_ma_;
+  result.baseline_settled = move_baseline_set_;
+  result.counts_spurious = spurious_.spurious();
+  result.last_fast_trip = last_fast_trip_;
+  result.endpoint_decision = last_endpoint_decision_;
+  result.ceiling_ms = move_limit_.limit_ms;
+  result.ceiling_counts = move_limit_.limit_counts;
+  result.ceiling_source = static_cast<uint8_t>(move_limit_.source);
+  result.requires_calibration = move_limit_.requires_calibration;
+  result.position_confident =
+      current_zone_ < NUM_ZONES && position_confident_[current_zone_];
+  result.close_step_sustained_ms = close_step_.sustained_ms();
+  const CapLadder ladder = sanitize_cap_ladder(cap_ladder_(), RAIL_COMPARATOR_TRIP_MA);
+  result.cap_seat_ma = ladder.seat_ma;
+  result.cap_popoff_ma = ladder.popoff_ma;
+  result.cap_open_ma = ladder.open_stop_ma;
+  result.cap_stall_ma = ladder.stall_ma;
+  result.cap_circuit_ma = ladder.circuit_ma;
+  result.learned_stall_ma = learned_stall_ma_(current_zone_, current_dir_);
   return result;
 }
 

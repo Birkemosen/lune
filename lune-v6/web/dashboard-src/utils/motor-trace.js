@@ -315,11 +315,21 @@ export function analyzeMotorTrace(samples, preferredDirection) {
   const towardPeak = direction === 'close' ? 0.55 : 0.68;
   const ratio = mean > 0.5 ? stallPeak / mean : 0;
   const phaseMax = Math.max(...driven.map((sample) => Number(sample.stroke_phase) || 0));
-  // Open stop is gentle: require a late current rise or a STOPPING phase. A flat
-  // free-travel capture (ratio≈1) means the timed window ended before the bite.
+  const trailingStep = maxTrailingStep(body, TRAILING_WINDOW_MS);
+  // Directions are NOT mirror images, and an earlier version had them backwards.
+  //
+  // Opening runs at a flat free-travel current and steps ~5x at the stop, so a
+  // stall/running ratio is the right test and the bar can be high.
+  //
+  // Closing has no flat baseline to take a ratio against: the valve spring
+  // drives the current up continuously across the whole stroke and the endstop
+  // adds only ~10% on top. The firmware therefore stopped using a free-travel
+  // reference for closing entirely - it looks at the rise over a trailing
+  // window - and so does this. Sustain is what separates the pin-contact ramp
+  // (one isolated qualifying sample) from the endstop ramp (seconds of them).
   const endstopSeen = direction === 'open'
-    ? (ratio >= 1.12 || phaseMax >= STROKE_PHASE.STOPPING || maxStallSlope >= 0.2)
-    : (ratio >= 1.15 || phaseMax >= STROKE_PHASE.UNDER_LOAD || maxStallSlope >= 0.4);
+    ? (ratio >= 1.35 || phaseMax >= STROKE_PHASE.STOPPING)
+    : (trailingStep >= CLOSE_STEP_MA || phaseMax >= STROKE_PHASE.UNDER_LOAD);
   const suggestedFactor = round1(clamp(1 + towardPeak * Math.max(0, ratio - 1), 1.25, 2.4));
   const suggestedSlope = round1(clamp(Math.max(travelSlope * 2.2, maxStallSlope * 0.42, direction === 'open' ? 0.15 : 0.4), 0.15, 8));
   const suggestedSlopeFloor = round1(clamp(1 + 0.35 * Math.max(0, ratio - 1), 1.15, 1.8));
@@ -340,8 +350,11 @@ export function analyzeMotorTrace(samples, preferredDirection) {
     max_stall_slope_ma_s: round1(maxStallSlope),
     travel_slope_ma_s: round1(travelSlope),
     measured_factor: round1(ratio),
+    max_trailing_step_ma: round1(trailingStep),
     endstop_seen: endstopSeen,
     suggested_factor: suggestedFactor,
+    // Retained for the telemetry chart's reference line only. Slope is no
+    // longer a trip path in firmware, so these must not be offered as tunables.
     suggested_slope: suggestedSlope,
     suggested_slope_floor: suggestedSlopeFloor,
     suggested_ripple_limit: suggestedRippleLimit,
@@ -353,14 +366,41 @@ export function analyzeMotorTrace(samples, preferredDirection) {
   };
 }
 
+// Trailing-window rise, mirroring safety_limits.h TrailingStepDetector. A fixed
+// sense offset differences away, so this is comparable across boards.
+const TRAILING_WINDOW_MS = 2000;
+const CLOSE_STEP_MA = 2.5;
+
+function maxTrailingStep(samples, windowMs) {
+  let best = 0;
+  let ref = 0;
+  for (let i = 0; i < samples.length; i += 1) {
+    while (ref < i && samples[i].t_ms - samples[ref].t_ms > windowMs) ref += 1;
+    if (ref > 0 || samples[i].t_ms - samples[0].t_ms >= windowMs) {
+      const rise = samples[i].current_ma - samples[ref].current_ma;
+      if (rise > best) best = rise;
+    }
+  }
+  return best;
+}
+
 export function overlayLevels(analysis, configured) {
   if (!analysis || !analysis.ok) return [];
   const mean = analysis.mean_ma;
   const factor = Number(configured && configured.factor) || analysis.suggested_factor;
-  return [
+  const levels = [
     { id: 'mean', value: mean },
     { id: 'threshold', value: round1(mean * factor) },
     { id: 'suggested', value: round1(mean * analysis.suggested_factor) },
-    { id: 'cap', value: 100 },
   ];
+  // The absolute caps that actually fire, reported live by the firmware. This
+  // used to be a hardcoded 100 mA line - a threshold that no longer exists and
+  // sits roughly 3x above the seat cap, so the chart implied enormous headroom
+  // that was not there.
+  const caps = (configured && configured.caps) || {};
+  const seat = Number(analysis.direction === 'open' ? caps.open : caps.seat);
+  const stall = Number(caps.stall);
+  if (Number.isFinite(seat) && seat > 0) levels.push({ id: 'cap', value: round1(seat) });
+  if (Number.isFinite(stall) && stall > 0) levels.push({ id: 'stall', value: round1(stall) });
+  return levels;
 }

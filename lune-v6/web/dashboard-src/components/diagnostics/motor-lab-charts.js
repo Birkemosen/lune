@@ -17,6 +17,7 @@ const COLOR_MEAN = 'var(--series-cool)';
 const COLOR_THRESHOLD = 'var(--state-warn)';
 const COLOR_SUGGESTED = 'var(--state-ok)';
 const COLOR_CAP = 'var(--state-danger)';
+const COLOR_STALL = 'var(--text-faint)';
 const COLOR_PIN = 'var(--state-warn)';
 const COLOR_CADENCE = 'var(--series-cool)';
 const COLOR_SLOPE = 'var(--accent)';
@@ -194,14 +195,14 @@ function renderCurrentChart(host, samples, analysis, overlays, live, visible) {
   timeAxis(svg, t0, tSpan);
 
   if (visible.overlays) {
-    const overlayColor = { mean: COLOR_MEAN, threshold: COLOR_THRESHOLD, suggested: COLOR_SUGGESTED, cap: COLOR_CAP };
+    const overlayColor = { mean: COLOR_MEAN, threshold: COLOR_THRESHOLD, suggested: COLOR_SUGGESTED, cap: COLOR_CAP, stall: COLOR_STALL };
     (overlays || []).forEach((line) => {
       const y = yAt(line.value, range);
       svg.appendChild(svgEl('line', {
         x1: PAD.l, x2: PAD.l + PLOT_W, y1: y, y2: y,
         stroke: overlayColor[line.id], 'stroke-dasharray': line.id === 'mean' ? '0' : '5 4',
         'stroke-width': line.id === 'mean' ? '1.4' : '1.2', 'vector-effect': 'non-scaling-stroke',
-        opacity: line.id === 'cap' ? '.45' : '.9',
+        opacity: (line.id === 'cap' || line.id === 'stall') ? '.45' : '.9',
       }));
     });
   }

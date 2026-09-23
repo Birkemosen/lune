@@ -2026,7 +2026,7 @@ void LV6Dashboard::handle_diagnostics_(AsyncWebServerRequest *request) {
             bad_zone_tok, action);
   }
 
-  snprintf(this->json_buf_, JSON_BUF_SIZE,
+  const int written = snprintf(this->json_buf_, JSON_BUF_SIZE,
            "{\"ok\":true,\"version\":\"v1\",\"data\":{\"heap\":{\"internal_kb\":%lu,"
            "\"dma_kb\":%lu,\"largest_internal_kb\":%lu,\"min_internal_kb\":%lu,"
            "\"psram_kb\":%lu,\"largest_psram_kb\":%lu,"
@@ -2051,7 +2051,14 @@ void LV6Dashboard::handle_diagnostics_(AsyncWebServerRequest *request) {
            "\"tacho_period_us\":%lu,\"tacho_cadence_us\":%lu,"
            "\"tacho_rejected\":%lu,\"tacho_hardware_count\":%lu,"
            "\"tacho_adc_count\":%lu,\"tacho_amp_raw\":%u,"
-           "\"motion_evidence_count\":%lu,\"sample_sequence\":%lu,\"motor_runtime_ms\":%lu},"
+           "\"motion_evidence_count\":%lu,\"sample_sequence\":%lu,\"motor_runtime_ms\":%lu,"
+           "\"baseline_ma\":%.1f,\"baseline_settled\":%s,\"counts_spurious\":%s,"
+           "\"last_fast_trip\":%u,\"endpoint_decision\":%u,"
+           "\"ceiling_ms\":%lu,\"ceiling_counts\":%lu,\"ceiling_source\":%u,"
+           "\"requires_calibration\":%s,\"position_confident\":%s,"
+           "\"close_step_sustained_ms\":%lu,\"learned_stall_ma\":%.1f,"
+           "\"cap_seat_ma\":%.1f,\"cap_popoff_ma\":%.1f,\"cap_open_ma\":%.1f,"
+           "\"cap_stall_ma\":%.1f,\"cap_circuit_ma\":%.1f},"
            "\"authority\":{\"state\":\"%s\",\"reason\":\"%s\",\"lease_remaining_s\":%lu,\"generation\":%lu,\"v6_write_allowed\":%s},"
            "\"firmware\":{\"update\":{\"current\":\"%s\",\"latest\":\"%s\",\"available\":%s,"
            "\"status\":\"%s\"}},\"reset_reason\":\"%s\","
@@ -2111,6 +2118,19 @@ void LV6Dashboard::handle_diagnostics_(AsyncWebServerRequest *request) {
            static_cast<unsigned long>(motor_diag.motion_evidence_count),
            static_cast<unsigned long>(motor_diag.sample_sequence),
            static_cast<unsigned long>(motor_diag.motor_runtime_ms),
+           motor_diag.baseline_ma,
+           motor_diag.baseline_settled ? "true" : "false",
+           motor_diag.counts_spurious ? "true" : "false",
+           motor_diag.last_fast_trip, motor_diag.endpoint_decision,
+           static_cast<unsigned long>(motor_diag.ceiling_ms),
+           static_cast<unsigned long>(motor_diag.ceiling_counts),
+           motor_diag.ceiling_source,
+           motor_diag.requires_calibration ? "true" : "false",
+           motor_diag.position_confident ? "true" : "false",
+           static_cast<unsigned long>(motor_diag.close_step_sustained_ms),
+           motor_diag.learned_stall_ma,
+           motor_diag.cap_seat_ma, motor_diag.cap_popoff_ma, motor_diag.cap_open_ma,
+           motor_diag.cap_stall_ma, motor_diag.cap_circuit_ma,
            snap->authority_state,
            snap->authority_reason, static_cast<unsigned long>(snap->authority_lease_remaining_s),
            static_cast<unsigned long>(snap->authority_generation),
@@ -2118,6 +2138,15 @@ void LV6Dashboard::handle_diagnostics_(AsyncWebServerRequest *request) {
            snap->firmware_update_current, snap->firmware_update_latest,
            snap->firmware_update_available ? "true" : "false",
            snap->firmware_update_status, snap->reset_reason, extras_json);
+  // snprintf truncates silently, which would emit structurally invalid JSON and
+  // present to the dashboard as a parse error with no clue where it came from.
+  if (written < 0 || static_cast<size_t>(written) >= JSON_BUF_SIZE) {
+    ESP_LOGE(TAG, "diagnostics JSON truncated (%d bytes into %u); raise JSON_BUF_SIZE",
+             written, static_cast<unsigned>(JSON_BUF_SIZE));
+    send_text_(request, 500, "application/json",
+               "{\"error\":\"diagnostics_json_truncated\"}", false, "no-cache");
+    return;
+  }
   send_text_(request, 200, "application/json", this->json_buf_, true, "no-cache");
 }
 

@@ -134,6 +134,40 @@ struct MotorSafetyDiagnostics {
   /// start is even reachable.
   bool adc_stream_ready{false};
   FaultCode fault{FaultCode::NONE};
+
+  // --- Rev 3.3 endstop architecture -----------------------------------------
+  // Everything the new safety path computes was log-only, which left the Motor
+  // Lab plotting constants that no longer exist and reporting "OK" for moves
+  // that deliberately recorded nothing.
+  /// Free-travel reference the trip thresholds are actually computed from.
+  float baseline_ma{0.0f};
+  bool baseline_settled{false};
+  /// The commutation counter is producing brush-arc edges, not commutations, so
+  /// cadence and motion count are actively wrong for the rest of this move.
+  bool counts_spurious{false};
+  /// Which DMA cap-ladder rung last cut the drive (FastTrip).
+  uint8_t last_fast_trip{0};
+  /// Last classifier verdict (EndpointDecision). STOPPED_UNCONFIRMED stops the
+  /// drive and records no position while deliberately raising no fault, so it
+  /// is invisible unless reported here.
+  uint8_t endpoint_decision{0};
+  /// Mechanical ceiling in force for the move in flight.
+  uint32_t ceiling_ms{0};
+  uint32_t ceiling_counts{0};
+  uint8_t ceiling_source{0};
+  bool requires_calibration{false};
+  bool position_confident{false};
+  /// Absolute current-cap ladder in force, so the UI plots the limits that
+  /// actually fire instead of a hardcoded one that does not.
+  float cap_seat_ma{0.0f};
+  float cap_popoff_ma{0.0f};
+  float cap_open_ma{0.0f};
+  float cap_stall_ma{0.0f};
+  float cap_circuit_ma{0.0f};
+  /// Endpoint current learned for the active zone/direction (0 = none yet).
+  float learned_stall_ma{0.0f};
+  /// Progress of the closing trailing-step detector toward its sustain.
+  uint32_t close_step_sustained_ms{0};
 };
 
 enum class MotorBackendKind : uint8_t {
@@ -639,6 +673,9 @@ class Lv6ValveController : public esphome::Component {
   /// Set when the fast path has taken the drive off. apply_drive_output_() would
   /// otherwise re-energise the bridge on the very next tick.
   bool drive_inhibited_ = false;
+  /// Last classifier verdict, kept so diagnostics can report outcomes that
+  /// deliberately raise no fault.
+  uint8_t last_endpoint_decision_ = 0;
 
   // Per-move context for soft-approach + adaptive endstop guard (set at move start)
   bool drive_to_endstop_active_ = false;  ///< Current move targets a mechanical limit

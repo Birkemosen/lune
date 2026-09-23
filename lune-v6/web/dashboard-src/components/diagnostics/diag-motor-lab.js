@@ -22,13 +22,46 @@ const CAPTURE_TIMEOUT_MS = 45000;
 const START_GRACE_MS = 2000;
 const STEPS = ['setup', 'arm', 'seat', 'open', 'close', 'review'];
 
+// Mirrors FaultCode in lv6_types.h. The panel used to render the bare integer,
+// so MECHANICAL_OVERRUN read as "8".
+const FAULT_NAMES = [
+  'none', 'open_circuit', 'blocked', 'timeout', 'overcurrent',
+  'thermal', 'stall', 'unknown', 'mechanical_overrun',
+];
+const FAULT_MECHANICAL_OVERRUN = 8;
+// Mirrors EndpointDecision in endpoint_logic.h. STOPPED_UNCONFIRMED stops the
+// drive and records no position while deliberately raising no fault, so without
+// this it presented as a clean, successful capture.
+const DECISION_NAMES = [
+  'continue', 'endpoint', 'jam', 'overcurrent', 'disconnected',
+  'tacho_fault', 'blocked_or_unknown', 'stopped_unconfirmed',
+];
+// Mirrors FastTrip in safety_limits.h.
+const FAST_TRIP_NAMES = [
+  '', 'close_seat', 'open_stop', 'close_popoff', 'stall_cap', 'circuit_fault',
+];
+
+// "OK" is only honest when the move actually confirmed an endpoint. A
+// STOPPED_UNCONFIRMED or a fast-trip stop is a real outcome the operator needs
+// to see, and neither raises a fault code.
+function decisionText(decision) {
+  const n = Number(decision) || 0;
+  return DECISION_NAMES[n] || String(n);
+}
+
+function faultText(code) {
+  const n = Number(code) || 0;
+  if (!n) return null;
+  return FAULT_NAMES[n] ? `${FAULT_NAMES[n]} (${n})` : String(n);
+}
+
+// Slope stopped being a trip path in firmware ("// Slope remains telemetry
+// only", detect_endstop_()). Offering the four slope fields here was actively
+// harmful during bring-up: an operator whose stroke stopped early would raise
+// them, observe nothing, and then over-raise the threshold multiplier instead.
 const TUNE_FIELDS = [
   { cls: 'close-factor', key: 'close_threshold_multiplier', id: gkey.closeThresholdMultiplier, labelKey: 'settings.motor.closeThreshold', unit: 'x', step: '0.1' },
-  { cls: 'close-slope', key: 'close_slope_threshold', id: gkey.closeSlopeThreshold, labelKey: 'settings.motor.closeSlope', unit: 'mA/s', step: '0.1' },
-  { cls: 'close-floor', key: 'close_slope_current_factor', id: gkey.closeSlopeCurrentFactor, labelKey: 'settings.motor.closeSlopeFloor', unit: 'x', step: '0.05' },
   { cls: 'open-factor', key: 'open_threshold_multiplier', id: gkey.openThresholdMultiplier, labelKey: 'settings.motor.openThreshold', unit: 'x', step: '0.1' },
-  { cls: 'open-slope', key: 'open_slope_threshold', id: gkey.openSlopeThreshold, labelKey: 'settings.motor.openSlope', unit: 'mA/s', step: '0.05' },
-  { cls: 'open-floor', key: 'open_slope_current_factor', id: gkey.openSlopeCurrentFactor, labelKey: 'settings.motor.openSlopeFloor', unit: 'x', step: '0.05' },
   { cls: 'open-ripple', key: 'open_ripple_limit_factor', id: gkey.openRippleLimitFactor, labelKey: 'settings.motor.openRippleLimit', unit: 'x', step: '0.05' },
 ];
 
@@ -380,29 +413,31 @@ const template = () => `
   </div>
 `;
 
-function configuredFor(direction) {
+function configuredFor(direction, caps) {
   if (direction === 'open') {
     return {
       factor: ev(gkey.openThresholdMultiplier),
       slope: ev(gkey.openSlopeThreshold),
       floor: ev(gkey.openSlopeCurrentFactor),
       ripple: ev(gkey.openRippleLimitFactor),
+      caps,
     };
   }
   return {
     factor: ev(gkey.closeThresholdMultiplier),
     slope: ev(gkey.closeSlopeThreshold),
     floor: ev(gkey.closeSlopeCurrentFactor),
+    caps,
   };
 }
 
 function suggestionRows(analysis) {
   const cfg = configuredFor(analysis.direction);
   const prefix = analysis.direction === 'open' ? 'open' : 'close';
+  // Only the threshold multiplier still reaches a trip path; the slope rows were
+  // writing NVS values nothing reads.
   const rows = [
     { key: prefix + '_threshold_multiplier', labelKey: analysis.direction === 'open' ? 'settings.motor.openThreshold' : 'settings.motor.closeThreshold', current: cfg.factor, suggested: analysis.suggested_factor, unit: 'x' },
-    { key: prefix + '_slope_threshold', labelKey: analysis.direction === 'open' ? 'settings.motor.openSlope' : 'settings.motor.closeSlope', current: cfg.slope, suggested: analysis.suggested_slope, unit: 'mA/s' },
-    { key: prefix + '_slope_current_factor', labelKey: analysis.direction === 'open' ? 'settings.motor.openSlopeFloor' : 'settings.motor.closeSlopeFloor', current: cfg.floor, suggested: analysis.suggested_slope_floor, unit: 'x' },
   ];
   if (analysis.direction === 'open' && analysis.suggested_ripple_limit != null) {
     rows.push({ key: 'open_ripple_limit_factor', labelKey: 'settings.motor.openRippleLimit', current: cfg.ripple, suggested: analysis.suggested_ripple_limit, unit: 'x' });
@@ -434,6 +469,12 @@ function emptyLive() {
     latchFaulted: false, driversEnabled: null,
     latchArmLevel: null, latchStateLevel: null, motorEnableLevel: null,
     invalidSamples: 0, tachoRejected: 0,
+    // Rev 3.3 endstop architecture, reported live by the firmware so the lab
+    // plots the limits that actually fire rather than hardcoded constants.
+    caps: null, baselineMa: null, baselineSettled: false, countsSpurious: false,
+    lastFastTrip: 0, endpointDecision: 0, ceilingMs: 0, ceilingCounts: 0,
+    ceilingSource: 0, requiresCalibration: false, positionConfident: false,
+    learnedStallMa: null,
   };
 }
 
@@ -451,6 +492,7 @@ export default component({
     let chartVisible = { current: true, overlays: true, phase: true, cadence: true, slope: true };
     const logLines = [];
     let liveDiag = emptyLive();
+    let spuriousWarned = false;
 
     const stepChip = el.querySelector('.lab-step-chip');
     const zoneChip = el.querySelector('.lab-zone-chip');
@@ -614,10 +656,20 @@ export default component({
       const profile = es(gkey.motorProfileDefault) || 'HmIP VdMot';
       let seconds;
       if (profile === 'HmIP VdMot') {
+        // Prefer the ceiling the firmware reports for the move in flight: it is
+        // direction-split (close 34 s, open 45 s) and also bounded in
+        // commutations, so a hardcoded 40 both over-requests on close - where
+        // the request is silently clipped and the short capture reads as a UI
+        // failure - and under-requests on open.
+        const live = Number(liveDiag.ceilingMs);
+        if (Number.isFinite(live) && live > 0) {
+          return Math.min(BROWSER_TRACE_MAX_MS, Math.round(live));
+        }
         seconds = Number(ev(gkey.hmipRuntimeLimitSeconds));
-        // HmIP-VDMOT mechanical ceiling is 40 s — never request headroom past it.
-        if (!Number.isFinite(seconds) || seconds <= 0) seconds = 40;
-        seconds = Math.min(40, seconds);
+        if (!Number.isFinite(seconds) || seconds <= 0) seconds = 34;
+        // 40 s of close travel is the plunger-at-housing-exit point, never a
+        // target. Cap at the close ceiling until the firmware reports otherwise.
+        seconds = Math.min(34, seconds);
       } else {
         seconds = Number(ev(gkey.genericRuntimeLimitSeconds));
         if (!Number.isFinite(seconds) || seconds <= 0) seconds = 45;
@@ -668,9 +720,25 @@ export default component({
       if (gauges.pad9) gauges.pad9.textContent = padLevel(liveDiag.latchStateLevel);
       if (gauges.pad11) gauges.pad11.textContent = padLevel(liveDiag.motorEnableLevel);
       gauges.backend.textContent = liveDiag.backend || '—';
+      const faultDisplay = () => {
+        const f = faultText(liveDiag.faultCode);
+        if (f) {
+          // MECHANICAL_OVERRUN has two distinct causes and they mean different
+          // things: the count ceiling is genuine overtravel, the time ceiling
+          // usually means the tacho went quiet.
+          if (liveDiag.faultCode === FAULT_MECHANICAL_OVERRUN && liveDiag.ceilingCounts > 0) {
+            const viaCounts = liveDiag.motion >= liveDiag.ceilingCounts;
+            return `${f} · ${viaCounts ? 'count ceiling' : 'time ceiling'}`;
+          }
+          return f;
+        }
+        if (liveDiag.endpointDecision === 7) return 'stopped, unconfirmed';
+        if (liveDiag.lastFastTrip) return `stopped · ${FAST_TRIP_NAMES[liveDiag.lastFastTrip] || liveDiag.lastFastTrip}`;
+        return t('common.ok');
+      };
       gauges.fault.textContent = liveDiag.latchFaulted
         ? t('diagnostics.lab.faultLatch')
-        : (liveDiag.faultCode ? String(liveDiag.faultCode) : t('common.ok'));
+        : faultDisplay();
       gauges.invalid.textContent = String(liveDiag.invalidSamples || 0);
       gauges.tachoRejected.textContent = String(liveDiag.tachoRejected || 0);
       gauges.stroke.textContent = t('diagnostics.lab.stroke.' + phaseKey);
@@ -685,7 +753,9 @@ export default component({
     }
 
     function paintCharts() {
-      const overlays = view.analysis ? overlayLevels(view.analysis, configuredFor(view.analysis.direction)) : [];
+      const overlays = view.analysis
+        ? overlayLevels(view.analysis, configuredFor(view.analysis.direction, liveDiag.caps))
+        : [];
       const controls = renderMotorLabCharts(chartEl, {
         samples: view.samples,
         analysis: view.analysis,
@@ -1137,6 +1207,7 @@ export default component({
       run = { active: true, aborted: false, direction, timer: null, live: [], hiRes: [], started: Date.now(), pullAt: 0, pullInFlight: false, chartAt: 0 };
       holdHttpForLab(true);
       liveDiag = emptyLive();
+      spuriousWarned = false;
       liveDiag.direction = t('diagnostics.lab.dir.' + direction);
       setPhase('starting', 'run');
       paintStage();
@@ -1201,6 +1272,30 @@ export default component({
             liveDiag.backend = safety.backend || liveDiag.backend;
             liveDiag.invalidSamples = Number(safety.invalid_samples) || 0;
             liveDiag.tachoRejected = Number(safety.tacho_rejected) || 0;
+            if (safety.cap_seat_ma != null) {
+              liveDiag.caps = {
+                seat: Number(safety.cap_seat_ma),
+                popoff: Number(safety.cap_popoff_ma),
+                open: Number(safety.cap_open_ma),
+                stall: Number(safety.cap_stall_ma),
+                circuit: Number(safety.cap_circuit_ma),
+              };
+            }
+            if (safety.baseline_ma != null) liveDiag.baselineMa = Number(safety.baseline_ma);
+            liveDiag.baselineSettled = !!safety.baseline_settled;
+            liveDiag.countsSpurious = !!safety.counts_spurious;
+            liveDiag.lastFastTrip = Number(safety.last_fast_trip) || 0;
+            liveDiag.endpointDecision = Number(safety.endpoint_decision) || 0;
+            liveDiag.ceilingMs = Number(safety.ceiling_ms) || 0;
+            liveDiag.ceilingCounts = Number(safety.ceiling_counts) || 0;
+            liveDiag.ceilingSource = Number(safety.ceiling_source) || 0;
+            liveDiag.requiresCalibration = !!safety.requires_calibration;
+            liveDiag.positionConfident = !!safety.position_confident;
+            if (safety.learned_stall_ma != null) liveDiag.learnedStallMa = Number(safety.learned_stall_ma);
+            if (liveDiag.countsSpurious && !spuriousWarned) {
+              spuriousWarned = true;
+              pushLog('diagnostics.lab.log.spurious', {});
+            }
             if (!liveDiag.pinSeen && (liveDiag.stroke === 1 || liveDiag.stroke === 2)) {
               liveDiag.pinSeen = true;
               liveDiag.pinAt = liveDiag.motion;
@@ -1292,6 +1387,7 @@ export default component({
       run = { active: false, aborted: false, direction: null, timer: null, live: [], hiRes: [], started: 0, pullAt: 0, pullInFlight: false, chartAt: 0 };
       captures = { open: null, close: null, seat: null };
       liveDiag = emptyLive();
+      spuriousWarned = false;
       logLines.length = 0;
       logEl.innerHTML = '';
       showBanner('');
