@@ -451,7 +451,7 @@ struct MotorConfig {
   // 1.7 is ~41 mA, which the Rev 3.3 close trace only reaches at ~41.5 s -
   // past the 40 s / 3120-count housing-exit boundary. Even 1.5 (36 mA) lands at
   // 40.25 s. 1.45 (~34.8 mA) clears the 31-33.6 mA pressure plateau and trips
-  // at 39.75 s, alongside the trailing step. test_stall_model replays this.
+  // at 39.75 s; only the seat cap (39.25 s) is earlier. test_stall_model replays this.
   float close_current_factor = 1.45f;
   float close_slope_threshold_ma_per_s = 0.6f;
   float close_slope_current_factor = 1.3f;
@@ -546,7 +546,9 @@ struct MotorConfig {
   float close_trailing_step_ma = 2.5f;
   /// Sustain is the discriminator, not magnitude: the measured pin-contact ramp
   /// produces one isolated qualifying sample, the endstop ramp holds for
-  /// seconds. Validated against test/fixtures/motor-lab-z1-close.csv.
+  /// seconds. Validated against test/fixtures/motor-lab-z1-close.csv - at the
+  /// real 10 ms tick it trips at ~40.16 s, just past the 40 s wall, so on that
+  /// trace the seat cap, not this, is the first close stop.
   uint32_t close_trailing_sustain_ms = 1000;
 
   // --- Spurious-count detection ----------------------------------------------

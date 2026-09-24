@@ -60,6 +60,15 @@ references**, not merely different constants:
 | **Open** — flat baseline, clean step | `I_free`, the frozen running minimum | fraction of the stall span, `open_endstop_stall_fraction` |
 | **Close** — continuously rising baseline | **trailing window**, `I(t) − I(t−2 s)` | `TrailingStepDetector`, 2.5 mA sustained 1 s |
 
+> **Trailing step at the real tick rate.** Before build 123 the detector stored every
+> observation in 48 slots, which at the 10 ms FSM tick reaches back only 470 ms, so no
+> sample was ever 2 s old and it **never tripped on a device**. The 500 ms fixture rows
+> hid it. History is now decimated to span two windows. Replayed at 10 ms against the
+> close fixture it trips at ~40.16 s: past the pin (a 750 ms sustain already
+> false-fires there at ~20.7 s) but ~160 ms after the 40 s wall. On that trace the
+> first close stop is the seat cap (34 mA, 39.25 s), then `close_current_factor` 1.45
+> (39.75 s).
+
 ## Hardware generations
 
 The detection paths are shared; what differs is where the signals come from and whether

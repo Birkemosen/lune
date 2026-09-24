@@ -323,7 +323,17 @@ class TrailingStepDetector {
     head_ = 0;
     run_ms_ = 0;
     last_ms_ = 0;
+    last_store_ms_ = 0;
     tripped_ = false;
+  }
+
+  /// History is decimated so HISTORY slots always span two windows. It used to
+  /// store every observation: at the FSM's 10 ms tick 48 slots reach back only
+  /// 470 ms, no sample was ever `window_ms` old, and the detector could never
+  /// trip on the device. Replaying 500 ms fixture rows hid that completely.
+  static constexpr uint32_t store_interval_ms(uint32_t window_ms) {
+    const uint32_t v = window_ms / (HISTORY / 2);
+    return v > 0 ? v : 1;
   }
 
   void observe(uint32_t now_ms, float current_ma) {
@@ -348,11 +358,14 @@ class TrailingStepDetector {
       run_ms_ = 0;
     }
 
-    t_[head_] = now_ms;
-    v_[head_] = current_ma;
-    head_ = static_cast<uint8_t>((head_ + 1) % HISTORY);
-    if (n_ < HISTORY)
-      n_++;
+    if (n_ == 0 || now_ms - last_store_ms_ >= store_interval_ms(cfg_.window_ms)) {
+      last_store_ms_ = now_ms;
+      t_[head_] = now_ms;
+      v_[head_] = current_ma;
+      head_ = static_cast<uint8_t>((head_ + 1) % HISTORY);
+      if (n_ < HISTORY)
+        n_++;
+    }
   }
 
   bool tripped() const { return tripped_; }
@@ -362,7 +375,7 @@ class TrailingStepDetector {
   TrailingStepConfig cfg_;
   uint32_t t_[HISTORY]{};
   float v_[HISTORY]{};
-  uint32_t last_ms_{0}, run_ms_{0};
+  uint32_t last_ms_{0}, run_ms_{0}, last_store_ms_{0};
   uint8_t n_{0}, head_{0};
   bool tripped_{false};
 };

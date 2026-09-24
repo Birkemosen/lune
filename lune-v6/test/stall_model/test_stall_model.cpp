@@ -209,6 +209,60 @@ void test_close_step_ignores_the_decoupled_open_trace() {
   assert(first_close_step_ms(rows, 0.0f, cfg) == 0);
 }
 
+/// Replay a fixture at the firmware's real 10 ms FSM tick, interpolating
+/// between rows. The 500 ms rows alone hid a detector that could not trip.
+uint32_t first_close_step_ms_at_tick(const std::vector<Sample> &rows,
+                                     const TrailingStepConfig &cfg) {
+  TrailingStepDetector det{cfg};
+  det.reset();
+  size_t i = 0;
+  for (uint32_t now = rows.front().t_ms; now <= rows.back().t_ms; now += 10) {
+    while (i + 1 < rows.size() && rows[i + 1].t_ms <= now)
+      i++;
+    float c = rows[i].current_ma;
+    if (i + 1 < rows.size()) {
+      const float f = static_cast<float>(now - rows[i].t_ms) /
+                      static_cast<float>(rows[i + 1].t_ms - rows[i].t_ms);
+      c += (rows[i + 1].current_ma - rows[i].current_ma) * f;
+    }
+    det.observe(now, c);
+    if (det.tripped())
+      return now;
+  }
+  return 0;
+}
+
+void test_close_step_trips_at_the_real_tick_rate() {
+  // A clean 4 mA/s ramp after flat travel, observed every 10 ms.
+  TrailingStepDetector det{TrailingStepConfig{}};
+  det.reset();
+  uint32_t tripped_at = 0;
+  for (uint32_t now = 10; now <= 15000 && tripped_at == 0; now += 10) {
+    const float c = now < 10000 ? 24.0f : 24.0f + 4.0f * (now - 10000) / 1000.0f;
+    det.observe(now, c);
+    if (det.tripped())
+      tripped_at = now;
+  }
+  assert(tripped_at != 0 && "the detector must trip when fed at the FSM tick rate");
+  assert(tripped_at > 10000 && tripped_at < 12500);
+
+  // At the tick rate the fixture trips at ~40.16 s: past the pin and plateau,
+  // but ~160 ms after the 40 s wall. No sustain avoids the pin (750 ms already
+  // false-fires at ~20.7 s) and beats the wall on this trace, so the trailing
+  // step is NOT the first close stop here - the seat cap is, at 39.25 s
+  // (test_close_seat_cap_waits_for_the_seated_phase). Pinned so a retune that
+  // moves it either way is a deliberate decision.
+  const auto close = load_fixture(fixture_dir + "/motor-lab-z1-close.csv");
+  const uint32_t t = first_close_step_ms_at_tick(close, TrailingStepConfig{});
+  assert(t != 0 && t > 36000 && t < 40500 && "fixture at 10 ms ticks: after the plateau, at the wall");
+  TrailingStepConfig quicker{};
+  quicker.sustain_ms = 750;
+  assert(first_close_step_ms_at_tick(close, quicker) < 25000 && "750 ms sustain fires on the pin");
+
+  const auto open = load_fixture(fixture_dir + "/motor-lab-z1-open.csv");
+  assert(first_close_step_ms_at_tick(open, TrailingStepConfig{}) == 0);
+}
+
 void test_close_step_sustain_is_the_discriminator() {
   const auto rows = load_fixture(fixture_dir + "/motor-lab-z1-close.csv");
   TrailingStepConfig quick{};
@@ -327,6 +381,7 @@ int main(int argc, char **argv) {
   test_close_step_is_offset_immune();
   test_close_step_ignores_the_decoupled_open_trace();
   test_close_step_sustain_is_the_discriminator();
+  test_close_step_trips_at_the_real_tick_rate();
 
   test_open_breakaway_clears_the_default_stall_cap();
   test_close_factor_fires_before_the_mechanical_wall();
