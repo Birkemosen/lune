@@ -329,7 +329,8 @@ static constexpr uint32_t PID_CONFIG_VERSION = 1;
 /// v6 repeats that reset. Firmware carrying v5 still had the loader bug that
 /// kept the main blob's copy of a stale section, so it re-saved the old v4
 /// values under the v5 marker and v5 alone can no longer tell them apart.
-static constexpr uint32_t MOTOR_CONFIG_VERSION = 6;
+/// v7 adds the working-range learning policy (learn_*).
+static constexpr uint32_t MOTOR_CONFIG_VERSION = 7;
 static constexpr uint32_t MANIFOLD_CONFIG_VERSION = 1;
 /// v2 replaces unsafe per-zone "modulating heat source" floors with an explicit
 /// secondary-loop commissioning floor. Old values are safely invalidated.
@@ -403,6 +404,15 @@ enum class RehomePolicy : uint8_t {
   PERIODIC = 1,     ///< re-home after N moves or H hours, otherwise move relative
   OPPORTUNISTIC = 2,///< only when a 0% target makes the close leg free anyway
   NEVER = 3,        ///< relative moves only
+};
+
+/// What a zone's learned counts mean.
+enum class StrokeModel : uint8_t {
+  /// Legacy: 0-100 % spans seat to the OPEN endstop; 100 % drives into it.
+  FULL_STROKE = 0,
+  /// 0 % is the seat, 100 % is pin release (+ margin). Everything beyond is dead
+  /// space and the open endstop is never a target. See stroke_learning.h.
+  WORKING_RANGE = 1,
 };
 
 struct MotorConfig {
@@ -572,6 +582,25 @@ struct MotorConfig {
   RehomePolicy rehome_policy = RehomePolicy::EVERY_MOVE;
   uint32_t rehome_after_moves = 50;
   uint32_t rehome_after_hours = 168;
+
+  // --- Working-range learning (Rev 3.2/3.3) ------------------------------------
+  // Learn pin contact (100 %) and seat (0 %) on close passes that start in dead
+  // space, instead of driving into the open endstop. stroke_learning.h has the
+  // sequence. Bring-up values: the Rev 3.3 trace put pin contact ~2000 counts
+  // before the stop and showed 3417 counts of open travel without a gear stop,
+  // so a first leg past ~2100 counts should land in dead space, well short of it.
+  //
+  // The open legs are capped by what the following close pass may travel: the
+  // close bootstrap ceiling minus its budget (2600 - 150). That also bounds the
+  // learnable working range - a longer one could not be closed from 100 % inside
+  // the close ceiling either.
+  bool working_range_learning = true;
+  uint32_t learn_open_start_ripples = 2200;
+  uint32_t learn_open_step_ripples = 125;
+  uint32_t learn_open_max_ripples = 2450;
+  uint32_t learn_min_free_ripples = 100;
+  uint8_t learn_samples = 3;
+  uint8_t learn_max_spread_pct = 10;
 };
 
 struct MotorTelemetry {
@@ -597,6 +626,9 @@ struct MotorTelemetry {
   float mean_close_current_ma = 20.0f;  ///< Running mean current, CLOSE moves (close endstop threshold base)
   float current_position_pct = 0.0f;
   uint32_t pin_engage_close_ripples = 0;  // Ripples from open end at pin contact (close pass)
+  /// How learned_*_ripples/_ms are to be read. Adding it changed the blob size,
+  /// which discards telemetry learned under the old full-stroke meaning.
+  StrokeModel stroke_model = StrokeModel::FULL_STROKE;
   // Rev 3.2 stroke-phase anchors. The blob is size-validated on load, so adding
   // fields here invalidates old telemetry rather than misreading it.
   uint32_t pin_engage_open_ripples = 0;    // Ripples from closed end at pin release (open pass)

@@ -763,6 +763,55 @@ to NVS.
 
 ## Calibration (Learning)
 
+### Working-range learning (Rev 3.2 / 3.3, default)
+
+Everything on the open side of pin contact is **dead space**: the plunger has let go of
+the valve pin, so opening further changes no flow and only walks the actuator toward its
+own gear-train stop. That is the direction whose overrun strips gears, and its stop has
+never been measured on a healthy unit. So the open endstop is **never a target**. The
+range that matters, pin contact (100 %) to seat (0 %), is learned entirely on close
+passes (`stroke_learning.h`, `make test-stroke-learning`):
+
+| Step | What happens |
+|---|---|
+| Home | Close to the seat from wherever the valve is. |
+| Open leg | Open by at most `learn_open_start_ripples` (2200) counts. The open-stop cap, the endpoint classifier and the per-move ceiling stay armed; if the gear stop comes first the leg ends there and later legs are capped to it. |
+| Close pass | Must show **at least `learn_min_free_ripples` (100) counts of free travel before pin contact**. That is the proof the leg ended in dead space. No proof: the next leg opens `learn_open_step_ripples` (125) further, up to `learn_open_max_ripples` (2450). |
+| Record | Working range W = seat count − pin onset count. |
+| Repeat | Until `learn_samples` (3) consecutive samples agree within `learn_max_spread_pct` (10 %); the median wins. Two extra passes are allowed to outlive an early outlier. |
+
+**Pin onset comes from current, not from the stroke tracker.** The tracker's contact test
+also needs the rotor to slow, and on this actuator pin contact barely moves the cadence.
+The current ramp is the usable signal (~1 mA/s off the flat free-travel level), but a step
+detector on it latches late: 2 mA above baseline is ~2 s and ~115 counts after the ramp
+began. `PinOnsetDetector` therefore reports the **last count the current was still within
+0.5 mA of the baseline**. On the close fixture that is count 978 against a ramp that
+starts at ~960–1000; the step itself latches at 1094.
+
+**The close ceiling bounds the learnable range.** Every open leg is closed again under the
+close bootstrap ceiling (2600 counts / 34 s), so `sanitize_motor_cfg_()` caps the leg at
+that ceiling minus its 150-count budget. A working range longer than ~2400 counts could
+not be closed from 100 % inside the ceiling either, so this is a real limit, not a
+tuning choice. While learning runs, ceilings ignore the stroke being relearned: an open
+leg does not move the recorded position, and old stroke × 0 % would cut the next close
+pass after ~150 counts. On time the margin is thinner: 2450 counts at the measured 78 Hz
+is ~31.4 s against 34 s.
+
+Afterwards 0–100 % spans the seat to **W + `pin_engage_margin_ripples` (50)** counts open.
+100 % is a count-based open leg from the seat (it re-homes first like any open leg), so
+the per-move ceiling for it is the learned span × 1.2 + budget rather than the 45 s
+bootstrap. `flow_to_physical_pct_()` is the identity: there is no dead zone left inside
+the range to remap around. The telemetry field `stroke_model` records which meaning the
+learned counts have; settings backups only restore counts learned under the working
+range.
+
+Failure modes are named, not folded into "travel too short": homing failed, open leg
+faulted, seat not confirmed, no dead space within the open limit, pin not found (the gear
+stop was reached and still no onset), range implausibly short, not repeatable. A failed
+relearn keeps the previous profile, as before.
+
+### Legacy double pass (Rev 3.0 / 3.1, or `working_range_learning = false`)
+
 Each attempt runs **close → open → close** (VdMot order), measuring per-pass:
 - Run time (ms)
 - Ripple count (commutator zero-crossings)

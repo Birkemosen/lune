@@ -22,6 +22,7 @@
 #include "endpoint_logic.h"
 #include "safety_limits.h"
 #include "stall_model.h"
+#include "stroke_learning.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/queue.h"
@@ -492,6 +493,16 @@ class Lv6ValveController : public esphome::Component {
   /// Run a single close-to-endstop or open-to-endstop pass.
   /// Returns the run time in ms, or 0 on fault.
   uint32_t calibration_pass_(uint8_t zone, MotorDirection dir);
+  /// Working-range learning (stroke_learning.h): home, bounded open legs and
+  /// close passes that must start in dead space. Returns true when learned.
+  bool learn_working_range_(uint8_t zone, uint8_t attempt);
+  /// Open by at most `target_ripples` from wherever the valve is. The open
+  /// endpoint paths stay armed as a backstop; hitting one is reported.
+  OpenLegResult calibration_open_leg_(uint8_t zone, uint32_t target_ripples);
+  bool working_range_learning_enabled_() const {
+    return rev32_backend_ != nullptr && ripple_enabled_ && motor_cfg_.working_range_learning;
+  }
+  bool uses_working_range_(uint8_t zone) const;
 
   // Position estimation
   float estimate_travel_time_ms_(uint8_t zone, float from_pct, float to_pct);
@@ -698,6 +709,13 @@ class Lv6ValveController : public esphome::Component {
   // the current domain, so the tracker separates them on cadence recovery.
   // See endpoint_logic.h.
   StrokeTracker stroke_{};
+  /// Pin onset from current on close moves. The tracker's contact test also
+  /// needs the rotor to slow, which this actuator barely does at the pin.
+  PinOnsetDetector pin_onset_{};
+  /// Set while learn_working_range_() runs. The stroke being relearned must not
+  /// size its own ceilings: an open leg does not update the position, so the old
+  /// stroke x a 0 % position would cut the next close pass after ~150 counts.
+  bool learning_active_{false};
 
   // Pin engagement detection (calibration close passes)
   bool pin_detect_enabled_ = false;

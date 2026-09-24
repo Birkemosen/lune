@@ -634,6 +634,11 @@ MoveCeilingInputs Lv6ValveController::build_ceiling_inputs_(
   in.learned_stroke_counts = ripple_enabled_ ? learned_counts : 0;
 
   in.position_confident = zone < NUM_ZONES && position_confident_[zone];
+  if (learning_active_) {
+    in.learned_stroke_ms = 0;
+    in.learned_stroke_counts = 0;
+    in.position_confident = false;
+  }
   const float remaining = is_open ? (100.0f - pos_pct) : pos_pct;
   in.remaining_fraction = std::clamp(remaining, 0.0f, 100.0f) / 100.0f;
 
@@ -1133,7 +1138,22 @@ float Lv6ValveController::actuator_to_logical_pct_(float actuator_pct) const {
   return manifold_is_nc_() ? 100.0f - actuator_pct : actuator_pct;
 }
 
+bool Lv6ValveController::uses_working_range_(uint8_t zone) const {
+  if (zone >= NUM_ZONES)
+    return false;
+  xSemaphoreTake(telemetry_mutex_, portMAX_DELAY);
+  const bool wr = telemetry_[zone].stroke_model == StrokeModel::WORKING_RANGE &&
+                  telemetry_[zone].learned_open_ripples > 0;
+  xSemaphoreGive(telemetry_mutex_);
+  return wr;
+}
+
 float Lv6ValveController::flow_to_physical_pct_(uint8_t zone, float flow_pct) {
+  // A working-range zone already spans pin release to seat: there is no dead
+  // zone left inside 0-100 % to remap around.
+  if (uses_working_range_(zone))
+    return flow_pct;
+
   flow_pct = std::clamp(flow_pct, 0.0f, 100.0f);
 
   // 0% flow always maps to 0% physical (closed endstop)
@@ -1356,7 +1376,10 @@ void Lv6ValveController::execute_move_(uint8_t zone, float target_pct) {
   // once on systems with no minimum-flow protection. rehome_inhibited_ is the
   // zone controller's veto for the case where closing this one would still
   // breach minimum flow.
-  const bool intermediate = target_pct > 0.01f && target_pct < 99.99f;
+  // A working-range zone opens to 100 % by count from the seat, so a full-open
+  // target needs the same datum as any other open leg.
+  const bool working_range = uses_working_range_(zone);
+  const bool intermediate = target_pct > 0.01f && (target_pct < 99.99f || working_range);
   if (intermediate && !rehoming_ && rehome_required_(zone)) {
     ESP_LOGI(TAG, "Motor %d re-homing before %.1f%% (pos was %.1f%%)", zone + 1,
              target_pct, current_pct);
@@ -1389,7 +1412,11 @@ void Lv6ValveController::execute_move_(uint8_t zone, float target_pct) {
   // Drive-to-endstop mode: for full open (100%) or full close (0%) targets,
   // run the motor until endstop detection fires instead of using time/ripple
   // estimates. This guarantees the valve is physically at the mechanical limit.
-  bool drive_to_endstop = (target_pct <= 0.01f || target_pct >= 99.99f);
+  //
+  // Working range: only the seat is an endstop target. 100 % is pin release +
+  // margin by count, so the open endstop - the gear-train stop - is never driven
+  // into; its detection paths stay armed as a backstop.
+  bool drive_to_endstop = target_pct <= 0.01f || (!working_range && target_pct >= 99.99f);
 
   // Compute ripple target (if calibrated and not driving to endstop)
   uint32_t target_ripples = 0;
@@ -1664,6 +1691,12 @@ bool Lv6ValveController::start_motor_(uint8_t zone, MotorDirection dir, bool ove
   pin_detected_ = false;
   pin_detected_ripples_ = 0;
   pin_detect_sustained_ = 0;
+  {
+    PinOnsetConfig pc{};
+    pc.step_ma = motor_cfg_.pin_engage_step_ma;
+    pin_onset_.set_config(pc);
+    pin_onset_.reset();
+  }
   current_fault_code_ = FaultCode::NONE;
   fsm_state_ = MotorFsmState::BOOST;
 
@@ -2023,6 +2056,9 @@ void Lv6ValveController::process_tick_() {
                       rev32_backend_->tacho_stretch_x10(motor_run_time_ms_));
       motor_diag_stroke_phase_.store(static_cast<uint8_t>(stroke_.phase()),
                                      std::memory_order_relaxed);
+      if (current_dir_ == MotorDirection::CLOSE)
+        pin_onset_.observe(motor_run_time_ms_, count, current_filtered_ma_,
+                           baseline_valid_ ? move_baseline_ma_ : 0.0f);
 
       // --- physics cross-check on the counter --------------------------------
       // At a hard stop this actuator's counter does not plateau; brush arcing
@@ -2294,6 +2330,34 @@ void Lv6ValveController::sanitize_motor_cfg_() {
     motor_cfg_.close_trailing_ref_ms = MotorConfig{}.close_trailing_ref_ms;
   if (motor_cfg_.close_trailing_sustain_ms > 10000)
     motor_cfg_.close_trailing_sustain_ms = MotorConfig{}.close_trailing_sustain_ms;
+
+  // Working-range learning. The open legs are the only moves that head toward
+  // the gear stop on purpose, so their bound may never exceed the open count
+  // ceiling, and the first leg must at least clear the free-travel proof.
+  {
+    const MotorConfig d{};
+    auto &m = motor_cfg_;
+    // Every open leg is followed by a close pass back to the seat, and that pass
+    // runs under the close bootstrap ceiling. A leg longer than the ceiling
+    // minus its budget can never be closed again inside it.
+    uint32_t leg_ceiling = m.open_runtime_limit_counts > 0 ? m.open_runtime_limit_counts
+                                                           : d.learn_open_max_ripples;
+    if (m.close_runtime_limit_counts > m.close_overrun_budget_counts)
+      leg_ceiling = std::min(leg_ceiling, m.close_runtime_limit_counts - m.close_overrun_budget_counts);
+    if (m.learn_open_max_ripples < 500 || m.learn_open_max_ripples > leg_ceiling)
+      m.learn_open_max_ripples = std::min(d.learn_open_max_ripples, leg_ceiling);
+    if (m.learn_min_free_ripples < 20 || m.learn_min_free_ripples > 1000)
+      m.learn_min_free_ripples = d.learn_min_free_ripples;
+    if (m.learn_open_start_ripples <= m.learn_min_free_ripples ||
+        m.learn_open_start_ripples > m.learn_open_max_ripples)
+      m.learn_open_start_ripples = std::min(d.learn_open_start_ripples, m.learn_open_max_ripples);
+    if (m.learn_open_step_ripples < 50 || m.learn_open_step_ripples > 2000)
+      m.learn_open_step_ripples = d.learn_open_step_ripples;
+    if (m.learn_samples < 1 || m.learn_samples > StrokeLearner::MAX_SAMPLES)
+      m.learn_samples = d.learn_samples;
+    if (m.learn_max_spread_pct < 1 || m.learn_max_spread_pct > 50)
+      m.learn_max_spread_pct = d.learn_max_spread_pct;
+  }
   if (!(motor_cfg_.open_endstop_stall_fraction >= 0.10f &&
         motor_cfg_.open_endstop_stall_fraction <= 0.60f))
     motor_cfg_.open_endstop_stall_fraction = 0.30f;
@@ -3539,6 +3603,118 @@ uint32_t Lv6ValveController::calibration_pass_(uint8_t zone, MotorDirection dir)
   return elapsed;
 }
 
+OpenLegResult Lv6ValveController::calibration_open_leg_(uint8_t zone, uint32_t target_ripples) {
+  OpenLegResult r{};
+  pin_detect_enabled_ = false;
+  if (!start_motor_(zone, MotorDirection::OPEN))
+    return r;
+
+  // Bounded by count. Everything that protects an open move still runs in
+  // process_tick_(): the per-move ceiling, the open-stop cap and the endpoint
+  // classifier. If the gear stop comes first, one of them ends the leg.
+  while (motor_turning_) {
+    motor_loop_();
+    vTaskDelay(pdMS_TO_TICKS(FAST_TICK_MS));
+    if (motor_turning_ &&
+        live_ripple_count_.load(std::memory_order_relaxed) >= target_ripples) {
+      stop_motor_(true);
+      break;
+    }
+  }
+
+  r.ok = current_fault_code_ == FaultCode::NONE;
+  r.open_stop_hit = endpoint_confirmed_;
+  r.count = get_motion_count_();
+  r.ms = motor_run_time_ms_;
+  ESP_LOGI(TAG, "Learning zone %d: open leg %" PRIu32 "/%" PRIu32 " counts in %" PRIu32 "ms%s",
+           zone + 1, r.count, target_ripples, r.ms,
+           r.open_stop_hit ? " (open stop reached first)" : "");
+  vTaskDelay(pdMS_TO_TICKS(500));
+  return r;
+}
+
+bool Lv6ValveController::learn_working_range_(uint8_t zone, uint8_t attempt) {
+  struct LearningScope {
+    bool &flag;
+    explicit LearningScope(bool &f) : flag(f) { flag = true; }
+    ~LearningScope() { flag = false; }
+  } scope{learning_active_};
+
+  StrokeLearningConfig lc{};
+  lc.open_start_ripples = motor_cfg_.learn_open_start_ripples;
+  lc.open_step_ripples = motor_cfg_.learn_open_step_ripples;
+  lc.open_max_ripples = motor_cfg_.learn_open_max_ripples;
+  lc.min_free_ripples = motor_cfg_.learn_min_free_ripples;
+  lc.samples = motor_cfg_.learn_samples;
+  lc.max_spread_pct = motor_cfg_.learn_max_spread_pct;
+  lc.margin_ripples = motor_cfg_.pin_engage_margin_ripples;
+  StrokeLearner learner{lc};
+
+  // Home. From an unknown position the seat is the one reference that can be
+  // found safely: closing is the high-current direction, and already-at-stop
+  // catches a valve that is closed to begin with.
+  if (calibration_pass_(zone, MotorDirection::CLOSE) == 0 || !endpoint_confirmed_) {
+    ESP_LOGW(TAG, "Learning zone %d: homing to the seat failed", zone + 1);
+    return false;
+  }
+
+  while (learner.step() == LearnStep::OPEN_LEG) {
+    learner.on_open_leg(calibration_open_leg_(zone, learner.next_open_ripples()));
+    if (learner.step() != LearnStep::CLOSE_PASS)
+      break;
+
+    ClosePassResult pass{};
+    pass.ms = calibration_pass_(zone, MotorDirection::CLOSE);
+    pass.seat_confirmed = pass.ms > 0 && endpoint_confirmed_;
+    pass.total_count = get_motion_count_();
+    pass.pin_seen = pin_onset_.detected();
+    pass.pin_count = pin_onset_.onset_count();
+    ESP_LOGI(TAG, "Learning zone %d: close %" PRIu32 " counts, seat %s, pin %s at %" PRIu32
+             " (free travel %" PRIu32 ", working %" PRIu32 ")",
+             zone + 1, pass.total_count, pass.seat_confirmed ? "confirmed" : "NOT confirmed",
+             pass.pin_seen ? "onset" : "not seen", pass.pin_count, pass.pin_count,
+             pass.pin_seen && pass.total_count > pass.pin_count ? pass.total_count - pass.pin_count : 0u);
+    learner.on_close_pass(pass);
+  }
+
+  if (learner.step() != LearnStep::DONE) {
+    ESP_LOGW(TAG, "Learning zone %d attempt %d failed: %s", zone + 1, attempt + 1,
+             learn_failure_to_string(learner.failure()));
+    return false;
+  }
+
+  const LearnedStroke r = learner.result();
+  xSemaphoreTake(telemetry_mutex_, portMAX_DELAY);
+  auto &t = telemetry_[zone];
+  t.stroke_model = StrokeModel::WORKING_RANGE;
+  // 0-100 % is now seat to pin release + margin, in both directions.
+  t.learned_open_ripples = r.open_span_ripples;
+  t.learned_close_ripples = r.open_span_ripples;
+  t.learned_open_ms = r.open_ms;
+  t.learned_close_ms = r.close_ms;
+  t.contact_to_stop_close_ripples = r.working_ripples;
+  t.pin_engage_close_ripples = r.free_ripples;
+  t.deadzone_ms = 0;
+  t.deadzone_ripples = 0;
+  t.mean_open_current_ma = mean_open_currents_[zone];
+  t.mean_close_current_ma = mean_close_currents_[zone];
+  t.mean_current_ma = mean_close_currents_[zone];
+  t.drift_percent = 0.0f;
+  t.movements_since_learn = 0;
+  t.last_learn_ms = static_cast<uint32_t>(esp_timer_get_time() / 1000);
+  t.calibration_retries = attempt;
+  t.blocked = false;
+  t.current_position_pct = 0.0f;  // every sequence ends on the seat
+  xSemaphoreGive(telemetry_mutex_);
+  position_confident_[zone] = true;
+  save_telemetry_(zone);
+
+  ESP_LOGI(TAG, "Learning zone %d OK: working range %" PRIu32 " counts (spread %" PRIu32
+           "), 100%% = %" PRIu32 " counts open from the seat, ~%" PRIu32 "ms open / %" PRIu32 "ms close",
+           zone + 1, r.working_ripples, r.spread_ripples, r.open_span_ripples, r.open_ms, r.close_ms);
+  return true;
+}
+
 void Lv6ValveController::run_calibration_(uint8_t zone) {
   if (zone >= NUM_ZONES || motor_turning_ || !drivers_enabled_)
     return;
@@ -3599,134 +3775,149 @@ void Lv6ValveController::run_calibration_(uint8_t zone) {
 
   calibrating_ = true;
 
-  ESP_LOGI(TAG, "Calibrating zone %d (double-pass, ripple=%s, prio=%u->%u)",
-           zone + 1, ripple_enabled_ ? "yes" : "no",
+  ESP_LOGI(TAG, "Calibrating zone %d (%s, ripple=%s, prio=%u->%u)",
+           zone + 1, working_range_learning_enabled_() ? "working-range learning" : "double-pass",
+           ripple_enabled_ ? "yes" : "no",
            static_cast<unsigned>(original_prio), static_cast<unsigned>(boosted_prio));
 
   uint8_t max_retries = motor_cfg_.calibration_max_retries;
   uint32_t min_travel = motor_cfg_.calibration_min_travel_ms;
 
-  for (uint8_t attempt = 0; attempt <= max_retries; attempt++) {
-    // Pass 1: close fully (reach the known closed reference). Closing is the
-    // high-current direction, so its endstop is the reliable one to detect — VdMot
-    // calibrates close-first for the same reason. A valve already at the closed stop
-    // is caught fast by the already-at-stop path (zero ripples after boost + current
-    // present) so we no longer over-drive a closed valve into its stop and pop the
-    // actuator socket off the pin.
-    uint32_t close1_ms = calibration_pass_(zone, MotorDirection::CLOSE);
-    if (close1_ms == 0) {
-      ESP_LOGW(TAG, "Calibration zone %d: initial close failed", zone + 1);
-      break;
-    }
-
-    // Pass 2: open fully (measure opening travel)
-    uint32_t open_ms = calibration_pass_(zone, MotorDirection::OPEN);
-    uint32_t open_ripples = get_motion_count_();
-    if (open_ms == 0) {
-      ESP_LOGW(TAG, "Calibration zone %d: open pass failed", zone + 1);
-      break;
-    }
-
-    // Pass 3: close fully again (measure closing travel + compute deadzone)
-    uint32_t close2_ms = calibration_pass_(zone, MotorDirection::CLOSE);
-    uint32_t close2_ripples = get_motion_count_();
-    if (close2_ms == 0) {
-      ESP_LOGW(TAG, "Calibration zone %d: second close failed", zone + 1);
-      break;
-    }
-
-    ESP_LOGI(TAG, "Calibration zone %d: close1=%" PRIu32 "ms open=%" PRIu32 "ms/%" PRIu32 "r close2=%" PRIu32 "ms/%" PRIu32 "r",
-             zone + 1, close1_ms, open_ms, open_ripples, close2_ms, close2_ripples);
-
-    // Acceptance validates the SPAN, not just the duration. A dead tacho with a
-    // running motor passed the old time-only gate, and a mounting or adapter
-    // error shows up here first: the HmIP-VDMOT's whole linear stroke is only
-    // 4.3 mm, so a 1 mm adapter mismatch is ~23% of it.
-    //
-    // This mirrors eQ-3's own VALVE_STATE fault set, which is entirely about
-    // whether the adaptation produced a plausible travel span:
-    //   TOO_TIGHT            resistance already present at the start
-    //   ADJUSTMENT_TOO_BIG   the endpoint was never properly detected
-    //   ADJUSTMENT_TOO_SMALL the endpoint was detected too early
-    const uint32_t min_ripples =
-        ripple_enabled_ ? motor_cfg_.calibration_min_travel_ripples : 0u;
-    const bool ripples_ok =
-        !ripple_enabled_ ||
-        (open_ripples >= min_ripples && close2_ripples >= min_ripples &&
-         open_ripples > close2_ripples &&
-         (open_ripples - close2_ripples) <= open_ripples / 2);
-    // close1 and close2 are the same mechanical move; if they disagree, one of
-    // them did not reach the seat. close1_ms was measured and thrown away before.
-    const bool repeatable =
-        close1_ms == 0 ||
-        (close1_ms > close2_ms ? close1_ms - close2_ms : close2_ms - close1_ms) <=
-            close2_ms / 5;
-    if (!ripples_ok)
-      ESP_LOGW(TAG,
-               "Motor %d calibration span implausible: open=%" PRIu32
-               " close=%" PRIu32 " ripples (min %" PRIu32 ")",
-               zone + 1, open_ripples, close2_ripples, min_ripples);
-    if (!repeatable)
-      ESP_LOGW(TAG,
-               "Motor %d close passes disagree: %" PRIu32 "ms vs %" PRIu32
-               "ms - one of them did not reach the seat",
-               zone + 1, close1_ms, close2_ms);
-
-    if (open_ms >= min_travel && close2_ms >= min_travel && ripples_ok &&
-        repeatable) {
-      int32_t deadzone = static_cast<int32_t>(close2_ms) - static_cast<int32_t>(open_ms);
-
-      xSemaphoreTake(telemetry_mutex_, portMAX_DELAY);
-      auto &t = telemetry_[zone];
-      t.learned_open_ms = open_ms;
-      t.learned_close_ms = close2_ms;
-      t.learned_open_ripples = open_ripples;
-      t.learned_close_ripples = close2_ripples;
-      t.deadzone_ms = deadzone;
-      // Count-based deadzone alongside the time-based one: VdMot's
-      // deadzone_count = opening_count - closing_count. Counts survive a change
-      // in drive speed; milliseconds do not.
-      t.deadzone_ripples = (open_ripples > close2_ripples)
-                               ? (open_ripples - close2_ripples)
-                               : 0;
-      t.mean_open_current_ma = mean_open_currents_[zone];
-      t.mean_close_current_ma = mean_close_currents_[zone];
-      t.mean_current_ma = mean_close_currents_[zone];  // valve closed after pass 3
-      t.drift_percent = 0.0f;
-      t.movements_since_learn = 0;
-      t.last_learn_ms = static_cast<uint32_t>(esp_timer_get_time() / 1000);
-      t.calibration_retries = attempt;
-      t.blocked = false;
-      t.current_position_pct = 0.0f;  // valve is closed after double-pass
-      // Store pin engagement from close2 pass (if detected)
-      if (pin_detected_ && pin_detected_ripples_ > 0) {
-        t.pin_engage_close_ripples = pin_detected_ripples_;
-        // Seating depth: commutations from pin contact to the hard stop. This is
-        // the tightest endpoint window closing has, because it does not depend
-        // on where the move started — unlike the full stroke.
-        if (close2_ripples > pin_detected_ripples_)
-          t.contact_to_stop_close_ripples = close2_ripples - pin_detected_ripples_;
+  if (working_range_learning_enabled_()) {
+    for (uint8_t attempt = 0; attempt <= max_retries; attempt++) {
+      if (learn_working_range_(zone, attempt)) {
+        calibrating_ = false;
+        if (boosted_prio != original_prio)
+          vTaskPrioritySet(nullptr, original_prio);
+        return;
       }
-      xSemaphoreGive(telemetry_mutex_);
-
-      save_telemetry_(zone);
-      ESP_LOGI(TAG, "Calibration zone %d OK: open=%" PRIu32 "ms/%" PRIu32 "r close=%" PRIu32 "ms/%" PRIu32 "r dz=%" PRId32 "ms",
-               zone + 1, open_ms, open_ripples, close2_ms, close2_ripples, deadzone);
-      if (pin_detected_ && pin_detected_ripples_ > 0) {
-        ESP_LOGI(TAG, "  Pin engagement at ripple %" PRIu32 " from open end (margin=%" PRIu16 " ensures full disengage at 100%% flow)",
-                 pin_detected_ripples_, motor_cfg_.pin_engage_margin_ripples);
-      } else {
-        ESP_LOGW(TAG, "  Pin engagement not detected (step threshold %.1f mA)",
-                 motor_cfg_.pin_engage_step_ma);
+      if (!drivers_enabled_)
+        break;
+    }
+  } else {
+    for (uint8_t attempt = 0; attempt <= max_retries; attempt++) {
+      // Pass 1: close fully (reach the known closed reference). Closing is the
+      // high-current direction, so its endstop is the reliable one to detect — VdMot
+      // calibrates close-first for the same reason. A valve already at the closed stop
+      // is caught fast by the already-at-stop path (zero ripples after boost + current
+      // present) so we no longer over-drive a closed valve into its stop and pop the
+      // actuator socket off the pin.
+      uint32_t close1_ms = calibration_pass_(zone, MotorDirection::CLOSE);
+      if (close1_ms == 0) {
+        ESP_LOGW(TAG, "Calibration zone %d: initial close failed", zone + 1);
+        break;
       }
-      calibrating_ = false;
-      if (boosted_prio != original_prio)
-        vTaskPrioritySet(nullptr, original_prio);
-      return;
+
+      // Pass 2: open fully (measure opening travel)
+      uint32_t open_ms = calibration_pass_(zone, MotorDirection::OPEN);
+      uint32_t open_ripples = get_motion_count_();
+      if (open_ms == 0) {
+        ESP_LOGW(TAG, "Calibration zone %d: open pass failed", zone + 1);
+        break;
+      }
+
+      // Pass 3: close fully again (measure closing travel + compute deadzone)
+      uint32_t close2_ms = calibration_pass_(zone, MotorDirection::CLOSE);
+      uint32_t close2_ripples = get_motion_count_();
+      if (close2_ms == 0) {
+        ESP_LOGW(TAG, "Calibration zone %d: second close failed", zone + 1);
+        break;
+      }
+
+      ESP_LOGI(TAG, "Calibration zone %d: close1=%" PRIu32 "ms open=%" PRIu32 "ms/%" PRIu32 "r close2=%" PRIu32 "ms/%" PRIu32 "r",
+               zone + 1, close1_ms, open_ms, open_ripples, close2_ms, close2_ripples);
+
+      // Acceptance validates the SPAN, not just the duration. A dead tacho with a
+      // running motor passed the old time-only gate, and a mounting or adapter
+      // error shows up here first: the HmIP-VDMOT's whole linear stroke is only
+      // 4.3 mm, so a 1 mm adapter mismatch is ~23% of it.
+      //
+      // This mirrors eQ-3's own VALVE_STATE fault set, which is entirely about
+      // whether the adaptation produced a plausible travel span:
+      //   TOO_TIGHT            resistance already present at the start
+      //   ADJUSTMENT_TOO_BIG   the endpoint was never properly detected
+      //   ADJUSTMENT_TOO_SMALL the endpoint was detected too early
+      const uint32_t min_ripples =
+          ripple_enabled_ ? motor_cfg_.calibration_min_travel_ripples : 0u;
+      const bool ripples_ok =
+          !ripple_enabled_ ||
+          (open_ripples >= min_ripples && close2_ripples >= min_ripples &&
+           open_ripples > close2_ripples &&
+           (open_ripples - close2_ripples) <= open_ripples / 2);
+      // close1 and close2 are the same mechanical move; if they disagree, one of
+      // them did not reach the seat. close1_ms was measured and thrown away before.
+      const bool repeatable =
+          close1_ms == 0 ||
+          (close1_ms > close2_ms ? close1_ms - close2_ms : close2_ms - close1_ms) <=
+              close2_ms / 5;
+      if (!ripples_ok)
+        ESP_LOGW(TAG,
+                 "Motor %d calibration span implausible: open=%" PRIu32
+                 " close=%" PRIu32 " ripples (min %" PRIu32 ")",
+                 zone + 1, open_ripples, close2_ripples, min_ripples);
+      if (!repeatable)
+        ESP_LOGW(TAG,
+                 "Motor %d close passes disagree: %" PRIu32 "ms vs %" PRIu32
+                 "ms - one of them did not reach the seat",
+                 zone + 1, close1_ms, close2_ms);
+
+      if (open_ms >= min_travel && close2_ms >= min_travel && ripples_ok &&
+          repeatable) {
+        int32_t deadzone = static_cast<int32_t>(close2_ms) - static_cast<int32_t>(open_ms);
+
+        xSemaphoreTake(telemetry_mutex_, portMAX_DELAY);
+        auto &t = telemetry_[zone];
+        t.learned_open_ms = open_ms;
+        t.learned_close_ms = close2_ms;
+        t.learned_open_ripples = open_ripples;
+        t.learned_close_ripples = close2_ripples;
+        t.deadzone_ms = deadzone;
+        // Count-based deadzone alongside the time-based one: VdMot's
+        // deadzone_count = opening_count - closing_count. Counts survive a change
+        // in drive speed; milliseconds do not.
+        t.deadzone_ripples = (open_ripples > close2_ripples)
+                                 ? (open_ripples - close2_ripples)
+                                 : 0;
+        t.mean_open_current_ma = mean_open_currents_[zone];
+        t.mean_close_current_ma = mean_close_currents_[zone];
+        t.mean_current_ma = mean_close_currents_[zone];  // valve closed after pass 3
+        t.drift_percent = 0.0f;
+        t.movements_since_learn = 0;
+        t.last_learn_ms = static_cast<uint32_t>(esp_timer_get_time() / 1000);
+        t.calibration_retries = attempt;
+        t.blocked = false;
+        t.current_position_pct = 0.0f;  // valve is closed after double-pass
+        // Store pin engagement from close2 pass (if detected)
+        if (pin_detected_ && pin_detected_ripples_ > 0) {
+          t.pin_engage_close_ripples = pin_detected_ripples_;
+          // Seating depth: commutations from pin contact to the hard stop. This is
+          // the tightest endpoint window closing has, because it does not depend
+          // on where the move started — unlike the full stroke.
+          if (close2_ripples > pin_detected_ripples_)
+            t.contact_to_stop_close_ripples = close2_ripples - pin_detected_ripples_;
+        }
+        xSemaphoreGive(telemetry_mutex_);
+
+        save_telemetry_(zone);
+        ESP_LOGI(TAG, "Calibration zone %d OK: open=%" PRIu32 "ms/%" PRIu32 "r close=%" PRIu32 "ms/%" PRIu32 "r dz=%" PRId32 "ms",
+                 zone + 1, open_ms, open_ripples, close2_ms, close2_ripples, deadzone);
+        if (pin_detected_ && pin_detected_ripples_ > 0) {
+          ESP_LOGI(TAG, "  Pin engagement at ripple %" PRIu32 " from open end (margin=%" PRIu16 " ensures full disengage at 100%% flow)",
+                   pin_detected_ripples_, motor_cfg_.pin_engage_margin_ripples);
+        } else {
+          ESP_LOGW(TAG, "  Pin engagement not detected (step threshold %.1f mA)",
+                   motor_cfg_.pin_engage_step_ma);
+        }
+        calibrating_ = false;
+        if (boosted_prio != original_prio)
+          vTaskPrioritySet(nullptr, original_prio);
+        return;
+      }
+
+      ESP_LOGW(TAG, "Calibration zone %d attempt %d: travel too short (open=%" PRIu32 "ms close=%" PRIu32 "ms min=%" PRIu32 "ms)",
+               zone + 1, attempt + 1, open_ms, close2_ms, min_travel);
     }
 
-    ESP_LOGW(TAG, "Calibration zone %d attempt %d: travel too short (open=%" PRIu32 "ms close=%" PRIu32 "ms min=%" PRIu32 "ms)",
-             zone + 1, attempt + 1, open_ms, close2_ms, min_travel);
   }
 
   bool has_previous_learning = false;

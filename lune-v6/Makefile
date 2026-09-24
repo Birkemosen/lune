@@ -37,7 +37,7 @@ DESIGN_DIR ?= $(firstword $(wildcard \
 LDS_DIR ?= $(DESIGN_DIR)
 LDS_CONSUMER ?= $(ROOT_ABS)
 
-.PHONY: help check ensure-secrets-link config compile build build-verify bump-build prepare-release release release-deploy release-firmware release-bundle upload deploy ota logs discover monitor erase erase-nvs clean dashboard dashboard-tooling dashboard-build dashboard-reference-traces dashboard-watch design-tokens design-verify test test-dashboard test-ripple test-rev31-logic test-rev32-logic test-safety-limits test-stall-model test-balance test-authority-lease test-preheat-policy test-preheat-absorb test-probe-mapping test-thermal-model test-flow-allocator test-hydraulic-policy test-hydraulic-diagnostics test-commissioning-schema test-request-guard test-ble-time-beacon test-settings-backup
+.PHONY: help check ensure-secrets-link config compile build build-verify bump-build prepare-release release release-deploy release-firmware release-bundle upload deploy ota logs discover monitor erase erase-nvs clean dashboard dashboard-tooling dashboard-build dashboard-reference-traces dashboard-watch design-tokens design-verify test test-dashboard test-ripple test-rev31-logic test-rev32-logic test-safety-limits test-stall-model test-stroke-learning test-balance test-authority-lease test-preheat-policy test-preheat-absorb test-probe-mapping test-thermal-model test-flow-allocator test-hydraulic-policy test-hydraulic-diagnostics test-commissioning-schema test-request-guard test-ble-time-beacon test-settings-backup
 
 help:
 	@echo "Lune V6 ESPHome tasks"
@@ -197,6 +197,8 @@ REV32_LOGIC_OUT  = /tmp/test_hv6_rev32_logic
 SAFETY_LIMITS_SRCS = test/safety_limits/test_safety_limits.cpp
 SAFETY_LIMITS_OUT  = /tmp/test_hv6_safety_limits
 STALL_MODEL_SRCS = test/stall_model/test_stall_model.cpp
+STROKE_LEARNING_SRCS = test/stroke_learning/test_stroke_learning.cpp
+STROKE_LEARNING_OUT  = /tmp/test_hv6_stroke_learning
 STALL_MODEL_OUT  = /tmp/test_hv6_stall_model
 
 test-ripple:
@@ -217,6 +219,10 @@ test-safety-limits:
 
 # Replays the two measured Motor Lab fixtures in test/fixtures/, so the trace
 # analysis behind the endstop thresholds is reproducible in CI.
+test-stroke-learning:
+	$(RIPPLE_CXX) $(RIPPLE_CXXFLAGS) $(STROKE_LEARNING_SRCS) -o $(STROKE_LEARNING_OUT)
+	$(STROKE_LEARNING_OUT) test/fixtures
+
 test-stall-model:
 	$(RIPPLE_CXX) $(RIPPLE_CXXFLAGS) -I components/lv6_config_store $(STALL_MODEL_SRCS) -o $(STALL_MODEL_OUT)
 	$(STALL_MODEL_OUT) test/fixtures
@@ -300,7 +306,7 @@ test-settings-backup:
 test-dashboard:
 	sh test/dashboard/test_dashboard.sh
 
-test: design-verify test-dashboard test-ripple test-rev31-logic test-rev32-logic test-safety-limits test-stall-model test-balance test-authority-lease test-preheat-policy test-preheat-absorb test-probe-mapping test-thermal-model test-flow-allocator test-hydraulic-policy test-hydraulic-diagnostics test-commissioning-schema test-request-guard test-ble-time-beacon test-settings-backup
+test: design-verify test-dashboard test-ripple test-rev31-logic test-rev32-logic test-safety-limits test-stall-model test-stroke-learning test-balance test-authority-lease test-preheat-policy test-preheat-absorb test-probe-mapping test-thermal-model test-flow-allocator test-hydraulic-policy test-hydraulic-diagnostics test-commissioning-schema test-request-guard test-ble-time-beacon test-settings-backup
 
 ota: check
 	$(MAKE) build

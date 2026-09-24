@@ -140,8 +140,12 @@ lv6::DeviceConfig make_known_config() {
 
 void fill_learned(lv6::MotorTelemetry learned[lv6::NUM_ZONES]) {
   for (uint8_t i = 0; i < lv6::NUM_ZONES; i++) {
+    learned[i].stroke_model = lv6::StrokeModel::WORKING_RANGE;
     learned[i].learned_open_ripples = 1000u + 37u * i;
     learned[i].learned_close_ripples = 900u + 41u * i;
+    learned[i].contact_to_stop_close_ripples = 950u + 29u * i;
+    learned[i].learned_open_ms = 12000u + 100u * i;
+    learned[i].learned_close_ms = 13000u + 100u * i;
     learned[i].learned_open_current_factor = 1.6f + 0.05f * i;
     learned[i].learned_close_current_factor = 1.7f + 0.05f * i;
   }
@@ -276,12 +280,38 @@ int main() {
     learned_ok = learned_ok &&
                  restored_learned[i].learned_open_ripples == learned[i].learned_open_ripples &&
                  restored_learned[i].learned_close_ripples == learned[i].learned_close_ripples &&
+                 restored_learned[i].stroke_model == lv6::StrokeModel::WORKING_RANGE &&
+                 restored_learned[i].contact_to_stop_close_ripples ==
+                     learned[i].contact_to_stop_close_ripples &&
+                 restored_learned[i].learned_open_ms == learned[i].learned_open_ms &&
+                 restored_learned[i].learned_close_ms == learned[i].learned_close_ms &&
                  std::fabs(restored_learned[i].learned_open_current_factor -
                            learned[i].learned_open_current_factor) < 1e-3f &&
                  std::fabs(restored_learned[i].learned_close_current_factor -
                            learned[i].learned_close_current_factor) < 1e-3f;
   }
   expect(learned_ok, "learned ripples and current factors round-trip");
+
+  // Full-stroke counts must never come back as a working range: 100 % would
+  // then open far past pin release, toward the gear stop.
+  {
+    lv6::MotorTelemetry legacy[lv6::NUM_ZONES]{};
+    fill_learned(legacy);
+    for (auto &t : legacy)
+      t.stroke_model = lv6::StrokeModel::FULL_STROKE;
+    char legacy_buf[16384];
+    sb::write_export_json(legacy_buf, sizeof(legacy_buf), source, "v1.2.3", legacy, true,
+                          probe_addrs, opt);
+    lv6::DeviceConfig cfg{};
+    lv6::MotorTelemetry into[lv6::NUM_ZONES]{};
+    bool applied = false;
+    sb::apply_import_json(legacy_buf, cfg, true, into, &applied, nullptr, nullptr);
+    bool untouched = true;
+    for (const auto &t : into)
+      untouched = untouched && t.learned_open_ripples == 0 && t.learned_close_ripples == 0 &&
+                  t.stroke_model == lv6::StrokeModel::FULL_STROKE;
+    expect(untouched, "full-stroke learned counts are not restored");
+  }
 
   expect(probes_applied, "1-Wire probe addresses are restored");
   bool addrs_ok = true;

@@ -785,6 +785,14 @@ size_t write_export_json(char *out, size_t out_cap, const lv6::DeviceConfig &cfg
       b.addf("%s{", i ? "," : "");
       b.key_int("index", i + 1);
       b.addf(",");
+      b.key_int("stroke_model", static_cast<uint32_t>(t.stroke_model));
+      b.addf(",");
+      b.key_int("working_ripples", t.contact_to_stop_close_ripples);
+      b.addf(",");
+      b.key_int("open_ms", t.learned_open_ms);
+      b.addf(",");
+      b.key_int("close_ms", t.learned_close_ms);
+      b.addf(",");
       b.key_int("open_ripples", t.learned_open_ripples);
       b.addf(",");
       b.key_int("close_ripples", t.learned_close_ripples);
@@ -1211,8 +1219,29 @@ ImportResult apply_import_json(const char *json, lv6::DeviceConfig &cfg, bool re
         if (l.b == nullptr)
           continue;
         lv6::MotorTelemetry &t = learned_out[i];
-        any |= apply_int(l, "open_ripples", t.learned_open_ripples, 0, 1000000, result.applied);
-        any |= apply_int(l, "close_ripples", t.learned_close_ripples, 0, 1000000, result.applied);
+        // Counts mean different things under the two stroke models: a
+        // full-stroke open count restored as a working range would open far
+        // past pin release, toward the gear stop. Files without the field
+        // predate the working range and are full-stroke by definition.
+        uint32_t model = static_cast<uint32_t>(lv6::StrokeModel::FULL_STROKE);
+        {
+          Span mv{};
+          double md = 0.0;
+          if (member(l, "stroke_model", &mv) && span_to_double(mv, &md))
+            model = static_cast<uint32_t>(md);
+        }
+        if (model != static_cast<uint32_t>(lv6::StrokeModel::WORKING_RANGE)) {
+          result.skipped++;
+        } else {
+          t.stroke_model = lv6::StrokeModel::WORKING_RANGE;
+          any |= apply_int(l, "working_ripples", t.contact_to_stop_close_ripples, 0, 1000000,
+                           result.applied);
+          any |= apply_int(l, "open_ms", t.learned_open_ms, 0, 600000, result.applied);
+          any |= apply_int(l, "close_ms", t.learned_close_ms, 0, 600000, result.applied);
+          any |= apply_int(l, "open_ripples", t.learned_open_ripples, 0, 1000000, result.applied);
+          any |= apply_int(l, "close_ripples", t.learned_close_ripples, 0, 1000000,
+                           result.applied);
+        }
         any |= apply_float(l, "open_factor", t.learned_open_current_factor, 0.0, 5.0,
                            result.applied);
         any |= apply_float(l, "close_factor", t.learned_close_current_factor, 0.0, 5.0,
