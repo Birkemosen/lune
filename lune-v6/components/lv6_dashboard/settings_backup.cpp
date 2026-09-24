@@ -660,6 +660,20 @@ size_t write_export_json(char *out, size_t out_cap, const lv6::DeviceConfig &cfg
   b.addf(",");
   b.key_num("cap_open_stop_ma", m.cap_open_stop_ma);
   b.addf(",");
+  b.key_bool("working_range_learning", m.working_range_learning);
+  b.addf(",");
+  b.key_int("learn_open_start_ripples", m.learn_open_start_ripples);
+  b.addf(",");
+  b.key_int("learn_open_step_ripples", m.learn_open_step_ripples);
+  b.addf(",");
+  b.key_int("learn_open_max_ripples", m.learn_open_max_ripples);
+  b.addf(",");
+  b.key_int("learn_min_free_ripples", m.learn_min_free_ripples);
+  b.addf(",");
+  b.key_int("learn_samples", m.learn_samples);
+  b.addf(",");
+  b.key_int("learn_max_spread_pct", m.learn_max_spread_pct);
+  b.addf(",");
   b.key_int("slowdown_plateau_factor_x10", m.slowdown_plateau_factor_x10);
   b.addf(",");
   b.key_int("calibration_min_travel_ripples", m.calibration_min_travel_ripples);
@@ -998,6 +1012,13 @@ ImportResult apply_import_json(const char *json, lv6::DeviceConfig &cfg, bool re
       apply_float(node, "cap_stall_ma", m.cap_stall_ma, 5.0, 140.0, result.applied);
       apply_float(node, "cap_circuit_fault_ma", m.cap_circuit_fault_ma, 5.0, 140.0, result.applied);
       apply_float(node, "cap_open_stop_ma", m.cap_open_stop_ma, 5.0, 140.0, result.applied);
+      apply_bool(node, "working_range_learning", m.working_range_learning, result.applied);
+      apply_int(node, "learn_open_start_ripples", m.learn_open_start_ripples, 100, 5000, result.applied);
+      apply_int(node, "learn_open_step_ripples", m.learn_open_step_ripples, 50, 2000, result.applied);
+      apply_int(node, "learn_open_max_ripples", m.learn_open_max_ripples, 500, 5000, result.applied);
+      apply_int(node, "learn_min_free_ripples", m.learn_min_free_ripples, 20, 1000, result.applied);
+      apply_int(node, "learn_samples", m.learn_samples, 1, 8, result.applied);
+      apply_int(node, "learn_max_spread_pct", m.learn_max_spread_pct, 1, 50, result.applied);
       apply_int(node, "slowdown_plateau_factor_x10", m.slowdown_plateau_factor_x10, 1, 200,
                 result.applied);
       apply_int(node, "calibration_min_travel_ripples", m.calibration_min_travel_ripples, 0, 5000,
@@ -1032,6 +1053,13 @@ ImportResult apply_import_json(const char *json, lv6::DeviceConfig &cfg, bool re
       m.cap_stall_ma = d.cap_stall_ma;
       m.cap_circuit_fault_ma = d.cap_circuit_fault_ma;
       m.cap_open_stop_ma = d.cap_open_stop_ma;
+      m.working_range_learning = d.working_range_learning;
+      m.learn_open_start_ripples = d.learn_open_start_ripples;
+      m.learn_open_step_ripples = d.learn_open_step_ripples;
+      m.learn_open_max_ripples = d.learn_open_max_ripples;
+      m.learn_min_free_ripples = d.learn_min_free_ripples;
+      m.learn_samples = d.learn_samples;
+      m.learn_max_spread_pct = d.learn_max_spread_pct;
       m.slowdown_plateau_factor_x10 = d.slowdown_plateau_factor_x10;
       m.calibration_min_travel_ripples = d.calibration_min_travel_ripples;
       m.rehome_policy = d.rehome_policy;

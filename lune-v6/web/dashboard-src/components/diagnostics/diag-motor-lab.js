@@ -78,8 +78,17 @@ const TUNE_FIELDS = [
   { group: 'caps', cls: 'cap-open-stop-ma', key: 'cap_open_stop_ma', id: gkey.capOpenStopMa, labelKey: 'settings.motor.capOpenStopMa', unit: 'mA', step: '0.5' },
   { group: 'caps', cls: 'cap-stall-ma', key: 'cap_stall_ma', id: gkey.capStallMa, labelKey: 'settings.motor.capStallMa', unit: 'mA', step: '1' },
   { group: 'caps', cls: 'cap-circuit-fault-ma', key: 'cap_circuit_fault_ma', id: gkey.capCircuitFaultMa, labelKey: 'settings.motor.capCircuitFaultMa', unit: 'mA', step: '1' },
+  { group: 'learn', cls: 'working-range-learning', key: 'working_range_learning', id: gkey.workingRangeLearning, labelKey: 'settings.motor.workingRangeLearning', unit: '0/1', step: '1' },
+  { group: 'learn', cls: 'learn-open-start-ripples', key: 'learn_open_start_ripples', id: gkey.learnOpenStartRipples, labelKey: 'settings.motor.learnOpenStartRipples', unit: 'counts', step: '25' },
+  { group: 'learn', cls: 'learn-open-step-ripples', key: 'learn_open_step_ripples', id: gkey.learnOpenStepRipples, labelKey: 'settings.motor.learnOpenStepRipples', unit: 'counts', step: '25' },
+  { group: 'learn', cls: 'learn-open-max-ripples', key: 'learn_open_max_ripples', id: gkey.learnOpenMaxRipples, labelKey: 'settings.motor.learnOpenMaxRipples', unit: 'counts', step: '25' },
+  { group: 'learn', cls: 'learn-min-free-ripples', key: 'learn_min_free_ripples', id: gkey.learnMinFreeRipples, labelKey: 'settings.motor.learnMinFreeRipples', unit: 'counts', step: '10' },
+  { group: 'learn', cls: 'learn-samples', key: 'learn_samples', id: gkey.learnSamples, labelKey: 'settings.motor.learnSamples', unit: 'count', step: '1' },
+  { group: 'learn', cls: 'learn-max-spread-pct', key: 'learn_max_spread_pct', id: gkey.learnMaxSpreadPct, labelKey: 'settings.motor.learnMaxSpreadPct', unit: '%', step: '1' },
+  { group: 'learn', cls: 'pin-engage-step-ma', key: 'pin_engage_step_ma', id: gkey.pinEngageStepMa, labelKey: 'settings.motor.pinEngageStepMa', unit: 'mA', step: '0.1' },
+  { group: 'learn', cls: 'pin-engage-margin-ripples', key: 'pin_engage_margin_ripples', id: gkey.pinEngageMarginRipples, labelKey: 'settings.motor.pinEngageMarginRipples', unit: 'counts', step: '5' },
 ];
-const TUNE_GROUPS = ['close', 'open', 'caps'];
+const TUNE_GROUPS = ['close', 'open', 'caps', 'learn'];
 
 const css = `
 .diag-motor-lab { color: var(--text-main); }

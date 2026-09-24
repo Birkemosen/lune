@@ -2357,6 +2357,12 @@ void Lv6ValveController::sanitize_motor_cfg_() {
       m.learn_samples = d.learn_samples;
     if (m.learn_max_spread_pct < 1 || m.learn_max_spread_pct > 50)
       m.learn_max_spread_pct = d.learn_max_spread_pct;
+    // The pin detector's step: below ~1 mA it fires on noise, above ~4 mA it
+    // latches so late the onset back-projection has to reach too far.
+    if (!(m.pin_engage_step_ma >= 1.0f && m.pin_engage_step_ma <= 4.0f))
+      m.pin_engage_step_ma = d.pin_engage_step_ma;
+    if (m.pin_engage_margin_ripples > 500)
+      m.pin_engage_margin_ripples = d.pin_engage_margin_ripples;
   }
   if (!(motor_cfg_.open_endstop_stall_fraction >= 0.10f &&
         motor_cfg_.open_endstop_stall_fraction <= 0.60f))

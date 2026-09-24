@@ -1500,6 +1500,16 @@ void LV6Dashboard::handle_state_(AsyncWebServerRequest *request) {
       {"cap_stall_ma", snap->motor.cap_stall_ma, 1},
       {"cap_open_stop_ma", snap->motor.cap_open_stop_ma, 1},
       {"cap_circuit_fault_ma", snap->motor.cap_circuit_fault_ma, 1},
+      // Working-range learning (stroke_learning.h) and the pin detector it uses.
+      {"working_range_learning", snap->motor.working_range_learning ? 1.0f : 0.0f, 0},
+      {"learn_open_start_ripples", static_cast<float>(snap->motor.learn_open_start_ripples), 0},
+      {"learn_open_step_ripples", static_cast<float>(snap->motor.learn_open_step_ripples), 0},
+      {"learn_open_max_ripples", static_cast<float>(snap->motor.learn_open_max_ripples), 0},
+      {"learn_min_free_ripples", static_cast<float>(snap->motor.learn_min_free_ripples), 0},
+      {"learn_samples", static_cast<float>(snap->motor.learn_samples), 0},
+      {"learn_max_spread_pct", static_cast<float>(snap->motor.learn_max_spread_pct), 0},
+      {"pin_engage_step_ma", snap->motor.pin_engage_step_ma, 2},
+      {"pin_engage_margin_ripples", static_cast<float>(snap->motor.pin_engage_margin_ripples), 0},
   };
   for (const auto &n : rev3x_motor) {
     format_float_token(num_buf, sizeof(num_buf), n.value, n.decimals);
@@ -3465,6 +3475,26 @@ void LV6Dashboard::dispatch_set_(const DashboardAction &act) {
       motor_cfg.cap_open_stop_ma = num_val;
     else if (strcmp(key, "cap_circuit_fault_ma") == 0)
       motor_cfg.cap_circuit_fault_ma = num_val;
+    // Working-range learning. sanitize_motor_cfg_() bounds the legs by the close
+    // ceiling, so a value too large for it is pulled back rather than obeyed.
+    else if (strcmp(key, "working_range_learning") == 0)
+      motor_cfg.working_range_learning = num_val >= 0.5f;
+    else if (strcmp(key, "learn_open_start_ripples") == 0)
+      motor_cfg.learn_open_start_ripples = static_cast<uint32_t>(std::max(0.0f, num_val));
+    else if (strcmp(key, "learn_open_step_ripples") == 0)
+      motor_cfg.learn_open_step_ripples = static_cast<uint32_t>(std::max(0.0f, num_val));
+    else if (strcmp(key, "learn_open_max_ripples") == 0)
+      motor_cfg.learn_open_max_ripples = static_cast<uint32_t>(std::max(0.0f, num_val));
+    else if (strcmp(key, "learn_min_free_ripples") == 0)
+      motor_cfg.learn_min_free_ripples = static_cast<uint32_t>(std::max(0.0f, num_val));
+    else if (strcmp(key, "learn_samples") == 0)
+      motor_cfg.learn_samples = static_cast<uint8_t>(std::max(0.0f, std::min(255.0f, num_val)));
+    else if (strcmp(key, "learn_max_spread_pct") == 0)
+      motor_cfg.learn_max_spread_pct = static_cast<uint8_t>(std::max(0.0f, std::min(255.0f, num_val)));
+    else if (strcmp(key, "pin_engage_step_ma") == 0)
+      motor_cfg.pin_engage_step_ma = num_val;
+    else if (strcmp(key, "pin_engage_margin_ripples") == 0)
+      motor_cfg.pin_engage_margin_ripples = static_cast<uint16_t>(std::max(0.0f, std::min(5000.0f, num_val)));
     else
       dirty = false;
 

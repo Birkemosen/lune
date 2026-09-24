@@ -58,6 +58,9 @@ lv6::DeviceConfig make_known_config() {
 
   cfg.motor.default_profile = lv6::MotorProfile::GENERIC;
   cfg.motor.close_current_factor = 1.85f;
+  cfg.motor.working_range_learning = false;
+  cfg.motor.learn_open_start_ripples = 2050;
+  cfg.motor.learn_samples = 4;
   cfg.motor.close_slope_threshold_ma_per_s = 0.8f;
   cfg.motor.close_slope_current_factor = 1.4f;
   cfg.motor.open_current_factor = 1.55f;
@@ -203,6 +206,9 @@ int main() {
   expect(restored.motor.default_profile == lv6::MotorProfile::GENERIC,
          "default motor profile round-trips");
   expect_near(restored.motor.close_current_factor, 1.85f, "close current factor round-trips");
+  expect(!restored.motor.working_range_learning && restored.motor.learn_open_start_ripples == 2050 &&
+             restored.motor.learn_samples == 4,
+         "working-range learning policy round-trips");
   expect_near(restored.motor.open_ripple_limit_factor, 1.25f, "open ripple limit round-trips");
   expect(restored.motor.generic_profile_runtime_limit_s == 55u, "generic runtime limit round-trips");
   expect(restored.motor.hmip_vdmot_runtime_limit_s == 32u, "HmIP close runtime limit round-trips");

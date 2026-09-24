@@ -88,6 +88,15 @@ const FIELDS = [
   { cls: 'cap-stall-ma', key: 'cap_stall_ma', id: gkey.capStallMa, labelKey: 'settings.motor.capStallMa', unit: 'mA' },
   { cls: 'cap-open-stop-ma', key: 'cap_open_stop_ma', id: gkey.capOpenStopMa, labelKey: 'settings.motor.capOpenStopMa', unit: 'mA' },
   { cls: 'cap-circuit-fault-ma', key: 'cap_circuit_fault_ma', id: gkey.capCircuitFaultMa, labelKey: 'settings.motor.capCircuitFaultMa', unit: 'mA' },
+  { cls: 'working-range-learning', key: 'working_range_learning', id: gkey.workingRangeLearning, labelKey: 'settings.motor.workingRangeLearning', unit: '0/1' },
+  { cls: 'learn-open-start-ripples', key: 'learn_open_start_ripples', id: gkey.learnOpenStartRipples, labelKey: 'settings.motor.learnOpenStartRipples', unit: 'counts' },
+  { cls: 'learn-open-step-ripples', key: 'learn_open_step_ripples', id: gkey.learnOpenStepRipples, labelKey: 'settings.motor.learnOpenStepRipples', unit: 'counts' },
+  { cls: 'learn-open-max-ripples', key: 'learn_open_max_ripples', id: gkey.learnOpenMaxRipples, labelKey: 'settings.motor.learnOpenMaxRipples', unit: 'counts' },
+  { cls: 'learn-min-free-ripples', key: 'learn_min_free_ripples', id: gkey.learnMinFreeRipples, labelKey: 'settings.motor.learnMinFreeRipples', unit: 'counts' },
+  { cls: 'learn-samples', key: 'learn_samples', id: gkey.learnSamples, labelKey: 'settings.motor.learnSamples', unit: 'count' },
+  { cls: 'learn-max-spread-pct', key: 'learn_max_spread_pct', id: gkey.learnMaxSpreadPct, labelKey: 'settings.motor.learnMaxSpreadPct', unit: '%' },
+  { cls: 'pin-engage-step-ma', key: 'pin_engage_step_ma', id: gkey.pinEngageStepMa, labelKey: 'settings.motor.pinEngageStepMa', unit: 'mA' },
+  { cls: 'pin-engage-margin-ripples', key: 'pin_engage_margin_ripples', id: gkey.pinEngageMarginRipples, labelKey: 'settings.motor.pinEngageMarginRipples', unit: 'counts' },
   { cls: 'relearn-movements', key: 'relearn_after_movements', id: gkey.relearnAfterMovements, labelKey: 'settings.motor.relearnMovements', unit: 'count' },
   { cls: 'relearn-hours', key: 'relearn_after_hours', id: gkey.relearnAfterHours, labelKey: 'settings.motor.relearnHours', unit: 'h' },
   { cls: 'learn-min-samples', key: 'learned_factor_min_samples', id: gkey.learnedFactorMinSamples, labelKey: 'settings.motor.learnMinSamples', unit: 'count' },
@@ -144,6 +153,14 @@ function isIntegerSetting(keyName) {
     keyName === 'close_trailing_sustain_ms' ||
     keyName === 'close_trailing_ref_ms' ||
     keyName === 'cap_close_seat_frames' ||
+    keyName === 'working_range_learning' ||
+    keyName === 'learn_open_start_ripples' ||
+    keyName === 'learn_open_step_ripples' ||
+    keyName === 'learn_open_max_ripples' ||
+    keyName === 'learn_min_free_ripples' ||
+    keyName === 'learn_samples' ||
+    keyName === 'learn_max_spread_pct' ||
+    keyName === 'pin_engage_margin_ripples' ||
     keyName === 'generic_runtime_limit_seconds' ||
     keyName === 'relearn_after_movements' ||
     keyName === 'relearn_after_hours';

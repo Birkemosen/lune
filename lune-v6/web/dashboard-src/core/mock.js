@@ -107,6 +107,15 @@ function seed() {
   setEntity(gkey.capStallMa, { value: 65.0 });
   setEntity(gkey.capOpenStopMa, { value: 40.0 });
   setEntity(gkey.capCircuitFaultMa, { value: 85.0 });
+  setEntity(gkey.workingRangeLearning, { value: 1 });
+  setEntity(gkey.learnOpenStartRipples, { value: 2200 });
+  setEntity(gkey.learnOpenStepRipples, { value: 125 });
+  setEntity(gkey.learnOpenMaxRipples, { value: 2450 });
+  setEntity(gkey.learnMinFreeRipples, { value: 100 });
+  setEntity(gkey.learnSamples, { value: 3 });
+  setEntity(gkey.learnMaxSpreadPct, { value: 10 });
+  setEntity(gkey.pinEngageStepMa, { value: 2.0 });
+  setEntity(gkey.pinEngageMarginRipples, { value: 50 });
   setEntity(gkey.genericRuntimeLimitSeconds, { value: 45 });
   setEntity(gkey.hmipRuntimeLimitSeconds, { value: 34 });
   setEntity(gkey.relearnAfterMovements, { value: 2000 });
@@ -566,6 +575,15 @@ export function handleMockPost(body) {
     cap_stall_ma: gkey.capStallMa,
     cap_open_stop_ma: gkey.capOpenStopMa,
     cap_circuit_fault_ma: gkey.capCircuitFaultMa,
+    working_range_learning: gkey.workingRangeLearning,
+    learn_open_start_ripples: gkey.learnOpenStartRipples,
+    learn_open_step_ripples: gkey.learnOpenStepRipples,
+    learn_open_max_ripples: gkey.learnOpenMaxRipples,
+    learn_min_free_ripples: gkey.learnMinFreeRipples,
+    learn_samples: gkey.learnSamples,
+    learn_max_spread_pct: gkey.learnMaxSpreadPct,
+    pin_engage_step_ma: gkey.pinEngageStepMa,
+    pin_engage_margin_ripples: gkey.pinEngageMarginRipples,
     generic_runtime_limit_seconds: gkey.genericRuntimeLimitSeconds,
     hmip_runtime_limit_seconds: gkey.hmipRuntimeLimitSeconds,
     relearn_after_movements: gkey.relearnAfterMovements,
