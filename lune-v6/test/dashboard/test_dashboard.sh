@@ -543,4 +543,29 @@ const series = motorTraceSeries(samples);
 if (!series.cadence.length || series.cadence[10].rate_hz < 500 || !series.slopes.length) process.exit(1);
 EOF
 
+# Motor Lab threshold explorer: the embedded reference traces must match the CI
+# fixtures, and the JS replay must agree with the firmware-side C++ tests
+# (test/stall_model) on when each close path fires.
+sh "$root/scripts/gen-reference-traces.sh" | cmp -s - "$root/web/dashboard-src/utils/motor-reference-traces.js" || {
+  echo 'FAIL motor-reference-traces.js is stale; run make dashboard-reference-traces' >&2
+  exit 1
+}
+node --input-type=module <<EOF
+import { explainEndstop } from 'file://$root/web/dashboard-src/utils/endstop-explorer.js';
+import { REFERENCE_CLOSE, REFERENCE_OPEN, referenceSamples } from 'file://$root/web/dashboard-src/utils/motor-reference-traces.js';
+const fail = (msg) => { console.error('FAIL explorer: ' + msg); process.exit(1); };
+const close = explainEndstop(referenceSamples(REFERENCE_CLOSE), 'close');
+const tr = close.trips;
+if (!tr.seat || tr.seat.t_ms < 38500 || tr.seat.t_ms > 39500) fail('seat cap should fire ~39 s');
+if (!tr.threshold || tr.threshold.t_ms < 36000 || tr.threshold.t_ms >= 40000) fail('close factor 1.45 should fire before the wall');
+if (!tr.trailing || tr.trailing.t_ms < 40000 || tr.trailing.t_ms > 40500) fail('trailing step should land just past the wall');
+if (close.first !== 'ceiling') fail('the 2600-count ceiling cuts this trace first');
+const quick = explainEndstop(referenceSamples(REFERENCE_CLOSE), 'close', { trailingSustainMs: 750 });
+if (!quick.trips.trailing || quick.trips.trailing.t_ms > 25000) fail('750 ms sustain should false-fire on the pin');
+const open = explainEndstop(referenceSamples(REFERENCE_OPEN), 'open');
+if (open.trips.stall) fail('stall cap 65 must clear the open breakaway');
+const open54 = explainEndstop(referenceSamples(REFERENCE_OPEN), 'open', { stallMa: 54 });
+if (!open54.trips.stall) fail('stall cap 54 must trip on the open breakaway');
+EOF
+
 echo 'PASS V6 dashboard LDS source contracts'

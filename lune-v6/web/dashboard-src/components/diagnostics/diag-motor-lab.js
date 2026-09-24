@@ -12,6 +12,7 @@ import {
   parseMotorTraceCsv, strokePhaseKey, TRACE_PULL_MS, BROWSER_TRACE_HZ, BROWSER_TRACE_MAX_MS,
 } from '../../utils/motor-trace.js';
 import { renderMotorLabCharts } from './motor-lab-charts.js';
+import { renderThresholdExplorer } from './motor-lab-thresholds.js';
 import { localize, subscribeLanguage, t } from '../../core/i18n.js';
 
 // Diagnostics + chart rebuild must not pile up: an async setInterval at 100 ms
@@ -420,6 +421,7 @@ const template = () => `
             <input type="number" class="lab-tune-input" data-tune-key="${field.key}" data-tune-id="${field.id}" step="${field.step}" inputmode="decimal" />
           </div>`).join('')}`).join('')}
       </div>
+      <div class="lab-thr-host"></div>
     </details>
     <div class="lab-chart"></div>
     <div class="lab-capture-bar">
@@ -558,6 +560,7 @@ export default component({
     const secondaryBtn = el.querySelector('.lab-secondary');
     const estopBtn = el.querySelector('.lab-estop');
     const tuneInputs = Array.from(el.querySelectorAll('.lab-tune-input'));
+    const thrHost = el.querySelector('.lab-thr-host');
     const kvBody = el.querySelector('.lab-kv-body');
     const gauges = {
       current: el.querySelector('[data-k="current"]'),
@@ -666,6 +669,52 @@ export default component({
       phaseEl.textContent = t('diagnostics.lab.phase.' + next);
     }
 
+    // What the explorer replays: the value typed in each field (so the chart
+    // previews a change before it is committed), else what the device holds.
+    const EXPLORER_PARAM = {
+      close_threshold_multiplier: 'closeFactor',
+      open_endstop_current_factor: 'openFactor',
+      open_endstop_stall_fraction: 'stallFraction',
+      close_trailing_step_ma: 'trailingStepMa',
+      close_trailing_sustain_ms: 'trailingSustainMs',
+      close_trailing_ref_ms: 'trailingWindowMs',
+      cap_close_seat_ma: 'seatMa',
+      cap_close_seat_frames: 'seatFrames',
+      cap_close_popoff_ma: 'popoffMa',
+      cap_stall_ma: 'stallMa',
+      cap_open_stop_ma: 'openStopMa',
+      cap_circuit_fault_ma: 'circuitMa',
+    };
+    function explorerParams() {
+      const params = {};
+      for (const input of tuneInputs) {
+        const name = EXPLORER_PARAM[input.dataset.tuneKey];
+        if (!name) continue;
+        const typed = input.value === '' ? NaN : Number(input.value);
+        const held = Number(ev(input.dataset.tuneId));
+        const value = Number.isFinite(typed) ? typed : held;
+        if (Number.isFinite(value)) params[name] = value;
+      }
+      const ceiling = Number(ev(gkey.hmipRuntimeLimitSeconds));
+      if (Number.isFinite(ceiling) && ceiling > 0) params.closeCeilingS = ceiling;
+      if (Number.isFinite(liveDiag.learnedStallMa) && liveDiag.learnedStallMa > 0) params.learnedStallMa = liveDiag.learnedStallMa;
+      return params;
+    }
+    let thrTimer = 0;
+    function paintThresholds() {
+      clearTimeout(thrTimer);
+      thrTimer = setTimeout(() => {
+        const closeCap = captures.close || captures.seat;
+        renderThresholdExplorer(thrHost, {
+          params: explorerParams(),
+          captures: {
+            close: closeCap && closeCap.samples,
+            open: captures.open && captures.open.samples,
+          },
+        });
+      }, 120);
+    }
+
     function paintTune() {
       for (const input of tuneInputs) {
         const value = ev(input.dataset.tuneId);
@@ -673,6 +722,7 @@ export default component({
         if (document.activeElement === input) continue;
         input.value = String(Number(value));
       }
+      paintThresholds();
     }
 
     function bindTune() {
@@ -691,6 +741,7 @@ export default component({
           if (view.analysis) paintCharts();
         };
         input.addEventListener('change', commit);
+        input.addEventListener('input', paintThresholds);
         input.addEventListener('keydown', (event) => {
           if (event.key === 'Enter') {
             event.preventDefault();
@@ -860,6 +911,7 @@ export default component({
         liveDiag.slope = view.analysis.max_stall_slope_ma_s;
       }
       paintCharts();
+      paintThresholds();
       const rows = [];
       if (step === 'review') {
         if (captures.open) rows.push(...suggestionRows(captures.open, liveDiag.backend));

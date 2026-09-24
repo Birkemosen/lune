@@ -37,7 +37,7 @@ DESIGN_DIR ?= $(firstword $(wildcard \
 LDS_DIR ?= $(DESIGN_DIR)
 LDS_CONSUMER ?= $(ROOT_ABS)
 
-.PHONY: help check ensure-secrets-link config compile build build-verify bump-build prepare-release release release-deploy release-firmware release-bundle upload deploy ota logs discover monitor erase erase-nvs clean dashboard dashboard-tooling dashboard-build dashboard-watch design-tokens design-verify test test-dashboard test-ripple test-rev31-logic test-rev32-logic test-safety-limits test-stall-model test-balance test-authority-lease test-preheat-policy test-preheat-absorb test-probe-mapping test-thermal-model test-flow-allocator test-hydraulic-policy test-hydraulic-diagnostics test-commissioning-schema test-request-guard test-ble-time-beacon test-settings-backup
+.PHONY: help check ensure-secrets-link config compile build build-verify bump-build prepare-release release release-deploy release-firmware release-bundle upload deploy ota logs discover monitor erase erase-nvs clean dashboard dashboard-tooling dashboard-build dashboard-reference-traces dashboard-watch design-tokens design-verify test test-dashboard test-ripple test-rev31-logic test-rev32-logic test-safety-limits test-stall-model test-balance test-authority-lease test-preheat-policy test-preheat-absorb test-probe-mapping test-thermal-model test-flow-allocator test-hydraulic-policy test-hydraulic-diagnostics test-commissioning-schema test-request-guard test-ble-time-beacon test-settings-backup
 
 help:
 	@echo "Lune V6 ESPHome tasks"
@@ -397,6 +397,9 @@ design-verify:
 	  exit 0; \
 	fi
 	$(PYTHON) $(LDS_DIR)/generate_tokens.py --install $(LDS_CONSUMER) --no-dist --check
+
+dashboard-reference-traces:
+	sh $(ROOT_ABS)/$(DEVICE_DIR)/scripts/gen-reference-traces.sh > $(DASHBOARD_SRC_DIR)/utils/motor-reference-traces.js
 
 dashboard-build:
 	@command -v $(DASHBOARD_TOOL) >/dev/null 2>&1 || $(MAKE) dashboard-tooling
