@@ -326,7 +326,10 @@ static constexpr uint32_t PID_CONFIG_VERSION = 1;
 /// v5 moves the endstop bring-up defaults onto the measured Rev 3.3 traces
 /// (close_current_factor 1.45, cap_stall_ma 65, cap_close_seat_frames 4). The
 /// layout is unchanged; the bump exists so stored v4 values are replaced.
-static constexpr uint32_t MOTOR_CONFIG_VERSION = 5;
+/// v6 repeats that reset. Firmware carrying v5 still had the loader bug that
+/// kept the main blob's copy of a stale section, so it re-saved the old v4
+/// values under the v5 marker and v5 alone can no longer tell them apart.
+static constexpr uint32_t MOTOR_CONFIG_VERSION = 6;
 static constexpr uint32_t MANIFOLD_CONFIG_VERSION = 1;
 /// v2 replaces unsafe per-zone "modulating heat source" floors with an explicit
 /// secondary-loop commissioning floor. Old values are safely invalidated.

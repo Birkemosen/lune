@@ -517,7 +517,7 @@ with these bring-up defaults, taken from the Rev 3.3 fixtures:
 | `cap_open_stop_ma` / `_frames` | 40 / 3 | armed only past breakaway |
 | `cap_circuit_fault_ma` / `_frames` | 85 / 2 | frame peak; never an endpoint |
 
-`MOTOR_CONFIG_VERSION` is 5; older blobs are invalidated rather than reinterpreted, so
+`MOTOR_CONFIG_VERSION` is 6; older blobs are invalidated rather than reinterpreted, so
 a device picks up these defaults on first boot after flashing.
 
 ### Rev 3.2 timing sequence
