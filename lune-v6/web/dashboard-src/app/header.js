@@ -65,9 +65,17 @@ const css = `
 .v6-side-link .dot.is-overheated {
   background:var(--state-warn); box-shadow:0 0 8px color-mix(in srgb,var(--state-warn) 55%,transparent);
 }
+/* The glyph sits on --danger, and --text-on-accent flips in the same direction
+   --danger does: near-black against the bright dark-theme red, white against
+   the deeper light-theme red. That picks the better contrast in both (5.0:1
+   and 5.3:1). Hardcoded white scored only 3.76:1 in dark mode - below the
+   4.5:1 this 9px glyph needs - so this is an accessibility fix, not just a
+   lint one. The coupling is to --accent by name rather than --danger, so if
+   either is retuned independently it wants revisiting; a dedicated
+   --text-on-danger token in LDS is the durable answer. */
 .v6-side-link .dot.is-fault {
   width:12px; height:12px; border-radius:4px; background:var(--danger); box-shadow:none;
-  color:#fff; font-size:9px; font-weight:800; line-height:12px; text-align:center;
+  color:var(--text-on-accent); font-size:9px; font-weight:800; line-height:12px; text-align:center;
   display:inline-grid; place-items:center;
 }
 .v6-nav-dot { margin-left:auto; width:8px; height:8px; border-radius:50%; background:var(--accent); flex:0 0 auto; }
