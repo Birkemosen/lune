@@ -77,6 +77,17 @@ const FIELDS = [
   { cls: 'open-slope-threshold', key: 'open_slope_threshold', id: gkey.openSlopeThreshold, labelKey: 'settings.motor.openSlope', unit: 'mA/s' },
   { cls: 'open-slope-floor', key: 'open_slope_current_factor', id: gkey.openSlopeCurrentFactor, labelKey: 'settings.motor.openSlopeFloor', unit: 'x' },
   { cls: 'open-ripple-limit', key: 'open_ripple_limit_factor', id: gkey.openRippleLimitFactor, labelKey: 'settings.motor.openRippleLimit', unit: 'x' },
+  { cls: 'open-endstop-current-factor', key: 'open_endstop_current_factor', id: gkey.openEndstopCurrentFactor, labelKey: 'settings.motor.openEndstopCurrentFactor', unit: 'x' },
+  { cls: 'open-endstop-stall-fraction', key: 'open_endstop_stall_fraction', id: gkey.openEndstopStallFraction, labelKey: 'settings.motor.openEndstopStallFraction', unit: 'k' },
+  { cls: 'close-trailing-step-ma', key: 'close_trailing_step_ma', id: gkey.closeTrailingStepMa, labelKey: 'settings.motor.closeTrailingStepMa', unit: 'mA' },
+  { cls: 'close-trailing-sustain-ms', key: 'close_trailing_sustain_ms', id: gkey.closeTrailingSustainMs, labelKey: 'settings.motor.closeTrailingSustainMs', unit: 'ms' },
+  { cls: 'close-trailing-ref-ms', key: 'close_trailing_ref_ms', id: gkey.closeTrailingRefMs, labelKey: 'settings.motor.closeTrailingRefMs', unit: 'ms' },
+  { cls: 'cap-close-seat-ma', key: 'cap_close_seat_ma', id: gkey.capCloseSeatMa, labelKey: 'settings.motor.capCloseSeatMa', unit: 'mA' },
+  { cls: 'cap-close-seat-frames', key: 'cap_close_seat_frames', id: gkey.capCloseSeatFrames, labelKey: 'settings.motor.capCloseSeatFrames', unit: 'frames' },
+  { cls: 'cap-close-popoff-ma', key: 'cap_close_popoff_ma', id: gkey.capClosePopoffMa, labelKey: 'settings.motor.capClosePopoffMa', unit: 'mA' },
+  { cls: 'cap-stall-ma', key: 'cap_stall_ma', id: gkey.capStallMa, labelKey: 'settings.motor.capStallMa', unit: 'mA' },
+  { cls: 'cap-open-stop-ma', key: 'cap_open_stop_ma', id: gkey.capOpenStopMa, labelKey: 'settings.motor.capOpenStopMa', unit: 'mA' },
+  { cls: 'cap-circuit-fault-ma', key: 'cap_circuit_fault_ma', id: gkey.capCircuitFaultMa, labelKey: 'settings.motor.capCircuitFaultMa', unit: 'mA' },
   { cls: 'relearn-movements', key: 'relearn_after_movements', id: gkey.relearnAfterMovements, labelKey: 'settings.motor.relearnMovements', unit: 'count' },
   { cls: 'relearn-hours', key: 'relearn_after_hours', id: gkey.relearnAfterHours, labelKey: 'settings.motor.relearnHours', unit: 'h' },
   { cls: 'learn-min-samples', key: 'learned_factor_min_samples', id: gkey.learnedFactorMinSamples, labelKey: 'settings.motor.learnMinSamples', unit: 'count' },
@@ -88,7 +99,7 @@ const template = () => {
   for (let i = 0; i < FIELDS.length; i++) {
     const field = FIELDS[i];
     if (field.key === 'generic_runtime_limit_seconds') continue;
-    const step = isIntegerSetting(field.key) ? '1' : '0.1';
+    const step = isIntegerSetting(field.key) ? '1' : 'any';
     rows += '<div class="ui-row">' +
       '<span class="ui-label"><span data-i18n="' + field.labelKey + '">' + t(field.labelKey) + '</span> (' + field.unit + ')</span>' +
       '<span class="ui-field">' +
@@ -130,6 +141,9 @@ const template = () => {
 
 function isIntegerSetting(keyName) {
   return keyName === 'learned_factor_min_samples' ||
+    keyName === 'close_trailing_sustain_ms' ||
+    keyName === 'close_trailing_ref_ms' ||
+    keyName === 'cap_close_seat_frames' ||
     keyName === 'generic_runtime_limit_seconds' ||
     keyName === 'relearn_after_movements' ||
     keyName === 'relearn_after_hours';

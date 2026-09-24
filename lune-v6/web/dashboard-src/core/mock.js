@@ -95,7 +95,18 @@ function seed() {
   setEntity(gkey.openThresholdMultiplier, { value: 1.7 });
   setEntity(gkey.openSlopeThreshold, { value: 0.8 });
   setEntity(gkey.openSlopeCurrentFactor, { value: 1.3 });
-  setEntity(gkey.openRippleLimitFactor, { value: 1.0 });
+  setEntity(gkey.openRippleLimitFactor, { value: 1.1 });
+  setEntity(gkey.openEndstopCurrentFactor, { value: 1.25 });
+  setEntity(gkey.openEndstopStallFraction, { value: 0.3 });
+  setEntity(gkey.closeTrailingStepMa, { value: 2.5 });
+  setEntity(gkey.closeTrailingSustainMs, { value: 1000 });
+  setEntity(gkey.closeTrailingRefMs, { value: 2000 });
+  setEntity(gkey.capCloseSeatMa, { value: 34.0 });
+  setEntity(gkey.capCloseSeatFrames, { value: 4 });
+  setEntity(gkey.capClosePopoffMa, { value: 36.0 });
+  setEntity(gkey.capStallMa, { value: 65.0 });
+  setEntity(gkey.capOpenStopMa, { value: 40.0 });
+  setEntity(gkey.capCircuitFaultMa, { value: 85.0 });
   setEntity(gkey.genericRuntimeLimitSeconds, { value: 45 });
   setEntity(gkey.hmipRuntimeLimitSeconds, { value: 34 });
   setEntity(gkey.relearnAfterMovements, { value: 2000 });
@@ -544,6 +555,17 @@ export function handleMockPost(body) {
     open_slope_threshold: gkey.openSlopeThreshold,
     open_slope_current_factor: gkey.openSlopeCurrentFactor,
     open_ripple_limit_factor: gkey.openRippleLimitFactor,
+    open_endstop_current_factor: gkey.openEndstopCurrentFactor,
+    open_endstop_stall_fraction: gkey.openEndstopStallFraction,
+    close_trailing_step_ma: gkey.closeTrailingStepMa,
+    close_trailing_sustain_ms: gkey.closeTrailingSustainMs,
+    close_trailing_ref_ms: gkey.closeTrailingRefMs,
+    cap_close_seat_ma: gkey.capCloseSeatMa,
+    cap_close_seat_frames: gkey.capCloseSeatFrames,
+    cap_close_popoff_ma: gkey.capClosePopoffMa,
+    cap_stall_ma: gkey.capStallMa,
+    cap_open_stop_ma: gkey.capOpenStopMa,
+    cap_circuit_fault_ma: gkey.capCircuitFaultMa,
     generic_runtime_limit_seconds: gkey.genericRuntimeLimitSeconds,
     hmip_runtime_limit_seconds: gkey.hmipRuntimeLimitSeconds,
     relearn_after_movements: gkey.relearnAfterMovements,

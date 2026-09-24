@@ -63,21 +63,35 @@ void save_section(nvs_handle_t handle, const char *key, uint32_t version, const 
 }
 
 /// Overlays `out` and returns true iff a matching-size, matching-version blob exists.
+///
+/// A section that EXISTS but is stale (other size or version) resets `out` to
+/// defaults. It must not keep what the main blob gave: the main blob carries
+/// every section too, and when a version bump leaves the layout unchanged it
+/// still loads at full size - so "keep the main blob" silently restored the
+/// very values the bump was meant to replace. Only an absent section falls
+/// back to the main blob, which is the pre-section migration case.
 template<typename T>
 bool load_section(nvs_handle_t handle, const char *key, uint32_t version, T &out) {
   size_t size = 0;
   if (nvs_get_blob(handle, key, nullptr, &size) != ESP_OK)
     return false;  // no durable copy yet (first boot, or pre-upgrade firmware)
-  if (size != sizeof(uint32_t) + sizeof(T))
-    return false;  // layout changed — keep whatever the main blob/defaults gave
+  if (size != sizeof(uint32_t) + sizeof(T)) {
+    ESP_LOGW(TAG, "Section '%s' layout changed; resetting it to defaults", key);
+    out = T{};
+    return false;
+  }
   uint8_t blob[sizeof(uint32_t) + sizeof(T)];
   size_t read_size = size;
   if (nvs_get_blob(handle, key, blob, &read_size) != ESP_OK)
     return false;
   uint32_t v = 0;
   std::memcpy(&v, blob, sizeof(uint32_t));
-  if (v != version)
+  if (v != version) {
+    ESP_LOGW(TAG, "Section '%s' v%" PRIu32 " is stale (current v%" PRIu32 "); resetting it to defaults",
+             key, v, version);
+    out = T{};
     return false;
+  }
   std::memcpy(&out, blob + sizeof(uint32_t), sizeof(T));
   return true;
 }

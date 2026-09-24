@@ -59,11 +59,26 @@ function faultText(code) {
 // only", detect_endstop_()). Offering the four slope fields here was actively
 // harmful during bring-up: an operator whose stroke stopped early would raise
 // them, observe nothing, and then over-raise the threshold multiplier instead.
+//
+// open_threshold_multiplier (open_current_factor) is not offered either: on the
+// GPIO-bridge backends detect_endstop_() replaces it with
+// open_endstop_current_factor, so editing it changed nothing on Rev 3.2/3.3.
 const TUNE_FIELDS = [
-  { cls: 'close-factor', key: 'close_threshold_multiplier', id: gkey.closeThresholdMultiplier, labelKey: 'settings.motor.closeThreshold', unit: 'x', step: '0.1' },
-  { cls: 'open-factor', key: 'open_threshold_multiplier', id: gkey.openThresholdMultiplier, labelKey: 'settings.motor.openThreshold', unit: 'x', step: '0.1' },
-  { cls: 'open-ripple', key: 'open_ripple_limit_factor', id: gkey.openRippleLimitFactor, labelKey: 'settings.motor.openRippleLimit', unit: 'x', step: '0.05' },
+  { group: 'close', cls: 'close-factor', key: 'close_threshold_multiplier', id: gkey.closeThresholdMultiplier, labelKey: 'settings.motor.closeThreshold', unit: 'x', step: '0.05' },
+  { group: 'close', cls: 'close-trailing-step-ma', key: 'close_trailing_step_ma', id: gkey.closeTrailingStepMa, labelKey: 'settings.motor.closeTrailingStepMa', unit: 'mA', step: '0.1' },
+  { group: 'close', cls: 'close-trailing-sustain-ms', key: 'close_trailing_sustain_ms', id: gkey.closeTrailingSustainMs, labelKey: 'settings.motor.closeTrailingSustainMs', unit: 'ms', step: '50' },
+  { group: 'close', cls: 'close-trailing-ref-ms', key: 'close_trailing_ref_ms', id: gkey.closeTrailingRefMs, labelKey: 'settings.motor.closeTrailingRefMs', unit: 'ms', step: '100' },
+  { group: 'open', cls: 'open-endstop-current-factor', key: 'open_endstop_current_factor', id: gkey.openEndstopCurrentFactor, labelKey: 'settings.motor.openEndstopCurrentFactor', unit: 'x', step: '0.05' },
+  { group: 'open', cls: 'open-endstop-stall-fraction', key: 'open_endstop_stall_fraction', id: gkey.openEndstopStallFraction, labelKey: 'settings.motor.openEndstopStallFraction', unit: 'k', step: '0.05' },
+  { group: 'open', cls: 'open-ripple', key: 'open_ripple_limit_factor', id: gkey.openRippleLimitFactor, labelKey: 'settings.motor.openRippleLimit', unit: 'x', step: '0.05' },
+  { group: 'caps', cls: 'cap-close-seat-ma', key: 'cap_close_seat_ma', id: gkey.capCloseSeatMa, labelKey: 'settings.motor.capCloseSeatMa', unit: 'mA', step: '0.5' },
+  { group: 'caps', cls: 'cap-close-seat-frames', key: 'cap_close_seat_frames', id: gkey.capCloseSeatFrames, labelKey: 'settings.motor.capCloseSeatFrames', unit: 'frames', step: '1' },
+  { group: 'caps', cls: 'cap-close-popoff-ma', key: 'cap_close_popoff_ma', id: gkey.capClosePopoffMa, labelKey: 'settings.motor.capClosePopoffMa', unit: 'mA', step: '0.5' },
+  { group: 'caps', cls: 'cap-open-stop-ma', key: 'cap_open_stop_ma', id: gkey.capOpenStopMa, labelKey: 'settings.motor.capOpenStopMa', unit: 'mA', step: '0.5' },
+  { group: 'caps', cls: 'cap-stall-ma', key: 'cap_stall_ma', id: gkey.capStallMa, labelKey: 'settings.motor.capStallMa', unit: 'mA', step: '1' },
+  { group: 'caps', cls: 'cap-circuit-fault-ma', key: 'cap_circuit_fault_ma', id: gkey.capCircuitFaultMa, labelKey: 'settings.motor.capCircuitFaultMa', unit: 'mA', step: '1' },
 ];
+const TUNE_GROUPS = ['close', 'open', 'caps'];
 
 const css = `
 .diag-motor-lab { color: var(--text-main); }
@@ -263,6 +278,12 @@ const css = `
 .diag-motor-lab .lab-tune-grid {
   display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 16px;
 }
+.diag-motor-lab .lab-tune-group {
+  grid-column: 1 / -1; margin-top: 4px; padding-top: 8px;
+  border-top: 1px solid var(--separator);
+  color: var(--text-faint); font-size: .66rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
+}
+.diag-motor-lab .lab-tune-group:first-child { margin-top: 0; padding-top: 0; border-top: 0; }
 .diag-motor-lab .lab-tune-row {
   display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(5.5rem, .8fr);
   gap: 8px; align-items: center;
@@ -391,11 +412,13 @@ const template = () => `
       <summary data-i18n="diagnostics.lab.tune.title">Endstop thresholds</summary>
       <p class="lab-tune-copy" data-i18n="diagnostics.lab.tune.copy">Raise multipliers or slopes if the stroke stops too early. Changes apply immediately to this controller.</p>
       <div class="lab-tune-grid">
-        ${TUNE_FIELDS.map((field) => `
+        ${TUNE_GROUPS.map((group) => `
+          <div class="lab-tune-group" data-i18n="diagnostics.lab.tune.${group}">${group}</div>
+          ${TUNE_FIELDS.filter((field) => field.group === group).map((field) => `
           <div class="lab-tune-row">
-            <label data-i18n="${field.labelKey}">${field.labelKey}</label>
+            <label><span data-i18n="${field.labelKey}">${field.labelKey}</span> (${field.unit})</label>
             <input type="number" class="lab-tune-input" data-tune-key="${field.key}" data-tune-id="${field.id}" step="${field.step}" inputmode="decimal" />
-          </div>`).join('')}
+          </div>`).join('')}`).join('')}
       </div>
     </details>
     <div class="lab-chart"></div>
@@ -418,10 +441,16 @@ const template = () => `
   </div>
 `;
 
-function configuredFor(direction, caps) {
+// Rev 3.2/3.3 replace open_current_factor with open_endstop_current_factor in
+// detect_endstop_(), so the open factor must be read and written there.
+function isGpioBridge(backend) {
+  return backend === 'rev32_gpio' || backend === 'rev33_gpio';
+}
+
+function configuredFor(direction, caps, backend) {
   if (direction === 'open') {
     return {
-      factor: ev(gkey.openThresholdMultiplier),
+      factor: ev(isGpioBridge(backend) ? gkey.openEndstopCurrentFactor : gkey.openThresholdMultiplier),
       slope: ev(gkey.openSlopeThreshold),
       floor: ev(gkey.openSlopeCurrentFactor),
       ripple: ev(gkey.openRippleLimitFactor),
@@ -436,13 +465,22 @@ function configuredFor(direction, caps) {
   };
 }
 
-function suggestionRows(analysis) {
-  const cfg = configuredFor(analysis.direction);
-  const prefix = analysis.direction === 'open' ? 'open' : 'close';
+function suggestionRows(analysis, backend) {
+  const cfg = configuredFor(analysis.direction, undefined, backend);
+  const opening = analysis.direction === 'open';
   // Only the threshold multiplier still reaches a trip path; the slope rows were
   // writing NVS values nothing reads.
+  const openKey = isGpioBridge(backend) ? 'open_endstop_current_factor' : 'open_threshold_multiplier';
+  const openLabel = isGpioBridge(backend) ? 'settings.motor.openEndstopCurrentFactor' : 'settings.motor.openThreshold';
+  // The close suggestion is a peak/running ratio, and a closing peak is taken
+  // AFTER the stop - on the Rev 3.3 trace it is the over-travel ramp. Applying it
+  // raised the close factor past the 40 s housing-exit wall, so it may only lower.
+  const current = Number(cfg.factor);
+  const suggested = !opening && Number.isFinite(current)
+    ? Math.min(analysis.suggested_factor, current)
+    : analysis.suggested_factor;
   const rows = [
-    { key: prefix + '_threshold_multiplier', labelKey: analysis.direction === 'open' ? 'settings.motor.openThreshold' : 'settings.motor.closeThreshold', current: cfg.factor, suggested: analysis.suggested_factor, unit: 'x' },
+    { key: opening ? openKey : 'close_threshold_multiplier', labelKey: opening ? openLabel : 'settings.motor.closeThreshold', current: cfg.factor, suggested, unit: 'x' },
   ];
   if (analysis.direction === 'open' && analysis.suggested_ripple_limit != null) {
     rows.push({ key: 'open_ripple_limit_factor', labelKey: 'settings.motor.openRippleLimit', current: cfg.ripple, suggested: analysis.suggested_ripple_limit, unit: 'x' });
@@ -788,7 +826,7 @@ export default component({
 
     function paintCharts() {
       const overlays = view.analysis
-        ? overlayLevels(view.analysis, configuredFor(view.analysis.direction, liveDiag.caps))
+        ? overlayLevels(view.analysis, configuredFor(view.analysis.direction, liveDiag.caps, liveDiag.backend))
         : [];
       const controls = renderMotorLabCharts(chartEl, {
         samples: view.samples,
@@ -824,10 +862,10 @@ export default component({
       paintCharts();
       const rows = [];
       if (step === 'review') {
-        if (captures.open) rows.push(...suggestionRows(captures.open));
-        if (captures.close) rows.push(...suggestionRows(captures.close));
+        if (captures.open) rows.push(...suggestionRows(captures.open, liveDiag.backend));
+        if (captures.close) rows.push(...suggestionRows(captures.close, liveDiag.backend));
       } else if (view.analysis) {
-        rows.push(...suggestionRows(view.analysis));
+        rows.push(...suggestionRows(view.analysis, liveDiag.backend));
       }
       if (!view.analysis && step !== 'review') {
         metricsEl.innerHTML = '';
@@ -1384,8 +1422,8 @@ export default component({
       if (action === 'restart') return restart();
       if (action === 'apply') {
         const rows = [];
-        if (captures.open) rows.push(...suggestionRows(captures.open));
-        if (captures.close) rows.push(...suggestionRows(captures.close));
+        if (captures.open) rows.push(...suggestionRows(captures.open, liveDiag.backend));
+        if (captures.close) rows.push(...suggestionRows(captures.close, liveDiag.backend));
         rows.forEach((row) => setGlobalNumber(row.key, row.suggested));
         setPhase('applied', 'ok');
         pushLog('diagnostics.lab.log.applied');

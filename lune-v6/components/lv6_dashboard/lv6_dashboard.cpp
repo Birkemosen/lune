@@ -1484,6 +1484,28 @@ void LV6Dashboard::handle_state_(AsyncWebServerRequest *request) {
   appendf(buf, BUF_SIZE, offset,
       "\"number-learned_factor_max_deviation_pct\":{\"value\":%s},", num_buf);
 
+  // Rev 3.2/3.3 endstop policy: the fields detect_endstop_() and the DMA cap
+  // ladder actually read on the GPIO-bridge backends.
+  if (!flush()) return;
+  struct MotorNum { const char *key; float value; int decimals; };
+  const MotorNum rev3x_motor[] = {
+      {"open_endstop_current_factor", snap->motor.open_endstop_current_factor, 2},
+      {"open_endstop_stall_fraction", snap->motor.open_endstop_stall_fraction, 2},
+      {"close_trailing_step_ma", snap->motor.close_trailing_step_ma, 2},
+      {"close_trailing_sustain_ms", static_cast<float>(snap->motor.close_trailing_sustain_ms), 0},
+      {"close_trailing_ref_ms", static_cast<float>(snap->motor.close_trailing_ref_ms), 0},
+      {"cap_close_seat_ma", snap->motor.cap_close_seat_ma, 1},
+      {"cap_close_seat_frames", static_cast<float>(snap->motor.cap_close_seat_frames), 0},
+      {"cap_close_popoff_ma", snap->motor.cap_close_popoff_ma, 1},
+      {"cap_stall_ma", snap->motor.cap_stall_ma, 1},
+      {"cap_open_stop_ma", snap->motor.cap_open_stop_ma, 1},
+      {"cap_circuit_fault_ma", snap->motor.cap_circuit_fault_ma, 1},
+  };
+  for (const auto &n : rev3x_motor) {
+    format_float_token(num_buf, sizeof(num_buf), n.value, n.decimals);
+    appendf(buf, BUF_SIZE, offset, "\"number-%s\":{\"value\":%s},", n.key, num_buf);
+  }
+
   // flush before authority/flow section
   if (!flush()) return;
 
@@ -3419,6 +3441,30 @@ void LV6Dashboard::dispatch_set_(const DashboardAction &act) {
       motor_cfg.learned_factor_min_samples = static_cast<uint8_t>(num_val);
     else if (strcmp(key, "learned_factor_max_deviation_pct") == 0)
       motor_cfg.learned_factor_max_deviation_pct = num_val / 100.0f;
+    // Rev 3.2/3.3 endstop policy. Range checks live in sanitize_motor_cfg_(),
+    // which reload_motor_config() runs, so a bad value cannot reach a trip path.
+    else if (strcmp(key, "open_endstop_current_factor") == 0)
+      motor_cfg.open_endstop_current_factor = num_val;
+    else if (strcmp(key, "open_endstop_stall_fraction") == 0)
+      motor_cfg.open_endstop_stall_fraction = num_val;
+    else if (strcmp(key, "close_trailing_step_ma") == 0)
+      motor_cfg.close_trailing_step_ma = num_val;
+    else if (strcmp(key, "close_trailing_sustain_ms") == 0)
+      motor_cfg.close_trailing_sustain_ms = static_cast<uint32_t>(std::max(0.0f, num_val));
+    else if (strcmp(key, "close_trailing_ref_ms") == 0)
+      motor_cfg.close_trailing_ref_ms = static_cast<uint32_t>(std::max(0.0f, num_val));
+    else if (strcmp(key, "cap_close_seat_ma") == 0)
+      motor_cfg.cap_close_seat_ma = num_val;
+    else if (strcmp(key, "cap_close_seat_frames") == 0)
+      motor_cfg.cap_close_seat_frames = static_cast<uint8_t>(std::max(0.0f, std::min(255.0f, num_val)));
+    else if (strcmp(key, "cap_close_popoff_ma") == 0)
+      motor_cfg.cap_close_popoff_ma = num_val;
+    else if (strcmp(key, "cap_stall_ma") == 0)
+      motor_cfg.cap_stall_ma = num_val;
+    else if (strcmp(key, "cap_open_stop_ma") == 0)
+      motor_cfg.cap_open_stop_ma = num_val;
+    else if (strcmp(key, "cap_circuit_fault_ma") == 0)
+      motor_cfg.cap_circuit_fault_ma = num_val;
     else
       dirty = false;
 

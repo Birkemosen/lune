@@ -2283,6 +2283,17 @@ void Lv6ValveController::sanitize_motor_cfg_() {
   };
   clamp_factor(motor_cfg_.close_current_factor, "close_current_factor");
   clamp_factor(motor_cfg_.open_current_factor, "open_current_factor");
+  if (!(motor_cfg_.open_endstop_current_factor >= 1.05f &&
+        motor_cfg_.open_endstop_current_factor <= 2.5f))
+    motor_cfg_.open_endstop_current_factor = MotorConfig{}.open_endstop_current_factor;
+  // The trailing step is the primary close detector. A zero step or window would
+  // trip on noise; an oversized one would never trip before the ceiling.
+  if (!(motor_cfg_.close_trailing_step_ma >= 0.5f && motor_cfg_.close_trailing_step_ma <= 20.0f))
+    motor_cfg_.close_trailing_step_ma = MotorConfig{}.close_trailing_step_ma;
+  if (motor_cfg_.close_trailing_ref_ms < 250 || motor_cfg_.close_trailing_ref_ms > 10000)
+    motor_cfg_.close_trailing_ref_ms = MotorConfig{}.close_trailing_ref_ms;
+  if (motor_cfg_.close_trailing_sustain_ms > 10000)
+    motor_cfg_.close_trailing_sustain_ms = MotorConfig{}.close_trailing_sustain_ms;
   if (!(motor_cfg_.open_endstop_stall_fraction >= 0.10f &&
         motor_cfg_.open_endstop_stall_fraction <= 0.60f))
     motor_cfg_.open_endstop_stall_fraction = 0.30f;
