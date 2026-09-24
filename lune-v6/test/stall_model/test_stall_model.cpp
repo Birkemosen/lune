@@ -7,6 +7,7 @@
 #include "stall_model.h"
 
 #include "safety_limits.h"
+#include "lv6_types.h"
 
 #include <cassert>
 #include <cmath>
@@ -221,6 +222,93 @@ void test_close_step_sustain_is_the_discriminator() {
   assert(first_close_step_ms(rows, 0.0f, cfg) > t_quick);
 }
 
+// The cap ladder runs on 6.4 ms DMA frames; the fixtures are 500 ms means.
+// Each sample is held for the frames it spans, so frame debounces are honoured,
+// but raw frames are noisier than this - the replay is a lower bound.
+constexpr uint32_t kFrameUs = 6400;
+
+FastTrip first_cap_trip(const std::vector<Sample> &rows, const CapLadder &ladder,
+                        const CapContext &ctx, uint32_t *at_ms) {
+  CapCounters counters{};
+  uint32_t prev_ms = 0;
+  for (const auto &r : rows) {
+    const uint32_t span_us = prev_ms == 0 ? kFrameUs : (r.t_ms - prev_ms) * 1000u;
+    prev_ms = r.t_ms;
+    FrameStats f{};
+    f.mean_ma = r.current_ma;
+    f.peak_ma = r.current_ma;
+    f.valid_samples = 64;
+    for (uint32_t us = 0; us < span_us; us += kFrameUs) {
+      const FastTrip trip = evaluate_cap_ladder(ladder, ctx, f, counters);
+      if (trip != FastTrip::NONE) {
+        if (at_ms != nullptr)
+          *at_ms = r.t_ms;
+        return trip;
+      }
+    }
+  }
+  return FastTrip::NONE;
+}
+
+void test_open_breakaway_clears_the_default_stall_cap() {
+  const auto rows = load_fixture(fixture_dir + "/motor-lab-z1-open.csv");
+  CapContext ctx{};
+  ctx.direction_is_open = true;
+  ctx.past_blanking = true;
+  ctx.open_cap_armed = false;  // breakaway: the open-stop rung is not armed yet
+
+  // The stall rung is not gated on breakaway, so it has to clear 57-59 mA.
+  const MotorConfig m{};
+  const CapLadder ladder{};
+  assert(ladder.stall_ma == m.cap_stall_ma && "ladder and MotorConfig defaults must agree");
+  assert(first_cap_trip(rows, ladder, ctx, nullptr) == FastTrip::NONE);
+
+  // The previous 54 mA default faulted the first open. This is the regression.
+  CapLadder old = ladder;
+  old.stall_ma = 54.0f;
+  assert(first_cap_trip(rows, old, ctx, nullptr) == FastTrip::STALL_CAP);
+}
+
+void test_close_factor_fires_before_the_mechanical_wall() {
+  const auto rows = load_fixture(fixture_dir + "/motor-lab-z1-close.csv");
+  const MotorConfig m{};
+  // The frozen running minimum over free travel, as detect_endstop_() uses it.
+  float baseline = rows.front().current_ma;
+  for (const auto &r : rows)
+    if (r.t_ms < 12000)
+      baseline = std::fmin(baseline, r.current_ma);
+  const float threshold = baseline * m.close_current_factor;
+
+  uint32_t t = 0;
+  for (const auto &r : rows)
+    if (r.current_ma > threshold) {
+      t = r.t_ms;
+      break;
+    }
+  assert(t != 0);
+  assert(t < 40000 && "the close factor must trip before the 40 s housing-exit wall");
+  assert(t > 36000 && "the close factor must clear the 31-33.6 mA pressure plateau");
+
+  // VdMot's 1.7 does not: it only trips after the plunger is past the wall.
+  const float vdmot = baseline * 1.7f;
+  for (const auto &r : rows)
+    if (r.current_ma > vdmot) {
+      assert(r.t_ms > 40000);
+      break;
+    }
+}
+
+void test_close_seat_cap_waits_for_the_seated_phase() {
+  const auto rows = load_fixture(fixture_dir + "/motor-lab-z1-close.csv");
+  CapContext ctx{};
+  ctx.past_blanking = true;
+  ctx.seat_phase = true;  // worst case: the tracker already calls it UNDER_LOAD
+  uint32_t t = 0;
+  const FastTrip trip = first_cap_trip(rows, CapLadder{}, ctx, &t);
+  assert(trip == FastTrip::CLOSE_SEAT);
+  assert(t > 36000 && "the seat cap must clear the pressure plateau");
+}
+
 }  // namespace
 
 int main(int argc, char **argv) {
@@ -239,6 +327,10 @@ int main(int argc, char **argv) {
   test_close_step_is_offset_immune();
   test_close_step_ignores_the_decoupled_open_trace();
   test_close_step_sustain_is_the_discriminator();
+
+  test_open_breakaway_clears_the_default_stall_cap();
+  test_close_factor_fires_before_the_mechanical_wall();
+  test_close_seat_cap_waits_for_the_seated_phase();
 
   std::printf("stall_model: all assertions passed\n");
   return 0;

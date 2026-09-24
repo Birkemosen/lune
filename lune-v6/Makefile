@@ -218,7 +218,7 @@ test-safety-limits:
 # Replays the two measured Motor Lab fixtures in test/fixtures/, so the trace
 # analysis behind the endstop thresholds is reproducible in CI.
 test-stall-model:
-	$(RIPPLE_CXX) $(RIPPLE_CXXFLAGS) $(STALL_MODEL_SRCS) -o $(STALL_MODEL_OUT)
+	$(RIPPLE_CXX) $(RIPPLE_CXXFLAGS) -I components/lv6_config_store $(STALL_MODEL_SRCS) -o $(STALL_MODEL_OUT)
 	$(STALL_MODEL_OUT) test/fixtures
 
 BALANCE_SRCS = test/adaptive_balance/test_adaptive_balance.cpp

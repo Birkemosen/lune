@@ -1000,9 +1000,12 @@ ImportResult apply_import_json(const char *json, lv6::DeviceConfig &cfg, bool re
       apply_int(node, "rehome_after_moves", m.rehome_after_moves, 1, 100000, result.applied);
       apply_int(node, "rehome_after_hours", m.rehome_after_hours, 1, 100000, result.applied);
     } else {
-      // Older file: keep the measured v4 defaults rather than pairing v3 values
+      // Older file: keep the measured defaults rather than pairing old values
       // with a policy the file knows nothing about.
       const lv6::MotorConfig d{};
+      // v5 retuned close_current_factor to the measured trace; a v4 file's 1.7
+      // trips past the housing-exit boundary on this actuator.
+      m.close_current_factor = d.close_current_factor;
       m.hmip_vdmot_open_runtime_limit_s = d.hmip_vdmot_open_runtime_limit_s;
       m.close_runtime_limit_counts = d.close_runtime_limit_counts;
       m.open_runtime_limit_counts = d.open_runtime_limit_counts;

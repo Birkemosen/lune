@@ -158,7 +158,7 @@ a fully retracted open) — stricter than VdMot's 120 s `TIMEOUT_NORMALCURRENT`.
 
 | Role | Mechanism | Notes |
 |---|---|---|
-| Primary | Threshold (free-travel mean × 1.7) | VdMot `currentbound_*_fac = 17` |
+| Primary | Threshold (free-travel mean × 1.45 close) | VdMot uses `currentbound_*_fac = 17`; 1.7 trips past the 40 s wall on the Rev 3.3 trace |
 | Close absolute | Seat cap ~38 mA (UNDER_LOAD) | Our sense scale; VdMot logs used ~65–70 mA |
 | Working cap | Raw > 60 mA sustained | VdMot `overcnt` at 60 mA |
 | Safety | Hard cap raw > 100 mA | VdMot ±100 mA |
@@ -221,7 +221,7 @@ debounce:   6 consecutive 10 ms FSM ticks (60 ms sustained)
 
 | Parameter | Close Default | Open Default | Config Field |
 |-----------|--------------|-------------|--------------|
-| Current factor | 1.7× | 1.7× | `close_current_factor` / `open_current_factor` |
+| Current factor | 1.45× | 1.7× (1.25× on Rev 3.2/3.3) | `close_current_factor` / `open_current_factor` |
 | Debounce | 6 ticks (60ms) | 6 ticks (60ms) | `ENDSTOP_HIGH_TICKS` (compile-time) |
 
 The threshold references a **per-direction** running mean (`mean_open_currents_[]` /
@@ -467,7 +467,7 @@ on current magnitude.
 | | Closing | Opening |
 |---|---|---|
 | The stop is | a pin in a seat, rigid | the gear train bottoming out |
-| Current factor | `close_current_factor` **1.7×** (VdMot) | **`open_endstop_current_factor` 1.25×** |
+| Current factor | `close_current_factor` **1.45×** (VdMot uses 1.7×) | **`open_endstop_current_factor` 1.25×** |
 | Missing it costs | pop-off | a stripped gear train over tens of seconds |
 
 The load-evidence requirement is *not* relaxed in either direction: the contract records
@@ -506,7 +506,19 @@ it is tunable during bring-up without a reflash:
 | `open_endstop_current_factor` | 1.25 | the gear-train stop is softer than the seat |
 | `contact_recovery_ripples` | 15 | commutations the rotor has to recover within |
 
-`MOTOR_CONFIG_VERSION` is 2; v1 blobs are invalidated rather than reinterpreted.
+The absolute cap ladder (`cap_*` in `MotorConfig`, evaluated per DMA frame) ships
+with these bring-up defaults, taken from the Rev 3.3 fixtures:
+
+| Field | Default | Purpose |
+|---|---|---|
+| `cap_close_seat_ma` / `_frames` | 34 / **4** | seat, gated to UNDER_LOAD/STOPPING; 4 frames because the pressure plateau peaks at 33.6 mA |
+| `cap_close_popoff_ma` / `_frames` | 36 / 2 | ungated close backstop |
+| `cap_stall_ma` / `_frames` | **65** / 3 | above the 57–59 mA open breakaway, which this rung is not gated on |
+| `cap_open_stop_ma` / `_frames` | 40 / 3 | armed only past breakaway |
+| `cap_circuit_fault_ma` / `_frames` | 85 / 2 | frame peak; never an endpoint |
+
+`MOTOR_CONFIG_VERSION` is 5; older blobs are invalidated rather than reinterpreted, so
+a device picks up these defaults on first boot after flashing.
 
 ### Rev 3.2 timing sequence
 
@@ -625,7 +637,7 @@ Motor Start
 | Parameter | Close | Open | Rationale |
 |-----------|-------|------|-----------|
 | Threshold mean | `mean_close` | `mean_open` | Per-direction; close runs hotter than open |
-| Threshold factor | **1.7×** (VdMot `currentbound_*_fac`) | 1.7× / open_endstop 1.25× on Rev 3.2 | Lenti84 VdMot Controller |
+| Threshold factor | **1.45×** (VdMot `currentbound_*_fac` is 1.7×) | 1.7× / open_endstop 1.25× on Rev 3.2 | Lenti84 VdMot Controller; retuned to the Rev 3.3 trace |
 | Slope threshold | 0.6 mA/s | 0.15 mA/s | Close ramps steeply; open ramps gently |
 | Slope floor | 1.3× | 1.3× | Same mid-travel step protection both ways |
 | Slope windows | 2 (1 s) | 1 (~500 ms) | Open ramp is slow; long grind = clicking |
@@ -730,7 +742,7 @@ to NVS.
 
 | Entity Name | Range | Default | Step |
 |-------------|-------|---------|------|
-| Motor N Close Endstop Threshold | 1.1× – 3.0× | 1.7× | 0.1 |
+| Motor N Close Endstop Threshold | 1.1× – 3.0× | 1.45× | 0.1 |
 | Motor N Close Endstop Slope | 0.1 – 5.0 mA/s | 0.6 | 0.05 |
 | Motor N Close Endstop Slope Floor | 1.0× – 2.5× | 1.3× | 0.1 |
 | Motor N Open Endstop Threshold | 1.1× – 3.0× | 1.7× | 0.1 |

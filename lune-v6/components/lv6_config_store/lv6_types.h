@@ -323,7 +323,10 @@ static constexpr uint32_t PID_CONFIG_VERSION = 1;
 /// commutation counts as well as milliseconds, adds the absolute current-cap
 /// ladder, and drops calibration_timeout_s / presence_test_duration_ms /
 /// adaptive_runtime_margin_ms / drift_relearn_threshold_pct (no read sites).
-static constexpr uint32_t MOTOR_CONFIG_VERSION = 4;
+/// v5 moves the endstop bring-up defaults onto the measured Rev 3.3 traces
+/// (close_current_factor 1.45, cap_stall_ma 65, cap_close_seat_frames 4). The
+/// layout is unchanged; the bump exists so stored v4 values are replaced.
+static constexpr uint32_t MOTOR_CONFIG_VERSION = 5;
 static constexpr uint32_t MANIFOLD_CONFIG_VERSION = 1;
 /// v2 replaces unsafe per-zone "modulating heat source" floors with an explicit
 /// secondary-loop commissioning floor. Old values are safely invalidated.
@@ -441,7 +444,12 @@ struct MotorConfig {
   // filtered current exceeds free-travel mean × 1.7 after inrush debounce.
   // Tach/commutation is for position only and must not withhold this trip.
   // See https://github.com/Lenti84/VdMot_Controller (motor.cpp TimerHandler0).
-  float close_current_factor = 1.7f;
+  // 1.45, not VdMot's 1.7: against the measured 24.0 mA free-travel minimum
+  // 1.7 is ~41 mA, which the Rev 3.3 close trace only reaches at ~41.5 s -
+  // past the 40 s / 3120-count housing-exit boundary. Even 1.5 (36 mA) lands at
+  // 40.25 s. 1.45 (~34.8 mA) clears the 31-33.6 mA pressure plateau and trips
+  // at 39.75 s, alongside the trailing step. test_stall_model replays this.
+  float close_current_factor = 1.45f;
   float close_slope_threshold_ma_per_s = 0.6f;
   float close_slope_current_factor = 1.3f;
   // Open-direction endstop (gentler ramp — spring assist)
@@ -507,10 +515,14 @@ struct MotorConfig {
   // window no hardware sees (DRV8411 OCP is 4 A, rail comparator 150 mA).
   float cap_close_seat_ma = 34.0f;
   float cap_close_popoff_ma = 36.0f;
-  float cap_stall_ma = 54.0f;
+  // 65, not 54: the measured open breakaway is 57-59 mA for ~4 s, and this
+  // rung is not gated on breakaway - 54 would fault the first open.
+  float cap_stall_ma = 65.0f;
   float cap_circuit_fault_ma = 85.0f;
   float cap_open_stop_ma = 40.0f;
-  uint8_t cap_close_seat_frames = 2;
+  // 4 frames (~26 ms): the pressure plateau peaks at 33.6 mA in 500 ms means,
+  // so single raw 6.4 ms frames already brush the 34 mA seat cap there.
+  uint8_t cap_close_seat_frames = 4;
   uint8_t cap_close_popoff_frames = 2;
   uint8_t cap_stall_frames = 3;
   uint8_t cap_circuit_frames = 2;

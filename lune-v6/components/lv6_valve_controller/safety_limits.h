@@ -189,11 +189,11 @@ enum class FastTrip : uint8_t {
 struct CapLadder {
   float seat_ma{34.0f};     ///< endpoint, gated to a seated stroke phase
   float popoff_ma{36.0f};   ///< ungated close backstop
-  float stall_ma{54.0f};    ///< rotor stalled
+  float stall_ma{65.0f};    ///< rotor stalled; above the 57-59 mA open breakaway
   float circuit_ma{85.0f};  ///< board fault, evaluated on the frame PEAK
   float open_stop_ma{40.0f};///< endpoint, armed only past breakaway
 
-  uint8_t seat_frames{2};
+  uint8_t seat_frames{4};
   uint8_t popoff_frames{2};
   uint8_t stall_frames{3};
   uint8_t circuit_frames{2};

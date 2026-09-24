@@ -268,7 +268,7 @@ under load:
 Opening mirrors it **without a pressure phase**: free travel back toward the
 housing, then the motor's own gear train bottoming out. That stop is a materially
 **smaller** resistance than the closing hard stop - which is why
-`open_endstop_current_factor` (1.25x) is below `close_current_factor` (1.7x), and
+`open_endstop_current_factor` (1.25x) is below `close_current_factor` (1.45x), and
 why opening is the direction `actuator_overrun_hazard` names as damaging.
 
 Missing phase 4 while closing is what pops the actuator head off. It is an abrupt,
