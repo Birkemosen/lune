@@ -178,15 +178,11 @@ grep -qF "mountComponent('zone-actuator-card')" "$app" >/dev/null
 ! grep -qF '1.15fr' "$app" >/dev/null
 ! grep -qF 'minmax(0,.95fr)' "$app" >/dev/null
 grep -qF 'class="zone-chipstrip" role="tablist"' "$app" >/dev/null
-grep -qF 'zo-status' "$app" >/dev/null
-grep -qF 'zo-title' "$app" >/dev/null
-grep -qF 'zo-temps' "$app" >/dev/null
-grep -qF 'zo-merge' "$app" >/dev/null
-grep -qF 'is-merged' "$app" >/dev/null
-grep -qF 'zo-pair-start' "$app" >/dev/null
-grep -qF 'zoneMergeMeta' "$app" >/dev/null
-grep -qF 'parseSyncTarget' "$app" >/dev/null
-grep -qF 'overview.zone.mergedWith' "$app" >/dev/null
+! grep -qF 'zo-status' "$app" >/dev/null
+! grep -qF 'zo-merge' "$app" >/dev/null
+! grep -qF 'zone-overview-card' "$app" >/dev/null
+! grep -qF 'zoneMergeMeta' "$app" >/dev/null
+! grep -qF 'parseSyncTarget' "$app" >/dev/null
 grep -qF 'key.syncTo(z)' "$app" >/dev/null
 grep -qF 'zone-id-short' "$app" >/dev/null
 grep -qF 'zone-id-long' "$app" >/dev/null
@@ -204,15 +200,18 @@ grep -qF 'zone-actuator-slot"></div>' "$app" >/dev/null
 # Desktop: overview is the interactive zone switcher; sidebar fold is gone.
 # Mobile: overview stays display-only; selection via dock chips.
 grep -qF 'isDesktopZoneSwitcher' "$app" >/dev/null
-grep -qF 'button type="button" class="zone-overview-card' "$app" >/dev/null
+grep -qF 'rebuildZoneOverview' "$app" >/dev/null
+grep -qF 'loopCellHtml({' "$app" >/dev/null
 grep -qF 'data-zone-select="${value}" aria-current="${selected?' "$app" >/dev/null
-grep -qF '@media(min-width:901px){.zone-overview-card{cursor:pointer}' "$app" >/dev/null
+grep -qF 'zone-overview-strip .loop{pointer-events:none;cursor:default}' "$app" >/dev/null
 grep -qF 'zoneOverview.addEventListener(' "$app" >/dev/null
 grep -qF "zoneOverview.addEventListener('click',onZoneOverviewClick)" "$app" >/dev/null
 grep -qF "zoneOverview.addEventListener('keydown',onZoneOverviewKeydown)" "$app" >/dev/null
 grep -qF 'pointer-events:none;cursor:default' "$app" >/dev/null
 grep -qF "mobileZoneChips.addEventListener('click',onZoneSelectClick)" "$app" >/dev/null
 grep -qF "mobileZoneChips.addEventListener('keydown',onZoneChipKeydown)" "$app" >/dev/null
+! grep -qF 'lune-pipe-run' "$tokens_css" >/dev/null
+grep -qF 'manifold-mark .lune-mark .pipe{stroke:var(--pipe-idle)' "$app" >/dev/null
 ! grep -qF 'v6-zone-fold' "$header" >/dev/null
 ! grep -qF 'v6-zone-fold-link' "$header" >/dev/null
 ! grep -qF 'rebuildZoneFold' "$header" >/dev/null
@@ -285,7 +284,16 @@ grep -qF 'baseSetpoint' "$keys" >/dev/null
 grep -qF 'coordinatorOffset' "$keys" >/dev/null
 grep -qF 'coordinatorRemaining' "$keys" >/dev/null
 grep -qF -- '--flow-track:' "$app" >/dev/null
-grep -qF 'eyebrow">ΔT</span>' "$app" >/dev/null
+grep -qF 'eyebrow">Mode</span>' "$app" >/dev/null
+grep -qF 'heatDemandSummaryLine' "$app" >/dev/null
+grep -qF 'heating-mode-slot' "$app" >/dev/null
+grep -qF "mountComponent('settings-heating-mode-card')" "$app" >/dev/null
+grep -qF "import './components/settings/settings-heating-mode-card.js'" "$main" >/dev/null
+grep -qF 'heatingMode:' "$keys" >/dev/null
+grep -qF 'hpBasePct:' "$keys" >/dev/null
+grep -qF 'heatDemandRecommendation:' "$keys" >/dev/null
+grep -qF "'settings.heatingMode.title': 'Heating mode'" "$i18n" >/dev/null
+grep -qF "'settings.heatingMode.title': 'Varmekilde-tilstand'" "$i18n" >/dev/null
 grep -qF 'loopCellHtml' "$app" >/dev/null
 grep -qF 'MANIFOLD_ROW_CSS' "$app" >/dev/null
 grep -qF 'loop-demand-bar' "$root/web/dashboard-src/core/lds-manifold-row.generated.js" >/dev/null
@@ -312,7 +320,11 @@ grep -qF 'settings-appearance-card' "$root/web/dashboard-src/components/settings
 grep -qF "'settings.appearance.title': 'Appearance'" "$i18n" >/dev/null
 ! grep -qF '>Appearance<' "$header" >/dev/null
 grep -qF 'color-scheme\" content=\"light dark' "$dashboard_cpp" >/dev/null
-grep -qF 'reserved_touch_weather_v4' "$root/components/lv6_config_store/lv6_types.h" >/dev/null
+grep -qF 'HeatingProfile' "$root/components/lv6_config_store/lv6_types.h" >/dev/null
+grep -qF 'HeatDemandSummary' "$root/components/lv6_config_store/lv6_types.h" >/dev/null
+! grep -qF 'reserved_touch_weather_v4' "$root/components/lv6_config_store/lv6_types.h" >/dev/null
+! grep -qF 'ForecastConfig' "$root/components/lv6_config_store/lv6_types.h" >/dev/null
+! grep -qF 'HeliosConfig' "$root/components/lv6_config_store/lv6_types.h" >/dev/null
 
 grep -qF 'overview.connectivity.version' "$root/web/dashboard-src/core/i18n.js" >/dev/null
 grep -qF 'class="cc-ver"' "$root/web/dashboard-src/components/overview/connectivity-card.js" >/dev/null
@@ -320,6 +332,11 @@ grep -qF 'gkey.firmware' "$root/web/dashboard-src/components/overview/connectivi
 grep -qF 'setInterval(paintUptime, 1000)' "$root/web/dashboard-src/components/overview/connectivity-card.js" >/dev/null
 grep -qF 'return m + "m"' "$root/web/dashboard-src/utils/format.js" >/dev/null
 grep -qF '\"uptime_s\":%lu,\"poll_after_ms\"' "$dashboard_cpp" >/dev/null
+grep -qF '\"runtime_revision\":%lu' "$dashboard_cpp" >/dev/null
+grep -qF 'runtime_revision' "$root/web/dashboard-src/core/sse.js" >/dev/null
+grep -qF 'setInterval(pollRevision, 1000)' "$root/web/dashboard-src/core/sse.js" >/dev/null
+grep -qF 'schedulePostWriteRefresh' "$root/web/dashboard-src/core/sse.js" >/dev/null
+grep -qF 'msUntilStateUnsuppressed' "$root/web/dashboard-src/core/store.js" >/dev/null
 grep -qF 'gkey.uptime' "$root/web/dashboard-src/core/sse.js" >/dev/null
 grep -qF 'firmware_suffix' "$root/version.yaml" >/dev/null
 grep -qF '${firmware_version}${firmware_suffix}' "$root/lune.yaml" >/dev/null

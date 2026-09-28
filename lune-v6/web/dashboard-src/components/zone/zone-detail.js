@@ -6,8 +6,11 @@ import { key } from '../../utils/keys.js';
 import { localize, subscribeLanguage, t } from '../../core/i18n.js';
 import { dial, bindDial, updateDial, overrideBanner, updateOverrideBanner, comfortSliderHtml, paintComfortSlider } from '../../core/ui-kit.js';
 import { luneMark } from '../../core/lune-mark.generated.js';
-import { zoneChart, zonePipeKind } from '../../core/canvas.js';
+import { zoneChart } from '../../core/canvas.js';
 import { fmtUp } from '../../utils/format.js';
+import { zoneControlStatusLabel } from '../../utils/control-mode.js';
+import { zoneLearningProgress } from '../../utils/learning-progress.js';
+import { gkey } from '../../utils/keys.js';
 
 const css = `
 .zone-detail{height:auto;padding:0;background:transparent;border:0;border-radius:0;box-shadow:none;overflow:visible}
@@ -23,6 +26,13 @@ const css = `
 .zone-detail .facts>div{min-width:0}
 .zone-detail .facts dt{color:var(--text-muted);font-size:.68rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase}
 .zone-detail .facts dd{margin:4px 0 0;font-family:var(--font-display);font-size:1.15rem;font-weight:650;font-variant-numeric:tabular-nums}
+.zone-detail .facts dd.is-warn{color:var(--state-warn)}
+.zone-detail .facts dd.is-ok{color:var(--state-ok)}
+.zone-detail .zd-learn-bar{display:none;margin-top:14px;padding:10px 12px;border-radius:10px;background:rgba(var(--learn-rgb),.08);border:1px solid rgba(var(--learn-rgb),.22)}
+.zone-detail .zd-learn-bar.is-on{display:block}
+.zone-detail .zd-learn-track{height:8px;border-radius:999px;background:rgba(var(--learn-rgb),.18);overflow:hidden}
+.zone-detail .zd-learn-fill{height:100%;width:0;min-width:4%;border-radius:inherit;background:var(--learn);transition:width .35s ease}
+.zone-detail .zd-learn-meta{margin-top:8px;color:var(--learn);font-size:.76rem;font-weight:650}
 `;
 
 injectStyle('zone-detail', css);
@@ -43,7 +53,12 @@ const template = (ctx) => `
       <div><dt data-i18n="zone.detail.setpoint">Setpoint</dt><dd class="zd-setpoint">—</dd></div>
       <div><dt data-i18n="zone.detail.currentTemp">Current</dt><dd class="zd-temp">—</dd></div>
       <div><dt data-i18n="zone.demand">Demand</dt><dd class="zd-demand">—</dd></div>
+      <div><dt data-i18n="zone.learning.status">Learning</dt><dd class="zd-learning">—</dd></div>
     </dl>
+    <div class="zd-learn-bar" hidden>
+      <div class="zd-learn-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="zd-learn-fill"></div></div>
+      <div class="zd-learn-meta">—</div>
+    </div>
   </div>
 `;
 
@@ -72,21 +87,34 @@ function clampSetpoint(v) {
 function fmtDeg(value) {
   return value == null || Number.isNaN(Number(value)) ? '—' : `${Number(value).toFixed(1)}°`;
 }
-function stateLabel(state, enabled) {
-  if (!enabled) return t('common.disabled');
-  const s = String(state || 'IDLE').toUpperCase();
-  if (s === 'HEATING') return t('state.heating');
-  if (s === 'IDLE') return t('state.idle');
-  if (s === 'OFF') return t('state.off');
-  if (s === 'FAULT') return t('common.fault');
-  if (s === 'MANUAL') return t('state.manual');
-  if (s === 'OVERHEATED') return t('state.overheated');
-  if (s === 'CALIBRATING') return t('state.calibrating');
-  return s;
+function stateLabel(zone, state, enabled) {
+  return zoneControlStatusLabel(zone, enabled ? state : 'OFF');
 }
 function demandLabel(zone, enabled) {
   if (!enabled) return t('state.off');
-  return zonePipeKind(zone) === 'calling' ? t('state.heating') : t('state.idle');
+  const state = String(es(key.state(zone)) || '').toUpperCase() || 'IDLE';
+  return zoneControlStatusLabel(zone, state);
+}
+
+function learningFact(zone, enabled) {
+  const learning = zoneLearningProgress(zone);
+  if (enabled && learning.active) {
+    return { text: `${learning.label} · ${learning.pct}%`, cls: 'is-warn', progress: learning };
+  }
+  const model = String(es(key.motorStrokeModel(zone)) || '');
+  const working = Number(ev(key.motorWorkingRipples(zone)));
+  const span = Number(ev(key.motorOpenRipples(zone)));
+  if (model === 'working_range' && working > 0) {
+    return {
+      text: t('zone.learning.workingRangeDetail', { working: Math.round(working), span: Math.round(span || working) }),
+      cls: 'is-ok',
+      progress: null,
+    };
+  }
+  if (span > 0) {
+    return { text: t('zone.learning.fullStrokeDetail', { span: Math.round(span) }), cls: 'is-ok', progress: null };
+  }
+  return { text: t('zone.learning.needed'), cls: 'is-warn', progress: null };
 }
 
 export default component({
@@ -135,6 +163,19 @@ export default component({
       refs.setpoint.textContent = appliedText;
       refs.temp.textContent = fmtDeg(temp);
       refs.demand.textContent = demandLabel(zone, enabled);
+      const learning = learningFact(zone, enabled);
+      refs.learning.textContent = learning.text;
+      refs.learning.className = 'zd-learning' + (learning.cls ? ' ' + learning.cls : '');
+      if (refs.learnBar) {
+        const on = !!(learning.progress && learning.progress.active);
+        refs.learnBar.hidden = !on;
+        refs.learnBar.classList.toggle('is-on', on);
+        if (on) {
+          refs.learnFill.style.width = Math.max(learning.progress.pct, 4) + '%';
+          refs.learnTrack.setAttribute('aria-valuenow', String(learning.progress.pct));
+          refs.learnMeta.textContent = learning.progress.label + ' · ' + learning.progress.pct + '%';
+        }
+      }
       if (refs.slider) {
         if (Number.isFinite(applied)) refs.slider.value = String(applied);
         refs.slider.disabled = !enabled;
@@ -144,7 +185,7 @@ export default component({
       if (refs.chart) refs.chart.innerHTML = zoneChart(zone);
       if (refs.badge) {
         const badge = refs.badge;
-        badge.textContent = stateLabel(state, enabled);
+        badge.textContent = stateLabel(zone, state, enabled);
         const badgeClass = !enabled ? 'badge-disabled' : state === 'HEATING' ? 'badge-heating' : state === 'IDLE' ? 'badge-idle' : state === 'FAULT' ? 'badge-fault' : '';
         badge.className = 'zd-badge' + (badgeClass ? ' ' + badgeClass : '');
       }
@@ -190,6 +231,11 @@ export default component({
       temp: el.querySelector('.zd-temp'),
       setpoint: el.querySelector('.zd-setpoint'),
       demand: el.querySelector('.zd-demand'),
+      learning: el.querySelector('.zd-learning'),
+      learnBar: el.querySelector('.zd-learn-bar'),
+      learnFill: el.querySelector('.zd-learn-fill'),
+      learnTrack: el.querySelector('.zd-learn-track'),
+      learnMeta: el.querySelector('.zd-learn-meta'),
       badge: el.querySelector('.zd-badge'),
       slider: el.querySelector('[data-comfort-slider]'),
       sliderValue: el.querySelector('[data-slider-value]'),
@@ -211,7 +257,7 @@ export default component({
     const updateIfSelectedZone = (id) => {
       const zone = getDashboardValue('selectedZone');
       if (
-        /(?:text_sensor-zone_\d+_state|switch-zone_\d+_enabled|sensor-zone_\d+_valve_pct)$/.test(id) ||
+        /(?:text_sensor-zone_\d+_state|switch-zone_\d+_enabled|sensor-zone_\d+_valve_pct|sensor-motor_\d+_(?:learned_open_ripples|working_ripples|pin_free_ripples|learn_pct|learn_sample|learn_samples_needed)|text_sensor-motor_\d+_(?:stroke_model|learn_phase))$/.test(id) ||
         id === key.temp(zone) ||
         id === key.setpoint(zone) ||
         id === key.baseSetpoint(zone) ||
@@ -233,8 +279,20 @@ export default component({
       subscribe(key.valve(zone), updateIfSelectedZone);
       subscribe(key.state(zone), updateIfSelectedZone);
       subscribe(key.enabled(zone), updateIfSelectedZone);
+      subscribe(key.motorOpenRipples(zone), updateIfSelectedZone);
+      subscribe(key.motorWorkingRipples(zone), updateIfSelectedZone);
+      subscribe(key.motorPinFreeRipples(zone), updateIfSelectedZone);
+      subscribe(key.motorStrokeModel(zone), updateIfSelectedZone);
+      subscribe(key.motorLearnPct(zone), updateIfSelectedZone);
+      subscribe(key.motorLearnPhase(zone), updateIfSelectedZone);
+      subscribe(key.motorLearnSample(zone), updateIfSelectedZone);
+      subscribe(key.motorLearnSamplesNeeded(zone), updateIfSelectedZone);
     }
     subscribe('sensor-manifold_return_temperature', update);
+    subscribe(gkey.effectiveHeatingMode, update);
+    subscribe(gkey.heatingMode, update);
+    subscribe(gkey.hpBasePct, update);
+    subscribe(gkey.hpTrimFloorPct, update);
     subscribeDashboard('selectedZone', update);
     subscribeLanguage(() => { localize(el); update(); });
     localize(el);

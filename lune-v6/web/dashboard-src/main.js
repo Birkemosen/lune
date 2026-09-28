@@ -25,7 +25,7 @@ import './components/diagnostics/diag-motor-lab.js';
 import './components/diagnostics/diag-system-card.js';
 import './components/settings/settings-manifold-card.js';
 import './components/settings/settings-touch-card.js';
-import './components/settings/settings-minimum-flow-card.js';
+import './components/settings/settings-heating-mode-card.js';
 import './components/settings/settings-return-temp-card.js';
 import './components/settings/settings-ble-clock-card.js';
 import './components/settings/settings-control-card.js';

@@ -134,12 +134,8 @@
 .lune-mark .disc-cut { fill: var(--bg); }
 .lune-mark .disc { fill: #0c0b09; stroke: var(--brand-rim, #25221E); stroke-width: 1.5; }
 .lune-mark .pipe { fill: none; stroke-linecap: round; }
-.lune-mark .pipe.is-calling { stroke: var(--pipe-calling); filter: drop-shadow(0 0 4px var(--pipe-calling)); stroke-dasharray: 7 9; animation: lune-pipe-run 1.05s linear infinite; }
+.lune-mark .pipe.is-calling { stroke: var(--pipe-calling); }
 .lune-mark .pipe.is-idle { stroke: var(--pipe-idle); opacity: .42; }
 .lune-mark .pipe.is-unused { stroke: var(--pipe-unused); }
 .lune-mark .pipe.is-focus { stroke-width: 8.5; }
 .lune-mark .sku, .lune-mark .word { fill: var(--brand-word, #FAF6EF); font-family: var(--font-ui); font-weight: 700; }
-@keyframes lune-pipe-run { to { stroke-dashoffset: -16; } }
-@media (prefers-reduced-motion: reduce) {
-  .lune-mark .pipe.is-calling { animation: none; stroke-dasharray: none; }
-}

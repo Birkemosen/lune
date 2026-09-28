@@ -869,8 +869,8 @@ number:
     unit_of_measurement: "s"
     min_value: 10
     # 40 s of close travel puts the plunger at the housing exit, so the entity
-    # must not be able to reach it. Default is 34.
-    max_value: 36
+    # must not be able to reach it. Default is 38.
+    max_value: 38
     step: 1
     optimistic: false
     lambda: |-

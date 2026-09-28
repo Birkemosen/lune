@@ -9,6 +9,16 @@
   --soft: var(--separator-soft);
   --green: var(--ok);
   --red: var(--danger);
+  /* Timeline / learning — distinct hues (not shared with --accent/--warn) */
+  --tl-off: #6b7280;
+  --tl-manual: #38bdf8;
+  --tl-calibrating: #a78bfa;
+  --tl-idle: #34d399;
+  --tl-overheated: #f43f5e;
+  --tl-absorb: #22d3ee;
+  --tl-absorb-armed: #0ea5e9;
+  --learn: var(--tl-calibrating);
+  --learn-rgb: 167, 139, 250;
 }
 
 *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }

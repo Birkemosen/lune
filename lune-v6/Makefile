@@ -37,7 +37,7 @@ DESIGN_DIR ?= $(firstword $(wildcard \
 LDS_DIR ?= $(DESIGN_DIR)
 LDS_CONSUMER ?= $(ROOT_ABS)
 
-.PHONY: help check ensure-secrets-link config compile build build-verify bump-build prepare-release release release-deploy release-firmware release-bundle upload deploy ota logs discover monitor erase erase-nvs clean dashboard dashboard-tooling dashboard-build dashboard-reference-traces dashboard-watch design-tokens design-verify test test-dashboard test-ripple test-rev31-logic test-rev32-logic test-safety-limits test-stall-model test-stroke-learning test-balance test-authority-lease test-preheat-policy test-preheat-absorb test-probe-mapping test-thermal-model test-flow-allocator test-hydraulic-policy test-hydraulic-diagnostics test-commissioning-schema test-request-guard test-ble-time-beacon test-settings-backup
+.PHONY: help check ensure-secrets-link config compile build build-verify bump-build prepare-release release release-deploy release-firmware release-bundle upload deploy ota logs discover monitor erase erase-nvs clean dashboard dashboard-tooling dashboard-build dashboard-reference-traces dashboard-watch design-tokens design-verify test test-dashboard test-ripple test-rev31-logic test-rev32-logic test-safety-limits test-stall-model test-stroke-learning test-balance test-authority-lease test-preheat-policy test-preheat-absorb test-probe-mapping test-thermal-model test-flow-allocator test-hydraulic-policy test-hydraulic-diagnostics test-commissioning-schema test-request-guard test-ble-time-beacon test-settings-backup test-control-mode
 
 help:
 	@echo "Lune V6 ESPHome tasks"
@@ -251,6 +251,8 @@ BLE_TIME_BEACON_SRCS = test/ble_time_beacon/test_ble_time_beacon.cpp
 BLE_TIME_BEACON_OUT  = /tmp/test_hv6_ble_time_beacon
 SETTINGS_BACKUP_SRCS = test/settings_backup/test_settings_backup.cpp components/lv6_dashboard/settings_backup.cpp
 SETTINGS_BACKUP_OUT  = /tmp/test_hv6_settings_backup
+CONTROL_MODE_SRCS = test/control_mode/test_control_mode_policy.cpp
+CONTROL_MODE_OUT  = /tmp/test_hv6_control_mode
 
 test-balance:
 	$(RIPPLE_CXX) -std=c++17 -O2 -Wall -Wextra -I components/lv6_zone_controller $(BALANCE_SRCS) -o $(BALANCE_OUT) -lm
@@ -303,10 +305,14 @@ test-settings-backup:
 	$(RIPPLE_CXX) -std=c++17 -O2 -Wall -Wextra -I components/lv6_dashboard -I components/lv6_config_store $(SETTINGS_BACKUP_SRCS) -o $(SETTINGS_BACKUP_OUT) -lm
 	$(SETTINGS_BACKUP_OUT)
 
+test-control-mode:
+	$(RIPPLE_CXX) -std=c++17 -O2 -Wall -Wextra -I components/lv6_zone_controller -I components/lv6_config_store $(CONTROL_MODE_SRCS) -o $(CONTROL_MODE_OUT) -lm
+	$(CONTROL_MODE_OUT)
+
 test-dashboard:
 	sh test/dashboard/test_dashboard.sh
 
-test: design-verify test-dashboard test-ripple test-rev31-logic test-rev32-logic test-safety-limits test-stall-model test-stroke-learning test-balance test-authority-lease test-preheat-policy test-preheat-absorb test-probe-mapping test-thermal-model test-flow-allocator test-hydraulic-policy test-hydraulic-diagnostics test-commissioning-schema test-request-guard test-ble-time-beacon test-settings-backup
+test: design-verify test-dashboard test-ripple test-rev31-logic test-rev32-logic test-safety-limits test-stall-model test-stroke-learning test-balance test-authority-lease test-preheat-policy test-preheat-absorb test-probe-mapping test-thermal-model test-flow-allocator test-hydraulic-policy test-hydraulic-diagnostics test-commissioning-schema test-request-guard test-ble-time-beacon test-settings-backup test-control-mode
 
 ota: check
 	$(MAKE) build

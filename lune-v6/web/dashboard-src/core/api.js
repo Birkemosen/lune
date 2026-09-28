@@ -210,6 +210,7 @@ const globalNumberMap = {
   cap_stall_ma: gkey.capStallMa,
   cap_open_stop_ma: gkey.capOpenStopMa,
   cap_circuit_fault_ma: gkey.capCircuitFaultMa,
+  close_runtime_limit_counts: gkey.closeRuntimeLimitCounts,
   working_range_learning: gkey.workingRangeLearning,
   learn_open_start_ripples: gkey.learnOpenStartRipples,
   learn_open_step_ripples: gkey.learnOpenStepRipples,
@@ -369,6 +370,11 @@ export function setManualMode(enabled) {
 // Recovery/reset helpers
 export function resetMotorFault(zone) {
   addActivity('Motor ' + zone + ' fault reset', zone);
+  // Optimistic: ESPHome template sensors lag up to 10 s; live snapshot now
+  // reads telemetry, but the next poll may still be a beat away.
+  if (zone >= 1 && zone <= 6) {
+    setEntity(key.motorLastFault(zone), { state: 'NONE' });
+  }
   return command('motor_reset_fault', zone);
 }
 

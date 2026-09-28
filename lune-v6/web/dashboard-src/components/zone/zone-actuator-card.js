@@ -4,6 +4,7 @@ import { ev, es, getDashboardValue, subscribeDashboard, zoneLabel } from '../../
 import { resetMotorFault, resetMotorLearnedFactors, resetMotorAndRelearn } from '../../core/api.js';
 import { key } from '../../utils/keys.js';
 import { localize, subscribeLanguage, t } from '../../core/i18n.js';
+import { zoneLearningProgress } from '../../utils/learning-progress.js';
 
 const css = `
 .zone-actuator-disclosure { height: auto; }
@@ -31,6 +32,36 @@ const css = `
   font-size: 1.08rem;
   font-weight: 650;
   font-variant-numeric: tabular-nums;
+}
+.zone-actuator-disclosure .za-stat-value.is-warn { color: var(--learn); }
+.zone-actuator-disclosure .za-stat-value.is-ok { color: var(--state-ok); }
+.zone-actuator-disclosure .za-learn-bar {
+  display: none;
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(var(--learn-rgb), .08);
+  border: 1px solid rgba(var(--learn-rgb), .22);
+}
+.zone-actuator-disclosure .za-learn-bar.is-on { display: block; }
+.zone-actuator-disclosure .za-learn-track {
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(var(--learn-rgb), .18);
+  overflow: hidden;
+}
+.zone-actuator-disclosure .za-learn-fill {
+  height: 100%;
+  width: 0;
+  border-radius: inherit;
+  background: var(--learn);
+  transition: width .35s ease;
+}
+.zone-actuator-disclosure .za-learn-meta {
+  margin-top: 8px;
+  color: var(--learn);
+  font-size: .78rem;
+  font-weight: 650;
 }
 .zone-actuator-disclosure .za-fault {
   display: flex;
@@ -121,19 +152,47 @@ const css = `
 
 injectStyle('zone-actuator-card', css);
 
-function fmtFactor(v) { return v != null ? Number(v).toFixed(2) + 'x' : '---'; }
-function fmtRipples(v) { return v != null ? Number(v).toFixed(0) : '---'; }
+function fmtFactor(v) { return v != null && Number(v) > 0 ? Number(v).toFixed(2) + 'x' : '---'; }
+function fmtRipples(v) {
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 ? String(Math.round(n)) : '---';
+}
 function fmtPreheat(v) { return v != null ? Number(v).toFixed(2) + 'C' : '---'; }
+
+function learningStatus(zone) {
+  const learning = zoneLearningProgress(zone);
+  if (learning.active) {
+    return { text: `${learning.label} · ${learning.pct}%`, cls: 'is-warn', progress: learning };
+  }
+  const model = String(es(key.motorStrokeModel(zone)) || '');
+  const working = Number(ev(key.motorWorkingRipples(zone)));
+  const span = Number(ev(key.motorOpenRipples(zone)));
+  if (model === 'working_range' && working > 0) {
+    return { text: t('zone.learning.workingRange'), cls: 'is-ok', progress: null };
+  }
+  if (model === 'full_stroke' && span > 0) {
+    return { text: t('zone.learning.fullStroke'), cls: 'is-ok', progress: null };
+  }
+  if (span > 0 || working > 0) {
+    return { text: t('zone.learning.learned'), cls: 'is-ok', progress: null };
+  }
+  return { text: t('zone.learning.needed'), cls: 'is-warn', progress: null };
+}
 
 const template = () => `
   <details class="disclosure zone-actuator-disclosure">
     <summary data-i18n="zone.actuator.title">Actuator</summary>
     <div class="disclosure-body">
       <div class="ui-section" data-i18n="zone.actuator.calibration">Calibration and preheat</div>
+      <div class="za-learn-bar" hidden>
+        <div class="za-learn-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="za-learn-fill"></div></div>
+        <div class="za-learn-meta">—</div>
+      </div>
       <div class="za-stats">
-        <div class="za-stat"><div class="za-stat-label" data-i18n="zone.detail.openRipples">Open Ripples</div><div class="za-stat-value za-orip">---</div></div>
-        <div class="za-stat"><div class="za-stat-label" data-i18n="zone.detail.closeRipples">Close Ripples</div><div class="za-stat-value za-crip">---</div></div>
-        <div class="za-stat"><div class="za-stat-label" data-i18n="zone.detail.openFactor">Open Factor</div><div class="za-stat-value za-ofac">---</div></div>
+        <div class="za-stat"><div class="za-stat-label" data-i18n="zone.learning.status">Learning</div><div class="za-stat-value za-learn">---</div></div>
+        <div class="za-stat"><div class="za-stat-label" data-i18n="zone.learning.workingSpan">Working range</div><div class="za-stat-value za-span">---</div></div>
+        <div class="za-stat"><div class="za-stat-label" data-i18n="zone.learning.pinToSeat">Pin → seat</div><div class="za-stat-value za-work">---</div></div>
+        <div class="za-stat"><div class="za-stat-label" data-i18n="zone.learning.freeTravel">Free to pin</div><div class="za-stat-value za-free">---</div></div>
         <div class="za-stat"><div class="za-stat-label" data-i18n="zone.detail.closeFactor">Close Factor</div><div class="za-stat-value za-cfac">---</div></div>
         <div class="za-stat"><div class="za-stat-label" data-i18n="zone.detail.preheatAdv">Preheat Adv.</div><div class="za-stat-value za-ph">---</div></div>
       </div>
@@ -172,10 +231,16 @@ export default component({
   render: template,
   onMount(ctx, el) {
     let zone = Number(getDashboardValue('selectedZone') || 1);
+    let wasLearning = false;
     const refs = {
-      orip: el.querySelector('.za-orip'),
-      crip: el.querySelector('.za-crip'),
-      ofac: el.querySelector('.za-ofac'),
+      learn: el.querySelector('.za-learn'),
+      learnBar: el.querySelector('.za-learn-bar'),
+      learnFill: el.querySelector('.za-learn-fill'),
+      learnTrack: el.querySelector('.za-learn-track'),
+      learnMeta: el.querySelector('.za-learn-meta'),
+      span: el.querySelector('.za-span'),
+      work: el.querySelector('.za-work'),
+      free: el.querySelector('.za-free'),
       cfac: el.querySelector('.za-cfac'),
       ph: el.querySelector('.za-ph'),
       fault: el.querySelector('.za-fault'),
@@ -188,9 +253,29 @@ export default component({
 
     function updateMetrics() {
       zone = Number(getDashboardValue('selectedZone') || 1);
-      refs.orip.textContent = fmtRipples(ev(key.motorOpenRipples(zone)));
-      refs.crip.textContent = fmtRipples(ev(key.motorCloseRipples(zone)));
-      refs.ofac.textContent = fmtFactor(ev(key.motorOpenFactor(zone)));
+      const status = learningStatus(zone);
+      const learning = status.progress;
+      if (wasLearning && !(learning && learning.active)) {
+        showStatus('✓ ' + t('zone.learning.finished', { zone: zoneLabel(zone) }), true);
+      }
+      wasLearning = !!(learning && learning.active);
+
+      refs.learn.textContent = status.text;
+      refs.learn.className = 'za-stat-value' + (status.cls ? ' ' + status.cls : '');
+      if (refs.learnBar) {
+        const on = !!(learning && learning.active);
+        refs.learnBar.hidden = !on;
+        refs.learnBar.classList.toggle('is-on', on);
+        if (on) {
+          refs.learnFill.style.width = Math.max(learning.pct, 4) + '%';
+          refs.learnTrack.setAttribute('aria-valuenow', String(learning.pct));
+          refs.learnTrack.setAttribute('aria-label', learning.label);
+          refs.learnMeta.textContent = learning.label + ' · ' + learning.pct + '%';
+        }
+      }
+      refs.span.textContent = fmtRipples(ev(key.motorOpenRipples(zone)));
+      refs.work.textContent = fmtRipples(ev(key.motorWorkingRipples(zone)));
+      refs.free.textContent = fmtRipples(ev(key.motorPinFreeRipples(zone)));
       refs.cfac.textContent = fmtFactor(ev(key.motorCloseFactor(zone)));
       refs.ph.textContent = fmtPreheat(ev(key.preheatAdvance(zone)));
       const fault = String(es(key.motorLastFault(zone)) || '').toUpperCase();
@@ -208,37 +293,52 @@ export default component({
     }
 
     function run(action, sentMsg) {
-      const p = action(zone);
+      const z = Number(getDashboardValue('selectedZone') || zone || 1);
+      zone = z;
+      const p = action(z);
       showStatus(sentMsg, true);
       if (p && typeof p.then === 'function') {
         p.then((resp) => {
           if (resp && resp.ok === false) showStatus(t('diagnostics.recovery.rejected'), false);
+          else updateMetrics();
         }).catch(() => showStatus(t('diagnostics.recovery.unreachable'), false));
+      } else {
+        updateMetrics();
       }
     }
 
     refs.faultBtn?.addEventListener('click', () => {
-      run(resetMotorFault, '✓ ' + t('diagnostics.recovery.faultSent', { zone: zoneLabel(zone) }));
+      const z = Number(getDashboardValue('selectedZone') || zone || 1);
+      run(resetMotorFault, '✓ ' + t('diagnostics.recovery.faultSent', { zone: zoneLabel(z) }));
     });
     refs.factorsBtn?.addEventListener('click', () => {
-      if (confirm(t('diagnostics.recovery.confirmFactors', { zone: zoneLabel(zone) }))) {
-        run(resetMotorLearnedFactors, '✓ ' + t('diagnostics.recovery.factorsReset', { zone: zoneLabel(zone) }));
+      const z = Number(getDashboardValue('selectedZone') || zone || 1);
+      if (confirm(t('diagnostics.recovery.confirmFactors', { zone: zoneLabel(z) }))) {
+        run(resetMotorLearnedFactors, '✓ ' + t('diagnostics.recovery.factorsReset', { zone: zoneLabel(z) }));
       }
     });
     refs.relearnBtn?.addEventListener('click', () => {
-      if (confirm(t('diagnostics.recovery.confirmRelearn', { zone: zoneLabel(zone) }))) {
-        run(resetMotorAndRelearn, '✓ ' + t('diagnostics.recovery.relearnStarted', { zone: zoneLabel(zone) }));
+      const z = Number(getDashboardValue('selectedZone') || zone || 1);
+      if (confirm(t('diagnostics.recovery.confirmRelearn', { zone: zoneLabel(z) }))) {
+        wasLearning = true;
+        run(resetMotorAndRelearn, '✓ ' + t('diagnostics.recovery.relearnStarted', { zone: zoneLabel(z) }));
       }
     });
 
     subscribeDashboard('selectedZone', updateMetrics);
     for (let z = 1; z <= 6; z++) {
+      subscribe(key.state(z), updateMetrics);
       subscribe(key.motorOpenRipples(z), updateMetrics);
-      subscribe(key.motorCloseRipples(z), updateMetrics);
-      subscribe(key.motorOpenFactor(z), updateMetrics);
+      subscribe(key.motorWorkingRipples(z), updateMetrics);
+      subscribe(key.motorPinFreeRipples(z), updateMetrics);
+      subscribe(key.motorStrokeModel(z), updateMetrics);
       subscribe(key.motorCloseFactor(z), updateMetrics);
       subscribe(key.preheatAdvance(z), updateMetrics);
       subscribe(key.motorLastFault(z), updateMetrics);
+      subscribe(key.motorLearnPct(z), updateMetrics);
+      subscribe(key.motorLearnPhase(z), updateMetrics);
+      subscribe(key.motorLearnSample(z), updateMetrics);
+      subscribe(key.motorLearnSamplesNeeded(z), updateMetrics);
     }
     subscribeLanguage(() => { localize(el); updateMetrics(); });
     localize(el);

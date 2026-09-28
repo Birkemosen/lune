@@ -166,7 +166,7 @@ const titleMap = {
 
 const settingsTitleMap = {
   touch: ['Settings', 'Touch', 'Approval and coordinator identity'],
-  hydraulics: ['Settings', 'Hydraulics', 'Manifold probes, return temperature and minimum flow'],
+  hydraulics: ['Settings', 'Hydraulics', 'Heating mode, manifold probes and minimum flow'],
   comfort: ['Settings', 'Comfort', 'Room clocks and preheat absorption'],
   motors: ['Settings', 'Motors', 'Drivers, profile and learning limits'],
   device: ['Settings', 'Device', 'Connection, firmware, backup and appearance'],

@@ -248,9 +248,19 @@ export function endPendingWrite() {
   notify(dashboardKey('pendingWrites'));
 }
 
+/** How long after a write we ignore inbound /state echoes (optimistic UI). */
+export const WRITE_ECHO_SUPPRESS_MS = 2000;
+
 export function shouldSuppressStateUpdate() {
   if (D.pendingWrites > 0) return true;
-  return (Date.now() - D.lastWriteAt) < 2000;
+  return (Date.now() - D.lastWriteAt) < WRITE_ECHO_SUPPRESS_MS;
+}
+
+/** ms until a full /state apply is allowed again (0 = apply now). */
+export function msUntilStateUnsuppressed() {
+  if (D.pendingWrites > 0) return WRITE_ECHO_SUPPRESS_MS;
+  const left = WRITE_ECHO_SUPPRESS_MS - (Date.now() - D.lastWriteAt);
+  return left > 0 ? left : 0;
 }
 
 // Zone names are device-persistent: the UI commits via api.applyZoneName() →

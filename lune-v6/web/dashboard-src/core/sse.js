@@ -3,20 +3,44 @@
 import { startMock } from './mock.js';
 import {
   setEntity, setLive, sampleHistory, addActivity, setI2cResult,
-  shouldSuppressStateUpdate, getDashboardValue, subscribeDashboard,
+  shouldSuppressStateUpdate, msUntilStateUnsuppressed, getDashboardValue, subscribeDashboard,
 } from './store.js';
 import { fetchHistory, fetchLogs } from './api.js';
 import { gkey } from '../utils/keys.js';
+import { zoneLearningProgress } from '../utils/learning-progress.js';
 
 let pollAbortController = null;
 let historyRefreshTimer = null;
 let logsRefreshTimer = null;
 let revisionTimer = null;
 let lastRevision = null;
+let lastRuntimeRevision = null;
+let learningPollTimer = null;
+let postWriteRefreshTimer = null;
 let backgroundSuspended = false;
 
 function labOwnsHttp() {
   return !!getDashboardValue('motorLabBusy') || backgroundSuspended;
+}
+
+/**
+ * Writes suppress /state application for ~2 s so optimistic UI is not clobbered.
+ * The revision poll that lands inside that window is discarded entirely — so after
+ * the window we must fetch once, or the UI stays on stale optimistic values
+ * (empty BLE MAC, cleared fault, etc.) until the next unrelated revision bump.
+ */
+function schedulePostWriteRefresh() {
+  if (postWriteRefreshTimer) clearTimeout(postWriteRefreshTimer);
+  const delay = Math.max(50, msUntilStateUnsuppressed() + 50);
+  postWriteRefreshTimer = setTimeout(() => {
+    postWriteRefreshTimer = null;
+    if (labOwnsHttp()) return;
+    if (shouldSuppressStateUpdate()) {
+      schedulePostWriteRefresh();
+      return;
+    }
+    pollStateCycle();
+  }, delay);
 }
 
 async function fetchStateOnce() {
@@ -42,11 +66,40 @@ async function fetchStateOnce() {
   return response.json();
 }
 
+function anyZoneLearning() {
+  for (let zone = 1; zone <= 6; zone++) {
+    if (zoneLearningProgress(zone).active) return true;
+  }
+  return false;
+}
+
+function syncLearningPoller() {
+  const need = anyZoneLearning() && !labOwnsHttp();
+  if (need && !learningPollTimer) {
+    learningPollTimer = setInterval(() => {
+      if (labOwnsHttp() || !anyZoneLearning()) {
+        clearInterval(learningPollTimer);
+        learningPollTimer = null;
+        return;
+      }
+      pollStateCycle();
+    }, 1000);
+  } else if (!need && learningPollTimer) {
+    clearInterval(learningPollTimer);
+    learningPollTimer = null;
+  }
+}
+
 function applyStateMap(payload) {
   if (!payload || typeof payload !== 'object') return;
-  if (shouldSuppressStateUpdate()) return;
+  if (shouldSuppressStateUpdate()) {
+    // Do not drop the refresh permanently — retry once the echo window ends.
+    schedulePostWriteRefresh();
+    return;
+  }
   for (const id in payload) setEntity(id, payload[id]);
   sampleHistory(false);
+  syncLearningPoller();
 }
 
 function onMessage(message) {
@@ -111,13 +164,19 @@ async function pollRevision() {
     const payload = await response.json();
     const data = payload && payload.data;
     const revision = data && data.data_revision;
+    const runtimeRevision = data && data.runtime_revision;
     // Uptime is not a config revision. Ship it on this cheap poll so the
     // connectivity card can keep ticking without refetching the full snapshot.
     if (data && data.uptime_s != null) {
       setEntity(gkey.uptime, { value: Number(data.uptime_s) });
     }
-    if (lastRevision === null || revision !== lastRevision) {
+    const dataChanged = lastRevision === null || revision !== lastRevision;
+    const runtimeChanged =
+      runtimeRevision != null &&
+      (lastRuntimeRevision === null || runtimeRevision !== lastRuntimeRevision);
+    if (dataChanged || runtimeChanged) {
       lastRevision = revision;
+      if (runtimeRevision != null) lastRuntimeRevision = runtimeRevision;
       pollStateCycle();
     }
     setLive(true);
@@ -132,6 +191,10 @@ function suspendBackgroundPolling_() {
   if (pollAbortController) {
     pollAbortController.abort();
     pollAbortController = null;
+  }
+  if (learningPollTimer) {
+    clearInterval(learningPollTimer);
+    learningPollTimer = null;
   }
 }
 
@@ -154,6 +217,14 @@ export function connect() {
     else resumeBackgroundPolling_();
   });
 
+  // When the last in-flight write settles, schedule a deferred /state pull so
+  // optimistic values converge with the device after the echo-suppress window.
+  subscribeDashboard('pendingWrites', () => {
+    if (getDashboardValue('pendingWrites') === 0) schedulePostWriteRefresh();
+  });
+
   pollStateCycle();
-  if (!revisionTimer) revisionTimer = setInterval(pollRevision, 3000);
+  // 1 s revision poll so learning progress (runtime_revision) reaches the UI
+  // without waiting for a config write to bump data_revision.
+  if (!revisionTimer) revisionTimer = setInterval(pollRevision, 1000);
 }

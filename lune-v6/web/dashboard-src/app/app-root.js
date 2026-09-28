@@ -7,6 +7,7 @@ import { fmtT, fmtV } from '../utils/format.js';
 import { applyTheme } from '../core/theme.js';
 import { isDevBuild } from '../utils/dev-build.js';
 import { paintMark, manifoldMetaHtml, fmtDeg, zonePipeKind } from '../core/canvas.js';
+import { heatDemandSummaryLine, heatingModeSummary, zoneControlStatusLabel } from '../utils/control-mode.js';
 import { luneTouchLockup } from '../core/lune-mark.generated.js';
 import { MANIFOLD_ROW_CSS, loopCellHtml, demandBarLevel } from '../core/lds-manifold-row.generated.js';
 import { FORM_CSS, formShellHtml } from '../core/lds-form.generated.js';
@@ -64,27 +65,14 @@ const css = `
 }
 *,*::before,*::after{box-sizing:border-box} html{font-size:100%;scroll-behavior:smooth} body{margin:0;background:var(--bg);color:var(--text-main);font-family:var(--font-ui);line-height:1.45;-webkit-font-smoothing:antialiased} button,input,select{font:inherit} button,a,select,input{ -webkit-tap-highlight-color:transparent }
 app-root{display:block}.app{min-height:100vh;position:relative}.shell{position:relative;z-index:1;display:grid;grid-template-columns:var(--sidebar-width) minmax(0,1fr);min-height:100vh}.side-panel{grid-column:1;position:sticky;top:0;height:100vh;display:flex;flex-direction:column;padding:18px 12px 14px;border-right:1px solid var(--separator);background:transparent;overflow:visible}.side-brand{display:flex;align-items:center;gap:8px;min-height:0;padding:6px 8px 16px;color:inherit;font:inherit;letter-spacing:0}.side-brand .lune-mark{width:var(--brand-lockup-w,80px);height:var(--brand-lockup-h,59px)}.side-subtitle{display:none}
-.lune-mark .pipe.is-calling{animation:none!important;stroke-dasharray:none!important;filter:none}.side-nav-slot{display:flex;flex:1;min-height:0}.main-panel{grid-column:2;min-width:0}.hdr{position:sticky;top:0;z-index:20;padding:22px 36px 16px;border-bottom:1px solid var(--separator);background:var(--bg)}.view-panel{min-width:0;width:100%;margin:0;padding:var(--content-pad)}.ftr{margin-top:48px;color:var(--text-faint);font-size:.75rem}.sec{display:none}.sec.active{display:block}
+.manifold-mark .lune-mark .pipe{stroke:var(--pipe-idle)!important;opacity:.42;animation:none!important;stroke-dasharray:none!important;filter:none!important}.side-nav-slot{display:flex;flex:1;min-height:0}.main-panel{grid-column:2;min-width:0}.hdr{position:sticky;top:0;z-index:20;padding:22px 36px 16px;border-bottom:1px solid var(--separator);background:var(--bg)}.view-panel{min-width:0;width:100%;margin:0;padding:var(--content-pad)}.ftr{margin-top:48px;color:var(--text-faint);font-size:.75rem}.sec{display:none}.sec.active{display:block}
 .view-lead{max-width:720px;margin:0 0 28px;padding-bottom:24px;border-bottom:1px solid var(--separator)}.view-lead h2{margin:0;color:var(--text-strong);font-size:1.1rem;font-weight:650}.view-lead p{margin:6px 0 0;color:var(--text-muted);font-size:.92rem}
 .status-summary{display:grid;grid-template-columns:minmax(0,1.4fr) repeat(4,minmax(100px,1fr));gap:0;margin:0 0 24px;padding:20px 0;border-top:1px solid var(--separator);border-bottom:1px solid var(--separator)}.settings-readiness,.diagnostics-readiness{grid-template-columns:minmax(0,1.5fr) repeat(3,minmax(120px,1fr))}.status-summary-main{padding-right:24px}.eyebrow{display:block;color:var(--text-faint);font-size:.72rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase}.status-summary h2{margin:5px 0 4px;color:var(--text-strong);font-size:1.65rem;letter-spacing:-.025em}.status-summary p{margin:0;color:var(--text-muted);font-size:.9rem}.status-fact{padding:0 16px;border-left:1px solid var(--separator)}.status-fact strong{display:block;margin-top:5px;color:var(--text-strong);font-size:1.15rem;font-variant-numeric:tabular-nums}.status-fact small{display:block;margin-top:3px;color:var(--text-muted);font-size:.78rem}.status-ok{color:var(--state-ok)!important}.status-summary h2.status-ok{color:var(--text-strong)!important}.status-warn{color:var(--state-warn)!important}.status-danger{color:var(--state-danger)!important}
 .attention{margin:0 0 24px;border-left:3px solid var(--state-warn);padding:13px 16px;background:rgba(245,158,11,.055)}.attention[hidden]{display:none}.attention strong{display:block;color:var(--text-strong);font-size:.9rem}.attention span{display:block;margin-top:3px;color:var(--text-muted);font-size:.85rem}
 .content-group{border:1px solid var(--separator);border-radius:12px;background:var(--surface-raised);overflow:hidden}.content-group + .content-group{margin-top:24px}.group-title{display:flex;justify-content:space-between;align-items:center;gap:18px;min-height:58px;padding:10px 12px 10px 18px;border-bottom:1px solid var(--separator)}.group-title-main{min-width:0}.group-title h3{margin:0;color:var(--text-strong);font-size:1rem;font-weight:650}.group-title span{display:block;margin-top:2px;color:var(--text-muted);font-size:.78rem}.group-navigation{min-height:var(--control-height);padding:0 10px;border:0;border-radius:8px;background:transparent;color:var(--accent);font-weight:650;cursor:pointer}.group-navigation:hover{background:rgba(var(--accent-rgb),.10)}.zone-grid{display:grid;grid-template-columns:1fr;gap:0;margin:0}
 .zone-id-short{display:inline}.zone-id-long{display:none}@media(min-width:901px){.zone-id-short{display:none}.zone-id-long{display:inline}}.zone-label-compact .zone-id-short{display:inline!important}.zone-label-compact .zone-id-long{display:none!important}.zone-title-id{min-width:0}.zone-title-name{font-weight:500;color:var(--text-faint)}@media(max-width:900px){.zone-label-compact .zone-title-name,.mobile-zone-dock .zone-title-name{display:none}}
-.zone-overview{margin:0 0 22px;padding:0 0 16px;border-bottom:1px solid var(--separator)}.zone-overview-strip{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px}.zone-overview-card{position:relative;min-width:0;min-height:64px;padding:10px 12px;border:1px solid var(--separator);border-radius:10px;background:var(--surface-raised);color:var(--text-muted);display:flex;flex-direction:column;align-items:stretch;justify-content:center;gap:2px;text-align:left;overflow:hidden;font:inherit}.zone-overview-card.is-merged{border-color:color-mix(in srgb,var(--accent) 32%,var(--separator));background:color-mix(in srgb,var(--accent) 5%,var(--surface-raised))}.zone-overview-card.zo-pair-start{border-top-right-radius:4px;border-bottom-right-radius:4px}.zone-overview-card.zo-pair-cont{border-top-left-radius:4px;border-bottom-left-radius:4px;margin-left:-4px;padding-left:14px;border-left-color:color-mix(in srgb,var(--accent) 22%,var(--separator))}.zone-overview-card .zo-status{position:absolute;top:10px;right:10px;width:8px;height:8px;border-radius:50%;background:var(--state-disabled)}.zone-overview-card.zs-heating .zo-status{background:var(--accent)}.zone-overview-card.zs-idle .zo-status,.zone-overview-card.zs-off .zo-status{background:var(--state-disabled)}.zone-overview-card.zs-overheated .zo-status{background:var(--state-warn)}.zone-overview-card.zs-fault .zo-status{background:var(--state-danger)}.zone-overview-card .zo-title{min-width:0;padding-right:14px;color:var(--text-strong);font-size:.78rem;font-weight:750;letter-spacing:.02em;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.zone-overview-card .zo-title .zone-title-name{font-size:.72rem;font-weight:560;letter-spacing:0;color:var(--text-faint)}.zone-overview-card .zo-temps{min-width:0;padding-right:4px;color:var(--text-muted);font-size:.8125rem;font-weight:600;font-variant-numeric:tabular-nums;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.zone-overview-card .zo-merge{min-width:0;padding-right:4px;color:var(--text-faint);font-size:.68rem;font-weight:600;letter-spacing:.01em;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}@media(min-width:901px){.zone-overview-card{cursor:pointer}.zone-overview-card:hover{color:var(--text-strong);background:color-mix(in srgb,var(--surface-raised) 70%,rgba(255,255,255,.06));border-color:color-mix(in srgb,var(--separator) 60%,rgba(199,211,232,.28))}.zone-overview-card[aria-current="true"]{color:var(--text-strong);border-color:transparent;background:var(--fill-forest)}.zone-overview-card[aria-current="true"] .zo-title,.zone-overview-card[aria-current="true"] .zo-temps{color:inherit}.zone-overview-card[aria-current="true"] .zo-title .zone-title-name{color:inherit;opacity:.72}.zone-overview-card[aria-current="true"].is-merged{border-color:transparent;background:var(--fill-forest)}.zone-overview-card:focus-visible{outline:3px solid var(--focus-ring);outline-offset:2px}}.zone-detail-heading{margin:0 0 12px;padding:0;border:0}.zone-detail-heading .eyebrow,.zone-detail-heading p{display:none}.zone-detail-heading h2{margin:4px 0 0;color:var(--text-strong);font-size:1.2rem;font-weight:650;letter-spacing:-.02em}.zones-detail-pane{min-width:0}.int-split>*{min-width:0}.zone-detail-secondary{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.zone-overview{margin:0 0 22px;padding:0 0 16px;border-bottom:1px solid var(--separator)}.zone-detail-heading{margin:0 0 12px;padding:0;border:0}.zone-detail-heading .eyebrow,.zone-detail-heading p{display:none}.zone-detail-heading h2{margin:4px 0 0;color:var(--text-strong);font-size:1.2rem;font-weight:650;letter-spacing:-.02em}.zones-detail-pane{min-width:0}.int-split>*{min-width:0}.zone-detail-secondary{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .mobile-zone-dock{display:none}
-.manifold .zone-overview-strip{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px;margin:0;padding:0;border:0}
-.manifold .zone-overview-card{display:grid;gap:4px;min-width:0;min-height:0;padding:8px 6px;border:1px solid transparent;border-radius:8px;background:transparent;color:inherit;text-align:center;align-items:center;justify-items:center;overflow:visible}
-.manifold .zone-overview-card .zo-status,.manifold .zone-overview-card .zo-title{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}
-.manifold .zone-overview-card .loop-id{color:var(--text-faint);font-size:.68rem;font-weight:750;letter-spacing:.06em}
-.manifold .zone-overview-card .loop-name{max-width:100%;overflow:hidden;color:var(--text-muted);font-size:.7rem;font-weight:600;text-overflow:ellipsis;white-space:nowrap}
-.manifold .zone-overview-card .zo-temps,.manifold .zone-overview-card .loop-temp{padding:0;font-family:var(--font-display);font-size:1.05rem;font-weight:650;font-variant-numeric:tabular-nums;color:var(--text-strong)}
-.manifold .zone-overview-card .zo-merge{max-width:100%;padding:0;color:var(--text-faint);font-size:.62rem;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.manifold .zone-overview-card.is-calling .loop-id,.manifold .zone-overview-card.zs-heating .loop-id{color:var(--accent)}
-.manifold .zone-overview-card.is-unused,.manifold .zone-overview-card.zs-off{opacity:.4}
-.manifold .zone-overview-card:hover{background:var(--inset)}
-.manifold .zone-overview-card[aria-current="true"],.manifold .zone-overview-card.is-selected{background:var(--fill-forest);border-color:transparent}
-.manifold .zone-overview-card.is-merged,.manifold .zone-overview-card.zo-pair-start,.manifold .zone-overview-card.zo-pair-cont{border-color:transparent;border-radius:8px;margin-left:0;padding-left:6px;background:transparent}
-.manifold .zone-overview-card.is-selected.is-merged,.manifold .zone-overview-card[aria-current="true"].is-merged{background:var(--fill-forest)}
 .zone-live{min-width:0}
 .provision .form-actions:not(:has(button)){display:none}
 .provision .zone-actuator-slot{margin-top:4px;padding-top:16px;border-top:1px solid var(--separator)}
@@ -137,9 +125,9 @@ button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,.z
 .overview-dashboard{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(280px,.7fr);column-gap:28px;border-top:1px solid var(--separator)}.dashboard-section{min-width:0;padding:24px 0;border-bottom:1px solid var(--separator)}.dashboard-hydraulic{grid-column:1/-1}.dashboard-activity{grid-column:1/-1}.dashboard-section-head{display:flex;align-items:flex-start;justify-content:space-between;gap:20px;margin:0 0 18px}.dashboard-section-head h3{margin:0;color:var(--text-strong);font-size:1rem;font-weight:650}.dashboard-section-head p{margin:3px 0 0;color:var(--text-muted);font-size:.82rem}.overview-dashboard .graph-card,.overview-dashboard .timeline-card{margin:0!important;border:0!important;border-radius:0!important;background:transparent!important;box-shadow:none!important;backdrop-filter:none!important}.overview-dashboard .graph-card{margin-top:18px!important;padding-top:18px!important;border-top:1px solid var(--separator)!important}
 .zone-configuration-groups{display:grid;gap:10px;width:100%}.zone-configuration-groups .ui-card{height:auto!important}.zone-configuration-groups .ui-section{margin-top:16px;color:var(--text-muted);font-size:.78rem;letter-spacing:0;text-transform:none}.zone-actuator-slot{width:100%}.zone-actuator-slot .ui-section{margin-top:16px;color:var(--text-muted);font-size:.78rem;letter-spacing:0;text-transform:none}.zone-actuator-slot .disclosure-body>.ui-section:first-child{margin-top:0}
 @media(min-width:901px){.zone-configuration-groups{grid-template-columns:minmax(0,1fr) minmax(0,1fr);grid-template-areas:"sensor room" "sensor coordination";align-items:stretch}.provision .zone-configuration-groups{grid-template-columns:1fr!important;grid-template-areas:none!important;align-items:start;gap:14px}.zone-room-slot{grid-area:room;min-width:0}.zone-sensor-slot{grid-area:sensor;min-width:0;display:flex;flex-direction:column}.zone-coordination-slot{grid-area:coordination;min-width:0}.provision .zone-room-slot,.provision .zone-sensor-slot,.provision .zone-coordination-slot{grid-area:auto!important;display:block}.zone-sensor-slot>.ui-card{flex:1 1 auto;align-self:stretch;height:auto!important}.provision .zone-sensor-slot>.ui-card{height:auto!important}}
-@media(max-width:900px){.shell{display:block;padding-bottom:78px}.shell.has-zone-dock{padding-bottom:132px}.main-panel{min-width:0}.side-panel{position:fixed;z-index:40;left:10px;right:10px;bottom:10px;top:auto;width:auto;height:auto;padding:7px;border:1px solid var(--separator);border-radius:14px;background:color-mix(in srgb,var(--bg) 92%,transparent);box-shadow:0 10px 32px rgba(0,0,0,.32);overflow:visible}.side-brand,.side-subtitle{display:none}.side-nav-slot,.side-nav-slot hv6-sidebar{flex:0 0 auto;min-height:auto}.mobile-zone-dock{display:flex;align-items:center;gap:4px;margin:0 0 6px;padding:0 0 6px;border-bottom:1px solid var(--separator)}.mobile-zone-dock[hidden]{display:none!important}.zone-overview{margin-bottom:16px}.manifold{grid-template-columns:1fr!important}.manifold-mark{margin:0 auto}.manifold .zone-overview-strip,.manifold .loops,.zone-overview-strip{grid-template-columns:repeat(3,minmax(0,1fr))!important}.manifold-meta{text-align:left}.zone-overview-card{min-height:58px;padding:9px 12px;pointer-events:none;cursor:default}.zone-overview-card.zo-pair-start,.zone-overview-card.zo-pair-cont{border-radius:10px;margin-left:0;padding-left:12px}.zone-overview-card .zo-title{font-size:.78rem}.zone-overview-card .zo-temps{font-size:.78rem}.hdr{padding:9px 14px}.view-panel{width:100%;padding:24px 16px 48px}.status-summary{grid-template-columns:1fr 1fr;gap:16px}.status-summary-main{grid-column:1/-1;padding:0 0 12px;border-bottom:1px solid var(--separator)}.status-fact{padding:0;border:0}.zone-card{grid-template-columns:minmax(120px,1fr) 90px 90px 28px;gap:10px}.zone-card .zc-valve{display:none}.zone-card .zc-reading{grid-column:2}.zone-card .zc-state-row{grid-column:3}.zone-card::after{grid-column:4}.zone-detail-secondary,.help-list{grid-template-columns:1fr}}
+@media(max-width:900px){.shell{display:block;padding-bottom:78px}.shell.has-zone-dock{padding-bottom:132px}.main-panel{min-width:0}.side-panel{position:fixed;z-index:40;left:10px;right:10px;bottom:10px;top:auto;width:auto;height:auto;padding:7px;border:1px solid var(--separator);border-radius:14px;background:color-mix(in srgb,var(--bg) 92%,transparent);box-shadow:0 10px 32px rgba(0,0,0,.32);overflow:visible}.side-brand,.side-subtitle{display:none}.side-nav-slot,.side-nav-slot hv6-sidebar{flex:0 0 auto;min-height:auto}.mobile-zone-dock{display:flex;align-items:center;gap:4px;margin:0 0 6px;padding:0 0 6px;border-bottom:1px solid var(--separator)}.mobile-zone-dock[hidden]{display:none!important}.zone-overview{margin-bottom:16px}.manifold{grid-template-columns:1fr!important}.manifold-mark{margin:0 auto}.manifold .zone-overview-strip,.manifold .loops,.zone-overview-strip{grid-template-columns:repeat(3,minmax(0,1fr))!important}.manifold-meta{text-align:left}.zone-overview-strip .loop{pointer-events:none;cursor:default}.hdr{padding:9px 14px}.view-panel{width:100%;padding:24px 16px 48px}.status-summary{grid-template-columns:1fr 1fr;gap:16px}.status-summary-main{grid-column:1/-1;padding:0 0 12px;border-bottom:1px solid var(--separator)}.status-fact{padding:0;border:0}.zone-card{grid-template-columns:minmax(120px,1fr) 90px 90px 28px;gap:10px}.zone-card .zc-valve{display:none}.zone-card .zc-reading{grid-column:2}.zone-card .zc-state-row{grid-column:3}.zone-card::after{grid-column:4}.zone-detail-secondary,.help-list{grid-template-columns:1fr}}
 @media(max-width:900px){.overview-dashboard{grid-template-columns:1fr}.dashboard-hydraulic,.dashboard-activity{grid-column:1}}
-@media(max-width:900px){.v6-toolbar h1{font-size:1.15rem}.v6-toolbar p{font-size:.78rem}.v6-toolbar-icon{display:none}.v6-live{font-size:0}.v6-live::before{width:8px;height:8px}.status-summary h2{font-size:1.35rem}.group-title{align-items:center}.group-title span{margin-top:4px}.zone-card{min-height:88px;grid-template-columns:minmax(0,1fr) 82px 28px}.zone-card .zc-reading{grid-column:2}.zone-card .zc-state-row{grid-column:1;margin-top:51px}.zone-card::after{grid-column:3}.zone-overview-strip{grid-template-columns:repeat(3,1fr)}.zone-overview-card{min-height:56px;padding:8px 10px}.zone-overview-card.zo-pair-cont{padding-left:10px}.mobile-zone-dock .zone-chip{font-size:.68rem}}
+@media(max-width:900px){.v6-toolbar h1{font-size:1.15rem}.v6-toolbar p{font-size:.78rem}.v6-toolbar-icon{display:none}.v6-live{font-size:0}.v6-live::before{width:8px;height:8px}.status-summary h2{font-size:1.35rem}.group-title{align-items:center}.group-title span{margin-top:4px}.zone-card{min-height:88px;grid-template-columns:minmax(0,1fr) 82px 28px}.zone-card .zc-reading{grid-column:2}.zone-card .zc-state-row{grid-column:1;margin-top:51px}.zone-card::after{grid-column:3}.zone-overview-strip{grid-template-columns:repeat(3,1fr)}.mobile-zone-dock .zone-chip{font-size:.68rem}}
 `;
 injectStyle('hv6-app-root', css);
 injectStyle('lds-manifold-row', MANIFOLD_ROW_CSS);
@@ -160,14 +148,14 @@ const template = () => `
 <section class="sec" data-section="zones"><section class="zone-detail-view zones-detail-pane" aria-labelledby="selected-zone-title"><article class="manifold zone-overview"><div class="manifold-mark" data-live-mark="zones"></div><div class="zone-overview-strip loops" role="group" aria-label="Select zone"></div><div class="manifold-meta" data-zone-meta></div></article>${zonesCanvasHtml}</section></section>
 <section class="sec" data-section="settings"><div class="settings-readiness status-summary"></div><div class="settings-layout">
 <div class="settings-panel settings-disclosure touch-settings is-active" data-panel="touch"><div class="disclosure-body touch-slot"></div></div>
-<div class="settings-panel settings-disclosure" data-panel="hydraulics"><div class="settings-panel-block settings-panel-block--probes" data-collapse-block="return-temp"><div class="settings-panel-head settings-panel-head--pair"><div class="settings-panel-copy"><h3 data-i18n="settings.manifold.panelTitle">Manifold and probes</h3><p data-i18n="settings.manifold.panelSub">Valve polarity and live 1-Wire readings</p></div><div class="settings-panel-pair"><div class="settings-panel-copy"><h3 data-i18n="settings.returnTemp.title">Return temperature</h3><p class="settings-probe-mode" data-probe-mode-hint data-i18n="settings.returnTemp.modeOff">2 probes · flow/return only</p></div><div class="settings-panel-toggle" data-toggle-host="return-temp"></div></div></div><div class="manifold-slot"></div></div><div class="settings-panel-block settings-panel-block--toggle" data-collapse-block="min-flow"><div class="settings-panel-head"><div class="settings-panel-copy"><h3 data-i18n="settings.minFlow.title">Hydraulic safety</h3><p data-i18n="settings.minFlow.panelSub">Minimum opening on active loops</p></div><div class="settings-panel-toggle" data-toggle-host="min-flow"></div></div><div class="settings-panel-body minimum-flow-slot" data-collapse-body="min-flow"></div></div></div>
+<div class="settings-panel settings-disclosure" data-panel="hydraulics"><div class="settings-panel-block"><h3 data-i18n="settings.heatingMode.panelTitle">Heating mode</h3><p data-i18n="settings.heatingMode.panelSub">How valves behave when rooms reach setpoint</p><div class="heating-mode-slot"></div></div><div class="settings-panel-block settings-panel-block--probes" data-collapse-block="return-temp"><div class="settings-panel-head settings-panel-head--pair"><div class="settings-panel-copy"><h3 data-i18n="settings.manifold.panelTitle">Manifold and probes</h3><p data-i18n="settings.manifold.panelSub">Valve polarity and live 1-Wire readings</p></div><div class="settings-panel-pair"><div class="settings-panel-copy"><h3 data-i18n="settings.returnTemp.title">Return temperature</h3><p class="settings-probe-mode" data-probe-mode-hint data-i18n="settings.returnTemp.modeOff">2 probes · flow/return only</p></div><div class="settings-panel-toggle" data-toggle-host="return-temp"></div></div></div><div class="manifold-slot"></div></div></div>
 <div class="settings-panel settings-disclosure" data-panel="comfort"><div class="settings-panel-block settings-panel-block--toggle" data-collapse-block="ble-clock"><div class="settings-panel-head"><div class="settings-panel-copy"><h3 data-i18n="settings.bleClock.title">Room clocks</h3><p data-i18n="settings.bleClock.panelSub">Shelly BLU display time</p></div><div class="settings-panel-toggle" data-toggle-host="ble-clock"></div></div><div class="settings-panel-body ble-clock-slot" data-collapse-body="ble-clock"></div></div><div class="settings-panel-block settings-panel-block--toggle" data-collapse-block="preheat"><div class="settings-panel-head"><div class="settings-panel-copy"><h3 data-i18n="settings.preheat.title">Preheat absorption</h3><p data-i18n="settings.preheat.panelSub">Local handling of external preload</p></div><div class="settings-panel-toggle" data-toggle-host="preheat"></div></div><div class="settings-panel-body preheat-slot" data-collapse-body="preheat"></div></div></div>
 <div class="settings-panel settings-disclosure" data-panel="motors"><div class="settings-panel-block"><h3>Motor configuration</h3><p>Drivers, profile and learning limits</p><div class="motor-slot"></div></div></div>
 <div class="settings-panel settings-disclosure" data-panel="device"><div class="settings-panel-block"><h3>Connection</h3><p>Network and firmware identity</p><div class="connectivity-slot"></div></div><div class="settings-panel-block"><h3>Firmware</h3><p>Version, updates and manual upload</p><div class="firmware-slot"></div></div><div class="settings-panel-block"><h3>Backup and restore</h3><p>Save or reapply local configuration</p><div class="backup-slot"></div></div><div class="settings-panel-block"><h3>Appearance</h3><p>Product colour</p><div class="appearance-slot"></div></div></div>
 </div></section>
 <section class="sec" data-section="diagnostics"><div class="diagnostics-readiness status-summary"></div><button type="button" class="diagnostics-attention attention" data-open-zones hidden></button><div class="diagnostics-layout"><details class="disclosure diagnostics-disclosure"><summary>Runtime health<small>Processor and memory</small></summary><div class="disclosure-body system-health-slot"></div></details><details class="disclosure diagnostics-disclosure"><summary>Hardware and connectivity<small>Network, firmware and I²C</small></summary><div class="disclosure-body diag-health-slot"></div></details><details class="disclosure diagnostics-disclosure"><summary>Device logs<small>Live firmware events</small></summary><div class="disclosure-body logs-main-col"></div></details><details class="disclosure diagnostics-disclosure"><summary>Manual motor control<small>Temporary service operation</small></summary><div class="disclosure-body manual-control-col"></div></details><details class="disclosure diagnostics-disclosure danger-zone"><summary>Recovery and restart<small>Actions that interrupt normal operation</small></summary><div class="disclosure-body diag-actions-slot"></div></details></div></section>
 <section class="sec" data-section="motorlab"><div class="motor-lab-slot"></div></section>
-<section class="sec" data-section="help"><div class="help-external-slot"></div><div class="help-list"><a class="help-item" href="#zones" data-help-section="zones"><strong>Manifolds and zones</strong><p>How physical loops map to rooms and targets.</p></a><a class="help-item" href="#zones"><strong>Sensors</strong><p>Temperature freshness, BLE coverage and fallback behavior.</p></a><a class="help-item" href="#settings"><strong>Touch coordination</strong><p>What Touch controls and what V6 enforces locally.</p></a><a class="help-item" href="#settings"><strong>Hydraulic safety</strong><p>Minimum flow, valve protection and safe local operation.</p></a><a class="help-item" href="#diagnostics"><strong>Diagnostics and recovery</strong><p>Read health evidence before using recovery actions.</p></a></div></section>
+<section class="sec" data-section="help"><div class="help-external-slot"></div><div class="help-list"><a class="help-item" href="#zones" data-help-section="zones"><strong>Manifolds and zones</strong><p>How physical loops map to rooms and targets.</p></a><a class="help-item" href="#zones"><strong>Sensors</strong><p>Temperature freshness, BLE coverage and fallback behavior.</p></a><a class="help-item" href="#settings"><strong>Touch coordination</strong><p>What Touch controls and what V6 enforces locally.</p></a><a class="help-item" href="#settings"><strong>Hydraulic safety</strong><p>Heating modes, valve protection and safe local operation.</p></a><a class="help-item" href="#diagnostics"><strong>Diagnostics and recovery</strong><p>Read health evidence before using recovery actions.</p></a></div></section>
 <div class="ftr">Lune V6 · Local manifold controller</div></main></div></div></div>`;
 
 component({ tag:'app-root', render:template, onMount(ctx, el) {
@@ -185,7 +173,7 @@ component({ tag:'app-root', render:template, onMount(ctx, el) {
   const manifoldCard = mountComponent('settings-manifold-card');
   el.querySelector('.manifold-slot').appendChild(manifoldCard);
   manifoldCard.querySelector('.return-temp-slot').appendChild(mountComponent('settings-return-temp-card'));
-  el.querySelector('.minimum-flow-slot').appendChild(mountComponent('settings-minimum-flow-card'));
+  el.querySelector('.heating-mode-slot').appendChild(mountComponent('settings-heating-mode-card'));
   el.querySelector('.ble-clock-slot').appendChild(mountComponent('settings-ble-clock-card'));
   el.querySelector('.preheat-slot').appendChild(mountComponent('smart-preheat-card'));
   el.querySelector('.motor-slot').appendChild(mountComponent('settings-motor-calibration-card'));
@@ -242,7 +230,8 @@ component({ tag:'app-root', render:template, onMount(ctx, el) {
     const state=(enabled&&(rawState==='FAULT'||hasFault))?'FAULT':rawState;
     return enabled?state:'OFF';
   }
-  function zoneStatusLabel(displayState){
+  function zoneStatusLabel(displayState, zone){
+    if (zone != null) return zoneControlStatusLabel(zone, displayState);
     return displayState==='HEATING'?t('state.heating'):
       displayState==='IDLE'?t('state.idle'):
       displayState==='FAULT'?t('common.fault'):
@@ -251,47 +240,8 @@ component({ tag:'app-root', render:template, onMount(ctx, el) {
       displayState==='CALIBRATING'?t('state.calibrating'):
       t('state.off');
   }
-  function zoneStatusClass(displayState){
-    if(displayState==='HEATING'||displayState==='CALLING') return 'zs-heating';
-    if(displayState==='OVERHEATED') return 'zs-overheated';
-    if(displayState==='FAULT') return 'zs-fault';
-    if(displayState==='IDLE') return 'zs-idle';
-    return 'zs-off';
-  }
-  function parseSyncTarget(raw){
-    const text=String(raw||'').trim();
-    if(!text||/^none$/i.test(text)||text==='0'||text==='-1') return 0;
-    const match=text.match(/(\d+)/);
-    const zone=match?Number(match[1]):0;
-    return zone>=1&&zone<=6?zone:0;
-  }
-  function zoneMergeMeta(){
-    const targets=[0,0,0,0,0,0,0];
-    for(let z=1;z<=6;z++) targets[z]=parseSyncTarget(es(key.syncTo(z)));
-    const roots=[0,0,0,0,0,0,0];
-    for(let z=1;z<=6;z++){
-      let root=z;
-      for(let guard=0;guard<6;guard++){
-        const next=targets[root];
-        if(!next||next<1||next>6) break;
-        if(next===z){ root=z; break; }
-        root=next;
-      }
-      roots[z]=root;
-    }
-    const membersByRoot={};
-    for(let z=1;z<=6;z++) (membersByRoot[roots[z]]||=[]).push(z);
-    const partners=[[],[],[],[],[],[],[]];
-    for(let z=1;z<=6;z++){
-      const members=membersByRoot[roots[z]]||[z];
-      const isGroup=members.length>1&&members.some((member)=>targets[member]>0);
-      partners[z]=isGroup?members.filter((member)=>member!==z):[];
-    }
-    return {roots,partners};
-  }
   function isDesktopZoneSwitcher(){ return window.matchMedia('(min-width: 901px)').matches; }
   function rebuildZoneOverview(){
-    const merge=zoneMergeMeta();
     const selectedZone=getDashboardValue('selectedZone')||1;
     const desktop=isDesktopZoneSwitcher();
     zoneOverview.setAttribute('role',desktop?'group':'list');
@@ -300,28 +250,29 @@ component({ tag:'app-root', render:template, onMount(ctx, el) {
       const value=i+1;
       const selected=value===selectedZone;
       const label=zoneLabel(value);
-      const title=zoneTitleMarkup(value);
       const kind=zonePipeKind(value);
       const shortId=zoneIdShort(value);
+      const valveRaw=ev(key.valve(value));
       const current=kind==='unused'?'—':fmtDeg(ev(key.temp(value)));
-      const setpoint=kind==='unused'?'—':fmtDeg(ev(key.effectiveSetpoint(value))??ev(key.setpoint(value)));
+      const valve=kind==='unused'?'—':fmtV(valveRaw);
+      const level=demandBarLevel(valveRaw, kind);
       const friendly=kind==='unused'?'—':(zoneFriendly(value)||'—');
       const displayState=zoneDisplayState(value);
-      const statusLabel=zoneStatusLabel(displayState);
-      const statusClass=zoneStatusClass(displayState);
-      const mergedWith=merge.partners[value];
-      const isMerged=mergedWith.length>0;
-      const mergeText=isMerged?t('overview.zone.mergedWith',{zones:mergedWith.map(zoneIdShort).join(', ')}):'';
-      const pairStart=isMerged&&mergedWith.includes(value+1)&&merge.roots[value]===merge.roots[value+1];
-      const pairCont=isMerged&&mergedWith.includes(value-1)&&merge.roots[value]===merge.roots[value-1];
-      const mergeClass=[isMerged?'is-merged':'',pairStart?'zo-pair-start':'',pairCont?'zo-pair-cont':'',kind==='calling'?'is-calling':'',kind==='unused'?'is-unused':''].filter(Boolean).join(' ');
-      const ariaLabel=`${label}, ${current} / ${setpoint}, ${statusLabel}${mergeText?', '+mergeText:''}`.replace(/"/g,'&quot;');
-      const mergeLine=isMerged?`<span class="zo-merge">${mergeText}</span>`:'';
-      const body=`<span class="zo-status" aria-hidden="true"></span><span class="loop-id">${shortId}</span><span class="loop-name">${friendly.replace(/&/g,'&amp;').replace(/</g,'&lt;')}</span><span class="zo-title zone-label-compact">${title}</span><span class="zo-temps loop-temp">${current}</span>${mergeLine}`;
-      if(desktop){
-        return `<button type="button" class="zone-overview-card ${statusClass}${mergeClass?' '+mergeClass:''}" data-zone-select="${value}" aria-current="${selected?'true':'false'}" aria-label="${ariaLabel}" title="${ariaLabel}" tabindex="${selected?'0':'-1'}">${body}</button>`;
-      }
-      return `<div class="zone-overview-card ${statusClass}${mergeClass?' '+mergeClass:''}" role="listitem" aria-label="${ariaLabel}" title="${ariaLabel}">${body}</div>`;
+      const statusLabel=zoneStatusLabel(displayState, value);
+      const ariaLabel=`${label}, ${current}, valve ${valve}, ${statusLabel}`.replace(/"/g,'&quot;');
+      const attrs=desktop
+        ? `data-zone-select="${value}" aria-current="${selected?'true':'false'}" aria-label="${ariaLabel}" title="${ariaLabel}" tabindex="${selected?'0':'-1'}"`
+        : `role="listitem" aria-label="${ariaLabel}" title="${ariaLabel}"`;
+      return loopCellHtml({
+        id: shortId,
+        name: friendly,
+        temp: current,
+        level,
+        kind,
+        selected: desktop && selected,
+        tag: desktop ? 'button' : 'div',
+        attrs,
+      });
     }).join('');
   }
   function rebuildMobileZoneChips(){
@@ -348,7 +299,7 @@ component({ tag:'app-root', render:template, onMount(ctx, el) {
       const level=demandBarLevel(valveRaw, kind);
       const friendly=kind==='unused'?'—':(zoneFriendly(value)||'—');
       const displayState=zoneDisplayState(value);
-      const statusLabel=zoneStatusLabel(displayState);
+      const statusLabel=zoneStatusLabel(displayState, value);
       const ariaLabel=`${label}, ${current}, valve ${valve}, ${statusLabel}`.replace(/"/g,'&quot;');
       return loopCellHtml({
         id: shortId,
@@ -385,7 +336,9 @@ component({ tag:'app-root', render:template, onMount(ctx, el) {
     const flow=ev(gkey.flow), ret=ev(gkey.ret), touch=String(es(gkey.authorityState)||'').replace(/_/g,' '); const healthy=faults===0&&getDashboardValue('live');
     const dt=flow!=null&&ret!=null?Number(flow)-Number(ret):null;
     const dtText=dt==null?'—':`${dt.toFixed(1)}°C`;
-    const html=`<div class="status-summary-main"><span class="eyebrow">System status</span><h2 class="${healthy?'status-ok':getDashboardValue('live')?'status-warn':'status-danger'}">${healthy?'Operating normally':getDashboardValue('live')?'Needs attention':'Device offline'}</h2><p>${faults?faults+' zone fault'+(faults===1?'':'s')+' require attention.':getDashboardValue('live')?'V6 is running local control safely.':'Unable to read current manifold state.'}</p></div><div class="status-fact"><span class="eyebrow">Heating</span><strong>${active} zones</strong><small>${enabled.length} enabled · ${active}/${enabled.length||0} calling</small></div><div class="status-fact"><span class="eyebrow">Flow</span><strong>${fmtT(flow)}</strong><small>Return ${fmtT(ret)}</small></div><div class="status-fact"><span class="eyebrow">ΔT</span><strong>${dtText}</strong><small>Flow − return</small></div><div class="status-fact"><span class="eyebrow">Touch</span><strong>${touch||'not connected'}</strong><small>${ev(gkey.authorityLeaseRemainingS)?Math.round(ev(gkey.authorityLeaseRemainingS))+' s lease':'local control'}</small></div>`;
+    const modeInfo=heatingModeSummary();
+    const heatDemand=heatDemandSummaryLine();
+    const html=`<div class="status-summary-main"><span class="eyebrow">System status</span><h2 class="${healthy?'status-ok':getDashboardValue('live')?'status-warn':'status-danger'}">${healthy?'Operating normally':getDashboardValue('live')?'Needs attention':'Device offline'}</h2><p>${faults?faults+' zone fault'+(faults===1?'':'s')+' require attention.':getDashboardValue('live')?heatDemand:'Unable to read current manifold state.'}</p></div><div class="status-fact"><span class="eyebrow">Mode</span><strong>${modeInfo.modeLabel}</strong><small>${modeInfo.source}</small></div><div class="status-fact"><span class="eyebrow">Heating</span><strong>${active} zones</strong><small>${enabled.length} enabled · ${active}/${enabled.length||0} calling</small></div><div class="status-fact"><span class="eyebrow">Flow</span><strong>${fmtT(flow)}</strong><small>Return ${fmtT(ret)} · ΔT ${dtText}</small></div><div class="status-fact"><span class="eyebrow">Touch</span><strong>${touch||'not connected'}</strong><small>${ev(gkey.authorityLeaseRemainingS)?Math.round(ev(gkey.authorityLeaseRemainingS))+' s lease':'local control'}</small></div>`;
     const touchApproved=isEntityOn(gkey.authorityConfigured); const drivers=String(es(gkey.drivers)||'off');
     el.querySelector('.overview-status').innerHTML=html; el.querySelector('.settings-readiness').innerHTML=`<div class="status-summary-main"><span class="eyebrow">Configuration</span><h2 class="${getDashboardValue('live')?'status-ok':'status-danger'}">${getDashboardValue('live')?'Ready':'Waiting for device'}</h2><p>V6 validates and saves changes locally.</p></div><div class="status-fact"><span class="eyebrow">Device</span><strong>${getDashboardValue('live')?'Live':'Offline'}</strong><small>local controller</small></div><div class="status-fact"><span class="eyebrow">Touch</span><strong>${touchApproved?'Approved':'Not approved'}</strong><small>${touchApproved?'authenticated control':'local control only'}</small></div><div class="status-fact"><span class="eyebrow">Drivers</span><strong>${drivers}</strong><small>motor outputs</small></div>`; el.querySelector('.diagnostics-readiness').innerHTML=`<div class="status-summary-main"><span class="eyebrow">Overall health</span><h2 class="${faults?'status-danger':healthy?'status-ok':'status-warn'}">${faults?faults+' issue'+(faults===1?'':'s'):healthy?'Healthy':'Awaiting data'}</h2><p>${faults?'Resolve current exceptions before using service controls.':'No active motor faults reported.'}</p></div><div class="status-fact"><span class="eyebrow">Zone faults</span><strong>${faults}</strong><small>${faults?'requires review':'none reported'}</small></div><div class="status-fact"><span class="eyebrow">Drivers</span><strong>${drivers}</strong><small>motor outputs</small></div><div class="status-fact"><span class="eyebrow">Touch</span><strong>${touch||'not connected'}</strong><small>${touchApproved?'approved':'local control'}</small></div>`;
     const faultDetail=faultList.map((f)=>t('overview.attention.faultDetail',{zone:f.zone,fault:f.fault})).join(' ');
@@ -411,6 +364,6 @@ component({ tag:'app-root', render:template, onMount(ctx, el) {
   el.querySelectorAll('[data-open-zones]').forEach((button)=>button.addEventListener('click',()=>setSection('zones')));
   el.querySelectorAll('[data-help-section]').forEach((node)=>node.addEventListener('click',(event)=>{event.preventDefault();setSection(node.dataset.helpSection)}));
   subscribeDashboard('section',updateSection); subscribeDashboard('settingsPanel',updateSettingsPanel); subscribeDashboard('selectedZone',updateZoneDetail); subscribeDashboard('live',updateSummary); subscribeDashboard('zoneNames',()=>{ updateZoneDetail(); updateSummary(); }); subscribeLanguage(()=>{ localize(el); rebuildZoneChrome(); updateZoneDetail(); });
-  for(let z=1;z<=6;z++){ [key.temp(z),key.setpoint(z),key.effectiveSetpoint(z),key.valve(z),key.state(z),key.enabled(z),key.motorLastFault(z),key.syncTo(z)].forEach((id)=>subscribe(id,()=>{ updateSummary(); rebuildZoneChrome(); })); } [gkey.flow,gkey.ret,gkey.authorityConfigured,gkey.authorityState,gkey.authorityLeaseRemainingS,gkey.drivers].forEach((id)=>subscribe(id,updateSummary)); localize(el); updateSection(); updateZoneDetail(); updateSummary();
+  for(let z=1;z<=6;z++){ [key.temp(z),key.setpoint(z),key.effectiveSetpoint(z),key.valve(z),key.state(z),key.enabled(z),key.motorLastFault(z),key.syncTo(z)].forEach((id)=>subscribe(id,()=>{ updateSummary(); rebuildZoneChrome(); })); } [gkey.flow,gkey.ret,gkey.authorityConfigured,gkey.authorityState,gkey.authorityLeaseRemainingS,gkey.drivers,gkey.heatingMode,gkey.effectiveHeatingMode,gkey.heatingModeSource,gkey.heatDemandRecommendation,gkey.heatDemandCriticalZone,gkey.heatDemandSaturatedS,gkey.hpBasePct,gkey.hpTrimFloorPct].forEach((id)=>subscribe(id,()=>{ updateSummary(); rebuildZoneChrome(); })); localize(el); updateSection(); updateZoneDetail(); updateSummary();
   const boot=new URLSearchParams(location.search); const bootSection=boot.get('section'); const bootZone=Number(boot.get('zone')); if(bootSection) setSection(bootSection); if(bootZone>=1&&bootZone<=6) setSelectedZone(bootZone);
  }});

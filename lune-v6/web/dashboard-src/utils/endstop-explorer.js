@@ -34,7 +34,6 @@ const TRAILING_HISTORY = 48;          // TrailingStepDetector::HISTORY
 // at the housing exit (design contract actuator_overrun_hazard).
 export const CLOSE_WALL = { ms: 40000, counts: 3120 };
 // Firmware defaults for the count ceilings; the WebUI does not expose them.
-const CLOSE_CEILING_COUNTS = 2600;
 const OPEN_CEILING_COUNTS = 3600;
 
 export const DEFAULT_PARAMS = Object.freeze({
@@ -50,9 +49,15 @@ export const DEFAULT_PARAMS = Object.freeze({
   stallMa: 65, stallFrames: 3,
   openStopMa: 40, openFrames: 3,
   circuitMa: 85, circuitFrames: 2,
-  closeCeilingS: 34,
+  closeCeilingS: 38,
+  closeCeilingCounts: 2600,
   openCeilingS: 45,
+  // Zone has a learned pin-to-seat depth. The device does not report it, so
+  // the explorer assumes the unlearned case a Motor Lab zone is usually in.
+  seatingLearned: false,
 });
+// StrokeLearningConfig::min_working_ripples: unlearned seat window past the pin.
+const MIN_SEATING_COUNTS = 200;
 
 function clamp(v, lo, hi) { return Math.min(hi, Math.max(lo, v)); }
 
@@ -135,7 +140,12 @@ export function explainEndstop(samples, direction, params) {
 
   let baseline = null;
   let lastDrop = 0;
-  const trailing = trailingStep({ window: p.trailingWindowMs, step: p.trailingStepMa, sustain: p.trailingSustainMs });
+  const trailingCfg = { window: p.trailingWindowMs, step: p.trailingStepMa, sustain: p.trailingSustainMs };
+  let trailing = trailingStep(trailingCfg);
+  // Close pin contact: the first move out of free travel. Firmware anchors the
+  // level trip to the current there and re-anchors the trailing step.
+  let sawFree = false;
+  let pin = null;
   const deb = {
     threshold: sustained(ENDSTOP_HIGH_MS),
     seat: sustained(p.seatFrames * FRAME_MS),
@@ -162,35 +172,42 @@ export function explainEndstop(samples, direction, params) {
       lastDrop = t;
     }
     const settled = baseline != null && t - lastDrop >= BASELINE_STABLE_MS;
+    if (tk.stroke_phase === 0) sawFree = true;
+    if (!opening && phaseKnown && sawFree && !pin && tk.stroke_phase >= 1) {
+      pin = { ma: c, count: tk.motion_count };
+      trailing = trailingStep(trailingCfg);
+    }
 
     let threshold = null;
     if (settled) {
       if (useFraction && p.learnedStallMa > baseline + 5) {
         threshold = clamp(baseline + p.stallFraction * (p.learnedStallMa - baseline), p.openStopMa * 0.75, p.stallMa);
       } else {
-        threshold = baseline * (opening ? p.openFactor : p.closeFactor);
+        const ref = pin ? Math.max(baseline, pin.ma) : baseline;
+        threshold = ref * (opening ? p.openFactor : p.closeFactor);
       }
     }
 
     const detecting = t >= DETECT_START_MS;
     const pastBlanking = t >= BLANKING_MS;
     const step = !opening && detecting ? trailing.observe(t, c) : { rise: null, qualifying: false, tripped: false };
+    const seatWindow = !pin || p.seatingLearned || tk.motion_count >= pin.count + MIN_SEATING_COUNTS;
 
     if (detecting && deb.threshold(threshold != null && c > threshold)) mark('threshold', tk);
-    if (step.tripped) mark('trailing', tk);
+    if (step.tripped && (!pin || p.seatingLearned)) mark('trailing', tk);
     if (pastBlanking) {
       if (deb.stall(c > p.stallMa)) mark('stall', tk);
       if (deb.circuit(c > p.circuitMa)) mark('circuit', tk);
       if (!opening) {
         if (deb.popoff(c > p.popoffMa)) mark('popoff', tk);
-        if (deb.seat(tk.stroke_phase >= 2 && c > p.seatMa)) mark('seat', tk);
+        if (deb.seat(tk.stroke_phase >= 2 && seatWindow && c > p.seatMa)) mark('seat', tk);
       } else {
         const armed = settled || t >= OPEN_ARM_FALLBACK_MS;
         if (deb.open(armed && c > p.openStopMa)) mark('openStop', tk);
       }
     }
 
-    const ceilingCounts = opening ? OPEN_CEILING_COUNTS : CLOSE_CEILING_COUNTS;
+    const ceilingCounts = opening ? OPEN_CEILING_COUNTS : p.closeCeilingCounts;
     const ceilingMs = (opening ? p.openCeilingS : p.closeCeilingS) * 1000;
     if (t >= ceilingMs || tk.motion_count >= ceilingCounts) mark('ceiling', tk);
     if (!opening && (t >= CLOSE_WALL.ms || tk.motion_count >= CLOSE_WALL.counts)) mark('wall', tk);
@@ -218,6 +235,7 @@ export function explainEndstop(samples, direction, params) {
     beforeWall: opening || !trips.wall || (first != null && trips[first].t_ms < trips.wall.t_ms) || !!ceilingFirst,
     usesFraction: useFraction,
     baselineMa: baseline,
+    pinAnchorMa: pin ? pin.ma : null,
   };
 }
 

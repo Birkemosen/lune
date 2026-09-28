@@ -134,7 +134,7 @@ const template = () => {
           <option value="HmIP VdMot">HmIP VdMot</option>
         </select></span>
       </div>
-      <div class="runtime-note" data-i18n="settings.motor.runtimeNote">HmIP-VDMot safety: the close stroke is capped at 34s and 2600 commutations — 40s is where the plunger leaves its housing. Opening is capped separately at 45s.</div>
+      <div class="runtime-note" data-i18n="settings.motor.runtimeNote">HmIP-VDMot safety: the close stroke is capped at 38s and 2600 commutations — 40s is where the plunger leaves its housing. Opening is capped separately at 45s.</div>
       <div class="ui-row">
         <span class="ui-label"><span data-i18n="settings.motor.maxSafeRuntime">Max Safe Runtime</span> (s)</span>
         <span class="ui-field"><input type="number" class="ui-input smc-safe-runtime" value="0" step="1"></span>
@@ -178,11 +178,11 @@ export default component({
 
     function enforceProfileRuntime(profile) {
       if (profile === 'HmIP VdMot') {
-        // 34 s, not 40. 40 s of CLOSE travel is where the plunger reaches the
+        // 38 s, not 40. 40 s of CLOSE travel is where the plunger reaches the
         // housing exit and the anti-rotation tap snaps - it is the destruction
         // boundary, not a safe limit. Writing 40 here silently reverted the
         // firmware's close ceiling every time this card mounted.
-        setGlobalNumber('hmip_runtime_limit_seconds', 34);
+        setGlobalNumber('hmip_runtime_limit_seconds', 38);
       }
       if (profile === 'Generic') {
         const genericRuntime = Number(ev(gkey.genericRuntimeLimitSeconds));

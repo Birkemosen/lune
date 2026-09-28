@@ -6,19 +6,19 @@ import { localize, subscribeLanguage, t } from '../../core/i18n.js';
 
 // ========================================
 // State palette
-// Code → { label, color }
+// Distinct hues on purpose: Heating/Calibrating/Absorb used to share orange.
 // Matches ZoneDisplayState enum in hv6_types.h
 // 0xFF (255) = unknown/empty slot → transparent
 // ========================================
 const STATE_PALETTE = {
-  0:   { labelKey: 'state.off',         color: 'var(--disabled)' },
-  1:   { labelKey: 'state.manual',      color: 'var(--info)' },
-  2:   { labelKey: 'state.calibrating', color: 'var(--warn)' },
+  0:   { labelKey: 'state.off',         color: 'var(--tl-off)' },
+  1:   { labelKey: 'state.manual',      color: 'var(--tl-manual)' },
+  2:   { labelKey: 'state.calibrating', color: 'var(--tl-calibrating)' },
   3:   { labelKey: 'state.waitCal',     color: 'var(--text-faint)' },
   4:   { labelKey: 'state.waitTemp',    color: 'var(--text-faint)' },
-  5:   { labelKey: 'state.heating',     color: 'var(--accent)' },
-  6:   { labelKey: 'state.idle',        color: 'var(--forest)' },
-  7:   { labelKey: 'state.overheated',  color: 'var(--danger)' },
+  5:   { labelKey: 'state.heating',     color: 'var(--accent)' }, // brand warm
+  6:   { labelKey: 'state.idle',        color: 'var(--tl-idle)' },
+  7:   { labelKey: 'state.overheated',  color: 'var(--tl-overheated)' },
   255: { labelKey: '',                  color: 'transparent' },
 };
 
@@ -31,8 +31,8 @@ const AXIS_H     = 48;
 const PAD_TOP    = 8;
 const BAND_H     = 16;          // preheat-absorption band height
 const BAND_GAP   = 10;          // gap between zone rows and the absorption band
-const ABSORB_COLOR = 'var(--series-solar)';
-const ABSORB_ARMED_COLOR = 'var(--accent)';
+const ABSORB_COLOR = 'var(--tl-absorb)';
+const ABSORB_ARMED_COLOR = 'var(--tl-absorb-armed)';
 const OBSERVED_BAR_H = 14;
 const ABSORB_INDEX = NZ + 1;    // entry shape: [uptime_s, z0..z5, absorbing]
 // absorbing: 0 idle, 1 reactive, 2 armed

@@ -4,7 +4,7 @@ import { ev, es, getDashboardValue, isEntityOn, subscribeDashboard, setDashboard
 import {
   emergencyStopMotors, fetchDiagnostics, fetchMotorTraceCsv,
   openMotorTimed, closeMotorTimed, probeArmClock, setDriversEnabled, setGlobalNumber, setManualMode,
-  resetMotorLearnedFactors,
+  resetMotorFault, resetMotorLearnedFactors, stopMotor,
 } from '../../core/api.js';
 import { gkey } from '../../utils/keys.js';
 import {
@@ -50,6 +50,17 @@ function decisionText(decision) {
   return DECISION_NAMES[n] || String(n);
 }
 
+// Which path ended the move, from the last diagnostics poll. A fast trip cuts
+// the drive before the classifier runs, so it is the more specific answer.
+function stopReasonParts(live) {
+  const parts = [];
+  const fault = faultText(live.faultCode);
+  if (fault) parts.push('fault ' + fault);
+  if (live.lastFastTrip) parts.push('fast trip ' + (FAST_TRIP_NAMES[live.lastFastTrip] || live.lastFastTrip));
+  parts.push('decision ' + decisionText(live.endpointDecision));
+  return parts.join(' · ');
+}
+
 function faultText(code) {
   const n = Number(code) || 0;
   if (!n) return null;
@@ -78,6 +89,8 @@ const TUNE_FIELDS = [
   { group: 'caps', cls: 'cap-open-stop-ma', key: 'cap_open_stop_ma', id: gkey.capOpenStopMa, labelKey: 'settings.motor.capOpenStopMa', unit: 'mA', step: '0.5' },
   { group: 'caps', cls: 'cap-stall-ma', key: 'cap_stall_ma', id: gkey.capStallMa, labelKey: 'settings.motor.capStallMa', unit: 'mA', step: '1' },
   { group: 'caps', cls: 'cap-circuit-fault-ma', key: 'cap_circuit_fault_ma', id: gkey.capCircuitFaultMa, labelKey: 'settings.motor.capCircuitFaultMa', unit: 'mA', step: '1' },
+  { group: 'ceiling', cls: 'close-ceiling-s', key: 'hmip_runtime_limit_seconds', id: gkey.hmipRuntimeLimitSeconds, labelKey: 'settings.motor.closeCeilingS', unit: 's, max 40', step: '1' },
+  { group: 'ceiling', cls: 'close-ceiling-counts', key: 'close_runtime_limit_counts', id: gkey.closeRuntimeLimitCounts, labelKey: 'settings.motor.closeCeilingCounts', unit: 'counts, max 3000', step: '50' },
   { group: 'learn', cls: 'working-range-learning', key: 'working_range_learning', id: gkey.workingRangeLearning, labelKey: 'settings.motor.workingRangeLearning', unit: '0/1', step: '1' },
   { group: 'learn', cls: 'learn-open-start-ripples', key: 'learn_open_start_ripples', id: gkey.learnOpenStartRipples, labelKey: 'settings.motor.learnOpenStartRipples', unit: 'counts', step: '25' },
   { group: 'learn', cls: 'learn-open-step-ripples', key: 'learn_open_step_ripples', id: gkey.learnOpenStepRipples, labelKey: 'settings.motor.learnOpenStepRipples', unit: 'counts', step: '25' },
@@ -88,7 +101,7 @@ const TUNE_FIELDS = [
   { group: 'learn', cls: 'pin-engage-step-ma', key: 'pin_engage_step_ma', id: gkey.pinEngageStepMa, labelKey: 'settings.motor.pinEngageStepMa', unit: 'mA', step: '0.1' },
   { group: 'learn', cls: 'pin-engage-margin-ripples', key: 'pin_engage_margin_ripples', id: gkey.pinEngageMarginRipples, labelKey: 'settings.motor.pinEngageMarginRipples', unit: 'counts', step: '5' },
 ];
-const TUNE_GROUPS = ['close', 'open', 'caps', 'learn'];
+const TUNE_GROUPS = ['close', 'open', 'caps', 'ceiling', 'learn'];
 
 const css = `
 .diag-motor-lab { color: var(--text-main); }
@@ -236,6 +249,24 @@ const css = `
 .diag-motor-lab .lab-gauge b[data-seen="true"] { color: var(--state-warn); }
 .diag-motor-lab .lab-gauge b[data-phase="load"] { color: var(--state-ok); }
 .diag-motor-lab .lab-gauge b[data-phase="stopping"] { color: var(--state-danger); }
+.diag-motor-lab .lab-manual-hint {
+  color: var(--text-muted); font-size: .78rem; text-align: right;
+}
+.diag-motor-lab .lab-manual-row {
+  display: flex; align-items: flex-end; justify-content: space-between; gap: 12px 18px; flex-wrap: wrap;
+  padding: 14px 16px;
+}
+.diag-motor-lab .lab-manual-duration { display: flex; flex-direction: column; gap: 6px; }
+.diag-motor-lab .lab-manual-input {
+  display: inline-flex; align-items: center; gap: 6px;
+  color: var(--text-muted); font-size: .84rem; font-weight: 650;
+}
+.diag-motor-lab .lab-manual-seconds {
+  width: 6.5rem; height: var(--control-height, 44px); min-height: var(--control-height, 44px);
+  padding: 0 10px; border: 1px solid var(--control-border); border-radius: 8px;
+  background: var(--control-bg); color: var(--text-strong); font-variant-numeric: tabular-nums;
+}
+.diag-motor-lab .lab-manual .lab-actions .ui-btn { min-width: 112px; }
 .diag-motor-lab .lab-log {
   margin: 0 0 16px; padding: 10px 12px;
   border: 1px solid var(--separator); border-radius: 10px;
@@ -408,6 +439,27 @@ const template = () => `
         </section>
       </div>
     </section>
+    <section class="lab-board lab-manual" aria-labelledby="lab-manual-title">
+      <div class="lab-phase-row">
+        <small id="lab-manual-title" data-i18n="diagnostics.lab.manual.title">Manual control</small>
+        <span class="lab-manual-hint" data-i18n="diagnostics.lab.manual.hint">Timed move with endstop detection armed.</span>
+      </div>
+      <div class="lab-manual-row">
+        <label class="lab-manual-duration">
+          <span class="lab-label" data-i18n="diagnostics.lab.manual.duration">Run time</span>
+          <span class="lab-manual-input">
+            <input type="number" class="lab-manual-seconds" min="0.1" max="45" step="0.5" value="10" inputmode="decimal" />
+            <span>s</span>
+          </span>
+        </label>
+        <div class="lab-actions">
+          <button type="button" class="ui-btn lab-manual-btn" data-manual="open" data-i18n="diagnostics.lab.manual.open">Open</button>
+          <button type="button" class="ui-btn lab-manual-btn" data-manual="close" data-i18n="diagnostics.lab.manual.close">Close</button>
+          <button type="button" class="ui-btn lab-manual-btn" data-manual="stop" data-i18n="diagnostics.lab.manual.stop">Stop</button>
+          <button type="button" class="ui-btn lab-manual-btn" data-manual="reset" data-i18n="diagnostics.lab.manual.resetFault">Clear fault</button>
+        </div>
+      </div>
+    </section>
     <section class="lab-board" aria-label="Kv curve">
       <div class="lab-phase-row">
         <small data-i18n="diagnostics.lab.kvCurve">Relative Kv (orifice model)</small>
@@ -568,6 +620,8 @@ export default component({
     const primaryBtn = el.querySelector('.lab-primary');
     const secondaryBtn = el.querySelector('.lab-secondary');
     const estopBtn = el.querySelector('.lab-estop');
+    const manualSeconds = el.querySelector('.lab-manual-seconds');
+    const manualBtns = Array.from(el.querySelectorAll('.lab-manual-btn'));
     const tuneInputs = Array.from(el.querySelectorAll('.lab-tune-input'));
     const thrHost = el.querySelector('.lab-thr-host');
     const kvBody = el.querySelector('.lab-kv-body');
@@ -693,6 +747,8 @@ export default component({
       cap_stall_ma: 'stallMa',
       cap_open_stop_ma: 'openStopMa',
       cap_circuit_fault_ma: 'circuitMa',
+      hmip_runtime_limit_seconds: 'closeCeilingS',
+      close_runtime_limit_counts: 'closeCeilingCounts',
     };
     function explorerParams() {
       const params = {};
@@ -704,8 +760,6 @@ export default component({
         const value = Number.isFinite(typed) ? typed : held;
         if (Number.isFinite(value)) params[name] = value;
       }
-      const ceiling = Number(ev(gkey.hmipRuntimeLimitSeconds));
-      if (Number.isFinite(ceiling) && ceiling > 0) params.closeCeilingS = ceiling;
       if (Number.isFinite(liveDiag.learnedStallMa) && liveDiag.learnedStallMa > 0) params.learnedStallMa = liveDiag.learnedStallMa;
       return params;
     }
@@ -766,7 +820,7 @@ export default component({
       let seconds;
       if (profile === 'HmIP VdMot') {
         // Prefer the ceiling the firmware reports for the move in flight: it is
-        // direction-split (close 34 s, open 45 s) and also bounded in
+        // direction-split (close 38 s, open 45 s) and also bounded in
         // commutations, so a hardcoded 40 both over-requests on close - where
         // the request is silently clipped and the short capture reads as a UI
         // failure - and under-requests on open.
@@ -775,10 +829,10 @@ export default component({
           return Math.min(BROWSER_TRACE_MAX_MS, Math.round(live));
         }
         seconds = Number(ev(gkey.hmipRuntimeLimitSeconds));
-        if (!Number.isFinite(seconds) || seconds <= 0) seconds = 34;
-        // 40 s of close travel is the plunger-at-housing-exit point, never a
-        // target. Cap at the close ceiling until the firmware reports otherwise.
-        seconds = Math.min(34, seconds);
+        if (!Number.isFinite(seconds) || seconds <= 0) seconds = 38;
+        // The configured close ceiling, which firmware bounds at 40 s
+        // (HMIP_VDMOT_RUNTIME_LIMIT_MAX_S) and again in execute_timed_move_().
+        seconds = Math.min(40, seconds);
       } else {
         seconds = Number(ev(gkey.genericRuntimeLimitSeconds));
         if (!Number.isFinite(seconds) || seconds <= 0) seconds = 45;
@@ -995,6 +1049,9 @@ export default component({
       zoneChip.hidden = inSetup;
       zoneChip.textContent = motorZoneLabel();
       estopBtn.dataset.armed = run.active ? 'true' : 'false';
+      // Stop stays live while a move runs; everything else waits for it.
+      for (const btn of manualBtns) btn.disabled = run.active && btn.dataset.manual !== 'stop';
+      if (manualSeconds) manualSeconds.disabled = run.active;
       paintGauges();
 
       const busy = run.active;
@@ -1196,7 +1253,10 @@ export default component({
       if (!analysis.ok) {
         setPhase('failed', 'halt');
         if (analysis.reason === 'no_endstop') {
-          pushLog('diagnostics.lab.log.noEndstop', {
+          // Decision 1 = ENDPOINT: firmware stopped on something the trace
+          // does not show as a stop, so "raise runtime" would be wrong advice.
+          const falseTrip = Number(liveDiag.endpointDecision) === 1;
+          pushLog(falseTrip ? 'diagnostics.lab.log.falseEndpoint' : 'diagnostics.lab.log.noEndstop', {
             direction: t('diagnostics.lab.dir.' + direction),
             seconds: ((analysis.runtime_ms || 0) / 1000).toFixed(0),
           });
@@ -1251,9 +1311,22 @@ export default component({
       }
     }
 
-    async function capture(direction, storeKey) {
+    // A manual move outside the guide must not leave other dashboard polling
+    // paused; inside the guide the lab keeps holding HTTP as before.
+    function stopReasonText() {
+      return stopReasonParts(liveDiag);
+    }
+
+    function endManualRun() {
+      if (run.manual && (step === 'setup' || step === 'halted')) holdHttpForLab(false);
+    }
+
+    // `manualMs` set = a manual jog: no learned-factor reset, operator-chosen
+    // run time, traced but never stored as a guided capture.
+    async function capture(direction, storeKey, manualMs) {
       if (run.active) return;
-      run = { active: true, aborted: false, direction, timer: null, live: [], hiRes: [], started: Date.now(), pullAt: 0, pullInFlight: false, chartAt: 0 };
+      const manual = Number.isFinite(manualMs) && manualMs > 0;
+      run = { active: true, aborted: false, direction, manual, timer: null, live: [], hiRes: [], started: Date.now(), pullAt: 0, pullInFlight: false, chartAt: 0 };
       holdHttpForLab(true);
       liveDiag = emptyLive();
       spuriousWarned = false;
@@ -1262,19 +1335,32 @@ export default component({
       paintStage();
       paintAnalysis(null, [], true);
       paintCaptureBar([]);
-      pushLog('diagnostics.lab.log.starting', { direction: t('diagnostics.lab.dir.' + direction), zone });
+      if (manual) {
+        pushLog('diagnostics.lab.log.manualMove', {
+          direction: t('diagnostics.lab.dir.' + direction), zone, seconds: (manualMs / 1000).toFixed(1),
+        });
+      } else {
+        pushLog('diagnostics.lab.log.starting', { direction: t('diagnostics.lab.dir.' + direction), zone });
+      }
       try {
-        // Clear learned means so a short false trip does not make the next retry slam.
-        try {
-          await resetMotorLearnedFactors(zone);
-          pushLog('diagnostics.lab.log.resetLearned');
-        } catch (err) {
-          pushLog('diagnostics.lab.log.resetLearnedFailed');
+        if (manual) {
+          if (!getDashboardValue('manualMode')) {
+            await setManualMode(true);
+            pushLog('diagnostics.lab.log.manual');
+          }
+        } else {
+          // Clear learned means so a short false trip does not make the next retry slam.
+          try {
+            await resetMotorLearnedFactors(zone);
+            pushLog('diagnostics.lab.log.resetLearned');
+          } catch (err) {
+            pushLog('diagnostics.lab.log.resetLearnedFailed');
+          }
         }
         if (run.aborted) return;
-        const durationMs = captureDurationMs();
+        const durationMs = manual ? manualMs : captureDurationMs();
         const captureDeadlineMs = durationMs + 8000;
-        pushLog('diagnostics.lab.log.duration', { seconds: (durationMs / 1000).toFixed(0) });
+        if (!manual) pushLog('diagnostics.lab.log.duration', { seconds: (durationMs / 1000).toFixed(0) });
         if (direction === 'open') await openMotorTimed(zone, durationMs);
         else await closeMotorTimed(zone, durationMs);
         if (run.aborted) return;
@@ -1347,7 +1433,7 @@ export default component({
               spuriousWarned = true;
               pushLog('diagnostics.lab.log.spurious', {});
             }
-            if (!liveDiag.pinSeen && (liveDiag.stroke === 1 || liveDiag.stroke === 2)) {
+            if (direction === 'close' && !liveDiag.pinSeen && (liveDiag.stroke === 1 || liveDiag.stroke === 2)) {
               liveDiag.pinSeen = true;
               liveDiag.pinAt = liveDiag.motion;
               liveDiag.pinMa = Number.isFinite(current) ? current : liveDiag.current;
@@ -1394,9 +1480,15 @@ export default component({
               if (safety.latch_faulted) {
                 showBanner(t('diagnostics.lab.latchBanner'));
                 pushLog('diagnostics.lab.log.latchFaulted');
+              } else if (Number(safety.fault_code) > 0) {
+                const code = Number(safety.fault_code);
+                pushLog('diagnostics.lab.log.neverStartedFault', {
+                  fault: FAULT_NAMES[code] || String(code),
+                });
               } else {
                 pushLog('diagnostics.lab.log.neverStarted');
               }
+              endManualRun();
               paintStage();
               return;
             }
@@ -1404,9 +1496,13 @@ export default component({
               finished = true;
               stopPoll();
               liveDiag.busy = false;
-              if (sawBusy) pushLog('diagnostics.lab.log.stopped');
+              if (sawBusy) {
+                pushLog('diagnostics.lab.log.stopped');
+                pushLog('diagnostics.lab.log.stopReason', { reason: stopReasonText() });
+              }
               run.active = false;
               await finishCapture(direction, storeKey);
+              endManualRun();
               paintStage();
               return;
             }
@@ -1417,6 +1513,7 @@ export default component({
               run.active = false;
               setPhase('failed', 'halt');
               pushLog('diagnostics.lab.log.traceFailed');
+              endManualRun();
               paintStage();
               return;
             }
@@ -1428,6 +1525,48 @@ export default component({
         run.active = false;
         setPhase('failed', 'halt');
         pushLog('diagnostics.lab.log.startFailed');
+        endManualRun();
+        paintStage();
+      }
+    }
+
+    function manualDurationMs() {
+      const seconds = Number(manualSeconds && manualSeconds.value);
+      // Firmware clips to the profile ceiling again in execute_timed_move_().
+      const clamped = Number.isFinite(seconds) ? Math.max(0.1, Math.min(45, seconds)) : 10;
+      if (manualSeconds) manualSeconds.value = String(clamped);
+      return Math.round(clamped * 1000);
+    }
+
+    // Refresh the gauges outside a run so a cleared fault shows immediately.
+    async function refreshSafety() {
+      try {
+        const payload = await fetchDiagnostics();
+        const safety = payload && payload.data && payload.data.motor_safety ? payload.data.motor_safety : {};
+        liveDiag.faultCode = Number(safety.fault_code) || 0;
+        liveDiag.latchFaulted = !!safety.latch_faulted;
+        liveDiag.lastFastTrip = Number(safety.last_fast_trip) || 0;
+        liveDiag.endpointDecision = Number(safety.endpoint_decision) || 0;
+        liveDiag.backend = safety.backend || liveDiag.backend;
+        paintGauges();
+      } catch (err) { /* gauges keep their last value */ }
+    }
+
+    async function onManual(action) {
+      if (action === 'stop') {
+        pushLog('diagnostics.lab.log.manualStop', { zone });
+        try { await stopMotor(zone); } catch (err) { /* poll sees busy drop */ }
+        return;
+      }
+      if (run.active) return;
+      if (action === 'open' || action === 'close') return capture(action, null, manualDurationMs());
+      if (action === 'reset') {
+        let sent = true;
+        try { await resetMotorFault(zone); } catch (err) { sent = false; }
+        await refreshSafety();
+        const cleared = sent && !liveDiag.faultCode && !liveDiag.latchFaulted;
+        pushLog(cleared ? 'diagnostics.lab.log.faultReset' : 'diagnostics.lab.log.faultResetFailed', { zone });
+        if (cleared) showBanner('');
         paintStage();
       }
     }
@@ -1495,6 +1634,7 @@ export default component({
     primaryBtn.addEventListener('click', () => onAction(primaryBtn.dataset.action));
     secondaryBtn.addEventListener('click', () => onAction(secondaryBtn.dataset.action));
     estopBtn.addEventListener('click', estop);
+    for (const btn of manualBtns) btn.addEventListener('click', () => onManual(btn.dataset.manual));
     downloadBtn.addEventListener('click', () => {
       if (!lastExportSamples.length) return;
       const dir = run.direction || 'trace';

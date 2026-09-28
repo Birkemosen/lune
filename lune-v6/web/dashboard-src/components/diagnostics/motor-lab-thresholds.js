@@ -125,12 +125,16 @@ function levelName(id, direction) {
 
 function thresholdDetail(id, result) {
   const p = result.params;
-  const base = result.baselineMa;
+  const pinRef = result.direction === 'close' && result.pinAnchorMa != null;
+  const base = pinRef && result.baselineMa != null
+    ? Math.max(result.baselineMa, result.pinAnchorMa) : result.baselineMa;
   switch (id) {
-    case 'trailing':
-      return t('diagnostics.lab.thr.trailingDetail', {
+    case 'trailing': {
+      const detail = t('diagnostics.lab.thr.trailingDetail', {
         step: p.trailingStepMa.toFixed(1), window: (p.trailingWindowMs / 1000).toFixed(1), sustain: (p.trailingSustainMs / 1000).toFixed(2),
       });
+      return pinRef && !p.seatingLearned ? detail + ' · ' + t('diagnostics.lab.thr.trailingPinGate') : detail;
+    }
     case 'threshold':
       if (base == null) return t('diagnostics.lab.thr.noBaseline');
       if (result.direction === 'open' && result.usesFraction) {
@@ -139,7 +143,7 @@ function thresholdDetail(id, result) {
       return t('diagnostics.lab.thr.factorDetail', {
         base: base.toFixed(1), f: (result.direction === 'open' ? p.openFactor : p.closeFactor).toFixed(2),
         ma: (base * (result.direction === 'open' ? p.openFactor : p.closeFactor)).toFixed(1),
-      });
+      }) + (pinRef ? ' · ' + t('diagnostics.lab.thr.pinAnchored') : '');
     case 'seat': return t('diagnostics.lab.thr.capDetail', { ma: p.seatMa.toFixed(1), frames: p.seatFrames }) + ' · ' + t('diagnostics.lab.thr.seatGate');
     case 'popoff': return t('diagnostics.lab.thr.capDetail', { ma: p.popoffMa.toFixed(1), frames: p.popoffFrames });
     case 'openStop': return t('diagnostics.lab.thr.capDetail', { ma: p.openStopMa.toFixed(1), frames: p.openFrames }) + ' · ' + t('diagnostics.lab.thr.openGate');
@@ -148,7 +152,7 @@ function thresholdDetail(id, result) {
     case 'ceiling':
       return result.direction === 'open'
         ? t('diagnostics.lab.thr.ceilingDetail', { s: p.openCeilingS, counts: 3600 })
-        : t('diagnostics.lab.thr.ceilingDetail', { s: p.closeCeilingS, counts: 2600 });
+        : t('diagnostics.lab.thr.ceilingDetail', { s: p.closeCeilingS, counts: p.closeCeilingCounts });
     case 'wall': return t('diagnostics.lab.thr.wallDetail', { s: CLOSE_WALL.ms / 1000, counts: CLOSE_WALL.counts });
     default: return '';
   }

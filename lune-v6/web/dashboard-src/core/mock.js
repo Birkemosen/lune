@@ -66,6 +66,20 @@ function seed() {
     setEntity(key.ble(zone), { state: 'AA:BB:CC:DD:EE:0' + zone });
     setEntity(key.name(zone), { state: ['Living Room', 'Kitchen', 'Bedroom', 'Bathroom', 'Office', 'Hallway'][index] || '' });
     setEntity(key.preheatAdvance(zone), { value: 0.08 + (index * 0.03) });
+    const working = zone === 1 ? 1847 : 0;
+    const span = zone === 1 ? 1897 : 0;
+    setEntity(key.motorOpenRipples(zone), { value: span });
+    setEntity(key.motorCloseRipples(zone), { value: span });
+    setEntity(key.motorWorkingRipples(zone), { value: working });
+    setEntity(key.motorPinFreeRipples(zone), { value: zone === 1 ? 1013 : 0 });
+    setEntity(key.motorStrokeModel(zone), { state: zone === 1 ? 'working_range' : 'full_stroke' });
+    setEntity(key.motorOpenFactor(zone), { value: 0 });
+    setEntity(key.motorCloseFactor(zone), { value: zone === 1 ? 1.51 : 0 });
+    setEntity(key.motorLastFault(zone), { state: 'NONE' });
+    setEntity(key.motorLearnPct(zone), { value: 0 });
+    setEntity(key.motorLearnPhase(zone), { state: '' });
+    setEntity(key.motorLearnSample(zone), { value: 0 });
+    setEntity(key.motorLearnSamplesNeeded(zone), { value: 0 });
   }
 
   for (let probe = 1; probe <= PROBES; probe++) {
@@ -107,6 +121,7 @@ function seed() {
   setEntity(gkey.capStallMa, { value: 65.0 });
   setEntity(gkey.capOpenStopMa, { value: 40.0 });
   setEntity(gkey.capCircuitFaultMa, { value: 85.0 });
+  setEntity(gkey.closeRuntimeLimitCounts, { value: 2600 });
   setEntity(gkey.workingRangeLearning, { value: 1 });
   setEntity(gkey.learnOpenStartRipples, { value: 2200 });
   setEntity(gkey.learnOpenStepRipples, { value: 125 });
@@ -117,7 +132,7 @@ function seed() {
   setEntity(gkey.pinEngageStepMa, { value: 2.0 });
   setEntity(gkey.pinEngageMarginRipples, { value: 50 });
   setEntity(gkey.genericRuntimeLimitSeconds, { value: 45 });
-  setEntity(gkey.hmipRuntimeLimitSeconds, { value: 34 });
+  setEntity(gkey.hmipRuntimeLimitSeconds, { value: 38 });
   setEntity(gkey.relearnAfterMovements, { value: 2000 });
   setEntity(gkey.relearnAfterHours, { value: 168 });
   setEntity(gkey.learnedFactorMinSamples, { value: 3 });
@@ -125,6 +140,15 @@ function seed() {
   setEntity(gkey.simplePreheatEnabled, { state: 'on' });
   setEntity(gkey.minZoneFlowPct, { value: 15 });
   setEntity(gkey.minimumFlowAlways, { state: 'off' });
+  setEntity(gkey.heatingMode, { state: 'heat_pump' });
+  setEntity(gkey.effectiveHeatingMode, { state: 'heat_pump' });
+  setEntity(gkey.heatingModeSource, { state: 'local' });
+  setEntity(gkey.hpOverheatMarginC, { value: 1.0 });
+  setEntity(gkey.hpBasePct, { value: 60 });
+  setEntity(gkey.hpTrimFloorPct, { value: 15 });
+  setEntity(gkey.heatDemandRecommendation, { state: 'hold' });
+  setEntity(gkey.heatDemandCriticalZone, { value: 1 });
+  setEntity(gkey.heatDemandSaturatedS, { value: 0 });
   setEntity(gkey.bleClockSyncEnabled, { state: 'on' });
   setEntity(gkey.bleClockSyncIntervalMin, { value: 60 });
   setEntity(gkey.bleClockSyncLastOkS, { value: (Number(Date.now() / 1000) | 0) - 900 });
@@ -492,6 +516,7 @@ export function handleMockPost(body) {
       return;
     }
     if (cmd === 'motor_reset_fault' && zone >= 1 && zone <= ZONES) {
+      setEntity(key.motorLastFault(zone), { state: 'NONE' });
       addActivity('Motor ' + zone + ' fault reset', zone);
       return;
     }
@@ -501,6 +526,39 @@ export function handleMockPost(body) {
     }
     if (cmd === 'motor_reset_and_relearn' && zone >= 1 && zone <= ZONES) {
       addActivity('Motor ' + zone + ' reset and relearn started', zone);
+      setEntity(key.state(zone), { state: 'calibrating' });
+      const need = 3;
+      setEntity(key.motorLearnPct(zone), { value: 0 });
+      setEntity(key.motorLearnPhase(zone), { state: 'home' });
+      setEntity(key.motorLearnSample(zone), { value: 0 });
+      setEntity(key.motorLearnSamplesNeeded(zone), { value: need });
+      const steps = [
+        { pct: 5, phase: 'home', sample: 0 },
+        { pct: 20, phase: 'open', sample: 0 },
+        { pct: 35, phase: 'close', sample: 1 },
+        { pct: 50, phase: 'open', sample: 1 },
+        { pct: 65, phase: 'close', sample: 2 },
+        { pct: 80, phase: 'open', sample: 2 },
+        { pct: 95, phase: 'close', sample: 3 },
+        { pct: 100, phase: 'done', sample: 3 },
+      ];
+      steps.forEach((step, i) => {
+        setTimeout(() => {
+          setEntity(key.motorLearnPct(zone), { value: step.pct });
+          setEntity(key.motorLearnPhase(zone), { state: step.phase });
+          setEntity(key.motorLearnSample(zone), { value: step.sample });
+          setEntity(key.motorLearnSamplesNeeded(zone), { value: need });
+          if (step.phase === 'done') {
+            setEntity(key.state(zone), { state: 'idle' });
+            setEntity(key.motorLearnPhase(zone), { state: '' });
+            setEntity(key.motorOpenRipples(zone), { value: 1897 });
+            setEntity(key.motorCloseRipples(zone), { value: 1897 });
+            setEntity(key.motorWorkingRipples(zone), { value: 1847 });
+            setEntity(key.motorPinFreeRipples(zone), { value: 1013 });
+            setEntity(key.motorStrokeModel(zone), { state: 'working_range' });
+          }
+        }, 700 * (i + 1));
+      });
       return;
     }
     if (cmd === 'ble_clock_sync_now') {
@@ -532,6 +590,14 @@ export function handleMockPost(body) {
   if (k === 'motor_profile_default') { setEntity(gkey.motorProfileDefault, { state: String(v) }); addActivity('Setting updated: ' + k + ' = ' + v); return; }
   if (k === 'simple_preheat_enabled') { setEntity(gkey.simplePreheatEnabled, { state: String(v) }); addActivity('Setting updated: ' + k + ' = ' + v); return; }
   if (k === 'minimum_flow_always') { setEntity(gkey.minimumFlowAlways, { state: String(v) }); addActivity('Setting updated: ' + k + ' = ' + v); return; }
+  if (k === 'heating_mode') {
+    const mode = String(v) === 'normal' ? 'normal' : 'heat_pump';
+    setEntity(gkey.heatingMode, { state: mode });
+    setEntity(gkey.effectiveHeatingMode, { state: mode });
+    setEntity(gkey.heatingModeSource, { state: 'local' });
+    addActivity('Setting updated: ' + k + ' = ' + mode);
+    return;
+  }
   if (k === 'ble_clock_sync_enabled') { setEntity(gkey.bleClockSyncEnabled, { state: String(v) }); addActivity('Setting updated: ' + k + ' = ' + v); return; }
   // Text settings
   if (k === 'zone_name' && zone >= 1) { setEntity(key.name(zone), { state: String(v) }); addActivity('Setting updated: ' + k + ' = ' + v, zone); return; }
@@ -575,6 +641,7 @@ export function handleMockPost(body) {
     cap_stall_ma: gkey.capStallMa,
     cap_open_stop_ma: gkey.capOpenStopMa,
     cap_circuit_fault_ma: gkey.capCircuitFaultMa,
+    close_runtime_limit_counts: gkey.closeRuntimeLimitCounts,
     working_range_learning: gkey.workingRangeLearning,
     learn_open_start_ripples: gkey.learnOpenStartRipples,
     learn_open_step_ripples: gkey.learnOpenStepRipples,
@@ -591,6 +658,9 @@ export function handleMockPost(body) {
     learned_factor_min_samples: gkey.learnedFactorMinSamples,
     learned_factor_max_deviation_pct: gkey.learnedFactorMaxDeviationPct,
     min_zone_flow_pct: gkey.minZoneFlowPct,
+    hp_overheat_margin_c: gkey.hpOverheatMarginC,
+    hp_base_pct: gkey.hpBasePct,
+    hp_trim_floor_pct: gkey.hpTrimFloorPct,
     ble_clock_sync_interval_min: gkey.bleClockSyncIntervalMin
   };
 
@@ -653,6 +723,10 @@ export function mockSettingsExport(includeLearned) {
       motor_profile_default: es(gkey.motorProfileDefault),
       min_zone_flow_pct: ev(gkey.minZoneFlowPct),
       minimum_flow_always: es(gkey.minimumFlowAlways) === 'on',
+      heating_mode: es(gkey.heatingMode) || 'heat_pump',
+      hp_overheat_margin_c: ev(gkey.hpOverheatMarginC),
+      hp_base_pct: ev(gkey.hpBasePct),
+      hp_trim_floor_pct: ev(gkey.hpTrimFloorPct),
       simple_preheat_enabled: es(gkey.simplePreheatEnabled) === 'on',
       ble_clock_sync_enabled: es(gkey.bleClockSyncEnabled) === 'on',
       ble_clock_sync_interval_min: ev(gkey.bleClockSyncIntervalMin),

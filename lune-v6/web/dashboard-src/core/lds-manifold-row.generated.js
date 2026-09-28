@@ -44,19 +44,24 @@ export const MANIFOLD_ROW_CSS = `
 .lds-loop,
 .loop {
   display: grid;
-  gap: 4px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
   min-width: 0;
   min-height: 0;
-  padding: 8px 6px;
+  padding: 8px 8px 8px 6px;
   border: 1px solid transparent;
   border-radius: 8px;
   background: transparent;
   color: inherit;
-  text-align: center;
-  align-items: center;
-  justify-items: center;
+  text-align: left;
+  align-items: stretch;
+  justify-items: stretch;
   cursor: pointer;
   font: inherit;
+}
+.lds-loop.has-demand,
+.loop.has-demand {
+  grid-template-columns: auto minmax(0, 1fr);
 }
 .lds-loop:hover,
 .loop:hover {
@@ -76,10 +81,18 @@ export const MANIFOLD_ROW_CSS = `
 .loop.is-unused {
   opacity: .4;
 }
+.lds-loop-body,
+.loop-body {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  align-content: center;
+  justify-items: start;
+}
 .lds-loop-id,
 .loop-id {
   color: var(--text-faint);
-  font-size: .68rem;
+  font-size: .78rem;
   font-weight: 750;
   letter-spacing: .06em;
 }
@@ -88,18 +101,10 @@ export const MANIFOLD_ROW_CSS = `
   max-width: 100%;
   overflow: hidden;
   color: var(--text-muted, var(--muted));
-  font-size: .7rem;
+  font-size: .8rem;
   font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.lds-loop-demand,
-.loop-demand {
-  display: inline-flex;
-  align-items: flex-end;
-  justify-content: center;
-  gap: 6px;
-  margin-top: 2px;
 }
 .lds-loop-demand-bar,
 .loop-demand-bar {
@@ -107,8 +112,8 @@ export const MANIFOLD_ROW_CSS = `
   flex-direction: column-reverse;
   gap: 2px;
   width: 10px;
-  height: 40px;
-  flex: 0 0 10px;
+  align-self: stretch;
+  min-height: 52px;
 }
 .lds-loop-demand-bar i,
 .loop-demand-bar i {
@@ -141,7 +146,7 @@ export const MANIFOLD_ROW_CSS = `
 .loop-temp {
   padding: 0;
   font-family: var(--font-display);
-  font-size: 1.05rem;
+  font-size: 1.1rem;
   font-weight: 650;
   font-variant-numeric: tabular-nums;
   color: var(--text-strong);
@@ -208,7 +213,7 @@ export function demandBarHtml(level = 0) {
 }
 
 /**
- * One Z1–Z6 cell: id, name, optional 5-step demand + temperature.
+ * One Z1–Z6 cell: full-height opening bar on the left, then id / name / temp.
  *
  * @param {id: string, name?: string, temp?: string, level?: number, kind?: string, selected?: boolean, attrs?: string, tag?: string, showDemand?: boolean, className?: string} opts
  */
@@ -227,16 +232,16 @@ export function loopCellHtml({
   const classes = [
     "lds-loop",
     "loop",
+    showDemand ? "has-demand" : "",
     selected ? "is-selected" : "",
     kind === "calling" ? "is-calling" : "",
     kind === "unused" ? "is-unused" : "",
     className,
   ].filter(Boolean).join(" ");
   const typeAttr = tag === "button" ? ` type="button"` : "";
-  const demand = showDemand
-    ? `<span class="lds-loop-demand loop-demand">${demandBarHtml(level)}<span class="lds-loop-temp loop-temp">${_esc(temp)}</span></span>`
-    : `<span class="lds-loop-temp loop-temp">${_esc(temp)}</span>`;
-  return `<${tag} class="${classes}"${typeAttr} ${attrs}><span class="lds-loop-id loop-id">${_esc(id)}</span><span class="lds-loop-name loop-name">${_esc(name)}</span>${demand}</${tag}>`;
+  const demand = showDemand ? demandBarHtml(level) : "";
+  const body = `<span class="lds-loop-body loop-body"><span class="lds-loop-id loop-id">${_esc(id)}</span><span class="lds-loop-name loop-name">${_esc(name)}</span><span class="lds-loop-temp loop-temp">${_esc(temp)}</span></span>`;
+  return `<${tag} class="${classes}"${typeAttr} ${attrs}>${demand}${body}</${tag}>`;
 }
 
 /**

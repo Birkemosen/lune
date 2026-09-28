@@ -204,8 +204,21 @@ export default component({
     // immediate: provision panel hides the Apply banner, so edits must write.
     const form = cardForm(el, { immediate: true });
     setSourceOptions(sourceEl, 'Local Probe');
-    form.select(sourceEl, { read: () => sourceToUiValue(String(es(key.tempSource(selectedZone())) || '')), commit: (v) => setZoneSelect(selectedZone(), 'zone_temp_source', uiValueToApiValue(v)) });
-    form.text(bleEl, { read: () => es(key.ble(selectedZone())) || '', commit: (v) => setZoneText(selectedZone(), 'zone_ble_mac', v) });
+    form.select(sourceEl, {
+      read: () => sourceToUiValue(String(es(key.tempSource(selectedZone())) || '')),
+      commit: (v) => setZoneSelect(selectedZone(), 'zone_temp_source', uiValueToApiValue(v)),
+    });
+    // Never POST an empty MAC on blur/zone-switch: firmware ignores empty
+    // has_str writes, but optimistic setEntity('') leaves the UI blank while
+    // ble-scan still shows the device assignment.
+    form.text(bleEl, {
+      read: () => es(key.ble(selectedZone())) || '',
+      commit: (v) => {
+        const mac = String(v || '').trim();
+        if (!mac) return;
+        setZoneText(selectedZone(), 'zone_ble_mac', mac);
+      },
+    });
     form.text(sidEl, { read: () => es(key.sensorId(selectedZone())) || '', commit: (v) => setZoneText(selectedZone(), 'zone_sensor_id', v) });
     form.text(snameEl, { read: () => es(key.sensorName(selectedZone())) || '', commit: (v) => setZoneText(selectedZone(), 'zone_sensor_name', v) });
     sourceEl.addEventListener('change', paintSourceRows);
@@ -222,10 +235,11 @@ export default component({
     }
 
     function update() {
-      const zone = selectedZone();
+      const zone = Number(selectedZone()) || 1;
       if (paintedZone !== zone) {
         paintedZone = zone;
         scanList.style.display = 'none';
+        // discard (not refresh) so a dirty empty BLE field cannot stick across zones
         form.discard();
       } else {
         form.refresh();
@@ -277,7 +291,8 @@ export default component({
               paintSourceRows();
               setZoneText(zone, 'zone_ble_mac', mac);
               setZoneSelect(zone, 'zone_temp_source', 'BLE');
-              form.refresh();
+              // Drop any stale dirty flag so the next sync/zone switch reads store.
+              form.discard();
             });
           });
         })
