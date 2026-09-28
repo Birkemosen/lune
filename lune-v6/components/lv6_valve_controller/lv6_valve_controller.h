@@ -258,6 +258,20 @@ class Lv6ValveController : public esphome::Component {
   FaultCode get_last_fault() const { return current_fault_code_.load(std::memory_order_acquire); }
   bool is_motor_busy() const { return motor_turning_.load(std::memory_order_acquire); }
   bool is_calibrating() const { return calibrating_.load(std::memory_order_acquire); }
+  /// Live learning progress for the zone currently calibrating (if any).
+  struct LearningProgress {
+    uint8_t zone{0xFF};       ///< 0-based zone, 0xFF = idle
+    uint8_t pct{0};           ///< 0-100
+    uint8_t sample{0};        ///< agreeing close samples so far
+    uint8_t samples_needed{0};///< target sample count
+    /// 0 none, 1 home, 2 open, 3 close, 4 done, 5 failed
+    uint8_t phase{0};
+  };
+  LearningProgress get_learning_progress() const;
+  /// Packed progress word used by the dashboard to bump runtime_revision.
+  uint32_t get_learning_progress_packed() const {
+    return learning_progress_packed_.load(std::memory_order_acquire);
+  }
   uint32_t get_live_ripple_count() const { return live_ripple_count_.load(std::memory_order_relaxed); }
   void request_calibration(uint8_t zone);
   void request_calibration_all();
@@ -496,6 +510,9 @@ class Lv6ValveController : public esphome::Component {
   /// Working-range learning (stroke_learning.h): home, bounded open legs and
   /// close passes that must start in dead space. Returns true when learned.
   bool learn_working_range_(uint8_t zone, uint8_t attempt);
+  void set_learning_progress_(uint8_t zone, uint8_t pct, uint8_t phase, uint8_t sample,
+                              uint8_t samples_needed);
+  void clear_learning_progress_();
   /// Open by at most `target_ripples` from wherever the valve is. The open
   /// endpoint paths stay armed as a backstop; hitting one is reported.
   OpenLegResult calibration_open_leg_(uint8_t zone, uint32_t target_ripples);
@@ -712,6 +729,15 @@ class Lv6ValveController : public esphome::Component {
   /// Pin onset from current on close moves. The tracker's contact test also
   /// needs the rotor to slow, which this actuator barely does at the pin.
   PinOnsetDetector pin_onset_{};
+  /// Close moves: filtered current when pin contact was first seen. The level
+  /// trip is referenced to it, since free-travel current is crossed by the pin
+  /// ramp itself. 0 = no contact yet.
+  float pin_anchor_ma_{0.0f};
+  /// Close moves past the pin: soft seat as a rise over the pressing plateau.
+  SeatRiseDetector seat_rise_{};
+  /// Zone has a learned pin-to-seat depth, so the endpoint window can place
+  /// the seat and the rate-based close trip may be trusted past the pin.
+  bool close_seating_learned_{false};
   /// Set while learn_working_range_() runs. The stroke being relearned must not
   /// size its own ceilings: an open leg does not update the position, so the old
   /// stroke x a 0 % position would cut the next close pass after ~150 counts.
@@ -751,6 +777,9 @@ class Lv6ValveController : public esphome::Component {
   std::atomic<int8_t> calibration_request_{-1};
   std::atomic<uint8_t> calibration_pending_mask_{0};
   std::atomic<bool> calibrating_{false};
+  /// Packed learning UI progress: zone(8) | pct(8) | sample(8) | phase(4) | need(4)
+  /// Updated from the valve task; read lock-free from the dashboard snapshot.
+  std::atomic<uint32_t> learning_progress_packed_{0};
 
   // Motor config cache
   MotorConfig motor_cfg_;

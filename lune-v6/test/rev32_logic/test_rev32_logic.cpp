@@ -338,6 +338,56 @@ static void test_slow_ramp_still_reaches_contact() {
   g_baseline = 14.0f;
 }
 
+// Measured Rev 3.3 close (motor-lab-z1-close.csv): 23 -> 28 mA over ~2 s at the
+// pin while the cadence stays at ~1.1x. observe() alone never leaves
+// FREE_TRAVEL, and the trailing-step trip on the pin ramp was classified as a
+// JAM - the stroke stopped at the pin and the zone was marked BLOCKED.
+static void test_current_only_pin_contact_is_not_a_jam() {
+  StrokeTracker tracker;
+  tracker.reset(false);
+  g_baseline = 23.1f;
+
+  uint32_t count = 0;
+  for (int i = 0; i < 200; ++i, ++count)
+    feed(tracker, count, 23.1f + static_cast<float>(i) * 0.025f, 11);
+  assert(tracker.phase() == StrokePhase::FREE_TRAVEL);
+
+  EndpointEvidence e;
+  e.blanking_elapsed = true;
+  e.current_present = true;
+  e.load_evidence = true;
+  e.commutation_observed = true;
+  e.commutation_plateau = false;
+  e.endpoint_window = true;
+  e.commanded_endpoint = true;
+  e.phase = tracker.phase();
+  assert(classify_endpoint(e) == EndpointDecision::JAM);
+
+  tracker.note_current_contact(/*onset=*/60, 28.0f);
+  assert(tracker.contact_seen());
+  assert(tracker.contact_count() == 60);
+  assert(tracker.phase() == StrokePhase::UNDER_LOAD);
+
+  // Before the seat window the same load evidence waits instead of faulting.
+  e.phase = tracker.phase();
+  e.endpoint_window = false;
+  assert(classify_endpoint(e) == EndpointDecision::CONTINUE);
+
+  // Pressing the pin keeps the current above the step, so it stays loaded.
+  feed(tracker, count + 10, 28.5f, 11, 5);
+  assert(tracker.phase() == StrokePhase::UNDER_LOAD);
+
+  // Idempotent, and never applies to opening.
+  tracker.note_current_contact(150, 30.0f);
+  assert(tracker.contact_count() == 60);
+  StrokeTracker opening;
+  opening.reset(true);
+  opening.note_current_contact(60, 28.0f);
+  assert(!opening.contact_seen());
+  assert(opening.phase() == StrokePhase::FREE_TRAVEL);
+  g_baseline = 14.0f;
+}
+
 static void test_no_phase_without_a_baseline() {
   StrokeTracker tracker;
   tracker.reset(false);
@@ -646,6 +696,7 @@ int main() {
   test_adaptive_plateau();
   test_pin_contact_is_not_an_endstop();
   test_slow_ramp_still_reaches_contact();
+  test_current_only_pin_contact_is_not_a_jam();
   test_no_phase_without_a_baseline();
   test_seating_outlasts_the_contact_window();
   test_opening_has_no_pressure_phase();

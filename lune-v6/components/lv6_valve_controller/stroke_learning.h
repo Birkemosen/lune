@@ -97,6 +97,102 @@ class PinOnsetDetector {
 };
 
 // ---------------------------------------------------------------------------
+// Soft seat from current, referenced to the pressing plateau
+// ---------------------------------------------------------------------------
+// Measured Rev 3.3 z1 close past the pin: ramp 23 -> 32 mA over ~430 counts,
+// a spring break-over bump to 35-36.5 mA ~600 counts past contact, a flat
+// ~32 mA pressing plateau, then the seat - a slow rise of ~1 mA per 100 counts
+// with no cadence drop at all (the rotor never slows). The bump reaches the
+// seat's magnitude, so no absolute or contact-anchored level separates them;
+// the plateau does. The reference is taken only once the bump is behind us
+// (a clear fall from the running peak), or after a fixed distance past contact
+// for a valve with no bump, and is the plateau's running minimum from then on.
+//
+// The rise is scaled to this motor's pin load (plateau - free travel): motor
+// torque constant and pin spring move the pressing and seating loads together,
+// so a weak motor or soft pin seats with a proportionally smaller step. z1:
+// 1.5 mA over a 9.3 mA pin load = 0.16.
+struct SeatRiseConfig {
+  float rise_fraction{0.16f};       ///< seat = plateau + fraction x pin load...
+  float rise_floor_ma{1.0f};        ///< ...never below this (plateau noise ~0.5 mA)
+  float rise_ma{1.5f};              ///< used while no free-travel reference exists
+  uint32_t sustain_ms{500};         ///< ...held this long
+  float breakover_drop_ma{1.5f};    ///< fall from the post-contact peak = bump passed
+  uint32_t arm_counts{800};         ///< ...or this far past contact without a bump
+};
+
+class SeatRiseDetector {
+ public:
+  explicit SeatRiseDetector(const SeatRiseConfig &cfg = {}) : cfg_(cfg) {}
+  void set_config(const SeatRiseConfig &cfg) { cfg_ = cfg; }
+
+  void reset() {
+    armed_ = false;
+    tripped_ = false;
+    peak_ma_ = 0.0f;
+    plateau_ma_ = 0.0f;
+    rise_ma_ = 0.0f;
+    run_ms_ = 0;
+    drop_ms_ = 0;
+    last_ms_ = 0;
+  }
+
+  /// Call every tick of a close stroke once pin contact has been seen.
+  /// `free_travel_ma` is the stroke's frozen free-travel baseline; 0 = none.
+  void observe(uint32_t now_ms, uint32_t count, float current_ma, uint32_t contact_count,
+               float free_travel_ma) {
+    const uint32_t dt = last_ms_ == 0 ? 0 : now_ms - last_ms_;
+    last_ms_ = now_ms;
+    if (tripped_)
+      return;
+    if (!armed_) {
+      peak_ma_ = std::max(peak_ma_, current_ma);
+      // Held, so a noise dip inside the still-rising pin ramp cannot arm it
+      // with a reference below the plateau.
+      if (current_ma <= peak_ma_ - cfg_.breakover_drop_ma)
+        drop_ms_ += dt;
+      else
+        drop_ms_ = 0;
+      const bool broke_over = drop_ms_ >= cfg_.sustain_ms;
+      const bool far_enough = count >= contact_count + cfg_.arm_counts;
+      if (!broke_over && !far_enough)
+        return;
+      armed_ = true;
+      plateau_ma_ = current_ma;
+    }
+    plateau_ma_ = std::min(plateau_ma_, current_ma);
+    rise_ma_ = free_travel_ma > 0.0f && plateau_ma_ > free_travel_ma
+                   ? std::max(cfg_.rise_floor_ma,
+                              cfg_.rise_fraction * (plateau_ma_ - free_travel_ma))
+                   : cfg_.rise_ma;
+    if (current_ma >= plateau_ma_ + rise_ma_) {
+      run_ms_ += dt;
+      if (run_ms_ >= cfg_.sustain_ms)
+        tripped_ = true;
+    } else {
+      run_ms_ = 0;
+    }
+  }
+
+  bool armed() const { return armed_; }
+  bool tripped() const { return tripped_; }
+  float plateau_ma() const { return plateau_ma_; }
+  /// Rise currently required above the plateau.
+  float rise_ma() const { return rise_ma_; }
+
+ private:
+  SeatRiseConfig cfg_;
+  bool armed_{false};
+  bool tripped_{false};
+  float peak_ma_{0.0f};
+  float plateau_ma_{0.0f};
+  float rise_ma_{0.0f};
+  uint32_t run_ms_{0};
+  uint32_t drop_ms_{0};
+  uint32_t last_ms_{0};
+};
+
+// ---------------------------------------------------------------------------
 // The learning sequence
 // ---------------------------------------------------------------------------
 struct StrokeLearningConfig {

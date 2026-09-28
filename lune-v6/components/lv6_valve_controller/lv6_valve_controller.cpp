@@ -1697,6 +1697,11 @@ bool Lv6ValveController::start_motor_(uint8_t zone, MotorDirection dir, bool ove
     pin_onset_.set_config(pc);
     pin_onset_.reset();
   }
+  pin_anchor_ma_ = 0.0f;
+  seat_rise_.reset();
+  xSemaphoreTake(telemetry_mutex_, portMAX_DELAY);
+  close_seating_learned_ = telemetry_[zone].contact_to_stop_close_ripples > 0;
+  xSemaphoreGive(telemetry_mutex_);
   current_fault_code_ = FaultCode::NONE;
   fsm_state_ = MotorFsmState::BOOST;
 
@@ -2056,9 +2061,21 @@ void Lv6ValveController::process_tick_() {
                       rev32_backend_->tacho_stretch_x10(motor_run_time_ms_));
       motor_diag_stroke_phase_.store(static_cast<uint8_t>(stroke_.phase()),
                                      std::memory_order_relaxed);
-      if (current_dir_ == MotorDirection::CLOSE)
+      if (current_dir_ == MotorDirection::CLOSE) {
         pin_onset_.observe(motor_run_time_ms_, count, current_filtered_ma_,
                            baseline_valid_ ? move_baseline_ma_ : 0.0f);
+        if (pin_onset_.detected() && !stroke_.contact_seen()) {
+          stroke_.note_current_contact(pin_onset_.onset_count(), current_filtered_ma_);
+          // The trailing window still holds free-travel samples, so the pin
+          // ramp itself reads as the seat step. Re-anchor it to the pin.
+          close_step_.reset();
+          endstop_high_count_ = 0;
+          ESP_LOGI(TAG, "Motor %d pin contact (current) at commutation %" PRIu32
+                   " (free travel %.1f mA, now %.1f mA)",
+                   current_zone_ + 1, pin_onset_.onset_count(), move_baseline_ma_,
+                   current_filtered_ma_);
+        }
+      }
 
       // --- physics cross-check on the counter --------------------------------
       // At a hard stop this actuator's counter does not plateau; brush arcing
@@ -2094,7 +2111,14 @@ void Lv6ValveController::process_tick_() {
       bits |= 0x01;
     if (motor_run_time_ms_ >= Rev32TachoQualifier::BLANKING_MS)
       bits |= 0x02;
-    if (ph == StrokePhase::UNDER_LOAD || ph == StrokePhase::STOPPING)
+    // Closing: the seat cap is withheld until the endpoint window, like every
+    // other close endpoint, so it cannot trip on the pin ramp - and on Rev 3.2+
+    // until the break-over bump is behind us, which reaches 35-36.5 mA.
+    const bool close_past_bump = rev32_backend_ == nullptr || !stroke_.contact_seen() ||
+                                 seat_rise_.armed();
+    if ((ph == StrokePhase::UNDER_LOAD || ph == StrokePhase::STOPPING) &&
+        (current_dir_ == MotorDirection::OPEN ||
+         (endpoint_window_reached_() && close_past_bump)))
       bits |= 0x04;
     if (open_fast_cap_armed_)
       bits |= 0x08;
@@ -2296,12 +2320,13 @@ void Lv6ValveController::sanitize_motor_cfg_() {
   // 40 s housing-exit boundary - 40 s IS the destruction point, not a safe limit.
   if (motor_cfg_.hmip_vdmot_open_runtime_limit_s > 120)
     motor_cfg_.hmip_vdmot_open_runtime_limit_s = 120;
-  if (motor_cfg_.close_runtime_limit_counts == 0 ||
-      motor_cfg_.close_runtime_limit_counts > 3000) {
+  if (motor_cfg_.close_runtime_limit_counts == 0) {
+    motor_cfg_.close_runtime_limit_counts = MotorConfig{}.close_runtime_limit_counts;
+  } else if (motor_cfg_.close_runtime_limit_counts > 3000) {
     ESP_LOGW(TAG, "close_runtime_limit_counts %" PRIu32 " outside the plunger travel "
-                  "budget; clamping to 2600",
+                  "budget; clamping to 3000",
              motor_cfg_.close_runtime_limit_counts);
-    motor_cfg_.close_runtime_limit_counts = 2600;
+    motor_cfg_.close_runtime_limit_counts = 3000;
   }
   if (motor_cfg_.stroke_uncertainty_pct > 50)
     motor_cfg_.stroke_uncertainty_pct = 50;
@@ -2647,6 +2672,9 @@ bool Lv6ValveController::endpoint_window_reached_() const {
           stroke_.contact_count() + static_cast<uint32_t>(seating * tolerance);
       return count >= expected;
     }
+    // Unlearned: the seat is still never inside the pin ramp.
+    if (count < stroke_.contact_count() + StrokeLearningConfig{}.min_working_ripples)
+      return false;
   }
 
   // Otherwise fall back to the travel estimated for this move. Opening has no
@@ -2789,6 +2817,14 @@ void Lv6ValveController::detect_endstop_() {
     float detect_mean = move_baseline_set_
                             ? move_baseline_ma_
                             : mean_current_(current_zone_, current_dir_);
+    // Closing past the pin: free travel x factor sits inside the pin ramp
+    // (Rev 3.3 z1: 22.2 x 1.45 = 32.1 mA against a ~34 mA pin peak), so the
+    // level trip is referenced to the current at pin contact instead.
+    const bool close_pin_seen = !is_opening && stroke_.contact_seen();
+    if (close_pin_seen && pin_anchor_ma_ <= 0.0f)
+      pin_anchor_ma_ = current_filtered_ma_;
+    if (close_pin_seen)
+      detect_mean = std::max(detect_mean, pin_anchor_ma_);
     if (soft_approach_active_ && motor_cfg_.pwm_hold_duty_pct > 0) {
       detect_mean *= static_cast<float>(motor_cfg_.pwm_approach_duty_pct) /
                      static_cast<float>(motor_cfg_.pwm_hold_duty_pct);
@@ -2827,7 +2863,15 @@ void Lv6ValveController::detect_endstop_() {
     } else {
       threshold = detect_mean * cfg_current_factor;
     }
-    if (current_filtered_ma_ > threshold) {
+    // Opening: the breakaway (38-59 mA, decaying for seconds when leaving a
+    // pressed pin) sits above any open trip, so the level is held until the
+    // free-travel baseline has settled - the same arming as the open fast cap.
+    // Closing past the pin on Rev 3.2+: any contact-anchored level sits inside
+    // the pin ramp once the factor is tuned down (1.3 x 26 mA = 33.8 mA tripped
+    // z1 at 1429 counts). The plateau-referenced seat rise below owns the seat.
+    const bool level_armed = rev32_backend_ == nullptr ||
+                             (is_opening ? open_fast_cap_armed_ : !close_pin_seen);
+    if (level_armed && current_filtered_ma_ > threshold) {
       if (endstop_high_count_ < 255)
         endstop_high_count_++;
     } else {
@@ -2841,10 +2885,44 @@ void Lv6ValveController::detect_endstop_() {
     // free-travel reference trips mid-travel. The rise RATE separates them -
     // the pressure plateau is ~0.06 mA/s against ~2 mA/s at the stop, a 30x
     // margin, which is far cleaner than any magnitude test.
+    //
+    // Past the pin, rate alone cannot place the seat until its depth is
+    // learned: on Rev 3.3 z1 the pin ramp runs ~2.5 mA/s, the seat's own rate.
+    // Until then the pin-anchored level and the seat/pop-off caps end the stroke.
     if (!is_opening) {
       close_step_.observe(motor_run_time_ms_, current_filtered_ma_);
-      if (close_step_.tripped())
+      if (close_step_.tripped() && (!close_pin_seen || close_seating_learned_))
         threshold_endstop = true;
+    }
+    // A soft seat never slows the rotor or reaches the pin-anchored level
+    // before the count ceiling (z1: seat ends ~3000 counts at 35-37 mA).
+    // Once the seating depth is learned the classifier's endpoint window keeps
+    // an early trip from being accepted short of it.
+    if (close_pin_seen && rev32_backend_ != nullptr) {
+      const bool was_tripped = seat_rise_.tripped();
+      const uint32_t count = live_ripple_count_.load(std::memory_order_relaxed);
+      seat_rise_.observe(motor_run_time_ms_, count, current_filtered_ma_,
+                         stroke_.contact_count(), move_baseline_set_ ? move_baseline_ma_ : 0.0f);
+      if (seat_rise_.tripped()) {
+        if (!was_tripped) {
+          const uint32_t depth = count > stroke_.contact_count() ? count - stroke_.contact_count() : 0;
+          ESP_LOGI(TAG, "Motor %d seat rise at depth %" PRIu32 ": %.1f mA over %.1f mA plateau "
+                        "(rise %.2f mA)",
+                   current_zone_ + 1, depth, current_filtered_ma_, seat_rise_.plateau_ma(),
+                   seat_rise_.rise_ma());
+          if (close_seating_learned_) {
+            xSemaphoreTake(telemetry_mutex_, portMAX_DELAY);
+            const uint32_t learned = telemetry_[current_zone_].contact_to_stop_close_ripples;
+            xSemaphoreGive(telemetry_mutex_);
+            const uint32_t tol = learned * motor_cfg_.endpoint_window_tolerance_pct / 100u;
+            if (depth + tol < learned || depth > learned + tol)
+              ESP_LOGW(TAG, "Motor %d seat depth %" PRIu32 " outside learned %" PRIu32
+                            " +/- %" PRIu32 " (actuator or pin drift?)",
+                       current_zone_ + 1, depth, learned, tol);
+          }
+        }
+        threshold_endstop = true;
+      }
     }
   }
 
@@ -3639,6 +3717,32 @@ OpenLegResult Lv6ValveController::calibration_open_leg_(uint8_t zone, uint32_t t
   return r;
 }
 
+Lv6ValveController::LearningProgress Lv6ValveController::get_learning_progress() const {
+  const uint32_t p = learning_progress_packed_.load(std::memory_order_acquire);
+  LearningProgress out{};
+  out.zone = static_cast<uint8_t>(p & 0xFFu);
+  out.pct = static_cast<uint8_t>((p >> 8) & 0xFFu);
+  out.sample = static_cast<uint8_t>((p >> 16) & 0xFFu);
+  out.phase = static_cast<uint8_t>((p >> 24) & 0x0Fu);
+  out.samples_needed = static_cast<uint8_t>((p >> 28) & 0x0Fu);
+  return out;
+}
+
+void Lv6ValveController::set_learning_progress_(uint8_t zone, uint8_t pct, uint8_t phase,
+                                                uint8_t sample, uint8_t samples_needed) {
+  const uint32_t packed =
+      (static_cast<uint32_t>(zone) & 0xFFu) |
+      ((static_cast<uint32_t>(std::min<uint8_t>(pct, 100)) & 0xFFu) << 8) |
+      ((static_cast<uint32_t>(sample) & 0xFFu) << 16) |
+      ((static_cast<uint32_t>(phase) & 0x0Fu) << 24) |
+      ((static_cast<uint32_t>(std::min<uint8_t>(samples_needed, 15)) & 0x0Fu) << 28);
+  learning_progress_packed_.store(packed, std::memory_order_release);
+}
+
+void Lv6ValveController::clear_learning_progress_() {
+  learning_progress_packed_.store(0xFFu, std::memory_order_release);  // zone=0xFF
+}
+
 bool Lv6ValveController::learn_working_range_(uint8_t zone, uint8_t attempt) {
   struct LearningScope {
     bool &flag;
@@ -3656,19 +3760,44 @@ bool Lv6ValveController::learn_working_range_(uint8_t zone, uint8_t attempt) {
   lc.margin_ripples = motor_cfg_.pin_engage_margin_ripples;
   StrokeLearner learner{lc};
 
+  // Optimistic step budget: home + (open+close) × samples. Extra grow-legs
+  // stretch the bar but never pull it backwards.
+  const uint8_t need = lc.samples == 0 ? 1 : lc.samples;
+  const uint8_t expected = static_cast<uint8_t>(1 + 2 * need);
+  uint8_t done = 0;
+  auto bump = [&](uint8_t phase) {
+    if (done < 250)
+      done++;
+    const uint8_t pct =
+        static_cast<uint8_t>(std::min(99, (100 * static_cast<int>(done)) / std::max(1, static_cast<int>(expected))));
+    set_learning_progress_(zone, pct, phase, learner.samples(), need);
+  };
+
   // Home. From an unknown position the seat is the one reference that can be
   // found safely: closing is the high-current direction, and already-at-stop
   // catches a valve that is closed to begin with.
+  set_learning_progress_(zone, 0, /*home*/ 1, 0, need);
   if (calibration_pass_(zone, MotorDirection::CLOSE) == 0 || !endpoint_confirmed_) {
     ESP_LOGW(TAG, "Learning zone %d: homing to the seat failed", zone + 1);
+    set_learning_progress_(zone, done, /*failed*/ 5, learner.samples(), need);
     return false;
   }
+  bump(/*home done → next is open*/ 2);
 
   while (learner.step() == LearnStep::OPEN_LEG) {
+    set_learning_progress_(zone,
+                           static_cast<uint8_t>(std::min(99, (100 * static_cast<int>(done)) /
+                                                                 std::max(1, static_cast<int>(expected)))),
+                           /*open*/ 2, learner.samples(), need);
     learner.on_open_leg(calibration_open_leg_(zone, learner.next_open_ripples()));
+    bump(/*close*/ 3);
     if (learner.step() != LearnStep::CLOSE_PASS)
       break;
 
+    set_learning_progress_(zone,
+                           static_cast<uint8_t>(std::min(99, (100 * static_cast<int>(done)) /
+                                                                 std::max(1, static_cast<int>(expected)))),
+                           /*close*/ 3, learner.samples(), need);
     ClosePassResult pass{};
     pass.ms = calibration_pass_(zone, MotorDirection::CLOSE);
     pass.seat_confirmed = pass.ms > 0 && endpoint_confirmed_;
@@ -3681,14 +3810,20 @@ bool Lv6ValveController::learn_working_range_(uint8_t zone, uint8_t attempt) {
              pass.pin_seen ? "onset" : "not seen", pass.pin_count, pass.pin_count,
              pass.pin_seen && pass.total_count > pass.pin_count ? pass.total_count - pass.pin_count : 0u);
     learner.on_close_pass(pass);
+    bump(/*open next or done*/ 2);
   }
 
   if (learner.step() != LearnStep::DONE) {
     ESP_LOGW(TAG, "Learning zone %d attempt %d failed: %s", zone + 1, attempt + 1,
              learn_failure_to_string(learner.failure()));
+    set_learning_progress_(zone,
+                           static_cast<uint8_t>(std::min(99, (100 * static_cast<int>(done)) /
+                                                                 std::max(1, static_cast<int>(expected)))),
+                           /*failed*/ 5, learner.samples(), need);
     return false;
   }
 
+  set_learning_progress_(zone, 100, /*done*/ 4, need, need);
   const LearnedStroke r = learner.result();
   xSemaphoreTake(telemetry_mutex_, portMAX_DELAY);
   auto &t = telemetry_[zone];
@@ -3780,6 +3915,11 @@ void Lv6ValveController::run_calibration_(uint8_t zone) {
     vTaskPrioritySet(nullptr, boosted_prio);
 
   calibrating_ = true;
+  clear_learning_progress_();
+  set_learning_progress_(zone, 0, /*home*/ 1, 0,
+                         working_range_learning_enabled_()
+                             ? std::max<uint8_t>(1, motor_cfg_.learn_samples)
+                             : 1);
 
   ESP_LOGI(TAG, "Calibrating zone %d (%s, ripple=%s, prio=%u->%u)",
            zone + 1, working_range_learning_enabled_() ? "working-range learning" : "double-pass",
@@ -3792,6 +3932,8 @@ void Lv6ValveController::run_calibration_(uint8_t zone) {
   if (working_range_learning_enabled_()) {
     for (uint8_t attempt = 0; attempt <= max_retries; attempt++) {
       if (learn_working_range_(zone, attempt)) {
+        set_learning_progress_(zone, 100, /*done*/ 4, motor_cfg_.learn_samples,
+                               motor_cfg_.learn_samples);
         calibrating_ = false;
         if (boosted_prio != original_prio)
           vTaskPrioritySet(nullptr, original_prio);
@@ -3802,6 +3944,7 @@ void Lv6ValveController::run_calibration_(uint8_t zone) {
     }
   } else {
     for (uint8_t attempt = 0; attempt <= max_retries; attempt++) {
+      set_learning_progress_(zone, 0, /*close1/home*/ 1, 0, 1);
       // Pass 1: close fully (reach the known closed reference). Closing is the
       // high-current direction, so its endstop is the reliable one to detect — VdMot
       // calibrates close-first for the same reason. A valve already at the closed stop
@@ -3814,6 +3957,7 @@ void Lv6ValveController::run_calibration_(uint8_t zone) {
         break;
       }
 
+      set_learning_progress_(zone, 33, /*open*/ 2, 0, 1);
       // Pass 2: open fully (measure opening travel)
       uint32_t open_ms = calibration_pass_(zone, MotorDirection::OPEN);
       uint32_t open_ripples = get_motion_count_();
@@ -3822,6 +3966,7 @@ void Lv6ValveController::run_calibration_(uint8_t zone) {
         break;
       }
 
+      set_learning_progress_(zone, 66, /*close*/ 3, 0, 1);
       // Pass 3: close fully again (measure closing travel + compute deadzone)
       uint32_t close2_ms = calibration_pass_(zone, MotorDirection::CLOSE);
       uint32_t close2_ripples = get_motion_count_();
@@ -3915,6 +4060,7 @@ void Lv6ValveController::run_calibration_(uint8_t zone) {
                    motor_cfg_.pin_engage_step_ma);
         }
         calibrating_ = false;
+        set_learning_progress_(zone, 100, /*done*/ 4, 1, 1);
         if (boosted_prio != original_prio)
           vTaskPrioritySet(nullptr, original_prio);
         return;
@@ -3940,6 +4086,7 @@ void Lv6ValveController::run_calibration_(uint8_t zone) {
   } else {
     ESP_LOGE(TAG, "Calibration zone %d FAILED after %d attempts", zone + 1, max_retries + 1);
   }
+  set_learning_progress_(zone, 0, /*failed*/ 5, 0, 0);
   calibrating_ = false;
   if (boosted_prio != original_prio)
     vTaskPrioritySet(nullptr, original_prio);

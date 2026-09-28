@@ -166,6 +166,22 @@ class StrokeTracker {
     }
   }
 
+  // Pin contact proven by the current alone (PinOnsetDetector). On this
+  // actuator the pin barely moves the cadence, so observe() can miss it and the
+  // closing stroke stays in FREE_TRAVEL - where classify_endpoint() reads the
+  // pin ramp as an obstruction (JAM) and the zone ends up BLOCKED. There is no
+  // cadence transient to wait out, so it goes straight to pressing the pin.
+  // `count` is the onset: the last commutation still at the free-travel level.
+  void note_current_contact(uint32_t count, float current_ma) {
+    if (direction_is_open_ || contact_seen_ || phase_ != StrokePhase::FREE_TRAVEL)
+      return;
+    phase_ = StrokePhase::UNDER_LOAD;
+    contact_count_ = count;
+    contact_seen_ = true;
+    peak_ma_ = current_ma;
+    contact_run_ = 0;
+  }
+
   StrokePhase phase() const { return phase_; }
   bool direction_is_open() const { return direction_is_open_; }
   bool contact_seen() const { return contact_seen_; }

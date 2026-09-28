@@ -97,6 +97,141 @@ void test_pin_onset_needs_a_sustained_step() {
   assert(!det.detected());
 }
 
+// --- seat rise ----------------------------------------------------------------
+
+struct SeatReplay {
+  bool tripped{false};
+  uint32_t trip_count{0};
+  float plateau_ma{0.0f};
+  float rise_ma{0.0f};
+};
+
+/// Same replay as the onset, feeding the seat detector from pin contact on.
+SeatReplay replay_seat(const std::vector<Row> &rows) {
+  PinOnsetDetector pin{};
+  SeatRiseDetector seat{};
+  pin.reset();
+  seat.reset();
+  float baseline = 0.0f;
+  size_t i = 0;
+  SeatReplay out;
+  for (uint32_t now = rows.front().t_ms; now <= rows.back().t_ms; now += 10) {
+    while (i + 1 < rows.size() && rows[i + 1].t_ms <= now)
+      i++;
+    const Row &a = rows[i];
+    const Row &b = rows[i + 1 < rows.size() ? i + 1 : i];
+    const float f = b.t_ms > a.t_ms ? float(now - a.t_ms) / float(b.t_ms - a.t_ms) : 0.0f;
+    const float c = a.current_ma + (b.current_ma - a.current_ma) * f;
+    const uint32_t count = static_cast<uint32_t>(a.count + (b.count - a.count) * f);
+    if (!pin.detected() && now >= 400 && (baseline == 0.0f || c < baseline - 0.5f))
+      baseline = c;
+    pin.observe(now, count, c, baseline);
+    if (!pin.detected())
+      continue;
+    seat.observe(now, count, c, pin.onset_count(), baseline);
+    if (seat.tripped()) {
+      out.tripped = true;
+      out.trip_count = count;
+      out.plateau_ma = seat.plateau_ma();
+      out.rise_ma = seat.rise_ma();
+      break;
+    }
+  }
+  return out;
+}
+
+void test_soft_seat_is_found_before_the_count_ceiling() {
+  // Both z1 strokes ran into the 3000-count ceiling: the bump at ~1530 counts
+  // reaches 35-36.5 mA, the ~32 mA plateau follows, and the seat rises slowly
+  // from ~2650 counts. The stop must land past the bump and inside the ceiling.
+  for (const char *name : {"motor-lab-z1-close-soft-seat-a.csv",
+                           "motor-lab-z1-close-soft-seat-b.csv"}) {
+    const SeatReplay r = replay_seat(load(name));
+    std::printf("  %s: seat at %u counts, %.2f mA over %.1f mA plateau\n", name, r.trip_count,
+                r.rise_ma, r.plateau_ma);
+    assert(r.tripped && "the soft seat must be detected");
+    assert(r.trip_count > 2600 && "the pin bump is not the seat");
+    assert(r.trip_count < 3000 && "the seat must be found inside the ceiling");
+    assert(r.plateau_ma > 31.0f && r.plateau_ma < 33.0f);
+  }
+}
+
+void test_pin_ramp_is_not_a_seat() {
+  // z1 stopped at 1429 counts / 33.3 mA on a contact-anchored level tuned to
+  // 1.3x: ~500 counts past contact, still climbing toward the bump.
+  const SeatReplay r = replay_seat(load("motor-lab-z1-close-pin-ramp-stop.csv"));
+  assert(!r.tripped && "the pin ramp must not read as the seat");
+}
+
+void test_seat_rise_ignores_a_dip_in_the_pin_ramp() {
+  SeatRiseDetector det{};
+  det.reset();
+  uint32_t count = 1000;
+  for (uint32_t t = 10; t <= 6000; t += 10, count++) {
+    // A rising ramp with a 200 ms, 2 mA dip: too short to count as break-over.
+    float c = 24.0f + static_cast<float>(t) * 0.0015f;
+    if (t >= 2000 && t < 2200)
+      c -= 2.0f;
+    det.observe(t, count, c, 1000, 22.0f);
+  }
+  assert(!det.armed() && "a transient dip is not the bump");
+}
+
+void test_seat_rise_arms_by_distance_without_a_bump() {
+  SeatRiseDetector det{};
+  det.reset();
+  uint32_t count = 1000;
+  bool armed_early = false;
+  for (uint32_t t = 10; t <= 20000; t += 10) {
+    count = 1000 + t / 12;
+    // Ramp to a flat 30 mA, then a +2 mA seat from count 2500.
+    float c = std::min(30.0f, 24.0f + static_cast<float>(count - 1000) * 0.02f);
+    if (count >= 2500)
+      c += std::min(2.0f, static_cast<float>(count - 2500) * 0.02f);
+    det.observe(t, count, c, 1000, 24.0f);
+    if (det.armed() && count < 1800)
+      armed_early = true;
+    if (det.tripped())
+      break;
+  }
+  assert(!armed_early);
+  assert(det.tripped() && count >= 2500 && count < 2700);
+}
+
+/// Flat pin load at `plateau`, then a seat of `seat_step` mA from count 2500.
+/// Returns the trip count, 0 = never tripped.
+uint32_t synthetic_seat(float free_travel, float plateau, float seat_step, float *rise = nullptr) {
+  SeatRiseDetector det{};
+  det.reset();
+  for (uint32_t t = 10; t <= 30000; t += 10) {
+    const uint32_t count = 1000 + t / 12;
+    float c = std::min(plateau, free_travel + static_cast<float>(count - 1000) * 0.02f);
+    if (count >= 2500)
+      c += std::min(seat_step, static_cast<float>(count - 2500) * 0.01f);
+    det.observe(t, count, c, 1000, free_travel);
+    if (det.tripped()) {
+      if (rise)
+        *rise = det.rise_ma();
+      return count;
+    }
+  }
+  return 0;
+}
+
+void test_seat_rise_scales_with_the_pin_load() {
+  // Weak motor / soft pin: 5 mA pin load, the seat adds only 1.2 mA. A fixed
+  // 1.5 mA would run it into the ceiling; the scaled rise sits at the floor.
+  float rise = 0.0f;
+  const uint32_t weak = synthetic_seat(22.0f, 27.0f, 1.2f, &rise);
+  assert(weak > 2500 && std::fabs(rise - 1.0f) < 0.01f);
+  // Strong motor / hard pin: 16 mA pin load needs a 2.56 mA seat, so a
+  // 1.8 mA wobble on its plateau is not one...
+  assert(synthetic_seat(22.0f, 38.0f, 1.8f) == 0);
+  // ...while its real, proportionally larger seat is.
+  const uint32_t strong = synthetic_seat(22.0f, 38.0f, 4.0f, &rise);
+  assert(strong > 2500 && std::fabs(rise - 2.56f) < 0.01f);
+}
+
 // --- learner ------------------------------------------------------------------
 
 /// Round numbers so the expansion arithmetic reads plainly in the asserts.
@@ -259,6 +394,11 @@ int main(int argc, char **argv) {
   test_pin_onset_on_the_close_fixture();
   test_pin_onset_ignores_flat_travel();
   test_pin_onset_needs_a_sustained_step();
+  test_soft_seat_is_found_before_the_count_ceiling();
+  test_pin_ramp_is_not_a_seat();
+  test_seat_rise_ignores_a_dip_in_the_pin_ramp();
+  test_seat_rise_arms_by_distance_without_a_bump();
+  test_seat_rise_scales_with_the_pin_load();
   test_happy_path_learns_the_median_range();
   test_starting_on_the_pin_grows_the_open_leg();
   test_no_dead_space_within_the_open_limit_fails();
