@@ -30,8 +30,10 @@ legacy bookmarks that redirect to `/`.
 - Read endpoints (raw JSON, no envelope yet — see "Planned"):
   - `GET /api/v1/state` — full dashboard snapshot (entity-id → value map consumed by the frontend store)
   - `GET /api/v1/revision` — lightweight revision-polling resource. The dashboard polls
-    this every three seconds and fetches the full state only when `data_revision` changes;
-    this intentionally replaces the unsafe one-shot pseudo-SSE route. The payload also
+    this every second and fetches the full state when `data_revision` **or**
+    `runtime_revision` changes. `data_revision` tracks config/command writes (and is
+    used by write guards); `runtime_revision` tracks live telemetry the UI must refresh
+    without invalidating those guards (motor learning progress today). The payload also
     includes `uptime_s` so the UI can keep device uptime current without a full snapshot.
   - `GET /api/v1/history` — 24 h ring buffer (288 slots @ 5 min). Each entry is
     `[uptime_s, z0, z1, z2, z3, z4, z5, absorbing, flow_c, return_c, demand_pct]` where
@@ -59,8 +61,10 @@ legacy bookmarks that redirect to `/`.
     `shared/contracts/absorb-command/`.
   - `POST /api/v1/authority/lease` — V6-A-only authenticated Touch lease acquisition
     and renewal. The URL-encoded form body contains `installation_id`, `coordinator_id`, `lease_id`,
-    `sequence`, `issued_ms`, and a 30–120 second `duration_ms`; the request must supply the
-    provisioned `X-Lune-Authority-Key`. V6 never restores an active lease after reboot and
+    `sequence`, `issued_ms`, a 30–120 second `duration_ms`, optional `degraded`, and optional
+    `control_mode` (`normal` | `heat_pump`); the request must supply the
+    provisioned `X-Lune-Authority-Key`. Absent `control_mode` keeps V6's local heating mode;
+    the override clears when the lease expires or is revoked. V6 never restores an active lease after reboot and
     rejects missing authentication, mismatched identity, replayed sequence, and conflicting
     lease ID. Authority state, remaining lease time, generation, and transition reason are
     included in `GET /diagnostics`. Touch includes a `degraded` coverage-health flag in each
@@ -118,7 +122,9 @@ Implemented global settings keys (legacy names retained for dashboard compatibil
 to secondary-flow commissioning:
 
 - `min_zone_flow_pct` (number) — minimum total valve opening across loops already accepting heat
-- `minimum_flow_always` (select: `on` | `off`) — explicit secondary-loop commissioning mode
+- `minimum_flow_always` (select: `on` | `off`) — explicit secondary-loop commissioning mode.
+  The floor only applies while the effective heating mode is `normal`; in `heat_pump` mode the
+  base opening keeps flow and the floor is skipped.
 - `ble_clock_sync_enabled` (select: `on` | `off`) — emit Shelly Date/Time Broadcast advertisements
 - `ble_clock_sync_interval_min` (number, 15–1440) — minutes between broadcast bursts (default 60)
 
@@ -223,6 +229,19 @@ Returns controller-level snapshot:
       "installation_id": "house-1",
       "coordinator_id": "lune-touch",
       "control_approved": true
+    },
+    "control": {
+      "mode": "heat_pump",
+      "effective_mode": "heat_pump",
+      "mode_source": "local",
+      "heat_demand": {
+        "recommendation": "hold",
+        "critical_zone": null,
+        "critical_opening_ratio": 0.0,
+        "saturated_s": 0,
+        "demanding_zones": 0,
+        "headroom": false
+      }
     }
   }
 }
@@ -232,10 +251,19 @@ Returns controller-level snapshot:
 Lune Touch stores it during commissioning and treats later overview responses
 with a different fingerprint as an identity mismatch.
 
+`control.mode` is the local Normal / Heat-pump setting. While a Touch lease
+carries `control_mode`, `effective_mode` and `mode_source` reflect that override.
+`heat_demand` is the published feed-temperature hint (V6 never writes the heat
+source). See [`docs/lune_whole_house_flow_temperature.md`](../../docs/lune_whole_house_flow_temperature.md).
+
 ### `GET /api/v1/zones`
 
-Returns all zones. Additive thermal fields (schema-compatible; older clients ignore):
+Returns all zones plus a stable `node_id`. Additive fields (schema-compatible;
+older clients ignore):
 
+- `node_id` — MAC-based (`lune-v6-<last6hex>`) for Touch room mapping
+- `group_primary` / `group_members` — sync-group root and members (1-based)
+- `opening_ratio` — current valve ÷ `max_opening_pct`
 - `ua_w_per_k`, `thermal_mass_kwh_per_k`, `tau_h` — static estimate from area,
   `heat_loss_w_m2`, and slab thickness (see `thermal_model.h`). Null when the
   estimate fails plausibility (`τ` outside 8–80 h or rates > 3 °C/h).
@@ -321,12 +349,6 @@ must not send zone numbers — see `POST /api/v1/room-temperatures`.
       "min_offset_c": -3.00,
       "max_offset_c": 3.00
     },
-    "forecast": {
-      "wind_exposure": 0.80,
-      "solar_gain": 0.20,
-      "thermal_lead_h": 8,
-      "max_offset_c": 1.25
-    },
     "motor": {
       "fault": "none",
       "open_ripples": 120,
@@ -337,6 +359,9 @@ must not send zone numbers — see `POST /api/v1/room-temperatures`.
   }
 }
 ```
+
+Weather exposure (`wind_exposure`, `solar_gain`, `thermal_lead_h`) is owned by
+Lune Touch rooms and is not stored or returned by V6.
 
 ### `GET /api/v1/diagnostics`
 
@@ -447,12 +472,6 @@ Returns dashboard-editable settings currently backed by config store and control
           "max_offset_c": 2.00,
           "abs_min_c": 5.0,
           "abs_max_c": 30.0
-        },
-        "forecast": {
-          "wind_exposure": 0.80,
-          "solar_gain": 0.20,
-          "thermal_lead_h": 8,
-          "max_offset_c": 2.00
         },
         "motor_profile": "INHERIT"
       }
@@ -606,10 +625,15 @@ Minimum command set:
 
 Applies validated partial settings payload.
 
-Touch owns exterior-wall geometry and does not mirror it to V6. The remaining
-legacy weather-profile settings routes are `zone_wind_exposure`,
-`zone_solar_gain`, and `zone_thermal_lead_h` (`number`). All include the
-one-based `zone` field.
+Heating-mode keys (global):
+
+- `heating_mode` (`select`): `normal` | `heat_pump`
+- `hp_overheat_margin_c` (`number`): 0.3–3.0 °C
+- `hp_base_pct` (`number`): 30–100
+- `hp_trim_floor_pct` (`number`): 0 up to the current base
+
+Weather exposure and room/manifold identity are owned by Lune Touch and have no
+V6 settings routes.
 
 ## Maintenance Endpoints
 

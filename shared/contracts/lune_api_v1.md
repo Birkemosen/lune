@@ -35,3 +35,10 @@ structured `409 stale_revision` error containing `current_revision`.
 V6's Touch-to-V6 command authentication adds a timestamp, nonce, and HMAC over the canonical
 request. Browser writes use a distinct authenticated local session plus CSRF token; neither a
 MAC-derived pairing fingerprint nor a read endpoint authorizes a write.
+
+V6 heating-mode / heat-demand fields (`control.mode`, `heat_demand`, lease
+`control_mode`, zone `group_primary` / `node_id`) are part of the product surface
+documented in `lune-v6/docs/lv6_api_v1.md` and
+`docs/lune_whole_house_flow_temperature.md`. This envelope contract does not
+re-list those resource schemas.
+

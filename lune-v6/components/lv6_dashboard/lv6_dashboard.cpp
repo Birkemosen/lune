@@ -11,6 +11,7 @@
 #include "esphome/components/logger/logger.h"
 #endif
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -382,6 +383,50 @@ void LV6Dashboard::update_snapshot_() {
     s.motor_close_ripple[i] = snap_float(this->motor_close_ripple_sensors_[i]);
     s.motor_open_factor[i]  = snap_float(this->motor_open_factor_sensors_[i]);
     s.motor_close_factor[i] = snap_float(this->motor_close_factor_sensors_[i]);
+    s.motor_working_ripple[i] = NAN;
+    s.motor_pin_free_ripple[i] = NAN;
+    s.motor_stroke_model[i] = 0;
+    s.motor_learn_pct[i] = 0;
+    s.motor_learn_phase[i] = 0;
+    s.motor_learn_sample[i] = 0;
+    s.motor_learn_samples_needed[i] = 0;
+  }
+  // Prefer live valve telemetry over the 10 s ESPHome template sensors so the
+  // zone UI updates as soon as a relearn finishes (or fails).
+  if (this->valve_controller_) {
+    uint16_t fault_fp = 0;
+    for (uint8_t i = 0; i < 6; i++) {
+      const auto t = this->valve_controller_->get_telemetry(i);
+      s.motor_open_ripple[i] = static_cast<float>(t.learned_open_ripples);
+      s.motor_close_ripple[i] = static_cast<float>(t.learned_close_ripples);
+      s.motor_open_factor[i] = t.learned_open_current_factor;
+      s.motor_close_factor[i] = t.learned_close_current_factor;
+      s.motor_working_ripple[i] = static_cast<float>(t.contact_to_stop_close_ripples);
+      s.motor_pin_free_ripple[i] = static_cast<float>(t.pin_engage_close_ripples);
+      s.motor_stroke_model[i] = static_cast<uint8_t>(t.stroke_model);
+      const char *fault = lv6::fault_code_to_string(t.last_fault_code);
+      std::strncpy(s.motor_fault[i], fault, sizeof(s.motor_fault[i]) - 1);
+      s.motor_fault[i][sizeof(s.motor_fault[i]) - 1] = '\0';
+      fault_fp = static_cast<uint16_t>((fault_fp * 33u) ^ static_cast<uint8_t>(t.last_fault_code));
+    }
+    if (fault_fp != this->last_motor_fault_fp_) {
+      this->last_motor_fault_fp_ = fault_fp;
+      if (this->runtime_revision_ != UINT32_MAX)
+        this->runtime_revision_++;
+    }
+    const auto lp = this->valve_controller_->get_learning_progress();
+    if (lp.zone < 6) {
+      s.motor_learn_pct[lp.zone] = lp.pct;
+      s.motor_learn_phase[lp.zone] = lp.phase;
+      s.motor_learn_sample[lp.zone] = lp.sample;
+      s.motor_learn_samples_needed[lp.zone] = lp.samples_needed;
+    }
+    const uint32_t packed = this->valve_controller_->get_learning_progress_packed();
+    if (packed != this->last_learning_progress_packed_) {
+      this->last_learning_progress_packed_ = packed;
+      if (this->runtime_revision_ != UINT32_MAX)
+        this->runtime_revision_++;
+    }
   }
   for (uint8_t i = 0; i < 8; i++)
     s.probe_temp_c[i] = snap_float(this->probe_temp_sensors_[i]);
@@ -400,7 +445,9 @@ void LV6Dashboard::update_snapshot_() {
   snap_text(this->reset_reason_text_,     s.reset_reason,     sizeof(s.reset_reason));
   for (uint8_t i = 0; i < 6; i++) {
     snap_text(this->zone_state_sensors_[i],  s.zone_state[i],  sizeof(s.zone_state[i]));
-    snap_text(this->motor_fault_sensors_[i], s.motor_fault[i], sizeof(s.motor_fault[i]));
+    // motor_fault[] is filled from live valve telemetry above when available.
+    if (!this->valve_controller_)
+      snap_text(this->motor_fault_sensors_[i], s.motor_fault[i], sizeof(s.motor_fault[i]));
   }
 
   s.drivers_enabled = this->valve_controller_ && this->valve_controller_->are_drivers_enabled();
@@ -412,8 +459,18 @@ void LV6Dashboard::update_snapshot_() {
     s.authority = this->config_store_->get_authority_config();
     this->authority_.configure(s.authority.installation_id, s.authority.coordinator_id);
     this->authority_.expire_if_needed(millis());
-    if (this->zone_controller_)
-      this->zone_controller_->set_touch_authority_active(this->authority_.snapshot(millis()).touch_lease_active);
+    if (this->zone_controller_) {
+      const auto auth_snap = this->authority_.snapshot(millis());
+      this->zone_controller_->set_touch_authority_active(auth_snap.touch_lease_active);
+      if (auth_snap.touch_lease_active && auth_snap.control_mode != lv6_authority::ControlMode::UNSET) {
+        const auto mode = (auth_snap.control_mode == lv6_authority::ControlMode::NORMAL)
+                              ? lv6::HeatingProfile::NORMAL
+                              : lv6::HeatingProfile::HEAT_PUMP;
+        this->zone_controller_->set_touch_control_mode(true, mode);
+      } else {
+        this->zone_controller_->set_touch_control_mode(false, lv6::HeatingProfile::HEAT_PUMP);
+      }
+    }
   }
   const auto authority_snapshot = this->authority_.snapshot(millis());
   strncpy(s.authority_state, lv6_authority::state_name(authority_snapshot.state), sizeof(s.authority_state) - 1);
@@ -434,8 +491,22 @@ void LV6Dashboard::update_snapshot_() {
     s.preheat_absorb_enabled = ctrl_cfg.preheat_absorb_enabled;
     s.preheat_absorb_band_c  = ctrl_cfg.preheat_absorb_band_c;
     s.preheat_detect_delta_c = ctrl_cfg.preheat_detect_delta_c;
+    s.heating_mode = ctrl_cfg.mode;
+    s.hp_overheat_margin_c = ctrl_cfg.hp_overheat_margin_c;
+    s.hp_base_pct = ctrl_cfg.hp_base_pct;
+    s.hp_trim_floor_pct = ctrl_cfg.hp_trim_floor_pct;
     s.preheat_absorbing = this->zone_controller_ && this->zone_controller_->is_preheat_absorbing();
     s.absorb_mode = this->zone_controller_ ? this->zone_controller_->absorb_mode_code() : 0;
+    if (this->zone_controller_) {
+      s.effective_heating_mode = this->zone_controller_->get_effective_control_mode();
+      s.heating_mode_from_touch = this->zone_controller_->is_touch_authority_active() &&
+                                  this->zone_controller_->has_touch_control_mode();
+      s.heat_demand = this->zone_controller_->get_heat_demand();
+    } else {
+      s.effective_heating_mode = ctrl_cfg.mode;
+      s.heating_mode_from_touch = false;
+      s.heat_demand = {};
+    }
     for (uint8_t i = 0; i < lv6::NUM_ZONES; i++) {
       if (this->zone_controller_) {
         s.zone_loop_share_pct[i] = this->zone_controller_->get_loop_share_pct(i);
@@ -1284,6 +1355,69 @@ void LV6Dashboard::handle_state_(AsyncWebServerRequest *request) {
     appendf(buf, BUF_SIZE, offset, "\"%s\":{\"value\":%s},", CLOSE_FACTOR_KEYS[i], num_buf);
   }
 
+  // flush: working-range telemetry would overflow with factors
+  if (!flush()) return;
+
+  // --- working-range learning (live from valve telemetry) ---
+  static const char *const WORKING_RIPPLE_KEYS[6] = {
+    "sensor-motor_1_working_ripples", "sensor-motor_2_working_ripples", "sensor-motor_3_working_ripples",
+    "sensor-motor_4_working_ripples", "sensor-motor_5_working_ripples", "sensor-motor_6_working_ripples",
+  };
+  static const char *const PIN_FREE_KEYS[6] = {
+    "sensor-motor_1_pin_free_ripples", "sensor-motor_2_pin_free_ripples", "sensor-motor_3_pin_free_ripples",
+    "sensor-motor_4_pin_free_ripples", "sensor-motor_5_pin_free_ripples", "sensor-motor_6_pin_free_ripples",
+  };
+  static const char *const STROKE_MODEL_KEYS[6] = {
+    "text_sensor-motor_1_stroke_model", "text_sensor-motor_2_stroke_model", "text_sensor-motor_3_stroke_model",
+    "text_sensor-motor_4_stroke_model", "text_sensor-motor_5_stroke_model", "text_sensor-motor_6_stroke_model",
+  };
+  for (uint8_t i = 0; i < 6; i++) {
+    format_float_token(num_buf, sizeof(num_buf), snap->motor_working_ripple[i], 0);
+    appendf(buf, BUF_SIZE, offset, "\"%s\":{\"value\":%s},", WORKING_RIPPLE_KEYS[i], num_buf);
+    format_float_token(num_buf, sizeof(num_buf), snap->motor_pin_free_ripple[i], 0);
+    appendf(buf, BUF_SIZE, offset, "\"%s\":{\"value\":%s},", PIN_FREE_KEYS[i], num_buf);
+    const char *model = snap->motor_stroke_model[i] == static_cast<uint8_t>(lv6::StrokeModel::WORKING_RANGE)
+                            ? "working_range"
+                            : "full_stroke";
+    appendf(buf, BUF_SIZE, offset, "\"%s\":{\"state\":\"%s\"},", STROKE_MODEL_KEYS[i], model);
+  }
+
+  // flush: learning progress would overflow with stroke model
+  if (!flush()) return;
+
+  static const char *const LEARN_PCT_KEYS[6] = {
+    "sensor-motor_1_learn_pct", "sensor-motor_2_learn_pct", "sensor-motor_3_learn_pct",
+    "sensor-motor_4_learn_pct", "sensor-motor_5_learn_pct", "sensor-motor_6_learn_pct",
+  };
+  static const char *const LEARN_PHASE_KEYS[6] = {
+    "text_sensor-motor_1_learn_phase", "text_sensor-motor_2_learn_phase", "text_sensor-motor_3_learn_phase",
+    "text_sensor-motor_4_learn_phase", "text_sensor-motor_5_learn_phase", "text_sensor-motor_6_learn_phase",
+  };
+  static const char *const LEARN_SAMPLE_KEYS[6] = {
+    "sensor-motor_1_learn_sample", "sensor-motor_2_learn_sample", "sensor-motor_3_learn_sample",
+    "sensor-motor_4_learn_sample", "sensor-motor_5_learn_sample", "sensor-motor_6_learn_sample",
+  };
+  static const char *const LEARN_NEED_KEYS[6] = {
+    "sensor-motor_1_learn_samples_needed", "sensor-motor_2_learn_samples_needed",
+    "sensor-motor_3_learn_samples_needed", "sensor-motor_4_learn_samples_needed",
+    "sensor-motor_5_learn_samples_needed", "sensor-motor_6_learn_samples_needed",
+  };
+  static const char *const LEARN_PHASE_NAME[] = {
+    "", "home", "open", "close", "done", "failed",
+  };
+  for (uint8_t i = 0; i < 6; i++) {
+    appendf(buf, BUF_SIZE, offset, "\"%s\":{\"value\":%u},", LEARN_PCT_KEYS[i],
+            static_cast<unsigned>(snap->motor_learn_pct[i]));
+    const uint8_t ph = snap->motor_learn_phase[i];
+    const char *phase =
+        ph < (sizeof(LEARN_PHASE_NAME) / sizeof(LEARN_PHASE_NAME[0])) ? LEARN_PHASE_NAME[ph] : "";
+    appendf(buf, BUF_SIZE, offset, "\"%s\":{\"state\":\"%s\"},", LEARN_PHASE_KEYS[i], phase);
+    appendf(buf, BUF_SIZE, offset, "\"%s\":{\"value\":%u},", LEARN_SAMPLE_KEYS[i],
+            static_cast<unsigned>(snap->motor_learn_sample[i]));
+    appendf(buf, BUF_SIZE, offset, "\"%s\":{\"value\":%u},", LEARN_NEED_KEYS[i],
+            static_cast<unsigned>(snap->motor_learn_samples_needed[i]));
+  }
+
   // flush: probe temps + text sensors would overflow combined
   if (!flush()) return;
 
@@ -1444,6 +1578,27 @@ void LV6Dashboard::handle_state_(AsyncWebServerRequest *request) {
   appendf(buf, BUF_SIZE, offset, "\"number-preheat_detect_delta_c\":{\"value\":%s},", num_buf);
 
   appendf(buf, BUF_SIZE, offset,
+      "\"select-heating_mode\":{\"state\":\"%s\"},"
+      "\"text-effective_heating_mode\":{\"state\":\"%s\"},"
+      "\"text-heating_mode_source\":{\"state\":\"%s\"},"
+      "\"text-heat_demand_recommendation\":{\"state\":\"%s\"},",
+      lv6::heating_profile_to_string(snap->heating_mode),
+      lv6::heating_profile_to_string(snap->effective_heating_mode),
+      snap->heating_mode_from_touch ? "touch" : "local",
+      lv6::heat_demand_recommendation_to_string(snap->heat_demand.recommendation));
+  format_float_token(num_buf, sizeof(num_buf), snap->hp_overheat_margin_c, 1);
+  appendf(buf, BUF_SIZE, offset, "\"number-hp_overheat_margin_c\":{\"value\":%s},", num_buf);
+  format_float_token(num_buf, sizeof(num_buf), snap->hp_base_pct, 0);
+  appendf(buf, BUF_SIZE, offset, "\"number-hp_base_pct\":{\"value\":%s},", num_buf);
+  format_float_token(num_buf, sizeof(num_buf), snap->hp_trim_floor_pct, 0);
+  appendf(buf, BUF_SIZE, offset, "\"number-hp_trim_floor_pct\":{\"value\":%s},", num_buf);
+  if (snap->heat_demand.critical_zone >= 0)
+    appendf(buf, BUF_SIZE, offset, "\"sensor-heat_demand_critical_zone\":{\"value\":%d},",
+            snap->heat_demand.critical_zone + 1);
+  appendf(buf, BUF_SIZE, offset, "\"sensor-heat_demand_saturated_s\":{\"value\":%lu},",
+          static_cast<unsigned long>(snap->heat_demand.saturated_s));
+
+  appendf(buf, BUF_SIZE, offset,
       "\"select-manifold_type\":{\"state\":\"%s\"},"
       "\"select-manifold_flow_probe\":{\"state\":\"Probe %d\"},"
       "\"select-manifold_return_probe\":{\"state\":\"Probe %d\"},",
@@ -1500,6 +1655,7 @@ void LV6Dashboard::handle_state_(AsyncWebServerRequest *request) {
       {"cap_stall_ma", snap->motor.cap_stall_ma, 1},
       {"cap_open_stop_ma", snap->motor.cap_open_stop_ma, 1},
       {"cap_circuit_fault_ma", snap->motor.cap_circuit_fault_ma, 1},
+      {"close_runtime_limit_counts", static_cast<float>(snap->motor.close_runtime_limit_counts), 0},
       // Working-range learning (stroke_learning.h) and the pin detector it uses.
       {"working_range_learning", snap->motor.working_range_learning ? 1.0f : 0.0f, 0},
       {"learn_open_start_ripples", static_cast<float>(snap->motor.learn_open_start_ripples), 0},
@@ -1601,6 +1757,13 @@ void LV6Dashboard::handle_overview_(AsyncWebServerRequest *request) {
   char pairing_fingerprint[24];
   format_pairing_fingerprint(snap->mac_address, pairing_fingerprint, sizeof(pairing_fingerprint));
 
+  char critical_zone_tok[8];
+  if (snap->heat_demand.critical_zone >= 0)
+    snprintf(critical_zone_tok, sizeof(critical_zone_tok), "%d",
+             snap->heat_demand.critical_zone + 1);
+  else
+    snprintf(critical_zone_tok, sizeof(critical_zone_tok), "null");
+
   snprintf(this->json_buf_, JSON_BUF_SIZE,
            "{\"ok\":true,\"version\":\"v1\",\"data\":{\"node\":{\"model\":\"lune-v6\","
            "\"firmware\":\"%s\",\"ip\":\"%s\",\"ssid\":\"%s\",\"mac\":\"%s\","
@@ -1608,6 +1771,10 @@ void LV6Dashboard::handle_overview_(AsyncWebServerRequest *request) {
            "\"pairing\":{\"method\":\"mac-fingerprint-v1\",\"fingerprint\":\"%s\"},"
            "\"coordination\":{\"installation_id\":\"%s\",\"coordinator_id\":\"%s\","
            "\"control_approved\":%s},"
+           "\"control\":{\"mode\":\"%s\",\"effective_mode\":\"%s\",\"mode_source\":\"%s\","
+           "\"heat_demand\":{\"recommendation\":\"%s\",\"critical_zone\":%s,"
+           "\"critical_opening_ratio\":%.3f,\"saturated_s\":%lu,\"demanding_zones\":%u,"
+           "\"headroom\":%s}},"
            "\"zones\":{\"count\":%u,\"enabled\":%u,\"active\":%u,\"open_valves\":%u},"
            "\"manifold\":{\"flow_c\":%s,\"flow_temp_c\":%s,\"return_c\":%s,\"mean_valve_pct\":%s},"
            "\"system\":{\"wifi_dbm\":%s,\"drivers_enabled\":%s,\"free_internal_kb\":%lu,"
@@ -1624,6 +1791,14 @@ void LV6Dashboard::handle_overview_(AsyncWebServerRequest *request) {
            snap->authority.installation_id[0] != '\0' &&
                    snap->authority.coordinator_id[0] != '\0' &&
                    snap->authority.shared_key[0] != '\0' ? "true" : "false",
+           lv6::heating_profile_to_string(snap->heating_mode),
+           lv6::heating_profile_to_string(snap->effective_heating_mode),
+           snap->heating_mode_from_touch ? "touch" : "local",
+           lv6::heat_demand_recommendation_to_string(snap->heat_demand.recommendation),
+           critical_zone_tok, snap->heat_demand.critical_opening_ratio,
+           static_cast<unsigned long>(snap->heat_demand.saturated_s),
+           static_cast<unsigned>(snap->heat_demand.demanding_zones),
+           snap->heat_demand.headroom ? "true" : "false",
            static_cast<unsigned>(lv6::NUM_ZONES), static_cast<unsigned>(enabled),
            static_cast<unsigned>(active), static_cast<unsigned>(active),
            flow, flow, ret, demand, wifi, snap->drivers_enabled ? "true" : "false",
@@ -1657,17 +1832,49 @@ void LV6Dashboard::handle_zones_(AsyncWebServerRequest *request) {
   const DashboardSnapshot *snap = &this->state_snap_buf_;
   char *buf = this->json_buf_;
   size_t off = 0;
-  appendf(buf, JSON_BUF_SIZE, off, "{\"ok\":true,\"version\":\"v1\",\"data\":{\"count\":%u,\"zones\":[",
-          static_cast<unsigned>(lv6::NUM_ZONES));
-  for (uint8_t i = 0; i < lv6::NUM_ZONES && off + 520 < JSON_BUF_SIZE; i++) {
+
+  // node_id: "lune-v6-" + last 6 hex digits of MAC (or controller_id fallback).
+  char node_id[40] = "lune-v6";
+  {
+    char hex[13]{};
+    size_t hi = 0;
+    for (const char *p = snap->mac_address; *p && hi + 1 < sizeof(hex); ++p) {
+      if ((*p >= '0' && *p <= '9') || (*p >= 'a' && *p <= 'f') || (*p >= 'A' && *p <= 'F'))
+        hex[hi++] = static_cast<char>(tolower(static_cast<unsigned char>(*p)));
+    }
+    if (hi >= 6)
+      snprintf(node_id, sizeof(node_id), "lune-v6-%s", hex + (hi - 6));
+    else if (snap->system.controller_id[0])
+      snprintf(node_id, sizeof(node_id), "%s", snap->system.controller_id);
+  }
+
+  // Resolve sync-group primaries for group_members / group_primary.
+  int8_t sync_roots[lv6::NUM_ZONES];
+  for (uint8_t i = 0; i < lv6::NUM_ZONES; i++) {
+    int8_t root = static_cast<int8_t>(i);
+    for (uint8_t guard = 0; guard < lv6::NUM_ZONES; guard++) {
+      int8_t next = snap->zones[root].sync_to_zone;
+      if (next < 0 || next >= static_cast<int8_t>(lv6::NUM_ZONES))
+        break;
+      if (next == static_cast<int8_t>(i)) {
+        root = static_cast<int8_t>(i);
+        break;
+      }
+      root = next;
+    }
+    sync_roots[i] = root;
+  }
+
+  appendf(buf, JSON_BUF_SIZE, off,
+          "{\"ok\":true,\"version\":\"v1\",\"data\":{\"node_id\":\"%s\",\"count\":%u,\"zones\":[",
+          node_id, static_cast<unsigned>(lv6::NUM_ZONES));
+  for (uint8_t i = 0; i < lv6::NUM_ZONES && off + 640 < JSON_BUF_SIZE; i++) {
     char temp[24], setpoint[24], valve[24], preload[24];
     format_float_token(temp, sizeof(temp), snap->zone_temp_c[i], 1);
     format_float_token(setpoint, sizeof(setpoint), snap->zones[i].setpoint_c, 1);
     format_float_token(valve, sizeof(valve), snap->zone_valve_pct[i], 0);
     format_float_token(preload, sizeof(preload), snap->zone_preheat_c[i], 1);
-    char wind[24], solar[24], max_offset[24];
-    format_float_token(wind, sizeof(wind), snap->zones[i].wind_exposure, 2);
-    format_float_token(solar, sizeof(solar), snap->zones[i].solar_gain_factor, 2);
+    char max_offset[24];
     format_float_token(max_offset, sizeof(max_offset), snap->zones[i].max_offset_c, 2);
     char ua[24], mass[24], tau[24], return_c[24];
     const auto th = lv6::thermal_model::estimate(snap->zones[i]);
@@ -1679,7 +1886,7 @@ void LV6Dashboard::handle_zones_(AsyncWebServerRequest *request) {
       format_float_token(return_c, sizeof(return_c), snap->probe_temp_c[zr], 1);
     else
       snprintf(return_c, sizeof(return_c), "null");
-    char share[24], rank[16];
+    char share[24], rank[16], opening_ratio[24];
     if (std::isfinite(snap->zone_loop_share_pct[i]))
       format_float_token(share, sizeof(share), snap->zone_loop_share_pct[i], 1);
     else
@@ -1688,8 +1895,11 @@ void LV6Dashboard::handle_zones_(AsyncWebServerRequest *request) {
       snprintf(rank, sizeof(rank), "%u", static_cast<unsigned>(snap->zone_absorb_capacity_rank[i]));
     else
       snprintf(rank, sizeof(rank), "null");
+    const float max_open = std::max(1.0f, snap->zones[i].max_opening_pct);
+    format_float_token(opening_ratio, sizeof(opening_ratio), snap->zone_valve_pct[i] / max_open, 3);
     const char *absorb_state =
         snap->absorb_mode == 2 ? "armed" : (snap->absorb_mode == 1 ? "reactive" : "idle");
+    const int8_t primary = sync_roots[i];
     appendf(buf, JSON_BUF_SIZE, off,
             "%s{\"zone\":%u,\"name\":\"",
             i ? "," : "", static_cast<unsigned>(i + 1));
@@ -1699,19 +1909,25 @@ void LV6Dashboard::handle_zones_(AsyncWebServerRequest *request) {
     append_json_escaped(buf, JSON_BUF_SIZE, off, snap->zones[i].name);
     appendf(buf, JSON_BUF_SIZE, off,
             "\",\"enabled\":%s,\"temperature_c\":%s,\"setpoint_c\":%s,\"valve_pct\":%s,"
-            "\"preheat_c\":%s,\"state\":\"%s\",\"temp_source\":\"%s\",\"fresh\":%s,"
-            "\"ua_w_per_k\":%s,\"thermal_mass_kwh_per_k\":%s,\"tau_h\":%s,"
-            "\"return_c\":%s,\"loop_share_pct\":%s,\"absorb_state\":\"%s\","
-            "\"absorb_capacity_rank\":%s,"
-            "\"forecast\":{\"wind_exposure\":%s,\"solar_gain\":%s,"
-            "\"thermal_lead_h\":%u,\"max_offset_c\":%s}}",
-            snap->zones[i].enabled ? "true" : "false", temp, setpoint, valve, preload,
+            "\"opening_ratio\":%s,\"preheat_c\":%s,\"state\":\"%s\",\"temp_source\":\"%s\","
+            "\"fresh\":%s,\"group_primary\":%u,\"group_members\":[",
+            snap->zones[i].enabled ? "true" : "false", temp, setpoint, valve, opening_ratio, preload,
             snap->zone_state[i], temp_source_to_dashboard_str(snap->zone_temp_source[i]),
             std::isfinite(snap->zone_temp_c[i]) ? "true" : "false",
+            static_cast<unsigned>(primary + 1));
+    bool first_member = true;
+    for (uint8_t m = 0; m < lv6::NUM_ZONES; m++) {
+      if (sync_roots[m] != primary)
+        continue;
+      appendf(buf, JSON_BUF_SIZE, off, "%s%u", first_member ? "" : ",", static_cast<unsigned>(m + 1));
+      first_member = false;
+    }
+    appendf(buf, JSON_BUF_SIZE, off,
+            "],\"ua_w_per_k\":%s,\"thermal_mass_kwh_per_k\":%s,\"tau_h\":%s,"
+            "\"return_c\":%s,\"loop_share_pct\":%s,\"absorb_state\":\"%s\","
+            "\"absorb_capacity_rank\":%s,\"max_offset_c\":%s}",
             th.plausible ? ua : "null", th.plausible ? mass : "null",
-            th.plausible ? tau : "null", return_c, share, absorb_state, rank,
-            wind, solar,
-            static_cast<unsigned>(snap->zones[i].thermal_lead_h), max_offset);
+            th.plausible ? tau : "null", return_c, share, absorb_state, rank, max_offset);
   }
   appendf(buf, JSON_BUF_SIZE, off, "]}}");
   send_text_(request, 200, "application/json", buf, true, "no-cache");
@@ -1735,27 +1951,26 @@ void LV6Dashboard::handle_zone_(AsyncWebServerRequest *request, uint8_t zone) {
   const DashboardSnapshot *snap = &this->state_snap_buf_;
   const lv6::ZoneConfig &z = snap->zones[i];
   char temp[24], setpoint[24], valve[24], preload[24], probe[24];
-  char area[24], spacing[24], wind[24], solar[24], max_offset[24];
+  char area[24], spacing[24], max_offset[24];
   char open_ripple[24], close_ripple[24], open_factor[24], close_factor[24];
-  char loop_length[24], design_flow[24], measured_flow[24], actuator_cal[24], thermal_delay[24];
+  char working_ripple[24], pin_free[24];
   format_float_token(temp, sizeof(temp), snap->zone_temp_c[i], 1);
   format_float_token(setpoint, sizeof(setpoint), z.setpoint_c, 1);
   format_float_token(valve, sizeof(valve), snap->zone_valve_pct[i], 0);
   format_float_token(preload, sizeof(preload), snap->zone_preheat_c[i], 1);
   format_float_token(area, sizeof(area), z.area_m2, 1);
   format_float_token(spacing, sizeof(spacing), z.pipe_spacing_mm, 0);
-  format_float_token(wind, sizeof(wind), z.wind_exposure, 2);
-  format_float_token(solar, sizeof(solar), z.solar_gain_factor, 2);
   format_float_token(max_offset, sizeof(max_offset), z.max_offset_c, 2);
   format_float_token(open_ripple, sizeof(open_ripple), snap->motor_open_ripple[i], 0);
   format_float_token(close_ripple, sizeof(close_ripple), snap->motor_close_ripple[i], 0);
   format_float_token(open_factor, sizeof(open_factor), snap->motor_open_factor[i], 2);
   format_float_token(close_factor, sizeof(close_factor), snap->motor_close_factor[i], 2);
-  format_float_token(loop_length, sizeof(loop_length), z.loop_pipe_length_m, 1);
-  format_float_token(design_flow, sizeof(design_flow), z.design_flow_l_h, 1);
-  format_float_token(measured_flow, sizeof(measured_flow), z.measured_flow_l_h, 1);
-  format_float_token(actuator_cal, sizeof(actuator_cal), z.actuator_calibration_pct, 1);
-  format_float_token(thermal_delay, sizeof(thermal_delay), z.expected_thermal_delay_min, 1);
+  format_float_token(working_ripple, sizeof(working_ripple), snap->motor_working_ripple[i], 0);
+  format_float_token(pin_free, sizeof(pin_free), snap->motor_pin_free_ripple[i], 0);
+  const char *stroke_model =
+      snap->motor_stroke_model[i] == static_cast<uint8_t>(lv6::StrokeModel::WORKING_RANGE)
+          ? "working_range"
+          : "full_stroke";
 
   const int8_t probe_idx = snap->probes.zone_return_probe[i];
   if (probe_idx >= 0 && probe_idx < static_cast<int8_t>(lv6::MAX_PROBES))
@@ -1802,13 +2017,9 @@ void LV6Dashboard::handle_zone_(AsyncWebServerRequest *request, uint8_t zone) {
           "\"settings\":{\"area_m2\":%s,\"pipe_spacing_mm\":%s,\"pipe_type\":%u,"
           "\"sync_to_zone\":%d,\"abs_min_c\":%.1f,\"abs_max_c\":%.1f,"
           "\"min_offset_c\":%.2f,\"max_offset_c\":%.2f},"
-          "\"forecast\":{\"wind_exposure\":%s,\"solar_gain\":%s,"
-          "\"thermal_lead_h\":%u,\"max_offset_c\":%s},"
-          "\"commissioning\":{\"manifold_id\":\"%s\",\"manifold_port\":%u,\"room_id\":\"%s\","
-          "\"loop_pipe_length_m\":%s,\"design_flow_l_h\":%s,\"measured_flow_l_h\":%s,"
-          "\"flooring_type\":%u,\"actuator_calibration_pct\":%s,\"expected_thermal_delay_min\":%s},"
           "\"motor\":{\"fault\":\"%s\",\"open_ripples\":%s,\"close_ripples\":%s,"
-          "\"open_factor\":%s,\"close_factor\":%s}}}",
+          "\"open_factor\":%s,\"close_factor\":%s,\"working_ripples\":%s,"
+          "\"pin_free_ripples\":%s,\"stroke_model\":\"%s\"}}}",
           z.enabled ? "true" : "false", snap->zone_state[i],
           std::isfinite(snap->zone_temp_c[i]) ? "true" : "false",
           temp, setpoint, valve, preload, temp_source_to_dashboard_str(snap->zone_temp_source[i]),
@@ -1819,11 +2030,8 @@ void LV6Dashboard::handle_zone_(AsyncWebServerRequest *request, uint8_t zone) {
           area, spacing, static_cast<unsigned>(z.pipe_type),
           z.sync_to_zone >= 0 ? static_cast<int>(z.sync_to_zone) + 1 : 0,
           z.abs_min_c, z.abs_max_c, z.min_offset_c, z.max_offset_c,
-          wind, solar,
-          static_cast<unsigned>(z.thermal_lead_h), max_offset,
-          z.manifold_id, static_cast<unsigned>(z.manifold_port), z.room_id,
-          loop_length, design_flow, measured_flow, static_cast<unsigned>(z.floor_type), actuator_cal, thermal_delay,
-          snap->motor_fault[i], open_ripple, close_ripple, open_factor, close_factor);
+          snap->motor_fault[i], open_ripple, close_ripple, open_factor, close_factor,
+          working_ripple, pin_free, stroke_model);
   send_text_(request, 200, "application/json", buf, true, "no-cache");
 }
 
@@ -1856,14 +2064,20 @@ void LV6Dashboard::handle_settings_(AsyncWebServerRequest *request) {
   };
 
   char preheat_band[24], preheat_delta[24], min_flow[24];
+  char hp_margin[24], hp_base[24], hp_trim[24];
   format_float_token(preheat_band, sizeof(preheat_band), snap->preheat_absorb_band_c, 1);
   format_float_token(preheat_delta, sizeof(preheat_delta), snap->preheat_detect_delta_c, 1);
   format_float_token(min_flow, sizeof(min_flow), snap->min_zone_flow_pct, 1);
+  format_float_token(hp_margin, sizeof(hp_margin), snap->hp_overheat_margin_c, 1);
+  format_float_token(hp_base, sizeof(hp_base), snap->hp_base_pct, 0);
+  format_float_token(hp_trim, sizeof(hp_trim), snap->hp_trim_floor_pct, 0);
 
   appendf(buf, BUF_SIZE, off,
           "{\"ok\":true,\"version\":\"v1\",\"data\":{\"control\":{"
           "\"simple_preheat_enabled\":%s,\"preheat_absorb_enabled\":%s,"
-          "\"preheat_absorb_band_c\":%s,\"preheat_detect_delta_c\":%s},"
+          "\"preheat_absorb_band_c\":%s,\"preheat_detect_delta_c\":%s,"
+          "\"heating_mode\":\"%s\",\"hp_overheat_margin_c\":%s,"
+          "\"hp_base_pct\":%s,\"hp_trim_floor_pct\":%s},"
           "\"minimum_flow\":{\"enabled\":%s,\"min_zone_flow_pct\":%s},"
           "\"ble_clock_sync\":{\"enabled\":%s,\"interval_min\":%u,\"last_ok_s\":%lu,"
           "\"last_error\":\"%s\",\"advertising\":%s},"
@@ -1875,6 +2089,7 @@ void LV6Dashboard::handle_settings_(AsyncWebServerRequest *request) {
           snap->simple_preheat_enabled ? "true" : "false",
           snap->preheat_absorb_enabled ? "true" : "false",
           preheat_band, preheat_delta,
+          lv6::heating_profile_to_string(snap->heating_mode), hp_margin, hp_base, hp_trim,
           snap->minimum_flow_always ? "true" : "false", min_flow,
           snap->ble_clock_sync_enabled ? "true" : "false",
           static_cast<unsigned>(snap->ble_clock_sync_interval_min),
@@ -1895,7 +2110,7 @@ void LV6Dashboard::handle_settings_(AsyncWebServerRequest *request) {
 
   for (uint8_t i = 0; i < lv6::NUM_ZONES; i++) {
     char setpoint[24], area[24], spacing[24], min_offset[24], max_offset[24];
-    char abs_min[24], abs_max[24], wind[24], solar[24];
+    char abs_min[24], abs_max[24];
     format_float_token(setpoint, sizeof(setpoint), snap->zones[i].setpoint_c, 1);
     format_float_token(area, sizeof(area), snap->zones[i].area_m2, 1);
     format_float_token(spacing, sizeof(spacing), snap->zones[i].pipe_spacing_mm, 0);
@@ -1903,8 +2118,6 @@ void LV6Dashboard::handle_settings_(AsyncWebServerRequest *request) {
     format_float_token(max_offset, sizeof(max_offset), snap->zones[i].max_offset_c, 2);
     format_float_token(abs_min, sizeof(abs_min), snap->zones[i].abs_min_c, 1);
     format_float_token(abs_max, sizeof(abs_max), snap->zones[i].abs_max_c, 1);
-    format_float_token(wind, sizeof(wind), snap->zones[i].wind_exposure, 2);
-    format_float_token(solar, sizeof(solar), snap->zones[i].solar_gain_factor, 2);
 
     appendf(buf, BUF_SIZE, off,
             "%s{\"zone\":%u,\"name\":\"",
@@ -1916,8 +2129,6 @@ void LV6Dashboard::handle_settings_(AsyncWebServerRequest *request) {
             "\"probe_index\":%d,\"sync_to_zone\":%d,\"ble_mac\":\"%s\","
             "\"limits\":{\"min_offset_c\":%s,\"max_offset_c\":%s,"
             "\"abs_min_c\":%s,\"abs_max_c\":%s},"
-            "\"forecast\":{\"wind_exposure\":%s,"
-            "\"solar_gain\":%s,\"thermal_lead_h\":%u,\"max_offset_c\":%s},"
             "\"motor_profile\":\"%s\"}",
             snap->zones[i].enabled ? "true" : "false", setpoint, area, spacing,
             pipe_type_to_api_str(snap->zones[i].pipe_type),
@@ -1925,8 +2136,6 @@ void LV6Dashboard::handle_settings_(AsyncWebServerRequest *request) {
             snap->probes.zone_return_probe[i] >= 0 ? static_cast<int>(snap->probes.zone_return_probe[i]) + 1 : 0,
             snap->zones[i].sync_to_zone >= 0 ? static_cast<int>(snap->zones[i].sync_to_zone) + 1 : 0,
             snap->zone_ble_mac[i], min_offset, max_offset, abs_min, abs_max,
-            wind, solar,
-            static_cast<unsigned>(snap->zones[i].thermal_lead_h), max_offset,
             motor_profile_to_api_str(snap->zones[i].motor_profile_override));
     if (!flush()) return;
   }
@@ -2253,11 +2462,13 @@ void LV6Dashboard::handle_events_(AsyncWebServerRequest *request) {
 }
 
 void LV6Dashboard::handle_revision_(AsyncWebServerRequest *request) {
-  char response[256];
+  char response[320];
   snprintf(response, sizeof(response),
            "{\"ok\":true,\"version\":\"v1\",\"data\":{\"data_revision\":%lu,"
-           "\"uptime_s\":%lu,\"poll_after_ms\":3000,\"freshness\":\"runtime\"}}",
+           "\"runtime_revision\":%lu,"
+           "\"uptime_s\":%lu,\"poll_after_ms\":1000,\"freshness\":\"runtime\"}}",
            static_cast<unsigned long>(data_revision_),
+           static_cast<unsigned long>(runtime_revision_),
            static_cast<unsigned long>(millis() / 1000UL));
   send_text_(request, 200, "application/json", response, false, "no-cache");
 }
@@ -2903,25 +3114,39 @@ void LV6Dashboard::handle_authority_lease_(AsyncWebServerRequest *request, const
   parse_num_param(request, body, "issued_ms", &issued_ms);
   parse_num_param(request, body, "duration_ms", &duration_ms);
   parse_bool_param(request, body, "degraded", &degraded);
+  char control_mode_str[24]{};
+  parse_text_param(request, body, "control_mode", "", control_mode_str, sizeof(control_mode_str));
   lv6_authority::Request lease_request{installation_id, coordinator_id, lease_id,
                                         static_cast<uint32_t>(sequence),
                                         static_cast<uint32_t>(issued_ms),
-                                        static_cast<uint32_t>(duration_ms), degraded};
+                                        static_cast<uint32_t>(duration_ms), degraded,
+                                        lv6_authority::control_mode_from_string(control_mode_str)};
   this->authority_.configure(cfg.installation_id, cfg.coordinator_id);
   const auto result = this->authority_.acquire_or_renew(lease_request, diff == 0, millis());
   const auto snapshot = this->authority_.snapshot(millis());
-  if (this->zone_controller_)
+  if (this->zone_controller_) {
     this->zone_controller_->set_touch_authority_active(snapshot.touch_lease_active);
+    if (snapshot.touch_lease_active && snapshot.control_mode != lv6_authority::ControlMode::UNSET) {
+      const auto mode = (snapshot.control_mode == lv6_authority::ControlMode::NORMAL)
+                            ? lv6::HeatingProfile::NORMAL
+                            : lv6::HeatingProfile::HEAT_PUMP;
+      this->zone_controller_->set_touch_control_mode(true, mode);
+    } else {
+      this->zone_controller_->set_touch_control_mode(false, lv6::HeatingProfile::HEAT_PUMP);
+    }
+  }
   const int status = (result == lv6_authority::Result::GRANTED || result == lv6_authority::Result::RENEWED) ? 200 :
                      (result == lv6_authority::Result::AUTH_REQUIRED ? 401 : 409);
-  char response[512];
+  const char *mode_json = lv6_authority::control_mode_to_string(snapshot.control_mode);
+  char response[640];
   snprintf(response, sizeof(response),
            "{\"ok\":%s,\"version\":\"v1\",\"data\":{\"result\":\"%s\",\"state\":\"%s\","
            "\"generation\":%lu,\"lease_remaining_s\":%lu,\"reason\":\"%s\","
-           "\"authority_only\":true}}",
+           "\"control_mode\":%s%s%s,\"authority_only\":true}}",
            status == 200 ? "true" : "false", lv6_authority::result_name(result),
            lv6_authority::state_name(snapshot.state), static_cast<unsigned long>(snapshot.lease_generation),
-           static_cast<unsigned long>(snapshot.remaining_ms / 1000UL), snapshot.last_reason);
+           static_cast<unsigned long>(snapshot.remaining_ms / 1000UL), snapshot.last_reason,
+           mode_json ? "\"" : "null", mode_json ? mode_json : "", mode_json ? "\"" : "");
   send_text_(request, status, "application/json", response, true, "no-cache");
 }
 
@@ -3016,8 +3241,10 @@ void LV6Dashboard::handle_authority_revoke_(AsyncWebServerRequest *request) {
   }
   this->config_store_->update_authority(lv6::AuthorityConfig{});
   this->authority_.configure("", "");
-  if (this->zone_controller_)
+  if (this->zone_controller_) {
     this->zone_controller_->set_touch_authority_active(false);
+    this->zone_controller_->set_touch_control_mode(false, lv6::HeatingProfile::HEAT_PUMP);
+  }
   if (data_revision_ != UINT32_MAX)
     data_revision_++;
   send_text_(request, 200, "application/json",
@@ -3284,42 +3511,6 @@ void LV6Dashboard::dispatch_set_(const DashboardAction &act) {
   } else if (strcmp(key, "zone_name") == 0 && has_str && zone_valid && this->zone_controller_) {
     this->zone_controller_->set_zone_name(zi, std::string(str_val));
 
-  // ---- physical-loop commissioning metadata (passive records only) ----
-  } else if (strcmp(key, "zone_manifold_id") == 0 && has_str && zone_valid && this->config_store_) {
-    auto cfg = this->config_store_->get_zone_config(zi);
-    strncpy(cfg.manifold_id, str_val, sizeof(cfg.manifold_id) - 1);
-    cfg.manifold_id[sizeof(cfg.manifold_id) - 1] = '\0';
-    this->config_store_->update_zone(zi, cfg);
-  } else if (strcmp(key, "zone_room_id") == 0 && has_str && zone_valid && this->config_store_) {
-    auto cfg = this->config_store_->get_zone_config(zi);
-    strncpy(cfg.room_id, str_val, sizeof(cfg.room_id) - 1);
-    cfg.room_id[sizeof(cfg.room_id) - 1] = '\0';
-    this->config_store_->update_zone(zi, cfg);
-  } else if (strcmp(key, "zone_manifold_port") == 0 && has_num && zone_valid && this->config_store_) {
-    auto cfg = this->config_store_->get_zone_config(zi);
-    cfg.manifold_port = static_cast<uint8_t>(std::clamp(num_val, 0.0f, 6.0f));
-    this->config_store_->update_zone(zi, cfg);
-  } else if (strcmp(key, "zone_loop_pipe_length_m") == 0 && has_num && zone_valid && this->config_store_) {
-    auto cfg = this->config_store_->get_zone_config(zi);
-    cfg.loop_pipe_length_m = std::max(-1.0f, num_val);
-    this->config_store_->update_zone(zi, cfg);
-  } else if (strcmp(key, "zone_design_flow_l_h") == 0 && has_num && zone_valid && this->config_store_) {
-    auto cfg = this->config_store_->get_zone_config(zi);
-    cfg.design_flow_l_h = std::max(-1.0f, num_val);
-    this->config_store_->update_zone(zi, cfg);
-  } else if (strcmp(key, "zone_measured_flow_l_h") == 0 && has_num && zone_valid && this->config_store_) {
-    auto cfg = this->config_store_->get_zone_config(zi);
-    cfg.measured_flow_l_h = std::max(-1.0f, num_val);
-    this->config_store_->update_zone(zi, cfg);
-  } else if (strcmp(key, "zone_actuator_calibration_pct") == 0 && has_num && zone_valid && this->config_store_) {
-    auto cfg = this->config_store_->get_zone_config(zi);
-    cfg.actuator_calibration_pct = std::clamp(num_val, -1.0f, 100.0f);
-    this->config_store_->update_zone(zi, cfg);
-  } else if (strcmp(key, "zone_expected_thermal_delay_min") == 0 && has_num && zone_valid && this->config_store_) {
-    auto cfg = this->config_store_->get_zone_config(zi);
-    cfg.expected_thermal_delay_min = std::max(-1.0f, num_val);
-    this->config_store_->update_zone(zi, cfg);
-
   // ---- zone_ble_mac ----
   } else if (strcmp(key, "zone_ble_mac") == 0 && has_str && zone_valid && this->zone_controller_) {
     this->zone_controller_->set_zone_ble_mac(zi, std::string(str_val));
@@ -3331,16 +3522,6 @@ void LV6Dashboard::dispatch_set_(const DashboardAction &act) {
   // ---- zone_sensor_name (friendly, UI only) ----
   } else if (strcmp(key, "zone_sensor_name") == 0 && has_str && zone_valid && this->zone_controller_) {
     this->zone_controller_->set_zone_sensor_name(zi, std::string(str_val));
-
-  // ---- coordinator weather metadata (same durable V6 zone config) ----
-  } else if (strcmp(key, "zone_wind_exposure") == 0 && has_num && zone_valid && this->zone_controller_) {
-    this->zone_controller_->set_zone_wind_exposure(zi, num_val);
-
-  } else if (strcmp(key, "zone_solar_gain") == 0 && has_num && zone_valid && this->zone_controller_) {
-    this->zone_controller_->set_zone_solar_gain(zi, num_val);
-
-  } else if (strcmp(key, "zone_thermal_lead_h") == 0 && has_num && zone_valid && this->zone_controller_) {
-    this->zone_controller_->set_zone_thermal_lead_h(zi, static_cast<uint8_t>(std::clamp(num_val, 0.0f, 48.0f)));
 
   // ---- zone_area_m2 ----
   } else if (strcmp(key, "zone_area_m2") == 0 && has_num && zone_valid && this->zone_controller_) {
@@ -3374,6 +3555,19 @@ void LV6Dashboard::dispatch_set_(const DashboardAction &act) {
     auto ctrl = this->config_store_->get_config().control;
     ctrl.preheat_absorb_enabled = (strcasecmp(str_val, "on") == 0 || strcmp(str_val, "1") == 0);
     this->config_store_->update_control(ctrl);
+
+  // ---- heating_mode (normal | heat_pump) ----
+  } else if (strcmp(key, "heating_mode") == 0 && has_str && this->zone_controller_) {
+    this->zone_controller_->set_heating_mode(lv6::heating_profile_from_string(str_val));
+
+  } else if (strcmp(key, "hp_overheat_margin_c") == 0 && has_num && this->zone_controller_) {
+    this->zone_controller_->set_hp_overheat_margin_c(num_val);
+
+  } else if (strcmp(key, "hp_base_pct") == 0 && has_num && this->zone_controller_) {
+    this->zone_controller_->set_hp_base_pct(num_val);
+
+  } else if (strcmp(key, "hp_trim_floor_pct") == 0 && has_num && this->zone_controller_) {
+    this->zone_controller_->set_hp_trim_floor_pct(num_val);
 
   // ---- preheat_absorb_band_c ----
   } else if (strcmp(key, "preheat_absorb_band_c") == 0 && has_num && this->config_store_) {
@@ -3475,6 +3669,8 @@ void LV6Dashboard::dispatch_set_(const DashboardAction &act) {
       motor_cfg.cap_open_stop_ma = num_val;
     else if (strcmp(key, "cap_circuit_fault_ma") == 0)
       motor_cfg.cap_circuit_fault_ma = num_val;
+    else if (strcmp(key, "close_runtime_limit_counts") == 0)
+      motor_cfg.close_runtime_limit_counts = static_cast<uint32_t>(std::max(0.0f, num_val));
     // Working-range learning. sanitize_motor_cfg_() bounds the legs by the close
     // ceiling, so a value too large for it is pulled back rather than obeyed.
     else if (strcmp(key, "working_range_learning") == 0)

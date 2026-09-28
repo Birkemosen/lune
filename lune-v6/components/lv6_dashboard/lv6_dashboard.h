@@ -53,6 +53,17 @@ struct DashboardSnapshot {
   float    motor_close_ripple[6];
   float    motor_open_factor[6];
   float    motor_close_factor[6];
+  /// Pin → seat depth (working range). 0 = not learned.
+  float    motor_working_ripple[6];
+  /// Free travel before pin contact on close (dead space). 0 = unknown.
+  float    motor_pin_free_ripple[6];
+  /// 0 = full_stroke, 1 = working_range (lv6::StrokeModel).
+  uint8_t  motor_stroke_model[6];
+  /// Per-zone learning progress while calibrating (0 otherwise).
+  uint8_t  motor_learn_pct[6];
+  uint8_t  motor_learn_phase[6];
+  uint8_t  motor_learn_sample[6];
+  uint8_t  motor_learn_samples_needed[6];
   float    probe_temp_c[8];
 
   // --- text sensors: fixed-size char arrays, null-terminated, pre-sanitized ---
@@ -107,6 +118,13 @@ struct DashboardSnapshot {
   float             zone_loop_share_pct[6]{};
   uint8_t           zone_absorb_capacity_rank[6]{};
   float             zone_relative_kv[6]{};  ///< Kv at current commanded opening
+  lv6::HeatingProfile heating_mode{lv6::HeatingProfile::HEAT_PUMP};
+  lv6::HeatingProfile effective_heating_mode{lv6::HeatingProfile::HEAT_PUMP};
+  bool              heating_mode_from_touch{false};
+  float             hp_overheat_margin_c{1.0f};
+  float             hp_base_pct{60.0f};
+  float             hp_trim_floor_pct{15.0f};
+  lv6::HeatDemandSummary heat_demand{};
 
   // --- Touch coordination authority (heat-source integration is external) ---
   lv6::AuthorityConfig authority;
@@ -326,6 +344,11 @@ class LV6Dashboard : public Component, public AsyncWebHandler {
   std::vector<DashboardAction> action_queue_;
   request_guard::Guard<24> request_guard_{};
   uint32_t data_revision_{1};  // runtime-only; resets on boot alongside boot identity
+  /// Bumps when live telemetry the UI must refresh changes (e.g. motor learning).
+  /// Separate from data_revision_ so write guards are not invalidated every tick.
+  uint32_t runtime_revision_{1};
+  uint32_t last_learning_progress_packed_{0xFFFFFFFFu};
+  uint16_t last_motor_fault_fp_{0xFFFFu};
   uint32_t write_rate_window_ms_{0};
   uint8_t write_rate_count_{0};
   uint32_t coordinator_command_expires_at_ms_[lv6::NUM_ZONES]{};
