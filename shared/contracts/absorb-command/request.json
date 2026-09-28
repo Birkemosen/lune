@@ -1,7 +1,8 @@
 {
   "request_id": "absorb-fc-001",
+  "action": "arm",
   "source": "lune-touch",
-  "reason": "odin preload hour",
+  "reason": "thermal_buffer",
   "ttl_s": 1800,
   "auth_timestamp_s": 1713111111,
   "auth_nonce": "n-absorb-001"

@@ -84,6 +84,27 @@ int main() {
     assert(o.detect_cycles == 0);
   }
 
+  // After arm yields, auto-detection resumes immediately (arm_active false).
+  // A previously armed-but-now-idle window with cool flow ends; hot flow can
+  // re-engage via the normal 2-cycle detect path.
+  {
+    auto in = base_hot_idle();
+    in.arm_active = false;
+    in.currently_active = false;
+    in.detect_cycles = 0;
+    in.flow_c = 25.0f;
+    DetectOutput cool = step(in);
+    assert(!cool.active);
+
+    in.flow_c = 35.0f;
+    DetectOutput c1 = step(in);
+    assert(!c1.active);
+    assert(c1.detect_cycles == 1);
+    in.detect_cycles = c1.detect_cycles;
+    DetectOutput c2 = step(in);
+    assert(c2.active);
+  }
+
   std::puts("Preheat absorb logic tests passed.");
   return 0;
 }

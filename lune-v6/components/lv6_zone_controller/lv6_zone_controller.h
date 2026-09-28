@@ -190,8 +190,14 @@ class Lv6ZoneController : public esphome::Component {
   /// 0=idle, 1=reactive, 2=armed — for history / API absorb_state.
   uint8_t absorb_mode_code() const;
   /// Arm an absorb window. Returns clamped TTL seconds. Reboot clears the arm.
+  /// `reason` is ledger/display only (already normalized by the HTTP layer).
   float arm_absorb_window(uint32_t ttl_s, const char *request_id, const char *reason);
+  /// Explicit disarm. Ends forced absorption immediately; local auto-detection
+  /// resumes on the next control cycle. Idempotent when no arm is active.
   void clear_absorb_arm();
+  const char *absorb_arm_reason() const { return absorb_arm_reason_; }
+  /// Last arm end: "" | "disarm" | "expired" (display / ledger).
+  const char *absorb_arm_end_reason() const { return absorb_arm_end_reason_; }
   float get_loop_share_pct(uint8_t zone) const;
   uint8_t get_absorb_capacity_rank(uint8_t zone) const;
   /// Relative Kv at opening percent for Motor lab / diagnostics.
@@ -291,6 +297,7 @@ class Lv6ZoneController : public esphome::Component {
   uint32_t absorb_arm_expires_at_ms_{0};
   char absorb_arm_request_id_[48]{};
   char absorb_arm_reason_[64]{};
+  char absorb_arm_end_reason_[16]{};  ///< "" | disarm | expired
   uint8_t absorb_arm_source_{0};  ///< 0=none, 1=armed, 2=reactive (history code)
 
   // Flow allocator (A4) — runtime energy debt + loop shares.
@@ -354,6 +361,7 @@ class Lv6ZoneController : public esphome::Component {
                               const std::array<float, NUM_ZONES> &temps,
                               const std::array<float, NUM_ZONES> &setpoints);
   bool absorb_arm_active_() const;
+  void expire_absorb_arm_if_needed_();
 
   // Hydraulic balancing
   void recalculate_balance_factors_();

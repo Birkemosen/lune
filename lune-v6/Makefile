@@ -37,7 +37,7 @@ DESIGN_DIR ?= $(firstword $(wildcard \
 LDS_DIR ?= $(DESIGN_DIR)
 LDS_CONSUMER ?= $(ROOT_ABS)
 
-.PHONY: help check ensure-secrets-link config compile build build-verify bump-build prepare-release release release-deploy release-firmware release-bundle upload deploy ota logs discover monitor erase erase-nvs clean dashboard dashboard-tooling dashboard-build dashboard-reference-traces dashboard-watch design-tokens design-verify test test-dashboard test-ripple test-rev31-logic test-rev32-logic test-safety-limits test-stall-model test-stroke-learning test-balance test-authority-lease test-preheat-policy test-preheat-absorb test-probe-mapping test-thermal-model test-flow-allocator test-hydraulic-policy test-hydraulic-diagnostics test-commissioning-schema test-request-guard test-ble-time-beacon test-settings-backup test-control-mode
+.PHONY: help check ensure-secrets-link config compile build build-verify bump-build prepare-release release release-deploy release-firmware release-bundle upload deploy ota logs discover monitor erase erase-nvs clean dashboard dashboard-tooling dashboard-build dashboard-reference-traces dashboard-watch design-tokens design-verify test test-dashboard test-ripple test-rev31-logic test-rev32-logic test-safety-limits test-stall-model test-stroke-learning test-balance test-authority-lease test-preheat-policy test-preheat-absorb test-absorb-command test-probe-mapping test-thermal-model test-flow-allocator test-hydraulic-policy test-hydraulic-diagnostics test-commissioning-schema test-request-guard test-ble-time-beacon test-settings-backup test-control-mode
 
 help:
 	@echo "Lune V6 ESPHome tasks"
@@ -235,6 +235,8 @@ PREHEAT_POLICY_SRCS = test/preheat_policy/test_preheat_policy.cpp
 PREHEAT_POLICY_OUT  = /tmp/test_hv6_preheat_policy
 PREHEAT_ABSORB_SRCS = test/preheat_absorb/test_preheat_absorb.cpp
 PREHEAT_ABSORB_OUT  = /tmp/test_hv6_preheat_absorb
+ABSORB_COMMAND_SRCS = test/absorb_command/test_absorb_command.cpp
+ABSORB_COMMAND_OUT  = /tmp/test_hv6_absorb_command
 THERMAL_MODEL_SRCS = test/thermal_model/test_thermal_model.cpp
 THERMAL_MODEL_OUT  = /tmp/test_hv6_thermal_model
 PROBE_MAPPING_SRCS = test/probe_mapping/test_probe_mapping.cpp
@@ -269,6 +271,10 @@ test-preheat-policy:
 test-preheat-absorb:
 	$(RIPPLE_CXX) -std=c++17 -O2 -Wall -Wextra -I components/lv6_zone_controller $(PREHEAT_ABSORB_SRCS) -o $(PREHEAT_ABSORB_OUT)
 	$(PREHEAT_ABSORB_OUT)
+
+test-absorb-command:
+	$(RIPPLE_CXX) -std=c++17 -O2 -Wall -Wextra -I components/lv6_zone_controller $(ABSORB_COMMAND_SRCS) -o $(ABSORB_COMMAND_OUT)
+	$(ABSORB_COMMAND_OUT)
 
 test-probe-mapping:
 	$(RIPPLE_CXX) -std=c++17 -O2 -Wall -Wextra -I components/lv6_zone_controller -I components/lv6_config_store $(PROBE_MAPPING_SRCS) -o $(PROBE_MAPPING_OUT)
@@ -312,7 +318,7 @@ test-control-mode:
 test-dashboard:
 	sh test/dashboard/test_dashboard.sh
 
-test: design-verify test-dashboard test-ripple test-rev31-logic test-rev32-logic test-safety-limits test-stall-model test-stroke-learning test-balance test-authority-lease test-preheat-policy test-preheat-absorb test-probe-mapping test-thermal-model test-flow-allocator test-hydraulic-policy test-hydraulic-diagnostics test-commissioning-schema test-request-guard test-ble-time-beacon test-settings-backup test-control-mode
+test: design-verify test-dashboard test-ripple test-rev31-logic test-rev32-logic test-safety-limits test-stall-model test-stroke-learning test-balance test-authority-lease test-preheat-policy test-preheat-absorb test-absorb-command test-probe-mapping test-thermal-model test-flow-allocator test-hydraulic-policy test-hydraulic-diagnostics test-commissioning-schema test-request-guard test-ble-time-beacon test-settings-backup test-control-mode
 
 ota: check
 	$(MAKE) build

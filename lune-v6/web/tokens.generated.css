@@ -26,11 +26,12 @@
   --state-danger: #EF4444;
   --info: #C9A36A;
   --disabled: #7a7268;
-  --series-measured: #E8D4B0;
+  --series-measured: #E07A5F;
   --series-target: #10B981;
   --series-warm: #F59E0B;
   --series-heat: #F59E0B;
-  --series-solar: #fcd34d;
+  --series-solar: #FFD24A;
+  --series-wind: #6BA8BC;
   --series-cool: #5F8F73;
   --space-1: 4px;
   --space-2: 8px;

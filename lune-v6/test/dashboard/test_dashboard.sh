@@ -52,9 +52,17 @@ grep -qF 'luneMark({' "$root/web/dashboard-src/components/zone/zone-detail.js" >
 ! grep -qF 'fonts.googleapis.com' "$css" >/dev/null
 grep -qF 'var(--sidebar-width)' "$app" >/dev/null
 grep -qF '@media(max-width:900px)' "$app" >/dev/null
-grep -qF 'v6-more-toggle' "$header" >/dev/null
+grep -qF 'tabItemHtml' "$header" >/dev/null
+grep -qF 'tabMoreHtml' "$header" >/dev/null
+grep -qF 'TAB_BAR_CSS' "$header" >/dev/null
+grep -qF 'lds-tab-bar' "$header" >/dev/null
+grep -qF 'data-lds-tab-more' "$header" >/dev/null
+! grep -qF 'v6-more-toggle' "$header" >/dev/null
+! grep -qF 'more-open' "$header" >/dev/null
 grep -qF 'menu-label' "$header" >/dev/null
 grep -qF 'menu-icon' "$header" >/dev/null
+grep -qF 'export function tabItemHtml' "$root/web/dashboard-src/core/lds-tab-bar.generated.js" >/dev/null
+grep -qF 'export function tabMoreHtml' "$root/web/dashboard-src/core/lds-tab-bar.generated.js" >/dev/null
 # Comfort control (LDS) + remaining ui-kit primitives
 comfort="$root/web/dashboard-src/core/lds-comfort-control.generated.js"
 grep -qF 'export function dial(' "$comfort" >/dev/null
@@ -72,7 +80,7 @@ grep -qF "'zone.override.remaining': 'Touch offset {offset} · {remaining} remai
 grep -qF "'zone.override.remaining': 'Touch-offset {offset} · {remaining} tilbage'" "$i18n" >/dev/null
 # Hex / 0x colour literals are only allowed in generated artifacts.
 if grep -R --include='*.js' --include='*.css' -E '#[0-9A-Fa-f]{3,8}\b' "$root/web/dashboard-src" \
-  | grep -v 'lune-mark.generated.js' | grep -v 'tokens.generated.css' | grep -v 'lds-comfort-control.generated.js' | grep -v 'lds-manifold-row.generated.js' | grep -v 'lds-live-status.generated.js'; then
+  | grep -v 'lune-mark.generated.js' | grep -v 'tokens.generated.css' | grep -v 'lds-comfort-control.generated.js' | grep -v 'lds-manifold-row.generated.js' | grep -v 'lds-live-status.generated.js' | grep -v 'lds-tab-bar.generated.js'; then
   echo "hex colour literals outside generated files" >&2
   exit 1
 fi
@@ -102,8 +110,10 @@ grep -qF 'Flow history' "$app" >/dev/null
 ! grep -qF 'flow-diagram-slot' "$app" >/dev/null
 grep -qF 'Needs attention' "$app" >/dev/null
 grep -qF 'aria-current' "$header" >/dev/null
-grep -qF 'v6-more-toggle' "$header" >/dev/null
-grep -qF "nav.classList.toggle('more-open')" "$header" >/dev/null
+grep -qF 'contains-current' "$header" >/dev/null
+grep -qF 'closeMore' "$header" >/dev/null
+! grep -qF 'v6-more-toggle' "$header" >/dev/null
+! grep -qF "nav.classList.toggle('more-open')" "$header" >/dev/null
 ! grep -qF "el.querySelector('.v6-side-nav')" "$header" >/dev/null
 grep -qF 'mobile-zone-dock' "$app" >/dev/null
 grep -qF 'has-zone-dock' "$app" >/dev/null
@@ -179,10 +189,14 @@ grep -qF "mountComponent('zone-actuator-card')" "$app" >/dev/null
 ! grep -qF 'minmax(0,.95fr)' "$app" >/dev/null
 grep -qF 'class="zone-chipstrip" role="tablist"' "$app" >/dev/null
 ! grep -qF 'zo-status' "$app" >/dev/null
-! grep -qF 'zo-merge' "$app" >/dev/null
 ! grep -qF 'zone-overview-card' "$app" >/dev/null
-! grep -qF 'zoneMergeMeta' "$app" >/dev/null
-! grep -qF 'parseSyncTarget' "$app" >/dev/null
+grep -qF 'zoneMergeMeta' "$app" >/dev/null
+grep -qF 'parseSyncTarget' "$app" >/dev/null
+grep -qF 'zoneMergeClass' "$app" >/dev/null
+grep -qF 'is-merged' "$app" >/dev/null
+grep -qF 'zo-pair-start' "$app" >/dev/null
+grep -qF 'zo-pair-cont' "$app" >/dev/null
+grep -qF 'overview.zone.mergedWith' "$app" >/dev/null
 grep -qF 'key.syncTo(z)' "$app" >/dev/null
 grep -qF 'zone-id-short' "$app" >/dev/null
 grep -qF 'zone-id-long' "$app" >/dev/null
@@ -313,12 +327,14 @@ grep -qF "colorSchemeMedia.addEventListener('change', update)" "$theme" >/dev/nu
 grep -qF ':root[data-color-scheme="light"]' "$tokens_css" >/dev/null
 ! grep -qF 'Accent theme' "$header" >/dev/null
 ! grep -qF 'hdr-theme' "$header" >/dev/null
-grep -qF 'Appearance' "$app" >/dev/null
-grep -qF "mountComponent('settings-appearance-card')" "$app" >/dev/null
-grep -qF "import './components/settings/settings-appearance-card.js'" "$main" >/dev/null
-grep -qF 'settings-appearance-card' "$root/web/dashboard-src/components/settings/settings-appearance-card.js" >/dev/null
-grep -qF "'settings.appearance.title': 'Appearance'" "$i18n" >/dev/null
+! grep -qF 'Appearance' "$app" >/dev/null
+! grep -qF 'appearance-slot' "$app" >/dev/null
+! grep -qF 'settings-appearance-card' "$app" >/dev/null
+! grep -qF 'settings-appearance-card' "$main" >/dev/null
+! grep -qF 'settings.appearance.' "$i18n" >/dev/null
+! test -e "$root/web/dashboard-src/components/settings/settings-appearance-card.js"
 ! grep -qF '>Appearance<' "$header" >/dev/null
+! grep -qF 'and appearance' "$header" >/dev/null
 grep -qF 'color-scheme\" content=\"light dark' "$dashboard_cpp" >/dev/null
 grep -qF 'HeatingProfile' "$root/components/lv6_config_store/lv6_types.h" >/dev/null
 grep -qF 'HeatDemandSummary' "$root/components/lv6_config_store/lv6_types.h" >/dev/null

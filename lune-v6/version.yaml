@@ -2,5 +2,5 @@ substitutions:
   # Product version. `make build` / `make deploy` append -<build>.
   # `make release` (optional VERSION=v1.2.3) compiles without a build suffix.
   firmware_version: "v1.0.0"
-  firmware_build: "153"
-  firmware_suffix: "-153"
+  firmware_build: "154"
+  firmware_suffix: "-154"

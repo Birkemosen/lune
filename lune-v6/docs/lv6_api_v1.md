@@ -55,10 +55,9 @@ legacy bookmarks that redirect to `/`.
   - `POST /api/v1/room-temperatures` — EXTERNAL room-temp ingest by `sensor_id` (V6 maps to zone)
   - `GET /api/v1/settings/export[?include_learned=0|1]` — configuration backup as a
     downloadable JSON document. See "Maintenance endpoints".
-  - `POST /api/v1/absorb-window` — house-level absorb arm (Touch). Auth + TTL like
-    setpoint-command; currently returns `501 not_implemented` after ledger write
-    (P3 stub). Runtime arm lands in P5. Fixtures under
-    `shared/contracts/absorb-command/`.
+  - `POST /api/v1/absorb-window` — house-level absorb arm/disarm (Touch). Auth +
+    TTL like setpoint-command; runtime arm/disarm with ledger (`clamp_applied`,
+    normalized `reason`). Fixtures under `shared/contracts/absorb-command/`.
   - `POST /api/v1/authority/lease` — V6-A-only authenticated Touch lease acquisition
     and renewal. The URL-encoded form body contains `installation_id`, `coordinator_id`, `lease_id`,
     `sequence`, `issued_ms`, a 30–120 second `duration_ms`, optional `degraded`, and optional
@@ -564,33 +563,59 @@ with the same names remain accepted during dashboard/coordinator migration.
 
 ### `POST /api/v1/absorb-window`
 
-House-level absorb arm (coordinator-owned). Same authority authentication as
-setpoint-command (`X-Lune-Authority-Key`, `auth_timestamp_s`, single-use
-`auth_nonce`). TTL is clamped to 60–7200 s. The arm is **runtime-only** and does
-not survive reboot.
+House-level absorb arm/disarm (coordinator-owned). Same authority authentication
+as setpoint-command (`X-Lune-Authority-Key`, `auth_timestamp_s`, single-use
+`auth_nonce`). TTL is clamped to 60–7200 s; `clamp_applied` is true in the
+response and ledger when the accepted TTL differs from the request. The arm is
+**runtime-only** and does not survive reboot.
+
+Optional `action`: `arm` (default) or `disarm`. Disarm is idempotent: it ends
+forced absorption immediately and leaves local auto-detection active (also under
+a Touch lease). After disarm or TTL expiry, auto-detection resumes on the next
+control cycle.
+
+Optional `reason` is ledger/display only. Known codes: `thermal_buffer`,
+`energy_cost`. Unknown values are stored as `other` and never rejected. V6 does
+not change control behaviour from `reason`.
 
 Shared fixtures: [`shared/contracts/absorb-command/`](../../shared/contracts/absorb-command/).
 
-Request:
+Arm request:
 
 ```json
 {
   "request_id": "absorb-fc-001",
+  "action": "arm",
   "source": "lune-touch",
-  "reason": "odin preload hour",
+  "reason": "thermal_buffer",
   "ttl_s": 1800,
   "auth_timestamp_s": 1713111111,
   "auth_nonce": "n-absorb-001"
 }
 ```
 
-**P3 status:** after a successful auth + TTL parse + ledger write the route
-returns `501` with `error.code = "not_implemented"` (no runtime arm yet). Touch
-keeps its client behind a feature flag until P5 enables the effect.
+Disarm request:
 
-Auth failures use the normal v1 error envelope (`403` / `409` / `503`). Reactive
-auto-detection of preheat absorption remains live under a Touch lease when no
-arm is active (fail-safe-on).
+```json
+{
+  "request_id": "absorb-fc-001-disarm",
+  "action": "disarm",
+  "source": "lune-touch",
+  "auth_timestamp_s": 1713111112,
+  "auth_nonce": "n-absorb-disarm-001"
+}
+```
+
+Arm success returns `status: "armed"` with `ttl_s`, `ttl_requested_s`, and
+`clamp_applied`. Disarm returns `status: "disarmed"` with `end_reason`
+(`disarm` or prior `expired`). Auth failures use the normal v1 error envelope
+(`403` / `409` / `503`). Reactive auto-detection of preheat absorption remains
+live under a Touch lease when no arm is active (fail-safe-on).
+
+`GET /api/v1/overview` exposes house-level
+`absorb: { state, reason, end_reason }` (`state`: `idle` | `reactive` | `armed`).
+Dashboard entities `text-preheat_absorbing`, `text-preheat_absorb_reason`, and
+`text-preheat_absorb_end_reason` mirror the same fields.
 
 ### `POST /api/v1/commands`
 

@@ -93,6 +93,8 @@ export const gkey = {
   preheatAbsorbBandC: 'number-preheat_absorb_band_c',
   preheatDetectDeltaC: 'number-preheat_detect_delta_c',
   preheatAbsorbing: 'text-preheat_absorbing',
+  preheatAbsorbReason: 'text-preheat_absorb_reason',
+  preheatAbsorbEndReason: 'text-preheat_absorb_end_reason',
   authorityState: 'text-authority_state',
   authorityReason: 'text-authority_reason',
   authorityInstallationId: 'text-authority_installation_id',

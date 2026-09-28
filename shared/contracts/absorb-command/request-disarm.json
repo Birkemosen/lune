@@ -1,0 +1,8 @@
+{
+  "request_id": "absorb-fc-001-disarm",
+  "action": "disarm",
+  "source": "lune-touch",
+  "reason": "thermal_buffer",
+  "auth_timestamp_s": 1713111112,
+  "auth_nonce": "n-absorb-disarm-001"
+}

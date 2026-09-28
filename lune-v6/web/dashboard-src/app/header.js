@@ -21,6 +21,7 @@ import { fmtUp } from '../utils/format.js';
 import { localize, subscribeLanguage, t } from '../core/i18n.js';
 import { LIVE_STATUS_CSS, liveStatusHtml, paintLiveStatus } from '../core/lds-live-status.generated.js';
 import { NAV_SWITCH_CSS, navSwitchHtml } from '../core/lds-nav-switch.generated.js';
+import { TAB_BAR_CSS, tabItemHtml, tabMoreHtml } from '../core/lds-tab-bar.generated.js';
 import { setEnabled } from '../core/api.js';
 
 const css = `
@@ -47,13 +48,13 @@ const css = `
 .v6-side-nav { display:flex; flex:1; flex-direction:column; gap:0; min-height:0; }
 .v6-nav-group { margin:0 0 18px; }
 .v6-nav-heading { display:block; padding:14px 10px 6px; color:var(--text-faint); font-size:.62rem; font-weight:750; letter-spacing:.1em; text-transform:uppercase; pointer-events:none; }
-.v6-side-link {
+.v6-side-link,.lds-tab-item.v6-side-link {
   position:relative; display:flex; align-items:center; gap:8px; width:100%; min-height:var(--nav-item-height,36px);
   padding:0 10px; border:0; border-radius:8px; color:var(--text-muted); background:transparent;
-  text-decoration:none; font-size:.8rem; font-weight:600; text-align:left; cursor:pointer;
+  text-decoration:none; font:inherit; font-size:.8rem; font-weight:600; text-align:left; cursor:pointer;
 }
-.v6-side-link:hover { color:var(--text-strong); background:var(--inset); }
-.v6-side-link.active { color:var(--text-strong); background:var(--fill-forest); }
+.v6-side-link:hover,.lds-tab-item.v6-side-link:hover { color:var(--text-strong); background:var(--inset); }
+.v6-side-link.active,.lds-tab-item.v6-side-link.active,.lds-tab-item.v6-side-link.is-active { color:var(--text-strong); background:var(--fill-forest); }
 .v6-side-link .dot {
   width:8px; height:8px; border-radius:50%; background:var(--ok); flex:0 0 auto;
   box-shadow:0 0 8px var(--ok);
@@ -78,44 +79,32 @@ const css = `
   color:var(--text-on-accent); font-size:9px; font-weight:800; line-height:12px; text-align:center;
   display:inline-grid; place-items:center;
 }
-.v6-nav-dot { margin-left:auto; width:8px; height:8px; border-radius:50%; background:var(--accent); flex:0 0 auto; }
-.v6-nav-dot[hidden] { display:none !important; }
-.v6-nav-dot.is-warn { background:var(--state-warn); }
+.nav-dot,.v6-nav-dot { margin-left:auto; width:8px; height:8px; border-radius:50%; background:var(--accent); flex:0 0 auto; }
+.nav-dot[hidden],.v6-nav-dot[hidden] { display:none !important; }
+.nav-dot.is-warn,.v6-nav-dot.is-warn { background:var(--state-warn); }
 .menu-icon { width:14px; height:14px; flex:0 0 auto; fill:none; stroke:currentColor; stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round; color:var(--text-faint); }
 .v6-nav-zones { display:flex; flex-direction:column; gap:2px; }
 .v6-nav-row { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:4px; }
 .v6-nav-row .v6-side-link { min-width:0; }
 .v6-side-utility { margin-top:auto; padding-top:12px; border-top:1px solid var(--separator); }
-.v6-more-toggle { display:none; }
-.v6-tab-zones { display:none !important; }
 @media (min-width:901px) {
-  .v6-side-link .menu-icon { display:none; }
+  .v6-side-link .menu-icon,.lds-tab-item.v6-side-link .menu-icon { display:none; }
 }
 @media (max-width:900px) {
   .v6-toolbar { min-height:48px; }
   .v6-toolbar-trailing { gap:8px; }
-  .v6-side-nav { display:grid; grid-template-columns:repeat(4,1fr); gap:4px; }
-  .v6-nav-group { display:contents; }
-  .v6-nav-heading, .v6-side-utility, .lds-live-status, .v6-nav-zones { display:none !important; }
-  .v6-side-link { justify-content:center; flex-direction:column; gap:2px; min-height:var(--nav-row-height,52px); padding:4px; font-size:.68rem; width:auto; }
+  .v6-nav-heading,.v6-side-utility,.lds-live-status,.v6-nav-zones,.v6-nav-wide-only { display:none !important; }
   .v6-side-link .dot { display:none; }
-  .v6-side-link[data-section="settings"],
-  .v6-side-link[data-section="motorlab"],
-  .v6-side-link[data-panel] { display:none; }
-  .v6-tab-zones { display:flex !important; }
-  .v6-more-toggle { display:flex; }
-  .v6-side-nav.more-open { grid-template-columns:repeat(3,minmax(0,1fr)); }
-  .v6-side-nav.more-open .v6-side-link[data-section="settings"],
-  .v6-side-nav.more-open .v6-side-link[data-section="motorlab"]:not([hidden]),
-  .v6-side-nav.more-open .v6-side-link[data-panel] { display:flex; }
-  .v6-side-nav.more-open .v6-side-utility { display:contents; border:0; padding:0; margin:0; }
-  .v6-side-nav.more-open .v6-side-utility .v6-side-link { display:flex; }
-  .v6-nav-dot { position:absolute; top:6px; right:10px; margin-left:0; width:7px; height:7px; }
+  .lds-tab-more.contains-current > summary,.nav-more.contains-current > summary,
+  .lds-tab-more[open] > summary,.nav-more[open] > summary {
+    background:var(--fill-forest); color:var(--text-strong);
+  }
 }
 `;
 injectStyle('hv6-header', css);
 injectStyle('lds-live-status', LIVE_STATUS_CSS);
 injectStyle('lds-nav-switch', NAV_SWITCH_CSS);
+injectStyle('lds-tab-bar', TAB_BAR_CSS);
 
 const toolbarTemplate = () => `
   <header class="v6-toolbar" aria-label="View toolbar">
@@ -123,35 +112,60 @@ const toolbarTemplate = () => `
     <div class="v6-toolbar-trailing"><button type="button" class="v6-attention-badge" id="hdr-attention" hidden></button><button type="button" class="v6-update-badge" id="hdr-update" hidden></button></div>
   </header>`;
 
+const ICONS = {
+  overview: '<rect x="4" y="4" width="6" height="9"/><rect x="14" y="4" width="6" height="4"/><rect x="4" y="17" width="6" height="3"/><rect x="14" y="12" width="6" height="8"/>',
+  zones: '<path d="M5 19V9l7-5 7 5v10"/><path d="M9 19v-6h6v6"/>',
+  diagnostics: '<path d="M4 19h16M6 16V8m4 8V4m4 12v-6m4 6V7"/><path d="m5 5 3 2 4-4 4 3 3-2"/>',
+  motorlab: '<path d="M3 12h3l2-6 3 12 2-8 2 4h6"/><circle cx="19" cy="12" r="1.4"/>',
+  touch: '<path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/><circle cx="12" cy="12" r="3.5"/>',
+  hydraulics: '<path d="M4 18h16M7 18V9m5 9V5m5 13v-6"/>',
+  comfort: '<path d="M12 4v3M8 8l-2-2M16 8l2-2M6 13h12M9 13c0 4 3 7 3 7s3-3 3-7"/>',
+  motors: '<circle cx="12" cy="12" r="3"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M18.4 5.6 17 7M7 17l-1.4 1.4"/>',
+  device: '<rect x="5" y="4" width="14" height="16" rx="2"/><path d="M9 8h6M9 12h6M9 16h3"/>',
+  help: '<circle cx="12" cy="12" r="9"/><path d="M9.8 9a2.4 2.4 0 1 1 3.7 2c-.9.6-1.5 1.1-1.5 2.3M12 17h.01"/>',
+};
+
 const icon = (content) => `<svg class="menu-icon" viewBox="0 0 24 24" aria-hidden="true">${content}</svg>`;
-const navDot = (kind) => `<span class="v6-nav-dot${kind === 'warn' ? ' is-warn' : ''}" data-nav-dot hidden aria-hidden="true"></span>`;
+const navDot = (kind) => `<span class="nav-dot v6-nav-dot${kind === 'warn' ? ' is-warn' : ''}" data-nav-dot hidden aria-hidden="true"></span>`;
+
+const moreMenuHtml = () => [
+  tabItemHtml({ id: 'settings', label: 'Touch', iconSvg: ICONS.touch, className: 'v6-side-link', attrs: 'data-panel="touch" data-nav-dot-host="touch"' }),
+  tabItemHtml({ id: 'settings', label: 'Hydraulics', iconSvg: ICONS.hydraulics, className: 'v6-side-link', attrs: 'data-panel="hydraulics"' }),
+  tabItemHtml({ id: 'settings', label: 'Comfort', iconSvg: ICONS.comfort, className: 'v6-side-link', attrs: 'data-panel="comfort"' }),
+  tabItemHtml({ id: 'settings', label: 'Motors', iconSvg: ICONS.motors, className: 'v6-side-link', attrs: 'data-panel="motors"' }),
+  tabItemHtml({ id: 'settings', label: 'Device', iconSvg: ICONS.device, className: 'v6-side-link', attrs: 'data-panel="device"' }),
+  tabItemHtml({ id: 'motorlab', label: 'Motor lab', iconSvg: ICONS.motorlab, className: 'v6-side-link', attrs: 'hidden data-motorlab-link' }),
+  tabItemHtml({ id: 'help', label: 'Help', iconSvg: ICONS.help, className: 'v6-side-link' }),
+].join('');
 
 const navTemplate = () => `
-  <nav class="v6-side-nav" aria-label="Primary navigation">
-    <div class="v6-nav-group">
+  <nav class="v6-side-nav lds-tab-bar" aria-label="Primary navigation" data-lds-tab-bar>
+    <div class="v6-nav-group lds-tab-group">
       <div class="v6-nav-heading">Home</div>
-      <a href="#" class="v6-side-link" data-section="overview">${icon('<rect x="4" y="4" width="6" height="9"/><rect x="14" y="4" width="6" height="4"/><rect x="4" y="17" width="6" height="3"/><rect x="14" y="12" width="6" height="8"/>')}<span class="menu-label">Overview</span></a>
+      ${tabItemHtml({ id: 'overview', label: 'Overview', iconSvg: ICONS.overview, className: 'v6-side-link' })}
     </div>
-    <div class="v6-nav-group">
+    <div class="v6-nav-group lds-tab-group">
       <div class="v6-nav-heading">Zones</div>
       <div class="v6-nav-zones" data-zone-nav></div>
-      <a href="#" class="v6-side-link v6-tab-zones" data-section="zones" hidden>${icon('<path d="M5 19V9l7-5 7 5v10"/><path d="M9 19v-6h6v6"/>')}<span class="menu-label">Zones</span>${navDot('warn')}</a>
+      ${tabItemHtml({ id: 'zones', label: 'Zones', iconSvg: ICONS.zones, className: 'v6-side-link', compactOnly: true, attrs: 'data-nav-dot-host="zones"' })}
     </div>
-    <div class="v6-nav-group">
+    <div class="v6-nav-group lds-tab-group">
       <div class="v6-nav-heading">System</div>
-      <a href="#" class="v6-side-link" data-section="diagnostics">${icon('<path d="M4 19h16M6 16V8m4 8V4m4 12v-6m4 6V7"/><path d="m5 5 3 2 4-4 4 3 3-2"/>')}<span class="menu-label">Diagnostics</span>${navDot('warn')}</a>
-      <a href="#" class="v6-side-link" data-section="motorlab" hidden>${icon('<path d="M3 12h3l2-6 3 12 2-8 2 4h6"/><circle cx="19" cy="12" r="1.4"/>')}<span class="menu-label">Motor lab</span></a>
+      ${tabItemHtml({ id: 'diagnostics', label: 'Diagnostics', iconSvg: ICONS.diagnostics, className: 'v6-side-link', attrs: 'data-nav-dot-host="diagnostics"' })}
+      <div class="v6-nav-wide-only">
+        <a href="#" class="v6-side-link" data-section="motorlab" data-motorlab-link hidden>${icon(ICONS.motorlab)}<span class="menu-label">Motor lab</span></a>
+      </div>
     </div>
-    <div class="v6-nav-group">
+    <div class="v6-nav-group v6-nav-wide-only">
       <div class="v6-nav-heading">Settings</div>
-      <a href="#" class="v6-side-link" data-section="settings" data-panel="touch">${icon('<path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"/><circle cx="12" cy="12" r="3.5"/>')}<span class="menu-label">Touch</span>${navDot()}</a>
-      <a href="#" class="v6-side-link" data-section="settings" data-panel="hydraulics">${icon('<path d="M4 18h16M7 18V9m5 9V5m5 13v-6"/>')}<span class="menu-label">Hydraulics</span></a>
-      <a href="#" class="v6-side-link" data-section="settings" data-panel="comfort">${icon('<path d="M12 4v3M8 8l-2-2M16 8l2-2M6 13h12M9 13c0 4 3 7 3 7s3-3 3-7"/>')}<span class="menu-label">Comfort</span></a>
-      <a href="#" class="v6-side-link" data-section="settings" data-panel="motors">${icon('<circle cx="12" cy="12" r="3"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M18.4 5.6 17 7M7 17l-1.4 1.4"/>')}<span class="menu-label">Motors</span></a>
-      <a href="#" class="v6-side-link" data-section="settings" data-panel="device">${icon('<rect x="5" y="4" width="14" height="16" rx="2"/><path d="M9 8h6M9 12h6M9 16h3"/>')}<span class="menu-label">Device</span></a>
+      <a href="#" class="v6-side-link" data-section="settings" data-panel="touch" data-nav-dot-host="touch">${icon(ICONS.touch)}<span class="menu-label">Touch</span>${navDot()}</a>
+      <a href="#" class="v6-side-link" data-section="settings" data-panel="hydraulics">${icon(ICONS.hydraulics)}<span class="menu-label">Hydraulics</span></a>
+      <a href="#" class="v6-side-link" data-section="settings" data-panel="comfort">${icon(ICONS.comfort)}<span class="menu-label">Comfort</span></a>
+      <a href="#" class="v6-side-link" data-section="settings" data-panel="motors">${icon(ICONS.motors)}<span class="menu-label">Motors</span></a>
+      <a href="#" class="v6-side-link" data-section="settings" data-panel="device">${icon(ICONS.device)}<span class="menu-label">Device</span></a>
     </div>
-    <button type="button" class="v6-side-link v6-more-toggle" aria-expanded="false">${icon('<circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/>')}<span class="menu-label">More</span>${navDot()}</button>
-    <div class="v6-side-utility"><a href="#" class="v6-side-link" data-section="help">${icon('<circle cx="12" cy="12" r="9"/><path d="M9.8 9a2.4 2.4 0 1 1 3.7 2c-.9.6-1.5 1.1-1.5 2.3M12 17h.01"/>')}<span class="menu-label">Help</span></a></div>
+    ${tabMoreHtml({ label: 'More', menuHtml: moreMenuHtml() })}
+    <div class="v6-side-utility v6-nav-wide-only"><a href="#" class="v6-side-link" data-section="help">${icon(ICONS.help)}<span class="menu-label">Help</span></a></div>
     ${liveStatusHtml({ live: false, label: 'Offline', uptime: '---', ip: '---' })}
   </nav>`;
 
@@ -169,7 +183,7 @@ const settingsTitleMap = {
   hydraulics: ['Settings', 'Hydraulics', 'Heating mode, manifold probes and minimum flow'],
   comfort: ['Settings', 'Comfort', 'Room clocks and preheat absorption'],
   motors: ['Settings', 'Motors', 'Drivers, profile and learning limits'],
-  device: ['Settings', 'Device', 'Connection, firmware, backup and appearance'],
+  device: ['Settings', 'Device', 'Connection, firmware and backup'],
 };
 
 function openAttentionTarget(action) {
@@ -325,21 +339,25 @@ component({ tag: 'hv6-header', render: toolbarTemplate, onMount(ctx, el) {
 }});
 
 component({ tag: 'hv6-sidebar', render: navTemplate, onMount(ctx, el) {
-  const nav = el;
-  const more = el.querySelector('.v6-more-toggle');
-  const settingsLink = el.querySelector('[data-section="settings"][data-panel="touch"]');
-  const zonesTab = el.querySelector('.v6-tab-zones');
+  const more = el.querySelector('[data-lds-tab-more]');
+  const moreSummary = more?.querySelector('summary') || null;
+  const zonesTab = el.querySelector('.nav-compact-only[data-section="zones"]');
   const diagnosticsLink = el.querySelector('[data-section="diagnostics"]');
   const zoneNav = el.querySelector('[data-zone-nav]');
   let uptimeBaseS = 0;
   let uptimeBaseAt = Date.now();
   let haveUptime = false;
 
-  function setDot(link, on, sectionLabel, attentionLabel) {
+  function closeMore() {
+    if (more?.open) more.open = false;
+  }
+
+  function setDot(link, on, sectionLabel, attentionLabel, warn = false) {
     if (!link) return;
     const dot = link.querySelector('[data-nav-dot]');
     if (!dot) return;
     dot.hidden = !on;
+    dot.classList.toggle('is-warn', !!warn);
     if (on) {
       link.setAttribute('aria-label', `${sectionLabel}, ${attentionLabel}`);
       link.title = attentionLabel;
@@ -355,21 +373,25 @@ component({ tag: 'hv6-sidebar', render: navTemplate, onMount(ctx, el) {
     const faultLabel = faults === 1
       ? t('status.attention.zoneFaultOne')
       : t('status.attention.zoneFaultMany', { count: faults });
-    setDot(settingsLink, touch, t('nav.settings'), t('status.attention.approveTouch'));
-    setDot(zonesTab, faults > 0, t('nav.zones'), faultLabel);
-    setDot(diagnosticsLink, faults > 0, t('nav.diagnostics'), faultLabel);
+    el.querySelectorAll('[data-section="settings"][data-panel="touch"]').forEach((link) => {
+      setDot(link, touch, t('nav.settings'), t('status.attention.approveTouch'));
+    });
+    setDot(zonesTab, faults > 0, t('nav.zones'), faultLabel, true);
+    setDot(diagnosticsLink, faults > 0, t('nav.diagnostics'), faultLabel, true);
     if (more) {
-      const moreDot = more.querySelector('[data-nav-dot]');
+      const moreDot = more.querySelector('summary [data-nav-dot]');
       if (moreDot) {
         moreDot.hidden = !touch;
         moreDot.classList.toggle('is-warn', false);
       }
-      if (touch) {
-        more.setAttribute('aria-label', t('status.attention.moreHasSettings'));
-        more.title = t('status.attention.approveTouch');
-      } else {
-        more.removeAttribute('aria-label');
-        more.removeAttribute('title');
+      if (moreSummary) {
+        if (touch) {
+          moreSummary.setAttribute('aria-label', t('status.attention.moreHasSettings'));
+          moreSummary.title = t('status.attention.approveTouch');
+        } else {
+          moreSummary.setAttribute('aria-label', t('nav.more'));
+          moreSummary.removeAttribute('title');
+        }
       }
     }
   }
@@ -438,12 +460,17 @@ component({ tag: 'hv6-sidebar', render: navTemplate, onMount(ctx, el) {
       if (on && link.dataset.panel) on = link.dataset.panel === panel;
       if (on && !link.dataset.panel && section === 'settings') on = false;
       link.classList.toggle('active', on);
+      link.classList.toggle('is-active', on);
       link.setAttribute('aria-current', on ? 'page' : 'false');
     });
     if (zonesTab) {
       const on = section === 'zones';
       zonesTab.classList.toggle('active', on);
+      zonesTab.classList.toggle('is-active', on);
       zonesTab.setAttribute('aria-current', on ? 'page' : 'false');
+    }
+    if (more) {
+      more.classList.toggle('contains-current', section === 'settings' || section === 'help' || section === 'motorlab');
     }
     paintZoneNav();
     paintNavAttention();
@@ -464,14 +491,11 @@ component({ tag: 'hv6-sidebar', render: navTemplate, onMount(ctx, el) {
       event.preventDefault();
       setSelectedZone(Number(zoneBtn.dataset.selectZone));
       setSection('zones');
-      if (nav.classList.contains('more-open')) {
-        nav.classList.remove('more-open');
-        if (more) more.setAttribute('aria-expanded', 'false');
-      }
+      closeMore();
       return;
     }
     const link = event.target.closest('[data-section]');
-    if (!link || !el.contains(link) || link.classList.contains('v6-more-toggle')) return;
+    if (!link || !el.contains(link)) return;
     event.preventDefault();
     const section = link.dataset.section;
     if (link.dataset.panel) setSettingsPanel(link.dataset.panel);
@@ -480,15 +504,7 @@ component({ tag: 'hv6-sidebar', render: navTemplate, onMount(ctx, el) {
     } else {
       setSection(section);
     }
-    if (nav.classList.contains('more-open')) {
-      nav.classList.remove('more-open');
-      if (more) more.setAttribute('aria-expanded', 'false');
-    }
-  });
-
-  if (more) more.addEventListener('click', () => {
-    const open = nav.classList.toggle('more-open');
-    more.setAttribute('aria-expanded', String(open));
+    closeMore();
   });
 
   subscribeDashboard('section', update);

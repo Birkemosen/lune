@@ -16,6 +16,8 @@ artifacts:
     dest: lune-v6/web/dashboard-src/core/lds-comfort-control.generated.js
   - kind: nav-switch-js
     dest: lune-v6/web/dashboard-src/core/lds-nav-switch.generated.js
+  - kind: tab-bar-js
+    dest: lune-v6/web/dashboard-src/core/lds-tab-bar.generated.js
   - kind: form-js
     dest: lune-v6/web/dashboard-src/core/lds-form.generated.js
   - kind: int-split-js

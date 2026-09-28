@@ -73,6 +73,10 @@ app-root{display:block}.app{min-height:100vh;position:relative}.shell{position:r
 .zone-id-short{display:inline}.zone-id-long{display:none}@media(min-width:901px){.zone-id-short{display:none}.zone-id-long{display:inline}}.zone-label-compact .zone-id-short{display:inline!important}.zone-label-compact .zone-id-long{display:none!important}.zone-title-id{min-width:0}.zone-title-name{font-weight:500;color:var(--text-faint)}@media(max-width:900px){.zone-label-compact .zone-title-name,.mobile-zone-dock .zone-title-name{display:none}}
 .zone-overview{margin:0 0 22px;padding:0 0 16px;border-bottom:1px solid var(--separator)}.zone-detail-heading{margin:0 0 12px;padding:0;border:0}.zone-detail-heading .eyebrow,.zone-detail-heading p{display:none}.zone-detail-heading h2{margin:4px 0 0;color:var(--text-strong);font-size:1.2rem;font-weight:650;letter-spacing:-.02em}.zones-detail-pane{min-width:0}.int-split>*{min-width:0}.zone-detail-secondary{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .mobile-zone-dock{display:none}
+.loops .loop.is-merged{border-color:color-mix(in srgb,var(--accent) 36%,transparent);background:color-mix(in srgb,var(--accent) 6%,transparent)}
+.loops .loop.zo-pair-start{border-top-right-radius:2px;border-bottom-right-radius:2px;margin-right:-4px;padding-right:10px;z-index:1}
+.loops .loop.zo-pair-cont{border-top-left-radius:2px;border-bottom-left-radius:2px;margin-left:-4px;padding-left:10px;border-left-color:color-mix(in srgb,var(--accent) 28%,var(--separator))}
+.loops .loop.is-selected.is-merged,.loops .loop[aria-current="true"].is-merged{background:var(--fill-forest);border-color:color-mix(in srgb,var(--accent) 28%,transparent)}
 .zone-live{min-width:0}
 .provision .form-actions:not(:has(button)){display:none}
 .provision .zone-actuator-slot{margin-top:4px;padding-top:16px;border-top:1px solid var(--separator)}
@@ -151,7 +155,7 @@ const template = () => `
 <div class="settings-panel settings-disclosure" data-panel="hydraulics"><div class="settings-panel-block"><h3 data-i18n="settings.heatingMode.panelTitle">Heating mode</h3><p data-i18n="settings.heatingMode.panelSub">How valves behave when rooms reach setpoint</p><div class="heating-mode-slot"></div></div><div class="settings-panel-block settings-panel-block--probes" data-collapse-block="return-temp"><div class="settings-panel-head settings-panel-head--pair"><div class="settings-panel-copy"><h3 data-i18n="settings.manifold.panelTitle">Manifold and probes</h3><p data-i18n="settings.manifold.panelSub">Valve polarity and live 1-Wire readings</p></div><div class="settings-panel-pair"><div class="settings-panel-copy"><h3 data-i18n="settings.returnTemp.title">Return temperature</h3><p class="settings-probe-mode" data-probe-mode-hint data-i18n="settings.returnTemp.modeOff">2 probes · flow/return only</p></div><div class="settings-panel-toggle" data-toggle-host="return-temp"></div></div></div><div class="manifold-slot"></div></div></div>
 <div class="settings-panel settings-disclosure" data-panel="comfort"><div class="settings-panel-block settings-panel-block--toggle" data-collapse-block="ble-clock"><div class="settings-panel-head"><div class="settings-panel-copy"><h3 data-i18n="settings.bleClock.title">Room clocks</h3><p data-i18n="settings.bleClock.panelSub">Shelly BLU display time</p></div><div class="settings-panel-toggle" data-toggle-host="ble-clock"></div></div><div class="settings-panel-body ble-clock-slot" data-collapse-body="ble-clock"></div></div><div class="settings-panel-block settings-panel-block--toggle" data-collapse-block="preheat"><div class="settings-panel-head"><div class="settings-panel-copy"><h3 data-i18n="settings.preheat.title">Preheat absorption</h3><p data-i18n="settings.preheat.panelSub">Local handling of external preload</p></div><div class="settings-panel-toggle" data-toggle-host="preheat"></div></div><div class="settings-panel-body preheat-slot" data-collapse-body="preheat"></div></div></div>
 <div class="settings-panel settings-disclosure" data-panel="motors"><div class="settings-panel-block"><h3>Motor configuration</h3><p>Drivers, profile and learning limits</p><div class="motor-slot"></div></div></div>
-<div class="settings-panel settings-disclosure" data-panel="device"><div class="settings-panel-block"><h3>Connection</h3><p>Network and firmware identity</p><div class="connectivity-slot"></div></div><div class="settings-panel-block"><h3>Firmware</h3><p>Version, updates and manual upload</p><div class="firmware-slot"></div></div><div class="settings-panel-block"><h3>Backup and restore</h3><p>Save or reapply local configuration</p><div class="backup-slot"></div></div><div class="settings-panel-block"><h3>Appearance</h3><p>Product colour</p><div class="appearance-slot"></div></div></div>
+<div class="settings-panel settings-disclosure" data-panel="device"><div class="settings-panel-block"><h3>Connection</h3><p>Network and firmware identity</p><div class="connectivity-slot"></div></div><div class="settings-panel-block"><h3>Firmware</h3><p>Version, updates and manual upload</p><div class="firmware-slot"></div></div><div class="settings-panel-block"><h3>Backup and restore</h3><p>Save or reapply local configuration</p><div class="backup-slot"></div></div></div>
 </div></section>
 <section class="sec" data-section="diagnostics"><div class="diagnostics-readiness status-summary"></div><button type="button" class="diagnostics-attention attention" data-open-zones hidden></button><div class="diagnostics-layout"><details class="disclosure diagnostics-disclosure"><summary>Runtime health<small>Processor and memory</small></summary><div class="disclosure-body system-health-slot"></div></details><details class="disclosure diagnostics-disclosure"><summary>Hardware and connectivity<small>Network, firmware and I²C</small></summary><div class="disclosure-body diag-health-slot"></div></details><details class="disclosure diagnostics-disclosure"><summary>Device logs<small>Live firmware events</small></summary><div class="disclosure-body logs-main-col"></div></details><details class="disclosure diagnostics-disclosure"><summary>Manual motor control<small>Temporary service operation</small></summary><div class="disclosure-body manual-control-col"></div></details><details class="disclosure diagnostics-disclosure danger-zone"><summary>Recovery and restart<small>Actions that interrupt normal operation</small></summary><div class="disclosure-body diag-actions-slot"></div></details></div></section>
 <section class="sec" data-section="motorlab"><div class="motor-lab-slot"></div></section>
@@ -179,7 +183,6 @@ component({ tag:'app-root', render:template, onMount(ctx, el) {
   el.querySelector('.motor-slot').appendChild(mountComponent('settings-motor-calibration-card'));
   el.querySelector('.firmware-slot').appendChild(mountComponent('settings-firmware-card'));
   el.querySelector('.backup-slot').appendChild(mountComponent('settings-backup-card'));
-  el.querySelector('.appearance-slot').appendChild(mountComponent('settings-appearance-card'));
   el.querySelector('.diag-actions-slot').appendChild(mountComponent('settings-control-card'));
   el.querySelector('.manual-control-col').appendChild(mountComponent('diag-manual-badge'));
   el.querySelector('.manual-control-col').appendChild(mountComponent('diag-zone-motor-card',{zone:getDashboardValue('selectedZone')||1}));
@@ -187,8 +190,9 @@ component({ tag:'app-root', render:template, onMount(ctx, el) {
   const labSection=el.querySelector('.sec[data-section="motorlab"]');
   function updateMotorLab(){
     const show=isDevBuild(es(gkey.firmware)||getDashboardValue('firmwareVersion'));
-    const navLink=el.querySelector('.v6-side-link[data-section="motorlab"]');
-    if(navLink) navLink.hidden=!show;
+    el.querySelectorAll('[data-motorlab-link],.v6-side-link[data-section="motorlab"]').forEach((navLink)=>{
+      navLink.hidden=!show;
+    });
     if(labSection) labSection.hidden=!show;
     if(show&&labSlot&&!labSlot.firstChild) labSlot.appendChild(mountComponent('diag-motor-lab'));
     if(!show&&getDashboardValue('section')==='motorlab') setSection('diagnostics');
@@ -241,7 +245,51 @@ component({ tag:'app-root', render:template, onMount(ctx, el) {
       t('state.off');
   }
   function isDesktopZoneSwitcher(){ return window.matchMedia('(min-width: 901px)').matches; }
+  function parseSyncTarget(raw){
+    const text=String(raw||'').trim();
+    if(!text||/^none$/i.test(text)||text==='0'||text==='-1') return 0;
+    const match=text.match(/(\d+)/);
+    const zone=match?Number(match[1]):0;
+    return zone>=1&&zone<=6?zone:0;
+  }
+  function zoneMergeMeta(){
+    const targets=[0,0,0,0,0,0,0];
+    for(let z=1;z<=6;z++) targets[z]=parseSyncTarget(es(key.syncTo(z)));
+    const roots=[0,0,0,0,0,0,0];
+    for(let z=1;z<=6;z++){
+      let root=z;
+      for(let guard=0;guard<6;guard++){
+        const next=targets[root];
+        if(!next||next<1||next>6) break;
+        if(next===z){ root=z; break; }
+        root=next;
+      }
+      roots[z]=root;
+    }
+    const membersByRoot={};
+    for(let z=1;z<=6;z++) (membersByRoot[roots[z]]||=[]).push(z);
+    const partners=[[],[],[],[],[],[],[]];
+    for(let z=1;z<=6;z++){
+      const members=membersByRoot[roots[z]]||[z];
+      const isGroup=members.length>1&&members.some((member)=>targets[member]>0);
+      partners[z]=isGroup?members.filter((member)=>member!==z):[];
+    }
+    return {roots,partners};
+  }
+  function zoneMergeClass(merge, value){
+    const mergedWith=merge.partners[value];
+    if(!mergedWith.length) return '';
+    const pairStart=mergedWith.includes(value+1)&&merge.roots[value]===merge.roots[value+1];
+    const pairCont=mergedWith.includes(value-1)&&merge.roots[value]===merge.roots[value-1];
+    return ['is-merged',pairStart?'zo-pair-start':'',pairCont?'zo-pair-cont':''].filter(Boolean).join(' ');
+  }
+  function zoneMergeLabel(merge, value){
+    const mergedWith=merge.partners[value];
+    if(!mergedWith.length) return '';
+    return t('overview.zone.mergedWith',{zones:mergedWith.map(zoneIdShort).join(', ')});
+  }
   function rebuildZoneOverview(){
+    const merge=zoneMergeMeta();
     const selectedZone=getDashboardValue('selectedZone')||1;
     const desktop=isDesktopZoneSwitcher();
     zoneOverview.setAttribute('role',desktop?'group':'list');
@@ -259,7 +307,9 @@ component({ tag:'app-root', render:template, onMount(ctx, el) {
       const friendly=kind==='unused'?'—':(zoneFriendly(value)||'—');
       const displayState=zoneDisplayState(value);
       const statusLabel=zoneStatusLabel(displayState, value);
-      const ariaLabel=`${label}, ${current}, valve ${valve}, ${statusLabel}`.replace(/"/g,'&quot;');
+      const mergeText=zoneMergeLabel(merge, value);
+      const mergeClass=zoneMergeClass(merge, value);
+      const ariaLabel=`${label}, ${current}, valve ${valve}, ${statusLabel}${mergeText?', '+mergeText:''}`.replace(/"/g,'&quot;');
       const attrs=desktop
         ? `data-zone-select="${value}" aria-current="${selected?'true':'false'}" aria-label="${ariaLabel}" title="${ariaLabel}" tabindex="${selected?'0':'-1'}"`
         : `role="listitem" aria-label="${ariaLabel}" title="${ariaLabel}"`;
@@ -271,6 +321,7 @@ component({ tag:'app-root', render:template, onMount(ctx, el) {
         kind,
         selected: desktop && selected,
         tag: desktop ? 'button' : 'div',
+        className: mergeClass,
         attrs,
       });
     }).join('');
@@ -288,6 +339,7 @@ component({ tag:'app-root', render:template, onMount(ctx, el) {
   }
   function rebuildOverviewLoops(){
     if(!overviewLoops) return;
+    const merge=zoneMergeMeta();
     overviewLoops.innerHTML=Array.from({length:6},(_,i)=>{
       const value=i+1;
       const label=zoneLabel(value);
@@ -300,13 +352,16 @@ component({ tag:'app-root', render:template, onMount(ctx, el) {
       const friendly=kind==='unused'?'—':(zoneFriendly(value)||'—');
       const displayState=zoneDisplayState(value);
       const statusLabel=zoneStatusLabel(displayState, value);
-      const ariaLabel=`${label}, ${current}, valve ${valve}, ${statusLabel}`.replace(/"/g,'&quot;');
+      const mergeText=zoneMergeLabel(merge, value);
+      const mergeClass=zoneMergeClass(merge, value);
+      const ariaLabel=`${label}, ${current}, valve ${valve}, ${statusLabel}${mergeText?', '+mergeText:''}`.replace(/"/g,'&quot;');
       return loopCellHtml({
         id: shortId,
         name: friendly,
         temp: current,
         level,
         kind,
+        className: mergeClass,
         attrs: `data-open-zone="${value}" aria-label="${ariaLabel}" title="${ariaLabel}"`,
       });
     }).join('');

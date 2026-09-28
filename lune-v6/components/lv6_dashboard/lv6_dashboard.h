@@ -115,6 +115,8 @@ struct DashboardSnapshot {
   float             preheat_detect_delta_c;
   bool              preheat_absorbing;
   uint8_t           absorb_mode{0};  ///< 0 idle, 1 reactive, 2 armed
+  char              absorb_reason[32]{};       ///< thermal_buffer | energy_cost | other | ""
+  char              absorb_end_reason[16]{};   ///< "" | disarm | expired
   float             zone_loop_share_pct[6]{};
   uint8_t           zone_absorb_capacity_rank[6]{};
   float             zone_relative_kv[6]{};  ///< Kv at current commanded opening
@@ -357,8 +359,10 @@ class LV6Dashboard : public Component, public AsyncWebHandler {
   // Absorb-window command ledger (runtime-only; last accepted envelope).
   char absorb_ledger_request_id_[48]{};
   char absorb_ledger_source_[32]{};
-  char absorb_ledger_reason_[80]{};
+  char absorb_ledger_reason_[32]{};
+  char absorb_ledger_action_[16]{};  ///< arm | disarm
   float absorb_ledger_ttl_s_{0.0f};
+  bool absorb_ledger_clamp_applied_{false};
   uint32_t absorb_ledger_at_ms_{0};
 
   SemaphoreHandle_t snapshot_lock_{nullptr};

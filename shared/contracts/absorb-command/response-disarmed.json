@@ -3,14 +3,12 @@
   "version": "v1",
   "data": {
     "accepted": true,
-    "status": "armed",
-    "request_id": "absorb-fc-001",
+    "status": "disarmed",
+    "request_id": "absorb-fc-001-disarm",
     "source": "lune-touch",
     "reason": "thermal_buffer",
-    "action": "arm",
-    "ttl_s": 1800,
-    "ttl_requested_s": 1800,
-    "clamp_applied": false,
+    "action": "disarm",
+    "end_reason": "disarm",
     "survives_reboot": false
   }
 }

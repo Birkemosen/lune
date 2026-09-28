@@ -12,6 +12,7 @@
 #include "flow_allocator.h"
 #include "control_mode_policy.h"
 #include "preheat_absorb_logic.h"
+#include "absorb_command_logic.h"
 #include "preheat_policy.h"
 #include "probe_mapping.h"
 #include "thermal_model.h"
@@ -1460,6 +1461,8 @@ static float floor_absorb_factor(FloorType type) {
 void Lv6ZoneController::update_preheat_absorb_(const DeviceConfig &cfg,
                                                const std::array<float, NUM_ZONES> &temps,
                                                const std::array<float, NUM_ZONES> &setpoints) {
+  expire_absorb_arm_if_needed_();
+
   float flow = read_manifold_flow_();
   float temp_sum = 0.0f;
   uint8_t temp_count = 0;
@@ -1506,10 +1509,25 @@ bool Lv6ZoneController::absorb_arm_active_() const {
   return static_cast<int32_t>(absorb_arm_expires_at_ms_ - now) > 0;
 }
 
+void Lv6ZoneController::expire_absorb_arm_if_needed_() {
+  if (absorb_arm_expires_at_ms_ == 0)
+    return;
+  if (absorb_arm_active_())
+    return;
+  // TTL elapsed — release arm ownership; local auto-detection resumes immediately.
+  absorb_arm_expires_at_ms_ = 0;
+  absorb_arm_source_ = 0;
+  absorb_arm_request_id_[0] = '\0';
+  std::strncpy(absorb_arm_end_reason_, "expired", sizeof(absorb_arm_end_reason_) - 1);
+  absorb_arm_end_reason_[sizeof(absorb_arm_end_reason_) - 1] = '\0';
+  ESP_LOGI(TAG, "Absorb window EXPIRED — local auto-detection resumes");
+}
+
 float Lv6ZoneController::arm_absorb_window(uint32_t ttl_s, const char *request_id, const char *reason) {
-  ttl_s = std::clamp(ttl_s, uint32_t{60}, uint32_t{7200});  // 1 min .. 2 h
+  ttl_s = std::clamp(ttl_s, lv6::absorb_command::TTL_MIN_S, lv6::absorb_command::TTL_MAX_S);
   absorb_arm_expires_at_ms_ = esphome::millis() + ttl_s * 1000u;
   absorb_arm_source_ = 1;
+  absorb_arm_end_reason_[0] = '\0';
   if (request_id && request_id[0]) {
     std::strncpy(absorb_arm_request_id_, request_id, sizeof(absorb_arm_request_id_) - 1);
     absorb_arm_request_id_[sizeof(absorb_arm_request_id_) - 1] = '\0';
@@ -1524,16 +1542,32 @@ float Lv6ZoneController::arm_absorb_window(uint32_t ttl_s, const char *request_i
   }
   preheat_absorb_active_ = true;
   preheat_absorb_detect_cycles_ = 0;
-  ESP_LOGI(TAG, "Absorb window ARMED ttl=%lus request_id=%s",
-           static_cast<unsigned long>(ttl_s), absorb_arm_request_id_);
+  ESP_LOGI(TAG, "Absorb window ARMED ttl=%lus request_id=%s reason=%s",
+           static_cast<unsigned long>(ttl_s), absorb_arm_request_id_, absorb_arm_reason_);
   return static_cast<float>(ttl_s);
 }
 
 void Lv6ZoneController::clear_absorb_arm() {
+  const bool was_active = absorb_arm_active_();
+  const bool had_timer = absorb_arm_expires_at_ms_ != 0;
+  if (was_active) {
+    std::strncpy(absorb_arm_end_reason_, "disarm", sizeof(absorb_arm_end_reason_) - 1);
+    absorb_arm_end_reason_[sizeof(absorb_arm_end_reason_) - 1] = '\0';
+  } else if (had_timer && absorb_arm_end_reason_[0] == '\0') {
+    std::strncpy(absorb_arm_end_reason_, "expired", sizeof(absorb_arm_end_reason_) - 1);
+    absorb_arm_end_reason_[sizeof(absorb_arm_end_reason_) - 1] = '\0';
+  }
   absorb_arm_expires_at_ms_ = 0;
   absorb_arm_source_ = 0;
   absorb_arm_request_id_[0] = '\0';
-  absorb_arm_reason_[0] = '\0';
+  // Disarm ends forced absorption immediately; auto-detection resumes next cycle.
+  if (was_active || had_timer) {
+    preheat_absorb_active_ = false;
+    preheat_absorb_detect_cycles_ = 0;
+  }
+  if (was_active || had_timer) {
+    ESP_LOGI(TAG, "Absorb window DISARMED — local auto-detection resumes");
+  }
 }
 
 uint8_t Lv6ZoneController::absorb_mode_code() const {

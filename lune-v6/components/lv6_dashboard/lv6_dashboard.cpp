@@ -1,4 +1,5 @@
 #include "lv6_dashboard.h"
+#include "../lv6_zone_controller/absorb_command_logic.h"
 #include "../lv6_zone_controller/hydraulic_diagnostics.h"
 #include "../lv6_zone_controller/probe_mapping.h"
 #include "../lv6_zone_controller/thermal_model.h"
@@ -497,6 +498,17 @@ void LV6Dashboard::update_snapshot_() {
     s.hp_trim_floor_pct = ctrl_cfg.hp_trim_floor_pct;
     s.preheat_absorbing = this->zone_controller_ && this->zone_controller_->is_preheat_absorbing();
     s.absorb_mode = this->zone_controller_ ? this->zone_controller_->absorb_mode_code() : 0;
+    if (this->zone_controller_) {
+      std::strncpy(s.absorb_reason, this->zone_controller_->absorb_arm_reason(),
+                   sizeof(s.absorb_reason) - 1);
+      s.absorb_reason[sizeof(s.absorb_reason) - 1] = '\0';
+      std::strncpy(s.absorb_end_reason, this->zone_controller_->absorb_arm_end_reason(),
+                   sizeof(s.absorb_end_reason) - 1);
+      s.absorb_end_reason[sizeof(s.absorb_end_reason) - 1] = '\0';
+    } else {
+      s.absorb_reason[0] = '\0';
+      s.absorb_end_reason[0] = '\0';
+    }
     if (this->zone_controller_) {
       s.effective_heating_mode = this->zone_controller_->get_effective_control_mode();
       s.heating_mode_from_touch = this->zone_controller_->is_touch_authority_active() &&
@@ -1570,9 +1582,13 @@ void LV6Dashboard::handle_state_(AsyncWebServerRequest *request) {
   appendf(buf, BUF_SIZE, offset,
       "\"switch-preheat_absorb_enabled\":{\"state\":\"%s\"},"
       "\"text-preheat_absorbing\":{\"state\":\"%s\"},"
+      "\"text-preheat_absorb_reason\":{\"state\":\"%s\"},"
+      "\"text-preheat_absorb_end_reason\":{\"state\":\"%s\"},"
       "\"number-preheat_absorb_band_c\":{\"value\":%s},",
       snap->preheat_absorb_enabled ? "on" : "off",
       snap->absorb_mode == 2 ? "armed" : (snap->absorb_mode == 1 ? "reactive" : "idle"),
+      snap->absorb_reason,
+      snap->absorb_end_reason,
       num_buf);
   format_float_token(num_buf, sizeof(num_buf), snap->preheat_detect_delta_c, 1);
   appendf(buf, BUF_SIZE, offset, "\"number-preheat_detect_delta_c\":{\"value\":%s},", num_buf);
@@ -1764,6 +1780,9 @@ void LV6Dashboard::handle_overview_(AsyncWebServerRequest *request) {
   else
     snprintf(critical_zone_tok, sizeof(critical_zone_tok), "null");
 
+  const char *absorb_state =
+      snap->absorb_mode == 2 ? "armed" : (snap->absorb_mode == 1 ? "reactive" : "idle");
+
   snprintf(this->json_buf_, JSON_BUF_SIZE,
            "{\"ok\":true,\"version\":\"v1\",\"data\":{\"node\":{\"model\":\"lune-v6\","
            "\"firmware\":\"%s\",\"ip\":\"%s\",\"ssid\":\"%s\",\"mac\":\"%s\","
@@ -1775,6 +1794,7 @@ void LV6Dashboard::handle_overview_(AsyncWebServerRequest *request) {
            "\"heat_demand\":{\"recommendation\":\"%s\",\"critical_zone\":%s,"
            "\"critical_opening_ratio\":%.3f,\"saturated_s\":%lu,\"demanding_zones\":%u,"
            "\"headroom\":%s}},"
+           "\"absorb\":{\"state\":\"%s\",\"reason\":\"%s\",\"end_reason\":\"%s\"},"
            "\"zones\":{\"count\":%u,\"enabled\":%u,\"active\":%u,\"open_valves\":%u},"
            "\"manifold\":{\"flow_c\":%s,\"flow_temp_c\":%s,\"return_c\":%s,\"mean_valve_pct\":%s},"
            "\"system\":{\"wifi_dbm\":%s,\"drivers_enabled\":%s,\"free_internal_kb\":%lu,"
@@ -1799,6 +1819,7 @@ void LV6Dashboard::handle_overview_(AsyncWebServerRequest *request) {
            static_cast<unsigned long>(snap->heat_demand.saturated_s),
            static_cast<unsigned>(snap->heat_demand.demanding_zones),
            snap->heat_demand.headroom ? "true" : "false",
+           absorb_state, snap->absorb_reason, snap->absorb_end_reason,
            static_cast<unsigned>(lv6::NUM_ZONES), static_cast<unsigned>(enabled),
            static_cast<unsigned>(active), static_cast<unsigned>(active),
            flow, flow, ret, demand, wifi, snap->drivers_enabled ? "true" : "false",
@@ -3253,8 +3274,8 @@ void LV6Dashboard::handle_authority_revoke_(AsyncWebServerRequest *request) {
 }
 
 void LV6Dashboard::handle_absorb_window_(AsyncWebServerRequest *request, const char *body) {
-  // P3: parse v1 envelope + auth + ledger, then 501. Runtime arm lands in P5.
-  // Touch builds its client against this stub behind a feature flag.
+  // House-level absorb arm/disarm (Touch). Same auth + nonce ledger as setpoint-command.
+  // Runtime effect: arm forces absorb until TTL/disarm; local auto-detection resumes after.
   if (this->config_store_ == nullptr) {
     this->send_v1_(request, 503, "auth_unavailable", "Authentication configuration unavailable");
     return;
@@ -3277,33 +3298,77 @@ void LV6Dashboard::handle_absorb_window_(AsyncWebServerRequest *request, const c
     this->send_v1_(request, 409, "replayed_nonce", "Absorb command nonce was already used");
     return;
   }
+  if (this->zone_controller_ == nullptr) {
+    this->send_v1_(request, 503, "controller_unavailable", "Zone controller unavailable");
+    return;
+  }
 
-  float ttl_s = 1800.0f;
-  parse_num_param(request, body, "ttl_s", &ttl_s);
-  if (!std::isfinite(ttl_s))
-    ttl_s = 1800.0f;
-  ttl_s = std::clamp(ttl_s, 60.0f, 7200.0f);
+  char action[16]{};
+  parse_text_param(request, body, "action", "arm", action, sizeof(action));
+  const bool disarm = lv6::absorb_command::is_disarm_action(action);
 
   char request_id[48]{};
   char source[32]{};
-  char reason[80]{};
+  char reason_raw[48]{};
+  char reason[32]{};
   parse_text_param(request, body, "request_id", "", request_id, sizeof(request_id));
   parse_text_param(request, body, "source", "lune-touch", source, sizeof(source));
-  parse_text_param(request, body, "reason", "absorb window", reason, sizeof(reason));
+  parse_text_param(request, body, "reason", "", reason_raw, sizeof(reason_raw));
+  lv6::absorb_command::normalize_reason(reason_raw, reason, sizeof(reason));
 
-  // Ledger (runtime-only) — records the accepted envelope even though the arm
-  // effect is not implemented yet.
+  float ttl_requested = 1800.0f;
+  bool clamp_applied = false;
+  uint32_t ttl_s = 0;
+  if (!disarm) {
+    parse_num_param(request, body, "ttl_s", &ttl_requested);
+    ttl_s = lv6::absorb_command::clamp_ttl_s(ttl_requested, &clamp_applied);
+  }
+
+  // Ledger (runtime-only) — accepted envelope including clamp + normalized reason.
   std::strncpy(this->absorb_ledger_request_id_, request_id, sizeof(this->absorb_ledger_request_id_) - 1);
   this->absorb_ledger_request_id_[sizeof(this->absorb_ledger_request_id_) - 1] = '\0';
   std::strncpy(this->absorb_ledger_source_, source, sizeof(this->absorb_ledger_source_) - 1);
   this->absorb_ledger_source_[sizeof(this->absorb_ledger_source_) - 1] = '\0';
   std::strncpy(this->absorb_ledger_reason_, reason, sizeof(this->absorb_ledger_reason_) - 1);
   this->absorb_ledger_reason_[sizeof(this->absorb_ledger_reason_) - 1] = '\0';
-  this->absorb_ledger_ttl_s_ = ttl_s;
+  std::strncpy(this->absorb_ledger_action_, disarm ? "disarm" : "arm",
+               sizeof(this->absorb_ledger_action_) - 1);
+  this->absorb_ledger_action_[sizeof(this->absorb_ledger_action_) - 1] = '\0';
+  this->absorb_ledger_ttl_s_ = static_cast<float>(ttl_s);
+  this->absorb_ledger_clamp_applied_ = clamp_applied;
   this->absorb_ledger_at_ms_ = millis();
 
-  this->send_v1_(request, 501, "not_implemented",
-                 "Absorb window accepted for ledger but effect not yet enabled");
+  if (disarm) {
+    // Idempotent: clearing when no arm is active is still accepted.
+    this->zone_controller_->clear_absorb_arm();
+    if (data_revision_ != UINT32_MAX)
+      data_revision_++;
+    char response[384];
+    snprintf(response, sizeof(response),
+             "{\"ok\":true,\"version\":\"v1\",\"data\":{\"accepted\":true,\"status\":\"disarmed\","
+             "\"request_id\":\"%s\",\"source\":\"%s\",\"reason\":\"%s\",\"action\":\"disarm\","
+             "\"end_reason\":\"%s\",\"survives_reboot\":false}}",
+             request_id, source, reason, this->zone_controller_->absorb_arm_end_reason());
+    send_text_(request, 200, "application/json", response, true, "no-store");
+    return;
+  }
+
+  const float accepted_ttl =
+      this->zone_controller_->arm_absorb_window(ttl_s, request_id, reason);
+  this->absorb_ledger_ttl_s_ = accepted_ttl;
+  if (data_revision_ != UINT32_MAX)
+    data_revision_++;
+
+  char response[448];
+  snprintf(response, sizeof(response),
+           "{\"ok\":true,\"version\":\"v1\",\"data\":{\"accepted\":true,\"status\":\"armed\","
+           "\"request_id\":\"%s\",\"source\":\"%s\",\"reason\":\"%s\",\"action\":\"arm\","
+           "\"ttl_s\":%lu,\"ttl_requested_s\":%.0f,\"clamp_applied\":%s,"
+           "\"survives_reboot\":false}}",
+           request_id, source, reason, static_cast<unsigned long>(accepted_ttl),
+           std::isfinite(ttl_requested) ? ttl_requested : 1800.0f,
+           clamp_applied ? "true" : "false");
+  send_text_(request, 200, "application/json", response, true, "no-store");
 }
 
 // Square-waves LATCH_ARM for a few seconds. A single arm edge is a ~3 V spike
