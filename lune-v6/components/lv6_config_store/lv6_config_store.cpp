@@ -180,7 +180,7 @@ void Lv6ConfigStore::loop() {
 void Lv6ConfigStore::dump_config() {
   ESP_LOGCONFIG(TAG, "LV6 Config Store:");
   ESP_LOGCONFIG(TAG, "  Controller ID: %s", config_.system.controller_id);
-  ESP_LOGCONFIG(TAG, "  Supply temp: %.1f°C", config_.system.supply_temp_c);
+  ESP_LOGCONFIG(TAG, "  Heating mode: %s", heating_profile_to_string(config_.control.mode));
   ESP_LOGCONFIG(TAG, "  Manifold type: %s", config_.manifold_type == ManifoldType::NC ? "NC" : "NO");
   for (uint8_t i = 0; i < NUM_ZONES; i++) {
     ESP_LOGCONFIG(TAG, "  Zone %d: %s, setpoint=%.1f°C, max=%.0f%%",
@@ -440,15 +440,6 @@ void Lv6ConfigStore::update_balancing(const BalancingConfig &balancing) {
   mark_dirty();
 }
 
-HeliosConfig Lv6ConfigStore::get_helios_config() const {
-  if (mutex_ == nullptr)
-    return config_.helios;
-  xSemaphoreTake(mutex_, portMAX_DELAY);
-  HeliosConfig copy = config_.helios;
-  xSemaphoreGive(mutex_);
-  return copy;
-}
-
 AuthorityConfig Lv6ConfigStore::get_authority_config() const {
   if (mutex_ == nullptr)
     return config_.authority;
@@ -471,37 +462,6 @@ void Lv6ConfigStore::update_authority(const AuthorityConfig &authority) {
   }
   xSemaphoreTake(mutex_, portMAX_DELAY);
   config_.authority = sanitized;
-  xSemaphoreGive(mutex_);
-  mark_dirty();
-}
-
-ForecastConfig Lv6ConfigStore::get_forecast_config() const {
-  if (mutex_ == nullptr)
-    return config_.forecast;
-  xSemaphoreTake(mutex_, portMAX_DELAY);
-  ForecastConfig copy = config_.forecast;
-  xSemaphoreGive(mutex_);
-  return copy;
-}
-
-void Lv6ConfigStore::update_forecast(const ForecastConfig &forecast) {
-  ForecastConfig sanitized = forecast;
-  sanitized.latitude = std::max(-90.0f, std::min(90.0f, sanitized.latitude));
-  sanitized.longitude = std::max(-180.0f, std::min(180.0f, sanitized.longitude));
-  sanitized.fetch_interval_s = std::max<uint16_t>(900, sanitized.fetch_interval_s);
-  sanitized.recompute_interval_s = std::max<uint16_t>(60, sanitized.recompute_interval_s);
-  sanitized.load_threshold = std::max(0.1f, std::min(10.0f, sanitized.load_threshold));
-  sanitized.gain_c_per_load = std::max(0.0f, std::min(2.0f, sanitized.gain_c_per_load));
-  sanitized.max_offset_c = std::max(0.0f, std::min(3.0f, sanitized.max_offset_c));
-  sanitized.indoor_ref_c = std::max(10.0f, std::min(28.0f, sanitized.indoor_ref_c));
-
-  if (mutex_ == nullptr) {
-    config_.forecast = sanitized;
-    mark_dirty();
-    return;
-  }
-  xSemaphoreTake(mutex_, portMAX_DELAY);
-  config_.forecast = sanitized;
   xSemaphoreGive(mutex_);
   mark_dirty();
 }
@@ -741,7 +701,29 @@ void Lv6ConfigStore::load_config_() {
   xSemaphoreTake(mutex_, portMAX_DELAY);
   had_all_sections &= load_section(handle, KEY_SYSTEM, SYSTEM_CONFIG_VERSION, config_.system);
   had_all_sections &= load_section(handle, KEY_CONTROL, CONTROL_CONFIG_VERSION, config_.control);
-  had_all_sections &= load_section(handle, KEY_PROBES, PROBE_CONFIG_VERSION, config_.probes);
+  {
+    // Stale probes blobs are reset to ProbeConfig{} inside load_section. An
+    // *absent* section still falls back to the main blob — rewrite the pre-v2
+    // factory map (zones→P1–P6, manifold P7/P8) so return-temperature probes
+    // stay disabled until the user enables them.
+    const bool had_probes =
+        load_section(handle, KEY_PROBES, PROBE_CONFIG_VERSION, config_.probes);
+    if (!had_probes && config_.probes.manifold_flow_probe == 6 &&
+        config_.probes.manifold_return_probe == 7) {
+      bool legacy_zones = true;
+      for (uint8_t z = 0; z < NUM_ZONES; z++) {
+        if (config_.probes.zone_return_probe[z] != static_cast<int8_t>(z)) {
+          legacy_zones = false;
+          break;
+        }
+      }
+      if (legacy_zones) {
+        ESP_LOGW(TAG, "Section 'probes' carried pre-v2 factory map; resetting to defaults");
+        config_.probes = ProbeConfig{};
+      }
+    }
+    had_all_sections &= had_probes;
+  }
   had_all_sections &= load_section(handle, KEY_PID, PID_CONFIG_VERSION, config_.pid);
   had_all_sections &= load_section(handle, KEY_MOTOR_CFG, MOTOR_CONFIG_VERSION, config_.motor);
   had_all_sections &= load_section(handle, KEY_MANIFOLD, MANIFOLD_CONFIG_VERSION, config_.manifold_type);
@@ -750,7 +732,6 @@ void Lv6ConfigStore::load_config_() {
   if (!had_authority)
     had_authority = load_legacy_authority(handle, config_.authority);
   had_all_sections &= had_authority;
-  had_all_sections &= load_section(handle, KEY_FORECAST, FORECAST_CONFIG_VERSION, config_.forecast);
   xSemaphoreGive(mutex_);
   if (had_all_sections)
     ESP_LOGI(TAG, "Global settings restored from durable keys");
@@ -796,7 +777,6 @@ void Lv6ConfigStore::save_config_() {
   save_section(handle, KEY_MANIFOLD, MANIFOLD_CONFIG_VERSION, snapshot.manifold_type);
   save_section(handle, KEY_BALANCING, BALANCING_CONFIG_VERSION, snapshot.balancing);
   save_section(handle, KEY_AUTHORITY, AUTHORITY_CONFIG_VERSION, snapshot.authority);
-  save_section(handle, KEY_FORECAST, FORECAST_CONFIG_VERSION, snapshot.forecast);
 
   nvs_commit(handle);
   nvs_close(handle);

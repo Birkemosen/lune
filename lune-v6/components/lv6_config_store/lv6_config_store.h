@@ -53,11 +53,8 @@ class Lv6ConfigStore : public esphome::Component {
   void update_motor(const MotorConfig &motor);
   void update_sensor_config(const SensorConfig &sensor_config);
   void update_balancing(const BalancingConfig &balancing);
-  HeliosConfig get_helios_config() const;  // legacy optimizer quiesce gate (.enabled)
   void update_authority(const AuthorityConfig &authority);
   AuthorityConfig get_authority_config() const;
-  void update_forecast(const ForecastConfig &forecast);
-  ForecastConfig get_forecast_config() const;
 
   // Motor telemetry persistence (calibration data)
   void save_motor_telemetry(uint8_t motor, const MotorTelemetry &telemetry);
@@ -75,7 +72,7 @@ class Lv6ConfigStore : public esphome::Component {
   static constexpr const char *KEY_SENSORS = "sensors";  // BLE pairing, survives main-blob resets
   static constexpr const char *KEY_ZONES = "zones";      // Zone config, survives main-blob resets
   // Remaining global-settings sections, each mirrored to its own durable key so
-  // user settings (preheat, legacy forecast, authority, balancing, ...) survive a
+  // user settings (preheat, authority, balancing, ...) survive a
   // legacy main-config reset just like zones/sensors do.
   static constexpr const char *KEY_SYSTEM = "system";
   static constexpr const char *KEY_CONTROL = "control";
@@ -85,7 +82,6 @@ class Lv6ConfigStore : public esphome::Component {
   static constexpr const char *KEY_MANIFOLD = "manifold";
   static constexpr const char *KEY_BALANCING = "balancing";
   static constexpr const char *KEY_AUTHORITY = "authority";
-  static constexpr const char *KEY_FORECAST = "forecast";
   static constexpr uint64_t DIRTY_DELAY_US = 1000000ULL;  // 1 second
   // Dedicated NVS persistence task — keeps flash commits off the main loop
   // task so loopTask isn't blocked for the 50–500 ms a commit can take.

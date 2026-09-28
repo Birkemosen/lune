@@ -10,6 +10,7 @@
 
 #include "lv6_zone_controller.h"
 #include "flow_allocator.h"
+#include "control_mode_policy.h"
 #include "preheat_absorb_logic.h"
 #include "preheat_policy.h"
 #include "probe_mapping.h"
@@ -180,18 +181,14 @@ bool Lv6ZoneController::try_get_system_snapshot(SystemSnapshot *out, uint32_t ti
   if (sys.active_zones > 0)
     sys.avg_valve_pct = sum_valve / static_cast<float>(sys.active_zones);
 
-  // Flow temperature modulation requests (only relevant with modulating heat source)
-  if (config_store_) {
-    auto cfg = config_store_->get_config();
-    if (cfg.balancing.secondary_flow_commissioning_enabled) {
-      sys.flow_temp_increase_requested = (sys.avg_valve_pct >= cfg.balancing.flow_increase_threshold_pct);
-      sys.flow_temp_decrease_requested = (sys.avg_valve_pct <= cfg.balancing.flow_decrease_threshold_pct);
-    }
-  }
-
   sys.manifold_flow_temp_c = read_manifold_flow_();
   sys.manifold_return_temp_c = read_manifold_return_();
   sys.preheat_absorbing = preheat_absorb_active_.load();
+  sys.heat_demand = heat_demand_;
+  sys.control_mode = config_store_ ? config_store_->get_config().control.mode : HeatingProfile::HEAT_PUMP;
+  sys.effective_control_mode = get_effective_control_mode();
+  sys.control_mode_from_touch = touch_authority_active_.load(std::memory_order_acquire) &&
+                                touch_control_mode_valid_.load(std::memory_order_acquire);
   sys.uptime_s = static_cast<uint32_t>(esp_timer_get_time() / 1000000);
   sys.free_heap = esp_get_free_heap_size();
   sys.cycle_count = cycle_count_;
@@ -662,43 +659,6 @@ void Lv6ZoneController::set_zone_area_m2(uint8_t zone, float area_m2) {
   ESP_LOGI(TAG, "Zone %d area: %.1f m2", zone + 1, area_m2);
 }
 
-void Lv6ZoneController::set_zone_wind_exposure(uint8_t zone, float exposure) {
-  if (zone >= NUM_ZONES || !config_store_)
-    return;
-  exposure = std::clamp(exposure, 0.0f, 1.0f);
-  auto cfg = config_store_->get_config();
-  if (std::fabs(cfg.zones[zone].wind_exposure - exposure) < 0.001f)
-    return;
-  cfg.zones[zone].wind_exposure = exposure;
-  config_store_->update_zone(zone, cfg.zones[zone]);
-  ESP_LOGI(TAG, "Zone %d wind exposure: %.2f", zone + 1, exposure);
-}
-
-void Lv6ZoneController::set_zone_solar_gain(uint8_t zone, float gain) {
-  if (zone >= NUM_ZONES || !config_store_)
-    return;
-  gain = std::clamp(gain, 0.0f, 1.0f);
-  auto cfg = config_store_->get_config();
-  if (std::fabs(cfg.zones[zone].solar_gain_factor - gain) < 0.001f)
-    return;
-  cfg.zones[zone].solar_gain_factor = gain;
-  config_store_->update_zone(zone, cfg.zones[zone]);
-  ESP_LOGI(TAG, "Zone %d solar gain: %.2f", zone + 1, gain);
-}
-
-void Lv6ZoneController::set_zone_thermal_lead_h(uint8_t zone, uint8_t hours) {
-  if (zone >= NUM_ZONES || !config_store_)
-    return;
-  if (hours > 48)
-    hours = 48;
-  auto cfg = config_store_->get_config();
-  if (cfg.zones[zone].thermal_lead_h == hours)
-    return;
-  cfg.zones[zone].thermal_lead_h = hours;
-  config_store_->update_zone(zone, cfg.zones[zone]);
-  ESP_LOGI(TAG, "Zone %d thermal lead: %u h", zone + 1, hours);
-}
-
 float Lv6ZoneController::get_zone_area_m2(uint8_t zone) const {
   if (zone >= NUM_ZONES || !config_store_)
     return 0.0f;
@@ -814,33 +774,13 @@ int8_t Lv6ZoneController::get_zone_sync(uint8_t zone) const {
 // Balancing Configuration
 // =============================================================================
 
-void Lv6ZoneController::set_dynamic_balancing_enabled(bool enabled) {
-  if (!config_store_)
-    return;
-  auto cfg = config_store_->get_config();
-  if (cfg.balancing.dynamic_balancing_enabled == enabled)
-    return;
-  cfg.balancing.dynamic_balancing_enabled = enabled;
-  config_store_->update_balancing(cfg.balancing);
-  balance_dirty_ = true;
-  ESP_LOGI(TAG, "Dynamic balancing: %s", enabled ? "ON" : "OFF");
-}
-
-bool Lv6ZoneController::is_dynamic_balancing_enabled() const {
-  if (!config_store_)
-    return false;
-  return config_store_->get_config().balancing.dynamic_balancing_enabled;
-}
-
 void Lv6ZoneController::set_balance_mode(BalanceMode mode) {
   if (!config_store_)
     return;
   auto cfg = config_store_->get_config();
-  bool want_legacy = (mode == BalanceMode::RETURN_TEMP);
-  if (cfg.balancing.mode == mode && cfg.balancing.dynamic_balancing_enabled == want_legacy)
+  if (cfg.balancing.mode == mode)
     return;
   cfg.balancing.mode = mode;
-  cfg.balancing.dynamic_balancing_enabled = want_legacy;  // keep legacy alias consistent
   config_store_->update_balancing(cfg.balancing);
   balance_dirty_ = true;
   ESP_LOGI(TAG, "Balance mode: %s", balance_mode_to_string(mode));
@@ -885,38 +825,6 @@ float Lv6ZoneController::get_secondary_min_total_opening_pct() const {
   return config_store_->get_config().balancing.secondary_min_total_opening_pct;
 }
 
-void Lv6ZoneController::set_flow_increase_threshold(float pct) {
-  if (!config_store_)
-    return;
-  pct = std::clamp(pct, 20.0f, 100.0f);
-  auto cfg = config_store_->get_config();
-  cfg.balancing.flow_increase_threshold_pct = pct;
-  config_store_->update_balancing(cfg.balancing);
-  ESP_LOGI(TAG, "Flow increase threshold: %.0f%%", pct);
-}
-
-float Lv6ZoneController::get_flow_increase_threshold() const {
-  if (!config_store_)
-    return 80.0f;
-  return config_store_->get_config().balancing.flow_increase_threshold_pct;
-}
-
-void Lv6ZoneController::set_flow_decrease_threshold(float pct) {
-  if (!config_store_)
-    return;
-  pct = std::clamp(pct, 5.0f, 80.0f);
-  auto cfg = config_store_->get_config();
-  cfg.balancing.flow_decrease_threshold_pct = pct;
-  config_store_->update_balancing(cfg.balancing);
-  ESP_LOGI(TAG, "Flow decrease threshold: %.0f%%", pct);
-}
-
-float Lv6ZoneController::get_flow_decrease_threshold() const {
-  if (!config_store_)
-    return 30.0f;
-  return config_store_->get_config().balancing.flow_decrease_threshold_pct;
-}
-
 void Lv6ZoneController::set_target_delta_t(float delta_c) {
   if (!config_store_)
     return;
@@ -932,6 +840,71 @@ float Lv6ZoneController::get_target_delta_t() const {
   if (!config_store_)
     return 5.0f;
   return config_store_->get_config().balancing.target_delta_t_c;
+}
+
+void Lv6ZoneController::set_touch_control_mode(bool valid, HeatingProfile mode) {
+  touch_control_mode_valid_.store(valid, std::memory_order_release);
+  touch_control_mode_.store(static_cast<uint8_t>(mode), std::memory_order_release);
+}
+
+HeatingProfile Lv6ZoneController::get_effective_control_mode() const {
+  if (!config_store_)
+    return HeatingProfile::HEAT_PUMP;
+  return control_mode_policy::resolve_mode(
+      config_store_->get_config().control.mode,
+      touch_authority_active_.load(std::memory_order_acquire),
+      touch_control_mode_valid_.load(std::memory_order_acquire),
+      static_cast<HeatingProfile>(touch_control_mode_.load(std::memory_order_acquire)));
+}
+
+HeatDemandSummary Lv6ZoneController::get_heat_demand() const {
+  return heat_demand_;
+}
+
+void Lv6ZoneController::set_heating_mode(HeatingProfile mode) {
+  if (!config_store_)
+    return;
+  auto cfg = config_store_->get_config();
+  if (cfg.control.mode == mode)
+    return;
+  cfg.control.mode = mode;
+  config_store_->update_control(cfg.control);
+  ESP_LOGI(TAG, "Heating mode: %s", heating_profile_to_string(mode));
+}
+
+void Lv6ZoneController::set_hp_overheat_margin_c(float margin_c) {
+  if (!config_store_)
+    return;
+  margin_c = std::clamp(margin_c, 0.3f, 3.0f);
+  auto cfg = config_store_->get_config();
+  if (std::fabs(cfg.control.hp_overheat_margin_c - margin_c) < 0.001f)
+    return;
+  cfg.control.hp_overheat_margin_c = margin_c;
+  config_store_->update_control(cfg.control);
+}
+
+void Lv6ZoneController::set_hp_base_pct(float pct) {
+  if (!config_store_)
+    return;
+  pct = std::clamp(pct, 30.0f, 100.0f);
+  auto cfg = config_store_->get_config();
+  if (std::fabs(cfg.control.hp_base_pct - pct) < 0.01f)
+    return;
+  cfg.control.hp_base_pct = pct;
+  if (cfg.control.hp_trim_floor_pct > pct)
+    cfg.control.hp_trim_floor_pct = pct;
+  config_store_->update_control(cfg.control);
+}
+
+void Lv6ZoneController::set_hp_trim_floor_pct(float pct) {
+  if (!config_store_)
+    return;
+  auto cfg = config_store_->get_config();
+  pct = std::clamp(pct, 0.0f, cfg.control.hp_base_pct);
+  if (std::fabs(cfg.control.hp_trim_floor_pct - pct) < 0.01f)
+    return;
+  cfg.control.hp_trim_floor_pct = pct;
+  config_store_->update_control(cfg.control);
 }
 
 // =============================================================================
@@ -1105,8 +1078,18 @@ void Lv6ZoneController::run_cycle_() {
       absorb_capacity_rank_[caps[r].zi] = static_cast<uint8_t>(r + 1);  // 1 = highest
   }
 
-  // Flow allocator: update debt/shares for enabled zones (A4).
-  {
+  // Flow allocator: heat-pump mode only (continuous share across demanding zones).
+  const HeatingProfile effective_mode = control_mode_policy::resolve_mode(
+      cfg.control.mode, touch_authority_active_.load(std::memory_order_acquire),
+      touch_control_mode_valid_.load(std::memory_order_acquire),
+      static_cast<HeatingProfile>(touch_control_mode_.load(std::memory_order_acquire)));
+  if (effective_mode != last_effective_mode_) {
+    normal_closed_.fill(false);
+    heat_demand_timers_ = {};
+    last_effective_mode_ = effective_mode;
+  }
+
+  if (effective_mode == HeatingProfile::HEAT_PUMP) {
     flow_allocator::ZoneSample samples[flow_allocator::MAX_ZONES]{};
     for (uint8_t i = 0; i < NUM_ZONES; i++) {
       samples[i].enabled = cfg.zones[i].enabled;
@@ -1140,11 +1123,15 @@ void Lv6ZoneController::run_cycle_() {
     flow_allocator::step(flow_alloc_, samples, dt_h, target_total);
     for (uint8_t i = 0; i < NUM_ZONES; i++)
       loop_share_pct_[i] = flow_alloc_.loop_share[i] * 100.0f;
+  } else {
+    flow_alloc_ = {};
+    loop_share_pct_.fill(0.0f);
   }
 
   for (uint8_t i = 0; i < NUM_ZONES; i++) {
     if (!cfg.zones[i].enabled) {
       target_positions[i] = 0.0f;
+      normal_closed_[i] = false;
       xSemaphoreTake(snapshot_mutex_, portMAX_DELAY);
       snapshots_[i].state = ZoneState::UNKNOWN;
       snapshots_[i].valve_position_pct = 0.0f;
@@ -1171,39 +1158,22 @@ void Lv6ZoneController::run_cycle_() {
       }
       absorb_band = cfg.control.preheat_absorb_band_c * cap_scale;
     }
-    ZoneState state = classify_zone_(temp, setpoint, cfg.control.comfort_band_c, preheat_advance, absorb_band);
+    ZoneState state = control_mode_policy::classify(
+        effective_mode, temp, setpoint, cfg.control.comfort_band_c, cfg.control.hp_overheat_margin_c,
+        preheat_advance, absorb_band, normal_closed_[i]);
     zone_states[i] = state;
 
-    float position = 0.0f;
-    bool was_overheated = false;
-
-    switch (state) {
-      case ZoneState::OVERHEATED:
-        position = 0.0f;
-        was_overheated = true;
-        break;
-      case ZoneState::SATISFIED:
-        // While absorbing, keep maintenance (or share-based) opening so the
-        // slab can take the buffer; otherwise maintenance base.
-        if (preheat_absorb_active_.load() && flow_alloc_.loop_share[i] > 0.0f)
-          position = std::max(cfg.control.maintenance_base_pct,
-                              flow_alloc_.opening_pct[i] * 0.5f);
-        else
-          position = cfg.control.maintenance_base_pct;
-        break;
-      case ZoneState::DEMAND:
-        // Heatpump path: continuous share from the flow allocator (A4).
-        position = flow_alloc_.opening_pct[i];
-        if (!(position > 1.0f)) {
-          position = compute_raw_position_(i, temp, setpoint);
-          position += cfg.control.demand_boost_pct;
-        }
-        position = std::clamp(position, 0.0f, cfg.zones[i].max_opening_pct);
-        break;
-      case ZoneState::UNKNOWN:
-        position = cfg.control.maintenance_base_pct;
-        break;
+    float raw_algo = 0.0f;
+    if (state == ZoneState::DEMAND) {
+      raw_algo = compute_raw_position_(i, temp, setpoint);
+      raw_algo += cfg.control.demand_boost_pct;
     }
+    float position = control_mode_policy::position_for_state(
+        effective_mode, state, flow_alloc_.opening_pct[i], raw_algo,
+        cfg.control.maintenance_base_pct, cfg.control.hp_base_pct, cfg.control.hp_trim_floor_pct,
+        cfg.control.hp_overheat_margin_c, temp, setpoint, cfg.zones[i].max_opening_pct,
+        preheat_absorb_active_.load(), absorb_band);
+    bool was_overheated = (state == ZoneState::OVERHEATED);
 
     position = apply_hydraulic_balance_(i, position);
     target_positions[i] = position;
@@ -1250,11 +1220,40 @@ void Lv6ZoneController::run_cycle_() {
   for (uint8_t i = 0; i < NUM_ZONES; i++)
     if (cfg.zones[i].enabled)
       pre_floor_total += pre_floor_positions[i];
-  const bool min_total_triggered = cfg.balancing.secondary_flow_commissioning_enabled &&
+  // Heat-pump mode keeps flow through the base opening; a total floor there
+  // would only fight the soft trim.
+  const bool floor_applies = effective_mode == HeatingProfile::NORMAL;
+  const bool min_total_triggered = floor_applies &&
+      cfg.balancing.secondary_flow_commissioning_enabled &&
       cfg.balancing.secondary_min_total_opening_pct > 0.0f &&
       pre_floor_total < cfg.balancing.secondary_min_total_opening_pct;
 
-  enforce_minimum_total_opening_(target_positions);
+  if (floor_applies)
+    enforce_minimum_total_opening_(target_positions);
+
+  // Heat-demand summary for Touch / Asgard feed-temperature trim (heat-pump mode).
+  {
+    control_mode_policy::HeatDemandZoneInput inputs[NUM_ZONES]{};
+    for (uint8_t i = 0; i < NUM_ZONES; i++) {
+      inputs[i].enabled = cfg.zones[i].enabled;
+      inputs[i].is_primary = (sync_roots[i] == static_cast<int8_t>(i));
+      inputs[i].state = zone_states[i];
+      inputs[i].opening_pct = target_positions[i];
+      inputs[i].max_opening_pct = cfg.zones[i].max_opening_pct;
+      inputs[i].pre_floor_opening_pct = pre_floor_positions[i];
+      if (valve_controller_) {
+        auto telem = valve_controller_->get_telemetry(i);
+        inputs[i].calibrated = (telem.learned_open_ms != 0 && telem.learned_close_ms != 0);
+      }
+    }
+    const uint32_t now_ms = esphome::millis();
+    uint32_t dt_ms = 0;
+    if (heat_demand_last_ms_ != 0 && now_ms > heat_demand_last_ms_)
+      dt_ms = now_ms - heat_demand_last_ms_;
+    heat_demand_last_ms_ = now_ms;
+    heat_demand_ = control_mode_policy::step_heat_demand(
+        heat_demand_timers_, dt_ms, effective_mode, cfg.control.hp_base_pct, inputs, NUM_ZONES);
+  }
 
   // The snapshot represents the final commanded target, including safety-flow
   // floors.  Keeping the pre-floor value here made the dashboard claim that a
@@ -2166,6 +2165,16 @@ void Lv6ZoneController::update_zone_display_states_() {
     if (!drivers_enabled) {
       snapshots_[i].display_state = ZoneDisplayState::OFF;
       continue;
+    }
+
+    // Live calibration / relearn: keep CALIBRATING even when a previous stroke
+    // is still stored (reset_and_relearn does not clear learned_* up front).
+    if (valve_controller_->is_calibrating()) {
+      const auto lp = valve_controller_->get_learning_progress();
+      if (lp.zone == i) {
+        snapshots_[i].display_state = ZoneDisplayState::CALIBRATING;
+        continue;
+      }
     }
 
     auto telem = valve_controller_->get_telemetry(i);

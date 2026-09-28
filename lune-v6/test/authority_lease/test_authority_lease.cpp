@@ -31,5 +31,36 @@ int main() {
   expect(lease.snapshot(123000).state == lv6_authority::State::TOUCH_RECOVERY_PENDING, "recovery is explicit and has no writer");
   recovery.sequence = 4;
   expect(lease.acquire_or_renew(recovery, true, 243000) == lv6_authority::Result::GRANTED, "stable Touch recovery receives a new lease");
+
+  // Optional control_mode on the lease
+  {
+    lv6_authority::Lease mode_lease;
+    mode_lease.configure("house-1", "touch-1");
+    mode_lease.reset_after_boot();
+    lv6_authority::Request with_mode{"house-1", "touch-1", "lease-mode", 1, 1000, 90000, false,
+                                     lv6_authority::ControlMode::NORMAL};
+    expect(mode_lease.acquire_or_renew(with_mode, true, 1000) == lv6_authority::Result::GRANTED,
+           "lease with control_mode is granted");
+    expect(mode_lease.snapshot(1000).control_mode == lv6_authority::ControlMode::NORMAL,
+           "active lease exposes control_mode");
+    expect(std::strcmp(lv6_authority::control_mode_to_string(mode_lease.snapshot(1000).control_mode),
+                       "normal") == 0,
+           "control_mode serialises as normal");
+    mode_lease.expire_if_needed(100000);
+    expect(mode_lease.snapshot(100000).control_mode == lv6_authority::ControlMode::UNSET,
+           "expired lease clears control_mode");
+
+    lv6_authority::Request unset_mode{"house-1", "touch-1", "lease-mode", 2, 100000, 90000};
+    expect(mode_lease.acquire_or_renew(unset_mode, true, 100000) == lv6_authority::Result::GRANTED,
+           "lease without control_mode is granted");
+    expect(mode_lease.snapshot(100000).control_mode == lv6_authority::ControlMode::UNSET,
+           "absent control_mode stays UNSET");
+    expect(lv6_authority::control_mode_from_string("heat_pump") ==
+               lv6_authority::ControlMode::HEAT_PUMP,
+           "control_mode_from_string accepts heat_pump");
+    expect(lv6_authority::control_mode_from_string("") == lv6_authority::ControlMode::UNSET,
+           "empty control_mode string is UNSET");
+  }
+
   std::puts("All authority lease tests passed.");
 }

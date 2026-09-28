@@ -15,6 +15,7 @@
 #include "../lv6_valve_controller/lv6_valve_controller.h"
 #include "control_algorithms.h"
 #include "adaptive_balance.h"
+#include "control_mode_policy.h"
 #include "flow_allocator.h"
 #include "hydraulic_policy.h"
 #include "freertos/FreeRTOS.h"
@@ -157,10 +158,6 @@ class Lv6ZoneController : public esphome::Component {
   float get_zone_pipe_spacing_mm(uint8_t zone) const;
   void set_zone_pipe_type(uint8_t zone, PipeType type);
   PipeType get_zone_pipe_type(uint8_t zone) const;
-  // Coordinator weather/preload metadata retained in per-zone config.
-  void set_zone_wind_exposure(uint8_t zone, float exposure);
-  void set_zone_solar_gain(uint8_t zone, float gain);
-  void set_zone_thermal_lead_h(uint8_t zone, uint8_t hours);
 
   // Probe role (room temperature vs return water)
   void set_zone_probe_role(uint8_t zone, ProbeRole role);
@@ -171,20 +168,12 @@ class Lv6ZoneController : public esphome::Component {
   int8_t get_zone_sync(uint8_t zone) const;
 
   // Balancing configuration
-  void set_dynamic_balancing_enabled(bool enabled);
-  bool is_dynamic_balancing_enabled() const;
-  /// Set the hydraulic-balancing strategy. Persists and forces a rebuild; also
-  /// keeps the legacy dynamic_balancing_enabled flag consistent with the mode.
   void set_balance_mode(BalanceMode mode);
   BalanceMode get_balance_mode() const;
   void set_secondary_flow_commissioning(bool enabled);
   bool secondary_flow_commissioning_enabled() const;
   void set_secondary_min_total_opening_pct(float pct);
   float get_secondary_min_total_opening_pct() const;
-  void set_flow_increase_threshold(float pct);
-  float get_flow_increase_threshold() const;
-  void set_flow_decrease_threshold(float pct);
-  float get_flow_decrease_threshold() const;
   void set_target_delta_t(float delta_c);
   float get_target_delta_t() const;
 
@@ -209,7 +198,22 @@ class Lv6ZoneController : public esphome::Component {
   float get_relative_kv(uint8_t zone, float opening_pct) const;
   void set_touch_authority_active(bool active) { touch_authority_active_.store(active, std::memory_order_release); }
   bool is_touch_authority_active() const { return touch_authority_active_.load(std::memory_order_acquire); }
+  /// Optional Touch-requested control mode for the active lease. Cleared when
+  /// the lease expires or Touch omits the field.
+  void set_touch_control_mode(bool valid, HeatingProfile mode);
+  bool has_touch_control_mode() const { return touch_control_mode_valid_.load(std::memory_order_acquire); }
+  HeatingProfile get_touch_control_mode() const {
+    return static_cast<HeatingProfile>(touch_control_mode_.load(std::memory_order_acquire));
+  }
+  HeatingProfile get_effective_control_mode() const;
+  HeatDemandSummary get_heat_demand() const;
   float get_zone_preheat_advance(uint8_t zone) const;
+
+  /// Persist heating-mode settings (local law used when Touch is offline).
+  void set_heating_mode(HeatingProfile mode);
+  void set_hp_overheat_margin_c(float margin_c);
+  void set_hp_base_pct(float pct);
+  void set_hp_trim_floor_pct(float pct);
 
   bool is_connected() const { return true; }  // WiFi managed by ESPHome
 
@@ -274,6 +278,13 @@ class Lv6ZoneController : public esphome::Component {
   std::atomic<bool> preheat_absorb_active_{false};
   // Runtime lease state only; no authority survives reboot.
   std::atomic<bool> touch_authority_active_{false};
+  std::atomic<bool> touch_control_mode_valid_{false};
+  std::atomic<uint8_t> touch_control_mode_{static_cast<uint8_t>(HeatingProfile::HEAT_PUMP)};
+  HeatingProfile last_effective_mode_{HeatingProfile::HEAT_PUMP};
+  std::array<bool, NUM_ZONES> normal_closed_{};
+  control_mode_policy::HeatDemandTimers heat_demand_timers_{};
+  HeatDemandSummary heat_demand_{};
+  uint32_t heat_demand_last_ms_{0};
   uint8_t preheat_absorb_detect_cycles_ = 0;
   // Armed absorb window (coordinator command). Expiry is millis(); 0 = inactive.
   // Never persisted — reboot clears the arm.
@@ -335,7 +346,7 @@ class Lv6ZoneController : public esphome::Component {
   float read_manifold_return_() const;
 
   ZoneState classify_zone_(float temp, float setpoint, float comfort_band, float preheat_advance_c,
-                           float absorb_band_c = 0.0f) const;
+                           float absorb_band_c = 0.0f) const;  // legacy helper retained for tests
   float compute_raw_position_(uint8_t zone, float temp, float setpoint);
   void update_simple_preheat_(uint8_t zone, float temp, float setpoint, float comfort_band, ZoneState state);
   void reset_simple_preheat_(uint8_t zone);

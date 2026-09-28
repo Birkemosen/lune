@@ -689,8 +689,6 @@ size_t write_export_json(char *out, size_t out_cap, const lv6::DeviceConfig &cfg
   b.addf(",\"control\":{");
   b.key_num("comfort_band_c", c.comfort_band_c);
   b.addf(",");
-  b.key_num("min_valve_opening_pct", c.min_valve_opening_pct);
-  b.addf(",");
   b.key_bool("simple_preheat_enabled", c.simple_preheat_enabled);
   b.addf(",");
   b.key_bool("preheat_absorb_enabled", c.preheat_absorb_enabled);
@@ -698,6 +696,14 @@ size_t write_export_json(char *out, size_t out_cap, const lv6::DeviceConfig &cfg
   b.key_num("preheat_absorb_band_c", c.preheat_absorb_band_c);
   b.addf(",");
   b.key_num("preheat_detect_delta_c", c.preheat_detect_delta_c);
+  b.addf(",");
+  b.key_str("heating_mode", lv6::heating_profile_to_string(c.mode));
+  b.addf(",");
+  b.key_num("hp_overheat_margin_c", c.hp_overheat_margin_c);
+  b.addf(",");
+  b.key_num("hp_base_pct", c.hp_base_pct);
+  b.addf(",");
+  b.key_num("hp_trim_floor_pct", c.hp_trim_floor_pct);
   b.addf("}");
 
   const lv6::BalancingConfig &bal = cfg.balancing;
@@ -769,23 +775,6 @@ size_t write_export_json(char *out, size_t out_cap, const lv6::DeviceConfig &cfg
     b.key_num("abs_min_c", z.abs_min_c);
     b.addf(",");
     b.key_num("abs_max_c", z.abs_max_c);
-    // Hydraulic commissioning identity (zone blob v4+).
-    b.addf(",");
-    b.key_str("manifold_id", z.manifold_id);
-    b.addf(",");
-    b.key_int("manifold_port", z.manifold_port);
-    b.addf(",");
-    b.key_str("room_id", z.room_id);
-    b.addf(",");
-    b.key_num("loop_pipe_length_m", z.loop_pipe_length_m);
-    b.addf(",");
-    b.key_num("design_flow_l_h", z.design_flow_l_h);
-    b.addf(",");
-    b.key_num("measured_flow_l_h", z.measured_flow_l_h);
-    b.addf(",");
-    b.key_num("actuator_calibration_pct", z.actuator_calibration_pct);
-    b.addf(",");
-    b.key_num("expected_thermal_delay_min", z.expected_thermal_delay_min);
     b.addf("}");
   }
   b.addf("]");
@@ -885,7 +874,7 @@ ImportResult apply_import_json(const char *json, lv6::DeviceConfig &cfg, bool re
     if (member(config_versions, "zone", &v) && span_to_double(v, &d))
       file_zone_version = static_cast<uint32_t>(d);
   }
-  const bool allow_hydraulic = file_zone_version >= lv6::ZONE_CONFIG_VERSION;
+  (void)file_zone_version;
 
   // Same reasoning for the motor blob. v4 made the mechanical ceiling
   // direction-split and count-based; a file written under v3 carries neither,
@@ -957,10 +946,10 @@ ImportResult apply_import_json(const char *json, lv6::DeviceConfig &cfg, bool re
               result.applied);
     apply_int(node, "generic_profile_runtime_limit_s", m.generic_profile_runtime_limit_s, 5, 300,
               result.applied);
-    // Upper bound 36, not 40: 40 s of CLOSE travel is where the plunger reaches
+    // Upper bound 38, not 40: 40 s of CLOSE travel is where the plunger reaches
     // the housing exit. A v3 backup carries the old 40 s default, and accepting it
     // would restore the destruction boundary as "applied".
-    apply_int(node, "hmip_vdmot_runtime_limit_s", m.hmip_vdmot_runtime_limit_s, 5, 36,
+    apply_int(node, "hmip_vdmot_runtime_limit_s", m.hmip_vdmot_runtime_limit_s, 5, 38,
               result.applied);
     apply_int(node, "relearn_after_movements", m.relearn_after_movements, 0, 1000000,
               result.applied);
@@ -1072,12 +1061,21 @@ ImportResult apply_import_json(const char *json, lv6::DeviceConfig &cfg, bool re
   if (member_inner(settings, "control", &node)) {
     lv6::ControlConfig &c = cfg.control;
     apply_float(node, "comfort_band_c", c.comfort_band_c, 0.1, 5.0, result.applied);
-    apply_float(node, "min_valve_opening_pct", c.min_valve_opening_pct, 0.0, 100.0, result.applied);
     apply_bool(node, "simple_preheat_enabled", c.simple_preheat_enabled, result.applied);
     apply_bool(node, "preheat_absorb_enabled", c.preheat_absorb_enabled, result.applied);
     apply_float(node, "preheat_absorb_band_c", c.preheat_absorb_band_c, 0.0, 10.0, result.applied);
     apply_float(node, "preheat_detect_delta_c", c.preheat_detect_delta_c, 0.0, 40.0,
                 result.applied);
+    char mode_text[24]{};
+    if (read_enum_str(node, "heating_mode", mode_text, sizeof(mode_text))) {
+      c.mode = lv6::heating_profile_from_string(mode_text);
+      result.applied++;
+    }
+    apply_float(node, "hp_overheat_margin_c", c.hp_overheat_margin_c, 0.3, 3.0, result.applied);
+    apply_float(node, "hp_base_pct", c.hp_base_pct, 30.0, 100.0, result.applied);
+    apply_float(node, "hp_trim_floor_pct", c.hp_trim_floor_pct, 0.0, 100.0, result.applied);
+    if (c.hp_trim_floor_pct > c.hp_base_pct)
+      c.hp_trim_floor_pct = c.hp_base_pct;
   }
 
   if (member_inner(settings, "balancing", &node)) {
@@ -1199,32 +1197,6 @@ ImportResult apply_import_json(const char *json, lv6::DeviceConfig &cfg, bool re
         z.max_offset_c = z.min_offset_c;
       if (z.abs_max_c < z.abs_min_c)
         z.abs_max_c = z.abs_min_c;
-
-      if (allow_hydraulic) {
-        apply_str(z_json, "manifold_id", z.manifold_id, sizeof(z.manifold_id), result.applied);
-        apply_int(z_json, "manifold_port", z.manifold_port, 0, lv6::NUM_ZONES, result.applied);
-        apply_str(z_json, "room_id", z.room_id, sizeof(z.room_id), result.applied);
-        apply_float_sentinel(z_json, "loop_pipe_length_m", z.loop_pipe_length_m, -1.0, 0.0, 500.0,
-                             result.applied);
-        apply_float_sentinel(z_json, "design_flow_l_h", z.design_flow_l_h, -1.0, 0.0, 2000.0,
-                             result.applied);
-        apply_float_sentinel(z_json, "measured_flow_l_h", z.measured_flow_l_h, -1.0, 0.0, 2000.0,
-                             result.applied);
-        apply_float_sentinel(z_json, "actuator_calibration_pct", z.actuator_calibration_pct, -1.0,
-                             0.0, 100.0, result.applied);
-        apply_float_sentinel(z_json, "expected_thermal_delay_min", z.expected_thermal_delay_min,
-                             -1.0, 0.0, 600.0, result.applied);
-      } else {
-        static const char *const HYDRAULIC[] = {
-            "manifold_id",      "manifold_port",           "room_id",
-            "loop_pipe_length_m", "design_flow_l_h",       "measured_flow_l_h",
-            "actuator_calibration_pct", "expected_thermal_delay_min"};
-        Span present{};
-        for (const char *key : HYDRAULIC) {
-          if (member(z_json, key, &present))
-            result.skipped++;
-        }
-      }
     }
   }
 

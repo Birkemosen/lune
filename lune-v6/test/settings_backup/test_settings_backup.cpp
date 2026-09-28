@@ -85,11 +85,14 @@ lv6::DeviceConfig make_known_config() {
   cfg.motor.contact_recovery_ripples = 22;
 
   cfg.control.comfort_band_c = 0.75f;
-  cfg.control.min_valve_opening_pct = 30.0f;
   cfg.control.simple_preheat_enabled = false;
   cfg.control.preheat_absorb_enabled = false;
   cfg.control.preheat_absorb_band_c = 1.5f;
   cfg.control.preheat_detect_delta_c = 9.5f;
+  cfg.control.mode = lv6::HeatingProfile::NORMAL;
+  cfg.control.hp_overheat_margin_c = 1.2f;
+  cfg.control.hp_base_pct = 55.0f;
+  cfg.control.hp_trim_floor_pct = 12.0f;
 
   cfg.balancing.secondary_flow_commissioning_enabled = true;
   cfg.balancing.secondary_min_total_opening_pct = 45.0f;
@@ -118,15 +121,6 @@ lv6::DeviceConfig make_known_config() {
     z.max_offset_c = 2.5f;
     z.abs_min_c = 6.0f;
     z.abs_max_c = 28.0f;
-
-    std::snprintf(z.manifold_id, sizeof(z.manifold_id), "UFH-A");
-    z.manifold_port = static_cast<uint8_t>(i + 1);
-    std::snprintf(z.room_id, sizeof(z.room_id), "room-%u", i + 1u);
-    z.loop_pipe_length_m = 62.5f + i;
-    z.design_flow_l_h = 120.0f + i;
-    z.measured_flow_l_h = 111.5f + i;
-    z.actuator_calibration_pct = 82.5f;
-    z.expected_thermal_delay_min = 35.0f;
 
     cfg.sensor_config.zone_temp_source[i] =
         (i == 0) ? lv6::TempSource::LOCAL_PROBE
@@ -176,7 +170,7 @@ int main() {
   expect(doc.find("\"_type\":\"lune-v6-settings\"") != std::string::npos,
          "export carries the envelope type");
   expect(doc.find("\"_version\":1") != std::string::npos, "export carries the schema version");
-  expect(doc.find("\"zone\":4") != std::string::npos, "export carries config_versions from lv6_types");
+  expect(doc.find("\"zone\":5") != std::string::npos, "export carries config_versions from lv6_types");
   expect(doc.find("\"installation_id\":\"house-1\"") != std::string::npos,
          "authority identity is exported as metadata");
 
@@ -222,7 +216,10 @@ int main() {
   expect(restored.motor.contact_recovery_ripples == 22, "rev32 contact recovery round-trips");
 
   expect_near(restored.control.comfort_band_c, 0.75f, "comfort band round-trips");
-  expect_near(restored.control.min_valve_opening_pct, 30.0f, "min valve opening round-trips");
+  expect(restored.control.mode == lv6::HeatingProfile::NORMAL, "heating mode round-trips");
+  expect_near(restored.control.hp_overheat_margin_c, 1.2f, "hp overheat margin round-trips");
+  expect_near(restored.control.hp_base_pct, 55.0f, "hp base opening round-trips");
+  expect_near(restored.control.hp_trim_floor_pct, 12.0f, "hp trim floor round-trips");
   expect(!restored.control.simple_preheat_enabled, "simple preheat flag round-trips");
   expect_near(restored.control.preheat_absorb_band_c, 1.5f, "preheat absorb band round-trips");
 
@@ -242,7 +239,6 @@ int main() {
 
   bool zones_ok = true;
   bool probes_ok = true;
-  bool hydraulic_ok = true;
   bool sensors_ok = true;
   for (uint8_t i = 0; i < lv6::NUM_ZONES; i++) {
     const lv6::ZoneConfig &a = source.zones[i];
@@ -257,13 +253,6 @@ int main() {
                std::fabs(a.max_offset_c - b.max_offset_c) < 1e-3f &&
                std::fabs(a.abs_min_c - b.abs_min_c) < 1e-3f &&
                std::fabs(a.abs_max_c - b.abs_max_c) < 1e-3f;
-    hydraulic_ok = hydraulic_ok && std::strcmp(a.manifold_id, b.manifold_id) == 0 &&
-                   a.manifold_port == b.manifold_port && std::strcmp(a.room_id, b.room_id) == 0 &&
-                   std::fabs(a.loop_pipe_length_m - b.loop_pipe_length_m) < 1e-3f &&
-                   std::fabs(a.design_flow_l_h - b.design_flow_l_h) < 1e-3f &&
-                   std::fabs(a.measured_flow_l_h - b.measured_flow_l_h) < 1e-3f &&
-                   std::fabs(a.actuator_calibration_pct - b.actuator_calibration_pct) < 1e-3f &&
-                   std::fabs(a.expected_thermal_delay_min - b.expected_thermal_delay_min) < 1e-3f;
     sensors_ok = sensors_ok &&
                  source.sensor_config.zone_temp_source[i] ==
                      restored.sensor_config.zone_temp_source[i] &&
@@ -276,7 +265,6 @@ int main() {
     probes_ok = probes_ok && source.probes.zone_return_probe[i] == restored.probes.zone_return_probe[i];
   }
   expect(zones_ok, "every zone's settings round-trip (including quoted names)");
-  expect(hydraulic_ok, "hydraulic commissioning fields round-trip at zone version 4");
   expect(sensors_ok, "zone temp source, BLE MAC, and EXTERNAL sensor_id round-trip");
   expect(probes_ok, "zone return probe map round-trips");
 
@@ -379,30 +367,17 @@ int main() {
     expect(cfg.manifold_type == lv6::ManifoldType::NC, "unknown sections do not shadow known ones");
   }
 
-  // --- 7. Older zone semantics: hydraulic identity is not invented ---------
+  // --- 7. Older zone semantics: unknown hydraulic keys are ignored ---------
   {
     lv6::DeviceConfig cfg{};
-    const lv6::ZoneConfig defaults{};
-    const std::string old_zones = replace_once(doc, "\"zone\":4", "\"zone\":3");
+    // Inject legacy Touch-owned identity keys; they must not fail the import.
+    std::string legacy = replace_once(doc, "\"setpoint_c\"",
+                                      "\"manifold_id\":\"UFH-A\",\"room_id\":\"room-1\","
+                                      "\"setpoint_c\"");
     const sb::ImportResult res =
-        sb::apply_import_json(old_zones.c_str(), cfg, true, nullptr, nullptr, nullptr, nullptr);
-    expect(res.ok, "a zone-v3 backup still imports");
-    expect_near(cfg.zones[0].setpoint_c, 21.5f, "non-hydraulic zone settings still apply at v3");
-
-    bool untouched = true;
-    for (uint8_t i = 0; i < lv6::NUM_ZONES; i++) {
-      const lv6::ZoneConfig &z = cfg.zones[i];
-      untouched = untouched && z.manifold_id[0] == '\0' && z.room_id[0] == '\0' &&
-                  z.manifold_port == defaults.manifold_port &&
-                  std::fabs(z.loop_pipe_length_m - defaults.loop_pipe_length_m) < 1e-3f &&
-                  std::fabs(z.design_flow_l_h - defaults.design_flow_l_h) < 1e-3f &&
-                  std::fabs(z.measured_flow_l_h - defaults.measured_flow_l_h) < 1e-3f &&
-                  std::fabs(z.actuator_calibration_pct - defaults.actuator_calibration_pct) < 1e-3f &&
-                  std::fabs(z.expected_thermal_delay_min - defaults.expected_thermal_delay_min) <
-                      1e-3f;
-    }
-    expect(untouched, "hydraulic fields are skipped when the backup predates zone v4");
-    expect(res.skipped >= lv6::NUM_ZONES, "skipped hydraulic fields are reported");
+        sb::apply_import_json(legacy.c_str(), cfg, true, nullptr, nullptr, nullptr, nullptr);
+    expect(res.ok, "a backup with legacy identity keys still imports");
+    expect_near(cfg.zones[0].setpoint_c, 21.5f, "zone settings still apply beside unknown keys");
   }
 
   // --- 8. Credentials are never restored -----------------------------------
@@ -443,7 +418,7 @@ int main() {
     sb::ImportResult r =
         sb::apply_import_json(json, cfg, false, nullptr, nullptr, nullptr, nullptr);
     expect(r.ok, "close-ceiling import completes");
-    expect(cfg.motor.hmip_vdmot_runtime_limit_s <= 36u,
+    expect(cfg.motor.hmip_vdmot_runtime_limit_s <= 38u,
            "a 40 s close ceiling is clamped below the housing-exit boundary");
     expect(cfg.motor.hmip_vdmot_runtime_limit_s < 40u,
            "the destruction boundary is unreachable through a restore");

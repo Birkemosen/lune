@@ -95,12 +95,15 @@ Temp source (DS18B20 / BLE) → Zone state machine → Control algorithm → Hyd
 Coordinator optimizers write per-zone setpoint-offset / preheat commands through
 `Lv6ZoneController::apply_helios_command()`. Offsets are clamped in firmware by per-zone
 safety limits; if a producer goes stale, its offsets are cleared and local control
-continues unchanged. `HeliosConfig.enabled` (NVS) remains as a compatibility quiesce gate.
+continues unchanged. The Helios command slot is runtime state only (Touch offsets);
+there is no persisted `HeliosConfig` / `ForecastConfig` NVS section.
 
 Whole-house coordination and heat-source integration are provided by Lune Touch,
 not an external HTTP optimizer — the previous `hv6_helios_client` was removed. Removing any
 producer reverts transparently to local control: no vendor lock-in, no safety dependency
-on an external service.
+on an external service. Heating modes, heat-demand summary, and the Asgard feed-temp
+trim contract are documented in
+[`docs/lune_whole_house_flow_temperature.md`](../../docs/lune_whole_house_flow_temperature.md).
 
 ## Hardware Layer
 

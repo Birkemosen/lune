@@ -10,6 +10,8 @@
 #include <cstdint>
 #include <cstddef>
 #include <cmath>
+#include <cstring>
+#include <strings.h>
 #include <algorithm>
 #include <array>
 
@@ -124,10 +126,13 @@ enum class FloorType : uint8_t {
   CARPET = 3,
 };
 
+/// Local heating control law. Heat-pump mode keeps loops mostly open so the
+/// source can settle at the lowest constant feed temperature; Normal closes
+/// zones at setpoint like a classic boiler manifold. Touch may override the
+/// effective mode while its lease is active.
 enum class HeatingProfile : uint8_t {
-  BOILER = 0,
-  HEAT_PUMP = 1,
-  DISTRICT_HEATING = 2,
+  NORMAL = 0,     ///< Boiler / gas / district — close at setpoint
+  HEAT_PUMP = 1,  ///< Continuous distribution — base opening + soft overheat trim
 };
 
 enum class ManifoldType : uint8_t {
@@ -178,10 +183,6 @@ struct ZoneConfig {
   float cooling_delta_c = 5.0f;
   float concrete_thickness_mm = 50.0f;
   char name[16] = "";
-  // Kept at the former exterior_walls byte offset so existing v4 zone blobs
-  // remain binary compatible. Exterior-wall geometry is coordinator-owned and
-  // this byte must not be read, written, or exposed by Lune V6.
-  uint8_t reserved_touch_weather_v4 = 0;
   ProbeRole probe_role = ProbeRole::ROOM_TEMPERATURE;
   int8_t sync_to_zone = -1;  ///< -1 = independent, 0–5 = synced to that zone (shares setpoint + avg temp)
   MotorProfile motor_profile_override = MotorProfile::INHERIT;
@@ -193,13 +194,6 @@ struct ZoneConfig {
   float max_offset_c = 2.0f;   ///< Maximum setpoint offset from Helios (firmware safety clamp)
   float abs_min_c = 5.0f;      ///< Absolute minimum effective setpoint (overrides all offsets)
   float abs_max_c = 30.0f;     ///< Absolute maximum effective setpoint (overrides all offsets)
-  // Coordinator forecast metadata retained for migration/back-compat. Lune V6
-  // no longer runs the forecast producer locally; Lune Touch/Mini should own
-  // weather, wind, solar and thermal-lead modelling and send clamped commands
-  // through the local command path.
-  float wind_exposure = 0.5f;      ///< 0..1 — facade shelter factor for forecast preload
-  float solar_gain_factor = 0.3f;  ///< 0..1 — passive solar relief through glazing
-  uint8_t thermal_lead_h = 4;      ///< Hours before a forecast load peak charging must start
   // Adaptive balancing — learned room-temp correction multiplier (adapt_i). Rides
   // on top of the resistance-aware static prior; persisted in the durable zones
   // blob so it survives legacy main-config resets. See docs/adaptive_balancing.md.
@@ -208,22 +202,11 @@ struct ZoneConfig {
   // heating so the zone reaches temperature on time). Adapts over time; persisted
   // so the device doesn't have to re-learn from zero after every reboot.
   float preheat_advance_c = 0.0f;
-  // Hydraulic commissioning identity. These fields describe the physical loop;
-  // they never affect demand calculation or valve safety.
-  char manifold_id[16] = "";       ///< Stable installed-manifold label, e.g. "UFH-A"
-  uint8_t manifold_port = 0;        ///< 1..6 when commissioned; 0 means unknown
-  char room_id[24] = "";            ///< Stable logical-room ID, not an array index
-  float loop_pipe_length_m = -1.0f; ///< -1 means not measured/known
-  float design_flow_l_h = -1.0f;    ///< -1 means not commissioned
-  float measured_flow_l_h = -1.0f;  ///< -1 means not measured
-  float actuator_calibration_pct = -1.0f;  ///< -1 means no commissioned result
-  float expected_thermal_delay_min = -1.0f; ///< -1 means not established
 };
 
 struct ControlConfig {
   float comfort_band_c = 0.5f;
-  float min_valve_opening_pct = 25.0f;
-  float maintenance_base_pct = 15.0f;
+  float maintenance_base_pct = 15.0f;  ///< Normal-mode satisfied opening (and heat-pump trim floor default)
   float demand_boost_pct = 30.0f;
   float boost_factor = 1.0f;
   float min_movement_pct = 5.0f;
@@ -237,12 +220,20 @@ struct ControlConfig {
   bool preheat_absorb_enabled = true;
   float preheat_absorb_band_c = 1.0f;   ///< Extra °C above comfort band before OVERHEATED while absorbing
   float preheat_detect_delta_c = 8.0f;  ///< Flow must exceed house-average temp by this to detect pre-buffering
+  // Heating mode — local law when Touch is not coordinating. Default HEAT_PUMP
+  // preserves today's continuous-distribution behaviour for existing installs.
+  HeatingProfile mode = HeatingProfile::HEAT_PUMP;
+  float hp_overheat_margin_c = 1.0f;  ///< °C above setpoint before a heat-pump zone closes
+  float hp_base_pct = 60.0f;          ///< Satisfied opening in heat-pump mode (keeps floors open)
+  float hp_trim_floor_pct = 15.0f;    ///< Soft-trim floor between setpoint and overheat margin
 };
 
 struct ProbeConfig {
   // Probe indices are 0-based (Probe 1 = index 0).
   // Defaults: P1 flow, P2 manifold return. Zone return probes stay unassigned
-  // until return-temperature mode is enabled (then Zone N → Probe N+2).
+  // until return-temperature mode is enabled (then Zone N → Probe N+2). The
+  // enable toggle is not a separate NVS bit — disabled means every
+  // zone_return_probe[] entry is PROBE_UNASSIGNED (persisted under KEY_PROBES).
   int8_t manifold_flow_probe = 0;    // Probe 1
   int8_t manifold_return_probe = 1;  // Probe 2
   int8_t zone_return_probe[NUM_ZONES] = {
@@ -292,13 +283,15 @@ static constexpr size_t SENSOR_CONFIG_V2_SIZE =
 
 /// Version tag for the standalone zone-config NVS blob. Persisted under its own
 /// key (separate from the main DeviceConfig blob) so per-zone settings (area,
-/// pipe type/spacing, exterior walls, etc.) survive legacy main-config resets on
-/// firmware update. Bump only when ZoneConfig's layout changes.
+/// pipe type/spacing, etc.) survive legacy main-config resets on firmware
+/// update. Bump only when ZoneConfig's layout changes.
 /// v2 adds balance_adapt (learned adaptive-balancing multiplier).
 /// v3 adds preheat_advance_c (learned simple-preheat head-start per zone).
 /// v4 adds physical-loop hydraulic commissioning fields. v3 blobs are safely
 /// invalidated rather than guessing manifold identity or measured values.
-static constexpr uint32_t ZONE_CONFIG_VERSION = 4;
+/// v5 drops Touch-owned weather/preload metadata and unused hydraulic
+/// commissioning identity fields (room mapping lives on Touch).
+static constexpr uint32_t ZONE_CONFIG_VERSION = 5;
 
 inline constexpr bool zone_config_blob_is_current(uint32_t version, size_t bytes) {
   return version == ZONE_CONFIG_VERSION &&
@@ -311,9 +304,15 @@ inline constexpr bool zone_config_blob_is_current(uint32_t version, size_t bytes
 /// constant ONLY when that one struct's layout changes — that resets just that
 /// section, not the user's whole configuration. See lv6_config_store.cpp.
 /// v3 removes obsolete heat-source/pump fields from the local system section.
-static constexpr uint32_t SYSTEM_CONFIG_VERSION = 3;
-static constexpr uint32_t CONTROL_CONFIG_VERSION = 1;
-static constexpr uint32_t PROBE_CONFIG_VERSION = 1;
+/// v4 keeps only controller_id (heating mode moved to ControlConfig).
+static constexpr uint32_t SYSTEM_CONFIG_VERSION = 4;
+/// v2 adds heating mode + heat-pump base/margin/trim; drops unused min_valve_opening_pct.
+static constexpr uint32_t CONTROL_CONFIG_VERSION = 2;
+/// v2 moves defaults to P1 flow / P2 manifold return with zone return probes
+/// unassigned (return-temperature mode off until the user enables it). Layout
+/// is unchanged; the bump replaces stored v1 values that still carried the
+/// old factory map (zones→P1–P6, manifold P7/P8).
+static constexpr uint32_t PROBE_CONFIG_VERSION = 2;
 static constexpr uint32_t PID_CONFIG_VERSION = 1;
 /// v2 adds the Rev 3.2 endstop policy (continuous drive, commutation-cadence
 /// stall debounce, learned-count endpoint window, phase-2 contact recovery) and
@@ -334,22 +333,19 @@ static constexpr uint32_t MOTOR_CONFIG_VERSION = 7;
 static constexpr uint32_t MANIFOLD_CONFIG_VERSION = 1;
 /// v2 replaces unsafe per-zone "modulating heat source" floors with an explicit
 /// secondary-loop commissioning floor. Old values are safely invalidated.
-static constexpr uint32_t BALANCING_CONFIG_VERSION = 2;
+/// v3 drops average-opening feed-temp thresholds and the dynamic_balancing alias.
+static constexpr uint32_t BALANCING_CONFIG_VERSION = 3;
 /// v2 adds the persisted authority identities and shared authentication key.
 /// Active leases remain runtime-only and are never restored from NVS.
 static constexpr uint32_t AUTHORITY_CONFIG_VERSION = 1;
-static constexpr uint32_t FORECAST_CONFIG_VERSION = 1;
 
 struct BalancingConfig {
-  bool dynamic_balancing_enabled = false;   ///< Back-compat alias: true ⇒ mode == RETURN_TEMP
   bool secondary_flow_commissioning_enabled = false;  ///< Explicit UFH-secondary commissioning only
   float secondary_min_total_opening_pct = 0.0f;       ///< Total across accepting loops; 0 disables
-  float flow_increase_threshold_pct = 80.0f;///< Request higher flow temp when avg zone opening exceeds this
-  float flow_decrease_threshold_pct = 30.0f;///< Request lower flow temp when avg zone opening drops below this
   float target_delta_t_c = 5.0f;            ///< Target ΔT (flow − return) for dynamic (RETURN_TEMP) balancing
   float damping_factor = 0.3f;              ///< EMA damping for balance factor updates (0..1, lower = slower)
   // --- Adaptive balancing (room-temperature feedback; docs/adaptive_balancing.md) ---
-  BalanceMode mode = BalanceMode::STATIC;   ///< Supersedes dynamic_balancing_enabled
+  BalanceMode mode = BalanceMode::STATIC;
   uint32_t adapt_interval_s = 3600;         ///< Outer-loop period (learned-factor step cadence)
   float    adapt_step = 0.02f;              ///< k: max factor move per update
   float    adapt_min = 0.5f;                ///< Clamp on the learned multiplier (lower)
@@ -359,36 +355,12 @@ struct BalancingConfig {
   float    adapt_heat_margin_c = 2.0f;      ///< flow_temp must exceed room by this to count a sample
 };
 
-/// Whole-house MPC and heat-source coordination live outside V6. All that
-/// remains is a quiesce gate:
-/// `enabled` lets the on-device forecast preload stand down if a future external
-/// optimizer is reintroduced (it owns the per-zone command slots). It has no
-/// runtime setter today, so it stays false. The former host/port/mDNS fields
-/// were dead and were removed (see docs/CLAUDE.md → Helios command path).
-struct HeliosConfig {
-  bool enabled = false;
-};
-
 /// Credentials used by Lune Touch to coordinate this local manifold node.
 /// Heat-source transport and whole-house aggregation live on Lune Touch.
 struct AuthorityConfig {
   char installation_id[32] = "";
   char coordinator_id[32] = "";
   char shared_key[64] = "";
-};
-
-/// Legacy weather-forecast preload config. Kept in the schema so existing NVS
-/// blobs remain readable, but the producer has moved to devices/lune-touch.
-struct ForecastConfig {
-  bool enabled = false;
-  float latitude = 0.0f;
-  float longitude = 0.0f;
-  uint16_t fetch_interval_s = 3600;     ///< Open-Meteo refresh cadence
-  uint16_t recompute_interval_s = 300;  ///< Preload re-evaluation cadence
-  float load_threshold = 1.0f;          ///< Load units before preload kicks in
-  float gain_c_per_load = 0.5f;         ///< °C offset per load unit above threshold
-  float max_offset_c = 1.5f;            ///< Model cap (per-zone clamps still apply)
-  float indoor_ref_c = 21.0f;           ///< Reference indoor temp for the cold term
 };
 
 struct PIDParams {
@@ -428,7 +400,7 @@ struct MotorConfig {
   // --- Mechanical ceilings ----------------------------------------------------
   // 40 s of CLOSE travel puts the HmIP-VDMOT plunger at the housing exit, where
   // the anti-rotation tap leaves its guide and snaps. That is the destruction
-  // boundary, not a safe limit, so the operative ceiling sits ~15% inside it.
+  // boundary, not a safe limit, so the operative ceiling sits inside it (38 s).
   //
   // Counts are the mechanically meaningful currency — plunger extension follows
   // commutations, not seconds — and 40 s at the measured 78 Hz free-travel
@@ -440,7 +412,7 @@ struct MotorConfig {
   uint32_t max_runtime_s = 40;
   uint32_t generic_profile_runtime_limit_s = 45;
   /// CLOSE ceiling. UI/backup keep the historical field name.
-  uint32_t hmip_vdmot_runtime_limit_s = 34;
+  uint32_t hmip_vdmot_runtime_limit_s = 38;
   uint32_t hmip_vdmot_open_runtime_limit_s = 45;
   uint32_t close_runtime_limit_counts = 2600;
   uint32_t open_runtime_limit_counts = 3600;
@@ -672,6 +644,23 @@ struct ZoneSnapshot {
   float measured_delta_t_c = NAN;     ///< Measured ΔT (flow − return)
 };
 
+/// Heat-demand summary published for Touch / Asgard feed-temperature trim.
+/// Derived from post-floor valve targets; V6 never writes the heat source.
+enum class HeatDemandRecommendation : uint8_t {
+  HOLD = 0,
+  RAISE = 1,
+  LOWER = 2,
+};
+
+struct HeatDemandSummary {
+  int8_t critical_zone = -1;               ///< 0-based; -1 = none
+  float critical_opening_ratio = 0.0f;     ///< opening / max_opening for critical zone
+  uint32_t saturated_s = 0;                ///< Seconds any demanding zone ≥ 90% of max
+  uint8_t demanding_zones = 0;
+  bool headroom = false;                   ///< No demand and max opening below heat-pump base
+  HeatDemandRecommendation recommendation = HeatDemandRecommendation::HOLD;
+};
+
 struct SystemSnapshot {
   std::array<ZoneSnapshot, NUM_ZONES> zones{};
   ControllerState controller_state = ControllerState::UNKNOWN;
@@ -680,9 +669,11 @@ struct SystemSnapshot {
   float avg_valve_pct = 0.0f;
   float manifold_flow_temp_c = NAN;
   float manifold_return_temp_c = NAN;
-  bool flow_temp_increase_requested = false;  ///< Avg opening > threshold → need higher flow temp
-  bool flow_temp_decrease_requested = false;  ///< Avg opening < threshold → can lower flow temp
   bool preheat_absorbing = false;             ///< External pre-buffering detected; overheat cutoff raised
+  HeatDemandSummary heat_demand{};
+  HeatingProfile control_mode = HeatingProfile::HEAT_PUMP;
+  HeatingProfile effective_control_mode = HeatingProfile::HEAT_PUMP;
+  bool control_mode_from_touch = false;
   uint32_t uptime_s = 0;
   uint32_t free_heap = 0;
   uint32_t cycle_count = 0;
@@ -691,8 +682,6 @@ struct SystemSnapshot {
 
 struct SystemConfig {
   char controller_id[33] = "lune";
-  HeatingProfile heating_profile = HeatingProfile::HEAT_PUMP;
-  float supply_temp_c = 35.0f;
 };
 
 /// Baseline version tag for the legacy all-in-one DeviceConfig blob.
@@ -715,9 +704,7 @@ struct DeviceConfig {
   ManifoldType manifold_type = ManifoldType::NO;
   SensorConfig sensor_config;
   BalancingConfig balancing;
-  HeliosConfig helios;
   AuthorityConfig authority;
-  ForecastConfig forecast;
 };
 
 // =============================================================================
@@ -756,12 +743,35 @@ inline const char *balance_mode_to_string(BalanceMode mode) {
   }
 }
 
-/// Resolve the effective balance mode, honouring the legacy
-/// dynamic_balancing_enabled flag as an alias for RETURN_TEMP.
+/// Resolve the effective balance mode.
 inline BalanceMode effective_balance_mode(const BalancingConfig &b) {
-  if (b.dynamic_balancing_enabled || b.mode == BalanceMode::RETURN_TEMP)
-    return BalanceMode::RETURN_TEMP;
   return b.mode;
+}
+
+inline const char *heating_profile_to_string(HeatingProfile profile) {
+  switch (profile) {
+    case HeatingProfile::NORMAL: return "normal";
+    case HeatingProfile::HEAT_PUMP: return "heat_pump";
+    default: return "heat_pump";
+  }
+}
+
+inline HeatingProfile heating_profile_from_string(const char *s) {
+  if (s == nullptr) return HeatingProfile::HEAT_PUMP;
+  if (strcasecmp(s, "normal") == 0 || strcasecmp(s, "boiler") == 0 ||
+      strcasecmp(s, "gas") == 0 || strcasecmp(s, "district") == 0 ||
+      strcasecmp(s, "district_heating") == 0)
+    return HeatingProfile::NORMAL;
+  return HeatingProfile::HEAT_PUMP;
+}
+
+inline const char *heat_demand_recommendation_to_string(HeatDemandRecommendation r) {
+  switch (r) {
+    case HeatDemandRecommendation::RAISE: return "raise";
+    case HeatDemandRecommendation::LOWER: return "lower";
+    case HeatDemandRecommendation::HOLD:
+    default: return "hold";
+  }
 }
 
 inline const char *zone_state_to_string(ZoneState state) {

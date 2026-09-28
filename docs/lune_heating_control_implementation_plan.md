@@ -691,25 +691,27 @@ Acceptance:
 - Coordinator tests can use a fake adapter.
 - Asgard compatibility is reported explicitly.
 
-## P5.2 Keep The House Target Local
+## P5.2 House Comfort Target Via Virtual Thermostat
 
-- [x] Retire external house-target synchronization.
+- [x] Write the house comfort target to Asgard's virtual-thermostat climate target
+  (separate from the physical VT input).
 
 Implementation requirements:
 
-- Keep the separately aggregated house target in Touch for schedules, room distribution,
-  diagnostics, and UI only.
-- Publish only the physical house temperature to Asgard.
-- Remove generic target-entity configuration and target-read helpers so an undocumented
-  external target path cannot be enabled accidentally.
-- Report target synchronization as intentionally unsupported, separately from physical
-  temperature transport health.
+- Keep the separately aggregated house comfort target in Touch.
+- Publish the physical house temperature to `Virtual Thermostat Input z1` only.
+- Write the comfort target to the virtual-thermostat climate
+  (`POST /climate/<vt>/set?target_temperature=`), rounded to 0.1 °C, only on
+  change, with read-back confirmation.
+- Drive Auto-Adaptive feed trim through **Setpoint Bias** (Touch-owned), not
+  through falsifying the physical temperature. See
+  [`lune_whole_house_flow_temperature.md`](lune_whole_house_flow_temperature.md).
 
 Acceptance:
 
-- A schedule change updates the local target without fabricating a physical-temperature
-  change or issuing an Asgard target write.
-- The API and dashboard explicitly report target synchronization as unsupported.
+- A schedule change updates the climate target without fabricating a physical-temperature
+  change.
+- Setpoint Bias moves only the flow temperature; relay on/off follows the VT climate.
 
 ## P5.3 Keep External Operating State Out Of Control
 
