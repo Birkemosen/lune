@@ -1061,6 +1061,14 @@
 
   .gated:has(> .switch input:not(:checked)) > .gated-body { opacity: .4; pointer-events: none; }
 
+  /* Heat-pump limits only apply in heat-pump mode (seg radios inside the form). */
+  form[data-save="heating"]:not(:has(input[name="heat_mode"][value="heat_pump"]:checked)) .hp-limits {
+    opacity: .4; pointer-events: none;
+  }
+
+  /* 2-probe layout: kun manifold frem/retur — skjul zone-returfelter og -metrics */
+  .app[data-probe-layout="2"] .zone-ret { display: none; }
+
   /* Segmenteret valg — pille, aktiv inverteret */
   .seg { display: flex; min-height: var(--hit); padding: 4px; border-radius: var(--r-pill); background: var(--raised); }
   .seg label { flex: 1; display: grid; }
@@ -1106,6 +1114,60 @@
   .btn:hover { background: var(--inv-bg); color: var(--inv-fg); }
   .btn.primary { background: var(--inv-bg); color: var(--inv-fg); }
   .btn.primary:hover { background: color-mix(in srgb, var(--inv-bg) 85%, transparent); }
+  /* Clean: gem-knap synlig men neutral — aldrig disabled/skjult */
+  form[data-js]:not([data-dirty]):not([data-state="saving"]):not([data-state="saved"]) > .panel-foot > .btn.primary {
+    background: var(--raised); color: var(--muted);
+  }
+  form[data-js]:not([data-dirty]):not([data-state="saving"]):not([data-state="saved"]) > .panel-foot > .btn.primary:hover {
+    background: var(--raised); color: var(--muted);
+  }
+  form[data-js]:not([data-dirty]) > .panel-foot > button[type="reset"] { display: none; }
+  .panel-foot .foot-start { margin-right: auto; display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; min-width: 0; }
+  .panel-foot > .save-status { margin-right: auto; }
+  .panel-foot .save-status { font-size: var(--fs-sm); color: var(--warn); }
+  .panel-foot .save-status:empty { display: none; }
+  form[data-state="error"] .panel-foot .save-status { color: var(--danger); }
+  .btn.primary[aria-busy="true"] { opacity: .7; cursor: wait; }
+  /* Dirty-prik (6 px) — `--warn`, aldrig eneste signal */
+  .field[data-dirty] > :is(label, .label)::after,
+  .switch[data-dirty] .switch-text > b::after,
+  .seg[data-dirty]::before {
+    content: "";
+    display: inline-block;
+    width: 6px; height: 6px;
+    margin-left: var(--space-2);
+    border-radius: 50%;
+    background: var(--warn);
+    vertical-align: middle;
+  }
+  .seg[data-dirty]::before { margin-left: 0; margin-right: var(--space-2); }
+  .tile[data-dirty] .tile-id::after,
+  .mode label[data-dirty]::after {
+    content: "";
+    display: inline-block;
+    width: 6px; height: 6px;
+    margin-left: var(--space-2);
+    border-radius: 50%;
+    background: var(--warn);
+    vertical-align: middle;
+  }
+  #m-conf:checked ~ .app .tile[data-dirty] .tile-id::after {
+    content: "";
+    color: transparent;
+    background: var(--warn);
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    font-weight: 400;
+  }
+  .autosave {
+    margin: var(--space-3) 0 0;
+    min-height: 1.25em;
+    font-size: var(--fs-sm);
+    color: var(--muted);
+    text-align: center;
+  }
+  .autosave:empty { display: none; }
+  .autosave .btn { min-height: calc(var(--hit) - 8px); padding: 0 var(--space-3); margin-left: var(--space-2); font-size: var(--fs-xs); }
   .btn.danger { background: var(--danger-bg); color: var(--danger); }
   .btn.danger:hover { background: var(--danger); color: var(--bg); }
   .btn:disabled { opacity: .35; pointer-events: none; }

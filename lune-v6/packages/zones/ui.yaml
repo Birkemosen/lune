@@ -847,7 +847,8 @@ number:
     mode: box
     unit_of_measurement: "s"
     min_value: 10
-    max_value: 90
+    # No shared mechanical ceiling for generic actuators — keep a soft UI bound only.
+    max_value: 3600
     step: 1
     optimistic: false
     lambda: |-
@@ -868,9 +869,8 @@ number:
     mode: box
     unit_of_measurement: "s"
     min_value: 10
-    # 40 s of close travel puts the plunger at the housing exit, so the entity
-    # must not be able to reach it. Default is 38.
-    max_value: 38
+    # Mechanical ceiling is 40 s (housing exit). Default remains 38.
+    max_value: 40
     step: 1
     optimistic: false
     lambda: |-

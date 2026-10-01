@@ -577,10 +577,17 @@ void LV6Dashboard::update_snapshot_() {
         s.zone_absorb_capacity_rank[i] = this->zone_controller_->get_absorb_capacity_rank(i);
         s.zone_relative_kv[i] =
             this->zone_controller_->get_relative_kv(i, s.zone_valve_pct[i]);
+        const auto zs = this->zone_controller_->get_zone_snapshot(i);
+        s.zone_static_factor[i] = zs.static_factor;
+        s.zone_balance_adapt[i] = zs.balance_adapt;
+        s.zone_hydraulic_factor[i] = zs.hydraulic_factor;
       } else {
         s.zone_loop_share_pct[i] = NAN;
         s.zone_absorb_capacity_rank[i] = 0;
         s.zone_relative_kv[i] = NAN;
+        s.zone_static_factor[i] = NAN;
+        s.zone_balance_adapt[i] = 1.0f;
+        s.zone_hydraulic_factor[i] = NAN;
       }
     }
     s.authority              = this->config_store_->get_authority_config();
@@ -1713,6 +1720,25 @@ void LV6Dashboard::handle_state_(AsyncWebServerRequest *request) {
             snap->heat_demand.critical_zone + 1);
   appendf(buf, BUF_SIZE, offset, "\"sensor-heat_demand_saturated_s\":{\"value\":%lu},",
           static_cast<unsigned long>(snap->heat_demand.saturated_s));
+
+  {
+    const char *bal_mode = "static";
+    switch (snap->balancing.mode) {
+      case lv6::BalanceMode::ADAPTIVE: bal_mode = "adaptive"; break;
+      case lv6::BalanceMode::RETURN_TEMP: bal_mode = "return_temp"; break;
+      default: bal_mode = "static"; break;
+    }
+    appendf(buf, BUF_SIZE, offset, "\"select-balancing_mode\":{\"state\":\"%s\"},", bal_mode);
+  }
+  for (uint8_t i = 0; i < lv6::NUM_ZONES; i++) {
+    const uint8_t zn = i + 1;
+    format_float_token(num_buf, sizeof(num_buf), snap->zone_static_factor[i], 2);
+    appendf(buf, BUF_SIZE, offset, "\"sensor-zone_%u_balance_prior\":{\"value\":%s},", zn, num_buf);
+    format_float_token(num_buf, sizeof(num_buf), snap->zone_balance_adapt[i], 2);
+    appendf(buf, BUF_SIZE, offset, "\"sensor-zone_%u_balance_learned\":{\"value\":%s},", zn, num_buf);
+    format_float_token(num_buf, sizeof(num_buf), snap->zone_hydraulic_factor[i], 2);
+    appendf(buf, BUF_SIZE, offset, "\"sensor-zone_%u_balance_effective\":{\"value\":%s},", zn, num_buf);
+  }
 
   appendf(buf, BUF_SIZE, offset,
       "\"select-manifold_type\":{\"state\":\"%s\"},"

@@ -592,21 +592,19 @@ MotorProfile Lv6ValveController::effective_motor_profile_(uint8_t zone) const {
 }
 
 uint32_t Lv6ValveController::effective_runtime_limit_s_(uint8_t zone) const {
-  uint32_t profile_limit = motor_cfg_.generic_profile_runtime_limit_s;
   switch (effective_motor_profile_(zone)) {
     case MotorProfile::HMIP_VDMOT:
       // Hard mechanical ceiling — never honour an NVS value above 40 s.
-      profile_limit = std::min(motor_cfg_.hmip_vdmot_runtime_limit_s,
-                               HMIP_VDMOT_RUNTIME_LIMIT_MAX_S);
-      break;
+      return std::max<uint32_t>(
+          1, std::min({motor_cfg_.hmip_vdmot_runtime_limit_s, HMIP_VDMOT_RUNTIME_LIMIT_MAX_S,
+                       motor_cfg_.max_runtime_s}));
     case MotorProfile::GENERIC:
     case MotorProfile::INHERIT:
     default:
-      profile_limit = motor_cfg_.generic_profile_runtime_limit_s;
-      break;
+      // Generic actuators have no shared mechanical ceiling — honour the
+      // configured profile limit as-is (UI/backup still apply a soft upper bound).
+      return std::max<uint32_t>(1, motor_cfg_.generic_profile_runtime_limit_s);
   }
-  profile_limit = std::max<uint32_t>(1, profile_limit);
-  return std::min(std::max<uint32_t>(1, motor_cfg_.max_runtime_s), profile_limit);
 }
 
 MoveCeilingInputs Lv6ValveController::build_ceiling_inputs_(

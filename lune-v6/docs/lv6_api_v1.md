@@ -486,7 +486,7 @@ Returns dashboard-editable settings currently backed by config store and control
       "return_probe": 8
     },
     "motor": {
-      "_comment": "hmip_runtime_limit_s is the CLOSE ceiling. 40 s of close travel is where the HmIP-VDMOT plunger reaches the housing exit, so it is bounded below that; opening has its own limit. Both are also bounded in commutations.",
+      "_comment": "hmip_runtime_limit_s is the CLOSE ceiling. Hard max 40 s (housing exit); default 38 s. Opening has its own limit. Both are also bounded in commutations.",
       "default_profile": "HMIP_VDMOT",
       "generic_runtime_limit_s": 45,
       "hmip_runtime_limit_s": 34,

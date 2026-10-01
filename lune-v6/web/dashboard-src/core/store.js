@@ -28,6 +28,8 @@ const D = {
   historyFlow: [],
   historyReturn: [],
   historyDemand: [],
+  historyZoneTemp: createZoneLog(), // reused shape: array per zone 1..6
+  historyZoneSp: createZoneLog(),
   lastHistoryAt: 0,
   zoneNames,
   manualMode: false,
@@ -422,6 +424,26 @@ export function sampleHistory(force) {
   pushHistory('historyFlow', ev('sensor-manifold_flow_temperature'));
   pushHistory('historyReturn', ev('sensor-manifold_return_temperature'));
   pushHistory('historyDemand', active ? demand / active : 0);
+  for (let zone = 1; zone <= NZ; zone++) {
+    pushZoneHistory('historyZoneTemp', zone, ev('sensor-zone_' + zone + '_temperature'));
+    pushZoneHistory('historyZoneSp', zone, ev('number-zone_' + zone + '_base_setpoint')
+      ?? ev('number-zone_' + zone + '_setpoint'));
+  }
+}
+
+function pushZoneHistory(bucket, zone, value) {
+  const target = D[bucket] && D[bucket][zone];
+  if (!target) return;
+  const numeric = toNumber(value);
+  if (numeric == null) return;
+  target.push(numeric);
+  while (target.length > HISTORY_MAX) target.shift();
+  notify(dashboardKey(bucket + ':' + zone));
+}
+
+export function getZoneSeries(kind, zone) {
+  const bucket = kind === 'sp' ? D.historyZoneSp : D.historyZoneTemp;
+  return (bucket && bucket[zone]) ? bucket[zone].slice() : [];
 }
 
 function timeStamp() {

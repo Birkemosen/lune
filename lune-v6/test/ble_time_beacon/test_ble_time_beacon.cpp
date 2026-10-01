@@ -11,6 +11,8 @@ int main() {
   assert(clamp_interval_min(60) == 60);
   assert(clamp_interval_min(1440) == 1440);
   assert(clamp_interval_min(9999) == 1440);
+  assert(CLOCK_SYNC_BURST_MS == 30000u);
+  assert(CLOCK_SYNC_NOW_BURST_MS == 90000u);
 
   // 2026: last Sundays are 29 Mar and 25 Oct.
   const DstBounds y2026 = europe_dst_bounds(2026);

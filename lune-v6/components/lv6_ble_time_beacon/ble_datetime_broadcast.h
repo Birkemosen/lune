@@ -16,7 +16,10 @@ static constexpr int32_t COPENHAGEN_DST_SHIFT_S = 3600;
 static constexpr uint16_t CLOCK_SYNC_INTERVAL_MIN_DEFAULT = 60;
 static constexpr uint16_t CLOCK_SYNC_INTERVAL_MIN_LO = 15;
 static constexpr uint16_t CLOCK_SYNC_INTERVAL_MIN_HI = 1440;
-static constexpr uint32_t CLOCK_SYNC_BURST_MS = 12000;
+// Periodic beacon: short on-air window (scan pauses while advertising).
+static constexpr uint32_t CLOCK_SYNC_BURST_MS = 30000;
+// Manual "Sync now": long enough to force-sync BLU displays (setup → 2× press).
+static constexpr uint32_t CLOCK_SYNC_NOW_BURST_MS = 90000;
 
 struct DstBounds {
   uint32_t start_s;

@@ -80,6 +80,11 @@ function seed() {
     setEntity(key.motorLearnPhase(zone), { state: '' });
     setEntity(key.motorLearnSample(zone), { value: 0 });
     setEntity(key.motorLearnSamplesNeeded(zone), { value: 0 });
+    const prior = [1, 0.85, 0.4, 1, 1, 0.85][index];
+    const learned = [1.08, 0.81, 0.44, 0.97, 0.97, 1][index];
+    setEntity(key.balancePrior(zone), { value: prior });
+    setEntity(key.balanceLearned(zone), { value: learned });
+    setEntity(key.balanceEffective(zone), { value: Number((prior * learned).toFixed(2)) });
   }
 
   for (let probe = 1; probe <= PROBES; probe++) {
@@ -144,6 +149,7 @@ function seed() {
   setEntity(gkey.heatingMode, { state: 'heat_pump' });
   setEntity(gkey.effectiveHeatingMode, { state: 'heat_pump' });
   setEntity(gkey.heatingModeSource, { state: 'local' });
+  setEntity(gkey.balancingMode, { state: 'adaptive' });
   setEntity(gkey.hpOverheatMarginC, { value: 1.0 });
   setEntity(gkey.hpBasePct, { value: 60 });
   setEntity(gkey.hpTrimFloorPct, { value: 15 });

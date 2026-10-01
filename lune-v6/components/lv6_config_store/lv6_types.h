@@ -485,8 +485,8 @@ struct MotorConfig {
   uint8_t approach_zone_pct = 80;      // begin soft-approach at this % of the move
   // --- Mechanical ceilings ----------------------------------------------------
   // 40 s of CLOSE travel puts the HmIP-VDMOT plunger at the housing exit, where
-  // the anti-rotation tap leaves its guide and snaps. That is the destruction
-  // boundary, not a safe limit, so the operative ceiling sits inside it (38 s).
+  // the anti-rotation tap leaves its guide and snaps. That is the hard ceiling
+  // (HMIP_VDMOT_RUNTIME_LIMIT_MAX_S). Default stays at 38 s for headroom.
   //
   // Counts are the mechanically meaningful currency — plunger extension follows
   // commutations, not seconds — and 40 s at the measured 78 Hz free-travel

@@ -132,6 +132,9 @@ struct DashboardSnapshot {
   float             zone_loop_share_pct[6]{};
   uint8_t           zone_absorb_capacity_rank[6]{};
   float             zone_relative_kv[6]{};  ///< Kv at current commanded opening
+  float             zone_static_factor[6]{};     ///< Resistance-aware static prior (0..1)
+  float             zone_balance_adapt[6]{};     ///< Learned adaptive multiplier
+  float             zone_hydraulic_factor[6]{};  ///< Effective static × adapt
   lv6::HeatingProfile heating_mode{lv6::HeatingProfile::HEAT_PUMP};
   lv6::HeatingProfile effective_heating_mode{lv6::HeatingProfile::HEAT_PUMP};
   bool              heating_mode_from_touch{false};

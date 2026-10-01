@@ -51,16 +51,24 @@ algorithm notes.
 <a id="heating"></a>
 ### Heating mode
 
-**Normal** vs **Heat pump**, plus a minimum total opening. Heat-pump limits
-(base supply, overheat margin, trim) only apply in heat-pump mode and bound how
-hard the manifold may call.
+**Normal** vs **Heat pump**, plus an optional minimum total opening across
+accepting loops (0 disables). Heat-pump limits only apply in heat-pump mode:
+
+- **Base opening** — satisfied valve position that keeps floors warm (default
+  60 %)
+- **Overheat margin** — °C above setpoint before a zone soft-closes (default
+  1.0 °C)
+- **Trim floor** — soft-trim floor between setpoint and overheat (default 15 %)
+
+Default local mode is heat pump.
 
 <a id="return-probes"></a>
 ### Return probes
 
 **2 probes**: shared supply/return on the manifold. **8 probes**: add a return
 sensor per zone for finer diagnostics and commissioning. Assign returns on each
-zone under Room and sensors.
+zone under Room and sensors. Live readings on this panel show each 1-Wire probe
+temperature so you can verify wiring before saving the layout.
 
 ---
 
@@ -75,8 +83,13 @@ authority. Without approval, V6 stays fully local and conservative.
 <a id="ble-clock"></a>
 ### BLE clock
 
-Optional BLE time beacon so room displays (e.g. Shelly BLU) stay in sync without
-NTP on every gadget. Interval is how often the beacon is advertised.
+Optional Shelly Date/Time Broadcast so nearby BLU displays can set their clock
+without NTP. Interval is how often V6 advertises a short burst.
+
+BLU displays typically sync only once per day. **Sync now** opens a ~90 s
+advertise window so you can force a sync on each display: press once to enter
+setup (`SEt`), then press twice rapidly. Bluetooth must be on (hold ~5 s to
+toggle if needed).
 
 <a id="weather"></a>
 ### Weather preload

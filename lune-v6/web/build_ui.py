@@ -115,15 +115,25 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
                 f'<input class="sr-only" id="{name}" name="{name}" type="file" accept="{accept}">'
                 f'<span class="file-pick">{T("common.chooseFile")}</span>'
                 f'<span class="file-name" data-empty="{T("common.noFile")}">{T("common.noFile")}</span></label>')
-    def metric(label,val,unit,bind=""):
+    def metric(label,val,unit,bind="",cls=""):
         b=f' data-bind="{bind}"' if bind else ""
-        return f'<div class="metric"><dt>{label}</dt><dd{b}>{val} <small>{unit}</small></dd></div>'
+        c=f' {cls}' if cls else ""
+        return f'<div class="metric{c}"><dt>{label}</dt><dd{b}>{val} <small>{unit}</small></dd></div>'
     def title(z): return f"{tid(z)} {z[1]}"
     def help_btn(hid, topic):
         return f'<button class="help-btn" type="button" popovertarget="{hid}" style="anchor-name:--a-{hid}" aria-label="{T("help.aria", topic=topic)}">?</button>'
     def help_pop(hid, body_key, more=""):
-        link=f'<a href="https://github.com/Birkemosen/lune/blob/main/{more}">{T("help.readMore")}</a>' if more else ""
+        link=(f'<a href="https://github.com/Birkemosen/lune/blob/main/{more}" '
+              f'target="_blank" rel="noopener noreferrer">{T("help.readMore")}</a>') if more else ""
         return f'<div id="{hid}" popover class="help-pop" style="position-anchor:--a-{hid}"><p>{T(body_key)}</p>{link}</div>'
+    def ss_id(key): return "ss-" + key.replace("/", "-")
+    def foot_save(key, primary, left=""):
+        status=f'<span class="save-status" id="{ss_id(key)}" aria-live="polite"></span>'
+        undo=f'<button type="reset" class="btn">{T("common.undo")}</button>'
+        btn=f'<button class="btn primary" type="submit">{primary}</button>'
+        if left:
+            return f'<footer class="panel-foot"><div class="foot-start">{left}{status}</div>{undo}{btn}</footer>'
+        return f'<footer class="panel-foot">{status}{undo}{btn}</footer>'
 
     # ---- strimmel
     tiles="".join(f'''
@@ -210,35 +220,33 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
     comfort="".join(f'''
             <label for="s-z{z[0]}" data-state="{z[4]}">
               <span class="id">{rid(z)}</span>
-              <span class="name">{z[1]}</span>
-              <span class="val">{f'<b class="bad">{ST["fault"]}</b>' if z[4]=='fault' else f'<b class="{"c-warn" if z[3]-z[2]>0.5 else ""}">{T.num(z[2])}°</b> / {T.num(z[3])}°'}</span>
-              {spark(z)}
+              <span class="name" data-bind="z{z[0]}.name">{z[1]}</span>
+              <span class="val" data-bind="z{z[0]}.comfort">—</span>
+              <svg class="spark" viewBox="0 0 240 40" preserveAspectRatio="none" aria-hidden="true" data-bind-spark="z{z[0]}"></svg>
             </label>''' for z in Z)
-    balrows=[("1,00","1,08","1,08"),("0,85","0,81","0,81"),("0,40","0,44","0,44"),("1,00","0,97","0,97"),("1,00","0,97","0,97"),("0,85","—","0,85")]
-    bal="".join(f'<tr><td>{rid(z)}</td>'+"".join(f'<td class="num{" c-violet" if j==1 else ""}">{v.replace(",",T.meta("_dec"))}</td>' for j,v in enumerate(r))+'</tr>' for z,r in zip(Z,balrows))
-    faultz=Z[5]
+    bal="".join(f'<tr data-bind-row="bal.z{z[0]}"><td data-bind="bal.z{z[0]}.id">{rid(z)}</td><td class="num" data-bind="bal.z{z[0]}.prior">—</td><td class="num c-violet" data-bind="bal.z{z[0]}.learned">—</td><td class="num" data-bind="bal.z{z[0]}.effective">—</td></tr>' for z in Z)
     dash_sys=f'''
       <section class="view" id="v-dash-sys" aria-labelledby="h-dash-sys">
-        <header class="view-head"><h2 id="h-dash-sys">{T("scope.manifold")}</h2><p>{T("dash.sys.sub",zones=6,calling=3,faults=1)}</p></header>
+        <header class="view-head"><h2 id="h-dash-sys">{T("scope.manifold")}</h2><p data-bind="dash.sys.sub">{T("dash.sys.sub",zones=6,calling=0,faults=0)}</p></header>
 
-        <div class="panel alert">
-          <div class="panel-head"><h3>{T("alert.zoneFault",zone=title(faultz))}</h3></div>
+        <div class="panel alert" data-bind-show="dash.alert" hidden>
+          <div class="panel-head"><h3 data-bind="dash.alertTitle">{T("alert.zoneFault",zone="—")}</h3></div>
           <p class="note">{T("alert.zoneFaultBody")}</p>
-          <div class="panel-foot" style="justify-content:flex-start"><label class="btn" for="s-z6">{T("common.open",x="Z6")}</label></div>
+          <div class="panel-foot" style="justify-content:flex-start"><label class="btn" data-bind-for="dash.alertZone" for="s-z1">{T("common.open",x="—")}</label></div>
         </div>
 
         <section class="panel c5">
-          <header class="panel-head"><h3>{T("heat.title")}</h3><span class="badge hot">{T("badge.calling")}</span></header>
+          <header class="panel-head"><h3>{T("heat.title")}</h3><span class="badge" data-bind="heat.badge">{T("state.idle")}</span></header>
           <dl class="metrics">
             {metric(T("m.supply"),T.num(34.2),"°C","manifold.flow")}
             {metric(T("m.return"),T.num(29.8),"°C","manifold.return")}
             {metric(T("m.dt"),T.num(4.4),"K","manifold.dt")}
             {metric(T("m.opening"),"32","%","manifold.opening")}
           </dl>
-          <div class="bar" style="--v:32%" role="meter" aria-valuenow="32" aria-valuemin="0" aria-valuemax="100" aria-label="{T("m.openingAria")}"><i></i></div>
+          <div class="bar" style="--v:0%" role="meter" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100" aria-label="{T("m.openingAria")}"><i></i></div>
           <div class="sub trend-wrap">
             <h4>{T("trend.title")} <span class="legend"><i class="lf"></i>{T("m.supply")}<i class="lr"></i>{T("m.return")}</span></h4>
-            {trend()}
+            <svg class="trend" viewBox="0 0 240 80" preserveAspectRatio="none" role="img" aria-label="{T("trend.aria")}" data-bind-trend="manifold"></svg>
             <div class="axis" aria-hidden="true"><span>−24 {H}</span><span>−12 {H}</span><span>{T("trend.now")}</span></div>
           </div>
         </section>
@@ -251,7 +259,7 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
 
 
         <section class="panel c6">
-          <header class="panel-head"><h3>{T("bal.title")}</h3><span class="badge violet">{T("bal.adaptive")}</span></header>
+          <header class="panel-head"><h3>{T("bal.title")}</h3><span class="badge violet" data-bind="bal.mode">{T("bal.adaptive")}</span></header>
           <div class="table-wrap"><table class="table">
             <thead><tr><th>{T("bal.zone")}</th><th class="num">{T("bal.prior")}</th><th class="num">{T("bal.learned")}</th><th class="num">{T("bal.effective")}</th></tr></thead>
             <tbody>{bal}</tbody>
@@ -259,15 +267,12 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
         </section>
 
         <section class="panel c6">
-          <header class="panel-head"><h3>{T("dev.title")}</h3><span class="badge ok">{T("dev.online")}</span></header>
+          <header class="panel-head"><h3>{T("dev.title")}</h3><span class="badge" data-bind="dev.badge">{T("dev.online")}</span></header>
           <dl class="metrics">
             {metric("Wi-Fi","−58","dBm","wifi.rssi")}
             {metric(T("dev.uptime"),"6",T("common.days"),"sys.uptime")}
           </dl>
-          <pre class="log" data-bind="log" aria-live="polite" lang="en">14:06  <span class="bad">zone Z6</span> FAULT, valve closed
-14:06  <span class="bad">motor Z6</span> end-stop timeout (45 s)
-14:05  <span class="violet">balancing</span> Z3 0.42 → 0.44
-14:05  <span class="info">forecast</span> fetched, max wind 11 m/s</pre>
+          <pre class="log" data-bind="log" aria-live="polite" lang="en"></pre>
         </section>
       </section>'''
 
@@ -277,20 +282,21 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
         member=grp=="member"
         sub=ST[st]+(" · "+T("zdash.follows",z="Z4") if member else " · "+T("zdash.primary",g="Z4–5") if grp=="primary" else "")
         alert=f'''
-        <form class="panel alert" data-save="zone/{i}/recovery">
+        <form class="panel alert" data-save="zone/{i}/recovery" data-bind-show="z{i}.fault" hidden>
           <div class="panel-head"><h3>{T("zdash.faultTitle")}</h3></div>
           <p class="note">{T("zdash.faultBody")}</p>
           <div class="panel-foot" style="justify-content:flex-start"><button class="btn" type="submit" name="action" value="reset_fault">{T("common.resetFault")}</button></div>
-        </form>''' if st=="fault" else ""
+        </form>'''
         dis=' disabled' if member else ''
-        badge={"calling":f'<span class="badge hot">{ST["calling"]}</span>',"idle":f'<span class="badge">{ST["idle"]}</span>',"fault":f'<span class="badge bad">{ST["fault"]}</span>'}[st]
-        pre=f'<p class="msg info"><span><b>{T("zdash.preloadStrong")}</b> {T("zdash.preload")}</span></p>' if i in (1,5) else ""
-        foot=(f'<span class="note">{T("zdash.memberNote",m="Z5",p="Z4")}</span><label class="btn" for="s-z4">{T("common.open",x="Z4–5")}</label>'
-              if member else f'<button class="btn primary" type="submit">{T("zdash.saveTarget")}</button>')
+        badge_cls={"calling":"badge hot","idle":"badge","fault":"badge bad","off":"badge"}.get(st,"badge")
+        badge=f'<span class="{badge_cls}" data-bind="z{i}.badge">{ST.get(st,ST["idle"])}</span>'
+        pre=f'<p class="msg info" data-bind-show="z{i}.preload" hidden><span><b>{T("zdash.preloadStrong")}</b> <span data-bind="z{i}.preload">{T("zdash.preload",offset="+0,0")}</span></span></p>'
+        foot=(f'<footer class="panel-foot"><span class="note">{T("zdash.memberNote",m="Z5",p="Z4")}</span><label class="btn" for="s-z4">{T("common.open",x="Z4–5")}</label></footer>'
+              if member else '')
         ta=T("zdash.targetAria")
         return f'''
       <section class="view" id="v-dash-z{i}" aria-labelledby="h-dash-z{i}">
-        <header class="view-head"><h2 id="h-dash-z{i}">{title(z)}</h2><p>{sub}</p></header>{alert}
+        <header class="view-head"><h2 id="h-dash-z{i}"><span data-bind="z{i}.title">{title(z)}</span></h2><p data-bind="z{i}.sub">{sub}</p></header>{alert}
 
         <form class="panel c7" data-save="zone/{i}/target">
           <header class="panel-head"><h3>{T("zdash.comfort")}</h3>{badge}</header>
@@ -303,21 +309,22 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
               <button type="button" data-step="1" aria-label="{T("common.increase",x=ta)}"{dis}>+</button>
             </div>
           </div>
-          <footer class="panel-foot">{foot}</footer>
+          <p class="autosave" aria-live="polite"></p>
+          {foot}
         </form>
 
         <section class="panel c5">
           <header class="panel-head"><h3>{T("zdash.valve")}</h3></header>
           <dl class="metrics">
             {metric(T("zdash.opening"),fl,"%",f"z{i}.flow")}
-            {metric(T("m.return"),T.num(ret),"°C",f"z{i}.return")}
+            {metric(T("m.return"),T.num(ret),"°C",f"z{i}.return",cls="zone-ret")}
           </dl>
           <div class="bar" style="--v:{fl}%" aria-hidden="true"><i></i></div>
           <dl class="kv">
-            <div><dt>{T("zdash.motor")}</dt><dd class="{'c-warn' if st=='fault' else 'c-ok'}">{T("common.needsLearning") if st=="fault" else T("common.learned")}</dd></div>
-            <div><dt>{T("zdash.preheatAdv")}</dt><dd>{T.num(0.0 if st=="fault" else 0.35,2)} °C</dd></div>
-            <div><dt>{T("zdash.offsetNow")}</dt><dd class="{'c-info' if i in (1,5) else ''}">{"+"+T.num(0.4) if i in (1,5) else T.num(0.0)} °C</dd></div>
-            <div><dt>{T("zdash.tempFrom")}</dt><dd class="c-info">{T("src.ble") if src=="ble" else T("src.probe")}</dd></div>
+            <div><dt>{T("zdash.motor")}</dt><dd data-bind="z{i}.motor">—</dd></div>
+            <div><dt>{T("zdash.preheatAdv")}</dt><dd data-bind="z{i}.preheat">—</dd></div>
+            <div><dt>{T("zdash.offsetNow")}</dt><dd data-bind="z{i}.offset">—</dd></div>
+            <div><dt>{T("zdash.tempFrom")}</dt><dd data-bind="z{i}.tempFrom">—</dd></div>
           </dl>
         </section>
       </section>'''
@@ -337,14 +344,14 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
           <div class="sub">
             <h4>{T("csys.manifold")}</h4>
             <div class="field"><span class="label">{T("csys.valveType")}</span>{seg("manifold_type",[("no",T("csys.no")),("nc",T("csys.nc"))],"nc",T("csys.valveType"))}</div>
-            {row("probe_flow",T("csys.supplyProbe"),probes(7,"probe_flow"))}
-            {row("probe_return",T("csys.returnProbe"),probes(8,"probe_return"))}
+            {row("probe_flow",T("csys.supplyProbe"),probes(1,"probe_flow"))}
+            {row("probe_return",T("csys.returnProbe"),probes(2,"probe_return"))}
           </div>
           <div class="sub">
             <h4>{T("csys.motors")}</h4>
             {switch("motor_drivers",T("csys.drivers"),T("csys.driversSub"),True)}
             {row("motor_type",T("csys.motorType"),'<select class="select" id="motor_type" name="motor_type"><option>Generic</option><option selected>HmIP VdMot</option></select>')}
-            {rstep("m_runtime",T("csys.maxRun"),45,10,120,5,"s",dec=0)}
+            {rstep("m_runtime",T("csys.maxRun"),38,5,40,1,"s",dec=0)}
           </div>
           <details class="more">
             <summary>{T("csys.limits")}</summary>
@@ -372,7 +379,7 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
               </div>
             </div>
           </details>
-          <footer class="panel-foot"><button class="btn primary" type="submit">{T("csys.saveManifold")}</button></footer>
+          {foot_save("manifold",T("csys.saveManifold"))}
         </form>
 
         <form class="panel c6" data-save="regulation">
@@ -394,36 +401,35 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
               {rstep("ph_delta",T("csys.delta"),0.3,0.1,2,0.1,"°C")}
             </div>
           </div>
-          <footer class="panel-foot">
-            <details class="confirm" style="margin-right:auto">
-              <summary class="btn danger">{T("csys.resetBal")}</summary>
-              <p class="note">{T("csys.resetBalNote")}</p>
-              <button class="btn danger" type="submit" name="action" value="reset_balancing">{T("csys.resetBalConfirm")}</button>
-            </details>
-            <button class="btn primary" type="submit">{T("csys.saveReg")}</button>
-          </footer>
+          {foot_save("regulation",T("csys.saveReg"),left=f'<details class="confirm"><summary class="btn danger">{T("csys.resetBal")}</summary><p class="note">{T("csys.resetBalNote")}</p><button class="btn danger" type="submit" name="action" value="reset_balancing">{T("csys.resetBalConfirm")}</button></details>')}
         </form>
 
         <form class="panel c6" data-save="heating">
           <header class="panel-head"><h3>{T("csys.heating")}</h3>{help_btn("help-heating",T("csys.heating"))}</header>
           {help_pop("help-heating","help.heating","lune-v6/docs/Manual.md#heating")}
-          <div class="field"><span class="label">{T("csys.heatMode")}</span>{seg("heat_mode",[("normal",T("csys.heatNormal")),("heat_pump",T("csys.heatPump"))],"normal",T("csys.heatMode"))}</div>
-          {rstep("heat_min_open",T("csys.minOpening"),15,0,100,1,"%",dec=0)}
-          <div class="sub gated">
+          <div class="field"><span class="label">{T("csys.heatMode")}</span>{seg("heat_mode",[("normal",T("csys.heatNormal")),("heat_pump",T("csys.heatPump"))],"heat_pump",T("csys.heatMode"))}</div>
+          {rstep("heat_min_open",T("csys.minOpening"),0,0,100,1,"%",dec=0)}
+          <div class="sub hp-limits">
             <h4>{T("csys.heatPumpLimits")}</h4>
-            {rstep("hp_base",T("csys.hpBase"),35,20,55,0.5,"°C")}
-            {rstep("hp_overheat",T("csys.hpOverheat"),8,0,20,0.5,"K")}
-            {rstep("hp_trim",T("csys.hpTrim"),-2,-10,10,0.5,"K")}
+            {rstep("hp_base",T("csys.hpBase"),60,30,100,1,"%",dec=0)}
+            {rstep("hp_overheat",T("csys.hpOverheat"),1.0,0.3,3.0,0.1,"°C")}
+            {rstep("hp_trim",T("csys.hpTrim"),15,0,100,1,"%",dec=0)}
           </div>
-          <footer class="panel-foot"><button class="btn primary" type="submit">{T("csys.saveHeating")}</button></footer>
+          {foot_save("heating",T("csys.saveHeating"))}
         </form>
 
         <form class="panel c6" data-save="return_probes">
           <header class="panel-head"><h3>{T("csys.returnProbes")}</h3>{help_btn("help-return-probes",T("csys.returnProbes"))}</header>
           {help_pop("help-return-probes","help.returnProbes","lune-v6/docs/Manual.md#return-probes")}
-          <div class="field"><span class="label">{T("csys.probeMode")}</span>{seg("return_probe_mode",[("2",T("csys.probeMode2")),("8",T("csys.probeMode8"))],"8",T("csys.probeMode"))}</div>
+          <div class="field"><span class="label">{T("csys.probeMode")}</span>{seg("return_probe_mode",[("2",T("csys.probeMode2")),("8",T("csys.probeMode8"))],"2",T("csys.probeMode"))}</div>
           <p class="note">{T("csys.returnProbesNote")}</p>
-          <footer class="panel-foot"><button class="btn primary" type="submit">{T("csys.saveReturnProbes")}</button></footer>
+          <div class="sub">
+            <h4>{T("csys.probeLive")}</h4>
+            <dl class="metrics">
+              {"".join(f'<div class="metric"><dt>{T("csys.probe",n=n)}</dt><dd data-bind="probe.{n}">— <small>°C</small></dd></div>' for n in range(1,9))}
+            </dl>
+          </div>
+          {foot_save("return_probes",T("csys.saveReturnProbes"))}
         </form>
 
         {sect("sect.connect")}
@@ -452,7 +458,7 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
           <header class="panel-head"><h3>{T("csys.bleClock")}</h3>{help_btn("help-ble-clock",T("csys.bleClock"))}</header>
           {help_pop("help-ble-clock","help.bleClock","lune-v6/docs/Manual.md#ble-clock")}
           {switch("ble_clock_enabled",T("csys.bleClockEnable"),T("csys.bleClockSub"),False)}
-          {rstep("ble_clock_interval",T("csys.bleClockInterval"),60,10,600,10,"s",dec=0)}
+          {rstep("ble_clock_interval",T("csys.bleClockInterval"),60,15,1440,15,"min",dec=0)}
           <footer class="panel-foot">
             <button class="btn" type="submit" name="action" value="sync">{T("csys.bleClockSync")}</button>
             <button class="btn primary" type="submit">{T("csys.saveBleClock")}</button>
@@ -575,12 +581,11 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
         merge=f'<option value="">{T("common.none")}</option>'+"".join(f'<option value="{y[0]}"{" selected" if (i==5 and y[0]==4) else ""}>Z{y[0]} {y[1]}</option>' for y in Z if y[0]!=i)
         pipes="".join(f'<option{" selected" if p==pipe else ""}>{p}</option>' for p in PIPES)
         fault=st=="fault"
-        L=(T("common.needsLearning"),"—","—",T.num(0,2),T("cz.endstopTimeout")) if fault else (T("common.learned"),"412 / 398",f"{T.num(0.96,2)} / {T.num(1.04,2)}",T.num(0.35,2),T("common.none"))
         member=f'<p class="msg violet"><span><b>{T("cz.memberStrong",p="Z4")}</b> {T("cz.member",p="Z4")}</span></p>' if grp=="member" else ""
         zid=f"Z{i}"
         return f'''
       <section class="view" id="v-conf-z{i}" aria-labelledby="h-conf-z{i}">
-        <header class="view-head"><h2 id="h-conf-z{i}">{title(z)}</h2><p>{T("cz.sub")}</p></header>
+        <header class="view-head"><h2 id="h-conf-z{i}"><span data-bind="z{i}.title">{title(z)}</span></h2><p>{T("cz.sub")}</p></header>
 
         {sect("sect.zone")}
 
@@ -605,10 +610,10 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
                   <button type="button" class="btn" data-action="ble-scan" data-zone="{i}">{T("cz.scan")}</button>
                 </div>
               </div>
-              <div class="field"><label for="z{i}_ret">{T("cz.returnSensor")}</label>{probes(i,f"z{i}_ret")}</div>
+              <div class="field zone-ret"><label for="z{i}_ret">{T("cz.returnSensor")}</label>{probes(i + 2,f"z{i}_ret")}</div>
             </div>
           </div>
-          <footer class="panel-foot"><button class="btn primary" type="submit">{T("cz.saveRoom")}</button></footer>
+          {foot_save(f"zone/{i}/room",T("cz.saveRoom"))}
         </form>
 
         <form class="panel c6" data-save="zone/{i}/floor">
@@ -630,17 +635,17 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
               <div class="field"><label for="z{i}_solar">{T("cz.solar")}</label>{stepper(f"z{i}_solar",0.6 if "s" in walls else 0.2,0,2,0.1,"×",T("cz.solar"))}</div>
             </div>
           </div>
-          <footer class="panel-foot"><button class="btn primary" type="submit">{T("cz.saveFloor")}</button></footer>
+          {foot_save(f"zone/{i}/floor",T("cz.saveFloor"))}
         </form>
 
         <form class="panel" data-save="zone/{i}/motor">
-          <header class="panel-head"><h3>{T("cz.motor")}</h3>{help_btn("help-zone-motor",T("cz.motor"))}<span class="badge {'warn' if fault else 'ok'}">{L[0]}</span></header>
+          <header class="panel-head"><h3>{T("cz.motor")}</h3>{help_btn("help-zone-motor",T("cz.motor"))}<span class="badge" data-bind="z{i}.motorBadge">—</span></header>
           <div class="subs cols-2">
-            <dl class="kv"><div><dt>{T("cz.ripples")}</dt><dd>{L[1]}</dd></div><div><dt>{T("cz.factors")}</dt><dd>{L[2]}</dd></div></dl>
-            <dl class="kv"><div><dt>{T("zdash.preheatAdv")}</dt><dd>{L[3]} °C</dd></div><div><dt>{T("cz.lastFault")}</dt><dd class="{'bad' if fault else ''}">{L[4]}</dd></div></dl>
+            <dl class="kv"><div><dt>{T("cz.ripples")}</dt><dd data-bind="z{i}.ripples">—</dd></div><div><dt>{T("cz.factors")}</dt><dd data-bind="z{i}.factors">—</dd></div></dl>
+            <dl class="kv"><div><dt>{T("zdash.preheatAdv")}</dt><dd data-bind="z{i}.preheat">—</dd></div><div><dt>{T("cz.lastFault")}</dt><dd data-bind="z{i}.lastFault">—</dd></div></dl>
           </div>
           <footer class="panel-foot">
-            <button class="btn" type="submit" name="action" value="reset_fault"{'' if fault else ' disabled'}>{T("common.resetFault")}</button>
+            <button class="btn" type="submit" name="action" value="reset_fault" data-bind-disable="z{i}.faultOk">{T("common.resetFault")}</button>
             <details class="confirm">
               <summary class="btn danger">{T("cz.relearn")}</summary>
               <p class="note">{T("cz.relearnNote",z=zid)}</p>
@@ -664,9 +669,24 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
         langnav=""
 
     # Dynamiske strenge til binderen (statusser, relative tider, gem-beskeder)
-    rt={k:T(k) for k in ("state.calling","state.idle","state.fault","state.off","tile.fault","badge.calling","sys.dt","sys.dtstate","dash.sys.sub","common.days","rt.savedOk","rt.saveFailed","rt.secondsAgo","rt.minutesAgo","rt.offline","common.learned","common.needsLearning","device.copyDiag","device.copied","device.sample")}
+    rt_keys=("state.calling","state.idle","state.fault","state.off","tile.fault","badge.calling","sys.dt","sys.dtstate","dash.sys.sub",
+             "common.days","common.open","common.none","common.learned","common.needsLearning","common.undo",
+             "rt.savedOk","rt.saveFailed","rt.saving","rt.unsaved.one","rt.unsaved.other","rt.nothingToSave","rt.leaveUnsaved",
+             "rt.autoSaving","rt.autoSaved","rt.autoFailed","rt.retry","rt.secondsAgo","rt.minutesAgo","rt.offline",
+             "device.copyDiag","device.copied","device.sample",
+             "alert.zoneFault","bal.adaptive","bal.static","dev.online","dev.offline",
+             "zdash.preload","zdash.preloadUntil","src.ble","src.probe",
+             "csys.touchWaiting","csys.touchWaitingBody","csys.touchApprove")
+    rt={k:T(k) for k in rt_keys}
     rt["_dec"]=T.meta("_dec"); rt["_lang"]=cur
     rt_json=json.dumps(rt,ensure_ascii=False,separators=(",",":"))
+    forms_path = (LDS_ROOT / "js" / "lune-forms.js") if LDS_ROOT else (ROOT.parents[1] / "lune-design-system" / "js" / "lune-forms.js")
+    forms_js = forms_path.read_text(encoding="utf-8")
+    import re as _re
+    forms_js = "\n".join(ln for ln in forms_js.splitlines() if ln.strip() and not ln.lstrip().startswith("/*") and not ln.lstrip().startswith("*"))
+    forms_js = _re.sub(r"\s+", " ", forms_js)
+    forms_js = _re.sub(r"\s*([{}();,:<>!=+\-*/?&|])\s*", r"\1", forms_js)
+    forms_js = forms_js.replace("}function", "}\nfunction").replace("})();", "})();")
 
     LOGO='<svg class="logo" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="15" fill="var(--fg)"/><path d="M10 22V12M14 22V10M18 22V13M22 22V11" stroke="var(--accent)" stroke-width="2.4" stroke-linecap="round"/></svg>'
     I_DASH='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 14a8 8 0 0 1 16 0"/><path d="M12 14l4-4"/><circle cx="12" cy="14" r="1.2"/></svg>'
@@ -702,7 +722,7 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
   <symbol id="i-rain" viewBox="0 0 24 24"><path d="M7 14h10a4 4 0 0 0 0-8 5.5 5.5 0 0 0-10.6 1.5A3.3 3.3 0 0 0 7 14z"/><path d="M8 17l-1 3M12 17l-1 3M16 17l-1 3"/></symbol>
 </svg>
 
-<div class="app">
+<div class="app" data-probe-layout="2">
   <div class="top">
     <div class="wrap">
       <header class="header">
@@ -814,8 +834,18 @@ document.addEventListener('change',function(e){{
   var name=lab.querySelector('.file-name'); if(!name) return;
   name.textContent=(inp.files&&inp.files[0])?inp.files[0].name:(name.dataset.empty||'');
 }});
-document.addEventListener('submit',function(e){{e.preventDefault();document.dispatchEvent(new CustomEvent('lune:save',{{detail:{{key:e.target.dataset.save,data:new FormData(e.target,e.submitter)}}}}));}});
+/* Preview uden binder: simuler API-svar (fejler hvis data-save indeholder /fail) */
+document.addEventListener('lune:save',function(e){{
+  if(window.LV6_DASHBOARD_CONFIG) return;
+  var d=e.detail||{{}}, f=d.form||document.querySelector('form.panel[data-save="'+d.key+'"]');
+  if(!f||!f.luneSaved) return;
+  var fail=String(d.key||'').indexOf('fail')>=0;
+  setTimeout(function(){{ f.luneSaved(!fail); }}, d.auto?400:700);
+}});
 }})();
+</script>
+<script>
+/*__LUNE_FORMS__*/
 </script>
 '''
     if include_binder:
@@ -823,10 +853,10 @@ document.addEventListener('submit',function(e){{e.preventDefault();document.disp
         binder_tag = f'{mock_boot}<script src="{binder_src}" defer></script>'
     else:
         binder_tag = '<!-- preview: static demo data, no binder -->'
-    return page + f'''{binder_tag}
+    return (page + f'''{binder_tag}
 </body>
 </html>
-'''
+''').replace("/*__LUNE_FORMS__*/", forms_js)
 
 # ---------------------------------------------------------------- C-header -
 def c_array(name, data):

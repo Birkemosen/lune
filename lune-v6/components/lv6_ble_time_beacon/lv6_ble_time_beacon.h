@@ -44,6 +44,7 @@ class Lv6BleTimeBeacon : public esphome::Component {
   bool pending_now_{false};
   bool advertising_{false};
   uint32_t burst_start_ms_{0};
+  uint32_t burst_ms_{ble_time::CLOCK_SYNC_BURST_MS};
   uint32_t next_try_ms_{0};
   uint32_t last_ok_s_{0};
   char last_error_[16]{};

@@ -33,7 +33,10 @@ export const key = {
   motorCloseFactor: (zone) => 'sensor-motor_' + zone + '_learned_close_factor',
   preheatAdvance: (zone) => 'sensor-zone_' + zone + '_preheat_advance_c',
   motorLastFault: (zone) => 'text_sensor-motor_' + zone + '_last_fault',
-  probeTemp: (probe) => 'sensor-probe_' + probe + '_temperature'
+  probeTemp: (probe) => 'sensor-probe_' + probe + '_temperature',
+  balancePrior: (zone) => 'sensor-zone_' + zone + '_balance_prior',
+  balanceLearned: (zone) => 'sensor-zone_' + zone + '_balance_learned',
+  balanceEffective: (zone) => 'sensor-zone_' + zone + '_balance_effective',
 };
 
 export const gkey = {
@@ -109,6 +112,7 @@ export const gkey = {
   minimumFlowAlways: 'switch-minimum_flow_always',
   minZoneFlowPct: 'number-min_zone_flow_pct',
   heatingMode: 'select-heating_mode',
+  balancingMode: 'select-balancing_mode',
   effectiveHeatingMode: 'text-effective_heating_mode',
   heatingModeSource: 'text-heating_mode_source',
   hpOverheatMarginC: 'number-hp_overheat_margin_c',

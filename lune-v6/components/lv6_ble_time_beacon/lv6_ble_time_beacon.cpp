@@ -65,7 +65,7 @@ void Lv6BleTimeBeacon::loop() {
   const uint32_t now_ms = esphome::millis();
 
   if (this->advertising_) {
-    if (now_ms - this->burst_start_ms_ >= ble_time::CLOCK_SYNC_BURST_MS)
+    if (now_ms - this->burst_start_ms_ >= this->burst_ms_)
       this->stop_burst_();
     return;
   }
@@ -114,6 +114,7 @@ bool Lv6BleTimeBeacon::start_burst_() {
     return false;
   }
 
+  const bool forced = this->pending_now_;
   const uint32_t unix_s = static_cast<uint32_t>(now.timestamp);
   const int year_utc = esphome::ESPTime::from_epoch_utc(now.timestamp).year;
   if (!this->start_advertising_(unix_s, year_utc)) {
@@ -125,12 +126,14 @@ bool Lv6BleTimeBeacon::start_burst_() {
 
   this->pending_now_ = false;
   this->advertising_ = true;
+  this->burst_ms_ = forced ? ble_time::CLOCK_SYNC_NOW_BURST_MS : ble_time::CLOCK_SYNC_BURST_MS;
   this->burst_start_ms_ = esphome::millis();
   this->next_try_ms_ = this->burst_start_ms_ + static_cast<uint32_t>(this->interval_min()) * 60000UL;
   this->last_ok_s_ = unix_s;
   this->last_error_[0] = '\0';
-  ESP_LOGI(TAG, "Date/Time Broadcast started (utc=%lu tz=Europe/Copenhagen)",
-           static_cast<unsigned long>(this->last_ok_s_));
+  ESP_LOGI(TAG, "Date/Time Broadcast started (utc=%lu tz=Europe/Copenhagen burst=%lums%s)",
+           static_cast<unsigned long>(this->last_ok_s_),
+           static_cast<unsigned long>(this->burst_ms_), forced ? " forced" : "");
   return true;
 }
 

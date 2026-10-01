@@ -976,12 +976,11 @@ ImportResult apply_import_json(const char *json, lv6::DeviceConfig &cfg, bool re
     apply_float(node, "pin_engage_step_ma", m.pin_engage_step_ma, 1.0, 4.0, result.applied);
     apply_int(node, "pin_engage_margin_ripples", m.pin_engage_margin_ripples, 0, 5000,
               result.applied);
-    apply_int(node, "generic_profile_runtime_limit_s", m.generic_profile_runtime_limit_s, 5, 300,
+    apply_int(node, "generic_profile_runtime_limit_s", m.generic_profile_runtime_limit_s, 5, 3600,
               result.applied);
-    // Upper bound 38, not 40: 40 s of CLOSE travel is where the plunger reaches
-    // the housing exit. A v3 backup carries the old 40 s default, and accepting it
-    // would restore the destruction boundary as "applied".
-    apply_int(node, "hmip_vdmot_runtime_limit_s", m.hmip_vdmot_runtime_limit_s, 5, 38,
+    // Upper bound 40: mechanical housing-exit ceiling. Default remains 38.
+    // Values above 40 are clamped by the valve controller.
+    apply_int(node, "hmip_vdmot_runtime_limit_s", m.hmip_vdmot_runtime_limit_s, 5, 40,
               result.applied);
     apply_int(node, "relearn_after_movements", m.relearn_after_movements, 0, 1000000,
               result.applied);

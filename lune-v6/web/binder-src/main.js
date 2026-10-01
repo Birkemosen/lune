@@ -5,9 +5,10 @@
 import { connect } from '../dashboard-src/core/sse.js';
 import {
   ev, es, isEntityOn, getDeviceLog, getDashboardValue, subscribeDashboard,
-  setDashboardValue,
+  setDashboardValue, getZoneSeries, sampleHistory,
 } from '../dashboard-src/core/store.js';
 import { key, gkey } from '../dashboard-src/utils/keys.js';
+import { parseProbeIndex } from '../dashboard-src/utils/available-probes.js';
 import {
   setSetpoint, setEnabled, setDriversEnabled, setGlobalSelect, setGlobalNumber,
   setZoneSelect, setZoneText, applyZoneName, approveTouchProposal, revokeTouchConnection,
@@ -74,6 +75,97 @@ function setBind(path, html) {
   setText(`[data-bind="${path}"]`, html);
 }
 
+function setShow(path, on) {
+  document.querySelectorAll(`[data-bind-show="${path}"]`).forEach((el) => {
+    el.hidden = !on;
+  });
+}
+
+function formatOffset(v) {
+  if (!Number.isFinite(v)) return '—';
+  const s = num(Math.abs(v));
+  return `${v >= 0 ? '+' : '−'}${s}`;
+}
+
+function formatRemaining(s) {
+  if (!Number.isFinite(s) || s <= 0) return '';
+  const sec = Math.round(s);
+  if (sec < 60) return `${sec} s`;
+  const min = Math.round(sec / 60);
+  if (min < 60) return `${min} min`;
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  return m ? `${h} h ${m} min` : `${h} h`;
+}
+
+function tempSourceLabel(raw) {
+  const s = String(raw || '').toLowerCase();
+  if (s.includes('ble')) return t('src.ble');
+  if (s.includes('external') || s.includes('http')) return t('src.probe'); // fallback label
+  return t('src.probe');
+}
+
+function motorLearnedLabel(z) {
+  const fault = String(es(key.motorLastFault(z)) || '').trim().toLowerCase();
+  if (fault && fault !== 'none' && fault !== 'ok') {
+    return `<span class="c-warn">${t('common.needsLearning')}</span>`;
+  }
+  const open = Number(ev(key.motorOpenRipples(z)));
+  const close = Number(ev(key.motorCloseRipples(z)));
+  const learned = (Number.isFinite(open) && open > 0) || (Number.isFinite(close) && close > 0);
+  return learned
+    ? `<span class="c-ok">${t('common.learned')}</span>`
+    : `<span class="c-warn">${t('common.needsLearning')}</span>`;
+}
+
+/** Firmware select values are "Probe N" / "None". */
+function probeSelectValue(raw) {
+  if (raw == null || raw === '' || String(raw).toLowerCase() === 'none') return 'None';
+  const n = String(raw).replace(/\D/g, '');
+  return n ? `Probe ${n}` : 'None';
+}
+
+function anyZoneReturnAssigned() {
+  for (let z = 1; z <= 6; z++) {
+    if (parseProbeIndex(es(key.probe(z)))) return true;
+  }
+  return false;
+}
+
+function probeLayoutMode() {
+  return anyZoneReturnAssigned() ? '8' : '2';
+}
+
+function setProbeLayoutUi(mode, { force = false } = {}) {
+  const m = mode === '8' ? '8' : '2';
+  const sample = document.querySelector('input[name="return_probe_mode"]');
+  const locked = !force && sample && formIsLocked(sample);
+  if (locked) return;
+  const app = document.querySelector('.app');
+  if (app) app.dataset.probeLayout = m;
+  document.querySelectorAll('input[name="return_probe_mode"]').forEach((radio) => {
+    radio.checked = radio.value === m;
+  });
+}
+
+async function applyTwoProbeLayout() {
+  for (let z = 1; z <= 6; z++) {
+    await setZoneSelect(z, 'zone_probe', 'None');
+  }
+}
+
+async function applyEightProbeDefaults() {
+  // Free every probe first so manifold 1/2 and zone 3–8 never conflict.
+  for (let z = 1; z <= 6; z++) {
+    await setZoneSelect(z, 'zone_probe', 'None');
+  }
+  await setGlobalSelect('manifold_flow_probe', 'Probe 1');
+  await setGlobalSelect('manifold_return_probe', 'Probe 2');
+  for (let z = 1; z <= 6; z++) {
+    await setZoneSelect(z, 'zone_probe', `Probe ${z + 2}`);
+  }
+}
+
 function paintStrip() {
   const flow = Number(ev(gkey.flow));
   const ret = Number(ev(gkey.ret));
@@ -91,33 +183,73 @@ function paintStrip() {
     }
     const name = es(key.name(z)) || `Zone ${z}`;
     setBind(`z${z}.name`, name);
+    setBind(`z${z}.title`, `${z} ${name}`);
     setBind(`z${z}.temp`, st === 'fault' ? t('tile.fault') : `${num(ev(key.temp(z)))}°`);
+    const badgeKey = st === 'calling' ? 'state.calling'
+      : st === 'fault' ? 'state.fault'
+      : st === 'off' ? 'state.off'
+      : 'state.idle';
+    setBind(`z${z}.badge`, t(badgeKey));
+    const badgeEl = document.querySelector(`#v-dash-z${z} [data-bind="z${z}.badge"]`);
+    if (badgeEl) {
+      badgeEl.className = st === 'calling' ? 'badge hot'
+        : st === 'fault' ? 'badge bad'
+        : 'badge';
+    }
+    setBind(`z${z}.sub`, t(badgeKey));
+    setShow(`z${z}.fault`, st === 'fault');
+    const offset = Number(ev(key.coordinatorOffset(z)));
+    const rem = Number(ev(key.coordinatorRemaining(z)));
+    const preloadOn = Number.isFinite(offset) && Math.abs(offset) >= 0.05;
+    setShow(`z${z}.preload`, preloadOn);
+    if (preloadOn) {
+      const offLabel = formatOffset(offset);
+      const remLabel = formatRemaining(rem);
+      setBind(`z${z}.preload`, remLabel
+        ? t('zdash.preloadUntil', { offset: offLabel, remaining: remLabel })
+        : t('zdash.preload', { offset: offLabel }));
+    }
+    setBind(`z${z}.motor`, motorLearnedLabel(z));
+    const preheat = Number(ev(key.preheatAdvance(z)));
+    setBind(`z${z}.preheat`, Number.isFinite(preheat) ? `${num(preheat, 2)} °C` : '—');
+    const offsetDd = document.querySelector(`#v-dash-z${z} [data-bind="z${z}.offset"]`);
+    const offsetHtml = Number.isFinite(offset) ? `${formatOffset(offset)} °C` : '—';
+    setBind(`z${z}.offset`, offsetHtml);
+    if (offsetDd) offsetDd.className = preloadOn ? 'c-info' : '';
+    const srcHtml = `<span class="c-info">${tempSourceLabel(es(key.tempSource(z)))}</span>`;
+    setBind(`z${z}.tempFrom`, srcHtml);
+    paintMotorConf(z, st);
     const comfort = document.querySelector(`.comfort label[for="s-z${z}"]`);
-    if (comfort) {
-      comfort.dataset.state = st;
-      const nameEl = comfort.querySelector('.name');
-      if (nameEl) nameEl.textContent = name;
-      const val = comfort.querySelector('.val');
-      if (val) {
-        if (st === 'fault') {
-          val.innerHTML = `<b class="bad">${t('state.fault')}</b>`;
-        } else {
-          const temp = Number(ev(key.temp(z)));
-          const sp = Number(ev(key.effectiveSetpoint(z)) ?? ev(key.setpoint(z)));
-          const warn = Number.isFinite(temp) && Number.isFinite(sp) && sp - temp > 0.5;
-          val.innerHTML = `<b class="${warn ? 'c-warn' : ''}">${num(temp)}°</b> / ${num(sp)}°`;
-        }
-      }
+    if (comfort) comfort.dataset.state = st;
+    if (st === 'fault') {
+      setBind(`z${z}.comfort`, `<b class="bad">${t('state.fault')}</b>`);
+    } else {
+      const temp = Number(ev(key.temp(z)));
+      const sp = Number(ev(key.effectiveSetpoint(z)) ?? ev(key.setpoint(z)));
+      const warn = Number.isFinite(temp) && Number.isFinite(sp) && sp - temp > 0.5;
+      setBind(`z${z}.comfort`, `<b class="${warn ? 'c-warn' : ''}">${num(temp)}°</b> / ${num(sp)}°`);
     }
     const now = document.querySelector(`#v-dash-z${z} .climate .now`);
     if (now) now.innerHTML = `${num(ev(key.temp(z)))}<small>°C</small>`;
     const opening = Number(ev(key.valve(z)));
     setBind(`z${z}.flow`, Number.isFinite(opening) ? String(Math.round(opening)) : '—');
-    setBind(`z${z}.return`, `${num(ev(gkey.ret))} <small>°C</small>`);
+    const zoneProbe = parseProbeIndex(es(key.probe(z)));
+    if (zoneProbe) {
+      setBind(`z${z}.return`, `${num(ev(key.probeTemp(zoneProbe)))} <small>°C</small>`);
+    } else {
+      setBind(`z${z}.return`, '—');
+    }
     const bar = document.querySelector(`#v-dash-z${z} .bar`);
     if (bar && Number.isFinite(opening)) {
       bar.style.setProperty('--v', `${Math.max(0, Math.min(100, opening))}%`);
     }
+    const prior = Number(ev(key.balancePrior(z)));
+    const learned = Number(ev(key.balanceLearned(z)));
+    const effective = Number(ev(key.balanceEffective(z)));
+    setBind(`bal.z${z}.id`, `Z${z}`);
+    setBind(`bal.z${z}.prior`, Number.isFinite(prior) ? num(prior, 2) : '—');
+    setBind(`bal.z${z}.learned`, Number.isFinite(learned) ? num(learned, 2) : '—');
+    setBind(`bal.z${z}.effective`, Number.isFinite(effective) ? num(effective, 2) : '—');
   }
   const dtLabel = Number.isFinite(dt) ? num(dt) : '—';
   setBind('strip.flow', `${num(flow)}°`);
@@ -127,21 +259,84 @@ function paintStrip() {
   setBind('manifold.return', `${num(ret)} <small>°C</small>`);
   setBind('manifold.dt', `${num(dt)} <small>K</small>`);
   let totalOpen = 0;
+  let firstFault = 0;
   for (let z = 1; z <= 6; z++) {
     const v = Number(ev(key.valve(z)));
     if (Number.isFinite(v)) totalOpen += v;
+    if (!firstFault && zoneState(z) === 'fault') firstFault = z;
   }
   const openingPct = Math.round(totalOpen / 6);
   setBind('manifold.opening', `${openingPct} <small>%</small>`);
+  for (let p = 1; p <= 8; p++) {
+    const pt = Number(ev(key.probeTemp(p)));
+    setBind(`probe.${p}`, Number.isFinite(pt) ? `${num(pt)} <small>°C</small>` : '—');
+  }
   const mBar = document.querySelector('#v-dash-sys .bar');
   if (mBar) {
     mBar.style.setProperty('--v', `${openingPct}%`);
     mBar.setAttribute('aria-valuenow', String(openingPct));
   }
-  const sub = document.querySelector('#h-dash-sys + p, #v-dash-sys .view-head p');
-  if (sub) sub.textContent = t('dash.sys.sub', { zones: 6, calling, faults });
-  const alert = document.querySelector('#v-dash-sys .panel.alert');
-  if (alert) alert.hidden = faults === 0;
+  setBind('dash.sys.sub', t('dash.sys.sub', { zones: 6, calling, faults }));
+  setShow('dash.alert', faults > 0);
+  if (firstFault) {
+    const fname = es(key.name(firstFault)) || `Zone ${firstFault}`;
+    setBind('dash.alertTitle', t('alert.zoneFault', { zone: `Z${firstFault} ${fname}` }));
+    const openBtn = document.querySelector('[data-bind-for="dash.alertZone"]');
+    if (openBtn) {
+      openBtn.setAttribute('for', `s-z${firstFault}`);
+      openBtn.textContent = t('common.open', { x: `Z${firstFault}` });
+    }
+  }
+  const heatBadge = document.querySelector('#v-dash-sys [data-bind="heat.badge"]');
+  if (heatBadge) {
+    heatBadge.textContent = calling > 0 ? t('badge.calling') : t('state.idle');
+    heatBadge.className = calling > 0 ? 'badge hot' : 'badge';
+  }
+  const balMode = String(es(gkey.balancingMode) || '').toLowerCase();
+  const balAdaptive = balMode.includes('adapt');
+  setBind('bal.mode', balAdaptive ? t('bal.adaptive') : t('bal.static'));
+  const balBadge = document.querySelector('#v-dash-sys [data-bind="bal.mode"]');
+  if (balBadge) balBadge.className = balAdaptive ? 'badge violet' : 'badge';
+  const live = !!getDashboardValue('live');
+  const devBadge = document.querySelector('#v-dash-sys [data-bind="dev.badge"]');
+  if (devBadge) {
+    devBadge.textContent = live ? t('dev.online') : t('dev.offline');
+    devBadge.className = live ? 'badge ok' : 'badge warn';
+  }
+}
+
+function paintMotorConf(z, st) {
+  const openR = Number(ev(key.motorOpenRipples(z)));
+  const closeR = Number(ev(key.motorCloseRipples(z)));
+  const openF = Number(ev(key.motorOpenFactor(z)));
+  const closeF = Number(ev(key.motorCloseFactor(z)));
+  const learned = (Number.isFinite(openR) && openR > 0) || (Number.isFinite(closeR) && closeR > 0);
+  const fault = st === 'fault';
+  const badge = document.querySelector(`#v-conf-z${z} [data-bind="z${z}.motorBadge"]`);
+  if (badge) {
+    badge.textContent = fault || !learned ? t('common.needsLearning') : t('common.learned');
+    badge.className = fault || !learned ? 'badge warn' : 'badge ok';
+  }
+  const ripples = (Number.isFinite(openR) || Number.isFinite(closeR))
+    ? `${Number.isFinite(openR) ? Math.round(openR) : '—'} / ${Number.isFinite(closeR) ? Math.round(closeR) : '—'}`
+    : '—';
+  setBind(`z${z}.ripples`, ripples);
+  const factors = (Number.isFinite(openF) || Number.isFinite(closeF))
+    ? `${Number.isFinite(openF) && openF > 0 ? num(openF, 2) : '—'} / ${Number.isFinite(closeF) && closeF > 0 ? num(closeF, 2) : '—'}`
+    : '—';
+  setBind(`z${z}.factors`, factors);
+  const faultRaw = String(es(key.motorLastFault(z)) || '').trim();
+  const faultLabel = (!faultRaw || faultRaw.toLowerCase() === 'none')
+    ? t('common.none')
+    : faultRaw.replace(/_/g, ' ');
+  const faultEl = document.querySelector(`#v-conf-z${z} [data-bind="z${z}.lastFault"]`);
+  if (faultEl) {
+    faultEl.textContent = faultLabel;
+    faultEl.className = fault ? 'bad' : '';
+  }
+  document.querySelectorAll(`[data-bind-disable="z${z}.faultOk"]`).forEach((btn) => {
+    btn.disabled = !fault;
+  });
 }
 
 function paintDevice() {
@@ -224,6 +419,7 @@ function paintTouch() {
   setBind('touch.coord', pending
     ? (es(gkey.authorityProposalCoordinatorId) || '—')
     : (es(gkey.authorityCoordinatorId) || '—'));
+  setShow('touch.identity', pending || configured);
 }
 
 function paintLogs() {
@@ -257,33 +453,143 @@ function escapeHtml(s) {
 }
 
 function paintSparks() {
-  // Static demo sparklines ship in HTML; live history is applied when
-  // /api/v1/history payloads are wired into store series (future polish).
+  sampleHistory(false);
+  for (let z = 1; z <= 6; z++) {
+    const svg = document.querySelector(`[data-bind-spark="z${z}"]`);
+    if (!svg) continue;
+    const temps = getZoneSeries('temp', z);
+    const sps = getZoneSeries('sp', z);
+    svg.innerHTML = seriesToSparkSvg(temps, sps);
+  }
+  paintTrend();
+}
+
+function seriesToSparkSvg(temps, sps) {
+  const n = Math.max(temps.length, sps.length, 2);
+  const vals = temps.concat(sps).filter((v) => Number.isFinite(v));
+  if (vals.length < 2) return '';
+  let lo = Math.min(...vals);
+  let hi = Math.max(...vals);
+  const mid = (lo + hi) / 2;
+  const span = Math.max(hi - lo + 0.6, 3.0);
+  lo = mid - span / 2;
+  hi = mid + span / 2;
+  const W = 240;
+  const Hh = 40;
+  const X = (k, len) => ((len <= 1 ? 0 : k / (len - 1)) * W).toFixed(1);
+  const Y = (v) => (Hh - ((v - lo) / (hi - lo)) * Hh).toFixed(1);
+  const line = (arr) => arr.map((v, k) => `${X(k, arr.length)},${Y(v)}`).join(' ');
+  const tp = temps.length ? line(temps) : '';
+  let gp = [];
+  for (let k = 0; k < sps.length; k++) {
+    if (k && sps[k] !== sps[k - 1]) gp.push(`${X(k, sps.length)},${Y(sps[k - 1])}`);
+    gp.push(`${X(k, sps.length)},${Y(sps[k])}`);
+  }
+  const goal = gp.join(' ');
+  if (!tp && !goal) return '';
+  const area = tp && goal
+    ? `<polygon class="a" points="${tp} ${[...gp].reverse().join(' ')}"/>`
+    : '';
+  return `${area}${goal ? `<polyline class="g" points="${goal}"/>` : ''}${tp ? `<polyline class="t" points="${tp}"/>` : ''}`;
+}
+
+function paintTrend() {
+  const svg = document.querySelector('[data-bind-trend="manifold"]');
+  if (!svg) return;
+  const hist = getDashboardValue('zoneStateHistory');
+  const entries = hist && Array.isArray(hist.entries) ? hist.entries : [];
+  const flows = [];
+  const rets = [];
+  // Prefer device 24 h history; fall back to short client buffer.
+  if (entries.length >= 2) {
+    const step = Math.max(1, Math.floor(entries.length / 48));
+    for (let i = 0; i < entries.length; i += step) {
+      const e = entries[i];
+      const f = e[8];
+      const r = e[9];
+      if (typeof f === 'number' && Number.isFinite(f)) flows.push(f);
+      if (typeof r === 'number' && Number.isFinite(r)) rets.push(r);
+    }
+  } else {
+    const hf = getDashboardValue('historyFlow') || [];
+    const hr = getDashboardValue('historyReturn') || [];
+    flows.push(...hf);
+    rets.push(...hr);
+  }
+  if (flows.length < 2 && rets.length < 2) {
+    svg.innerHTML = '';
+    return;
+  }
+  const vals = flows.concat(rets).filter((v) => Number.isFinite(v));
+  let lo = Math.min(...vals) - 1;
+  let hi = Math.max(...vals) + 1;
+  if (!(hi > lo)) { lo = 26; hi = 39; }
+  const W = 240;
+  const Hh = 80;
+  const X = (k, len) => ((len <= 1 ? 0 : k / (len - 1)) * W).toFixed(1);
+  const Y = (v) => (Hh - ((v - lo) / (hi - lo)) * Hh).toFixed(1);
+  const line = (arr) => arr.map((v, k) => `${X(k, arr.length)},${Y(Number.isFinite(v) ? v : lo)}`).join(' ');
+  const pf = flows.length ? line(flows) : '';
+  const pr = rets.length ? line(rets) : '';
+  const band = pf && pr
+    ? `<polygon class="dt" points="${pf} ${pr.split(' ').reverse().join(' ')}"/>`
+    : '';
+  svg.innerHTML = `${band}${pf ? `<polyline class="f" points="${pf}"/>` : ''}${pr ? `<polyline class="r" points="${pr}"/>` : ''}`;
 }
 
 /** True while the user is editing a save-form (focus or unsaved local change). */
 function formIsLocked(el) {
   const form = el && el.closest && el.closest('form[data-save]');
   if (!form) return false;
-  if (form.dataset.dirty === '1') return true;
+  // Pending climate autosave (_autoT) or in-flight save must not be wiped by paintAll.
+  if (form._autoT || form.hasAttribute('data-dirty') || form.dataset.state === 'saving'
+      || form.dataset.state === 'error' || form.dataset.state === 'saved') return true;
   const ae = document.activeElement;
   if (!ae || !form.contains(ae)) return false;
   // Hold while typing/selecting; ignore submit/stepper button focus so post-save paint works.
   return ae.matches('input:not([type="button"]):not([type="submit"]):not([type="reset"]), select, textarea');
 }
 
-function markFormDirty(el) {
-  const form = el && el.closest && el.closest('form[data-save]');
-  if (form) form.dataset.dirty = '1';
+function saveFormEl(detail) {
+  if (detail && detail.form) return detail.form;
+  const key = detail && detail.key;
+  return key ? document.querySelector(`form.panel[data-save="${key}"]`) : null;
 }
 
-function clearFormDirty(saveKey) {
-  document.querySelectorAll('form[data-save]').forEach((form) => {
-    if (form.dataset.save === saveKey) delete form.dataset.dirty;
+function resnapCleanForms() {
+  document.querySelectorAll('form.panel[data-save]').forEach((form) => {
+    if (typeof form.luneResnap !== 'function') return;
+    if (form.hasAttribute('data-dirty') || form.dataset.state === 'saving' || form.dataset.state === 'error' || form.dataset.state === 'saved') return;
+    form.luneResnap();
   });
 }
 
+function isHmipMotorType(sel) {
+  if (!sel) return true;
+  const opt = sel.options[sel.selectedIndex];
+  return String((opt && (opt.value || opt.textContent)) || sel.value || '')
+    .toLowerCase()
+    .includes('hmip');
+}
+
+/** HmIP close ceiling is 40 s; generic has no mechanical max (soft UI bound 3600). */
+function syncRuntimeLimits() {
+  const type = document.getElementById('motor_type');
+  const runtime = document.querySelector('input[name="m_runtime"]');
+  if (!runtime) return;
+  const hmip = isHmipMotorType(type);
+  runtime.min = '5';
+  runtime.step = '1';
+  if (hmip) {
+    runtime.max = '40';
+    if (Number(runtime.value) > 40) runtime.value = '40';
+  } else {
+    runtime.max = '3600';
+  }
+}
+
 function paintFormsFromState() {
+  setProbeLayoutUi(probeLayoutMode());
   const flowProbe = es(gkey.manifoldFlowProbe);
   const retProbe = es(gkey.manifoldReturnProbe);
   const mType = es(gkey.manifoldType);
@@ -297,11 +603,40 @@ function paintFormsFromState() {
   if (pr && retProbe && !formIsLocked(pr)) pr.value = String(retProbe).replace(/\D/g, '') || pr.value;
   const drivers = document.querySelector('input[name="motor_drivers"]');
   if (drivers && !formIsLocked(drivers)) drivers.checked = isEntityOn(gkey.drivers);
-  const heat = es(gkey.heatingMode) || 'normal';
+  const profile = String(es(gkey.motorProfileDefault) || '').toLowerCase();
+  const motorType = document.getElementById('motor_type');
+  if (motorType && !formIsLocked(motorType)) {
+    const wantHmip = profile.includes('hmip');
+    for (const opt of motorType.options) {
+      if (wantHmip === String(opt.value || opt.textContent || '').toLowerCase().includes('hmip')) {
+        opt.selected = true;
+        break;
+      }
+    }
+  }
+  const runtime = document.querySelector('input[name="m_runtime"]');
+  if (runtime && !formIsLocked(runtime)) {
+    const lim = Number(ev(profile.includes('hmip') ? gkey.hmipRuntimeLimitSeconds : gkey.genericRuntimeLimitSeconds));
+    if (Number.isFinite(lim) && lim > 0) runtime.value = String(Math.round(lim));
+  }
+  syncRuntimeLimits();
+  const heat = es(gkey.heatingMode) || 'heat_pump';
   const heatRadio = document.querySelector(`input[name="heat_mode"][value="${heat === 'heat_pump' ? 'heat_pump' : 'normal'}"]`);
   if (heatRadio && !formIsLocked(heatRadio)) heatRadio.checked = true;
+  const paintNum = (name, entityKey, digits = 0) => {
+    const el = document.querySelector(`input[name="${name}"]`);
+    if (!el || formIsLocked(el)) return;
+    const n = Number(ev(entityKey));
+    if (!Number.isFinite(n)) return;
+    el.value = digits > 0 ? n.toFixed(digits) : String(Math.round(n));
+  };
+  paintNum('heat_min_open', gkey.minZoneFlowPct, 0);
+  paintNum('hp_base', gkey.hpBasePct, 0);
+  paintNum('hp_overheat', gkey.hpOverheatMarginC, 1);
+  paintNum('hp_trim', gkey.hpTrimFloorPct, 0);
   const ble = document.querySelector('input[name="ble_clock_enabled"]');
   if (ble && !formIsLocked(ble)) ble.checked = isEntityOn(gkey.bleClockSyncEnabled);
+  paintNum('ble_clock_interval', gkey.bleClockSyncIntervalMin, 0);
   for (let z = 1; z <= 6; z++) {
     const name = document.getElementById(`z${z}_name`);
     if (name && !formIsLocked(name)) name.value = es(key.name(z)) || name.value;
@@ -314,6 +649,11 @@ function paintFormsFromState() {
     }
     const bleMac = document.getElementById(`z${z}_ble`);
     if (bleMac && !formIsLocked(bleMac)) bleMac.value = es(key.ble(z)) || '';
+    const retSel = document.getElementById(`z${z}_ret`);
+    if (retSel && !formIsLocked(retSel)) {
+      const idx = parseProbeIndex(es(key.probe(z)));
+      if (idx) retSel.value = String(idx);
+    }
   }
 }
 
@@ -328,6 +668,7 @@ function paintAll() {
   paintLogs();
   paintSparks();
   paintFormsFromState();
+  resnapCleanForms();
   // Show motor lab on non-release firmware strings.
   const fw = String(es(gkey.firmware) || '');
   const isDev = /dev|dirty|\+\d|-\d+$/i.test(fw) || fw.includes('+');
@@ -345,6 +686,7 @@ function fd(data) {
 async function handleSave(detail) {
   const { key: saveKey, data } = detail || {};
   if (!saveKey) return;
+  const formEl = saveFormEl(detail);
   const form = fd(data);
   const action = form.action;
   try {
@@ -353,18 +695,30 @@ async function handleSave(detail) {
       else await approveTouchProposal();
     } else if (saveKey === 'manifold') {
       await setGlobalSelect('manifold_type', form.manifold_type === 'no' ? 'normally_open' : 'normally_closed');
-      if (form.probe_flow) await setGlobalSelect('manifold_flow_probe', `probe_${form.probe_flow}`);
-      if (form.probe_return) await setGlobalSelect('manifold_return_probe', `probe_${form.probe_return}`);
+      if (form.probe_flow) await setGlobalSelect('manifold_flow_probe', probeSelectValue(form.probe_flow));
+      if (form.probe_return) await setGlobalSelect('manifold_return_probe', probeSelectValue(form.probe_return));
       await setDriversEnabled(!!form.motor_drivers);
       if (form.motor_type) {
         const profile = String(form.motor_type).toLowerCase().includes('hmip') ? 'hmip_vdmot' : 'generic';
         await setGlobalSelect('motor_profile_default', profile);
+        if (form.m_runtime != null) {
+          await setGlobalNumber(
+            profile === 'hmip_vdmot' ? 'hmip_runtime_limit_seconds' : 'generic_runtime_limit_seconds',
+            form.m_runtime,
+          );
+        }
+      } else if (form.m_runtime != null) {
+        await setGlobalNumber('hmip_runtime_limit_seconds', form.m_runtime);
       }
-      if (form.m_runtime != null) await setGlobalNumber('generic_runtime_limit_seconds', form.m_runtime);
       if (form.m_relmov != null) await setGlobalNumber('relearn_after_movements', form.m_relmov);
       if (form.m_relh != null) await setGlobalNumber('relearn_after_hours', form.m_relh);
       if (form.m_minsamp != null) await setGlobalNumber('learned_factor_min_samples', form.m_minsamp);
       if (form.m_maxdev != null) await setGlobalNumber('learned_factor_max_deviation_pct', Number(form.m_maxdev) * 100);
+    } else if (saveKey === 'return_probes') {
+      const mode = form.return_probe_mode === '8' ? '8' : '2';
+      if (mode === '8') await applyEightProbeDefaults();
+      else await applyTwoProbeLayout();
+      setProbeLayoutUi(mode, { force: true });
     } else if (saveKey === 'regulation') {
       if (action === 'reset_balancing') {
         await command('reset_balancing');
@@ -387,7 +741,7 @@ async function handleSave(detail) {
       else {
         await setGlobalSelect('ble_clock_sync_enabled', form.ble_clock_enabled ? 'on' : 'off');
         if (form.ble_clock_interval != null) {
-          await setGlobalNumber('ble_clock_sync_interval_min', Math.max(1, Math.round(Number(form.ble_clock_interval) / 60)));
+          await setGlobalNumber('ble_clock_sync_interval_min', Math.max(15, Math.round(Number(form.ble_clock_interval))));
         }
       }
     } else if (saveKey === 'firmware') {
@@ -436,7 +790,7 @@ async function handleSave(detail) {
       if (form[`z${z}_name`] != null) await applyZoneName(z, form[`z${z}_name`]);
       if (form[`z${z}_src`]) await setZoneSelect(z, 'zone_temp_source', form[`z${z}_src`]);
       if (form[`z${z}_ble`] != null) await setZoneText(z, 'zone_ble_mac', form[`z${z}_ble`]);
-      if (form[`z${z}_ret`]) await setZoneSelect(z, 'zone_probe', `probe_${form[`z${z}_ret`]}`);
+      if (form[`z${z}_ret`]) await setZoneSelect(z, 'zone_probe', probeSelectValue(form[`z${z}_ret`]));
       const merge = form[`z${z}_merge`];
       if (merge) await postGroups({ primary: Number(merge), members: [z] });
       const area = Number(form[`z${z}_area`]);
@@ -464,11 +818,17 @@ async function handleSave(detail) {
       if (action === 'reset_fault') await command('clear_motor_fault', z);
       if (action === 'reset_relearn') await command('reset_motor_learning', z);
     }
-    clearFormDirty(saveKey);
+    if (formEl) {
+      // Unlock so paintAll can write the accepted server values, then snap those.
+      delete formEl.dataset.dirty;
+      delete formEl.dataset.state;
+    }
     paintAll();
+    if (formEl && typeof formEl.luneSaved === 'function') formEl.luneSaved(true);
   } catch (err) {
     console.error('lune:save failed', saveKey, err);
-    addToast(t('rt.saveFailed'));
+    if (formEl && typeof formEl.luneSaved === 'function') formEl.luneSaved(false, t('rt.saveFailed'));
+    else addToast(t('rt.saveFailed'));
   }
 }
 
@@ -494,9 +854,20 @@ function boot() {
     handleSave(e.detail);
   });
 
-  // Stepper +/- dispatches change; typing fires input. Hold the form until save.
-  document.addEventListener('input', (e) => markFormDirty(e.target), true);
-  document.addEventListener('change', (e) => markFormDirty(e.target), true);
+  document.addEventListener('change', (e) => {
+    const layout = e.target && e.target.name === 'return_probe_mode' ? e.target.value : null;
+    if (layout === '2' || layout === '8') setProbeLayoutUi(layout, { force: true });
+    if (e.target && e.target.id === 'motor_type') {
+      const runtime = document.querySelector('input[name="m_runtime"]');
+      const hmip = isHmipMotorType(e.target);
+      syncRuntimeLimits();
+      if (runtime && !formIsLocked(runtime)) {
+        const lim = Number(ev(hmip ? gkey.hmipRuntimeLimitSeconds : gkey.genericRuntimeLimitSeconds));
+        if (Number.isFinite(lim) && lim > 0) runtime.value = String(Math.round(lim));
+        else runtime.value = hmip ? '38' : '45';
+      }
+    }
+  }, true);
 
   document.addEventListener('click', (e) => {
     const scan = e.target.closest('[data-action="ble-scan"]');
@@ -518,6 +889,7 @@ function boot() {
   subscribeDashboard('live', () => paintAll());
   subscribeDashboard('deviceLog', () => paintAll());
   subscribeDashboard('i2cResult', () => paintAll());
+  subscribeDashboard('zoneStateHistory', () => { paintSparks(); });
   setInterval(paintAll, 1000);
 
   connect();

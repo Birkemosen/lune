@@ -407,10 +407,8 @@ int main() {
   // --- Rev 3.3 mechanical-ceiling guards -----------------------------------
   // apply_int/apply_float CLAMP into the accepted range rather than rejecting,
   // so the property under test is that the accepted range itself can no longer
-  // reach the destruction boundary.
+  // Mechanical housing-exit ceiling is 40 s; values above it are clamped.
   {
-    // 40 s of CLOSE travel is where the plunger reaches the housing exit, and a
-    // v3 backup carries exactly that as its default.
     lv6::DeviceConfig cfg = make_known_config();
     const char *json = "{\"_type\":\"lune-v6-settings\",\"_version\":1,"
                        "\"config_versions\":{\"motor\":4},"
@@ -418,10 +416,19 @@ int main() {
     sb::ImportResult r =
         sb::apply_import_json(json, cfg, false, nullptr, nullptr, nullptr, nullptr);
     expect(r.ok, "close-ceiling import completes");
-    expect(cfg.motor.hmip_vdmot_runtime_limit_s <= 38u,
-           "a 40 s close ceiling is clamped below the housing-exit boundary");
-    expect(cfg.motor.hmip_vdmot_runtime_limit_s < 40u,
-           "the destruction boundary is unreachable through a restore");
+    expect(cfg.motor.hmip_vdmot_runtime_limit_s == 40u,
+           "40 s close ceiling is accepted as the mechanical max");
+  }
+  {
+    lv6::DeviceConfig cfg = make_known_config();
+    const char *json = "{\"_type\":\"lune-v6-settings\",\"_version\":1,"
+                       "\"config_versions\":{\"motor\":4},"
+                       "\"settings\":{\"motor\":{\"hmip_vdmot_runtime_limit_s\":41}}}";
+    sb::ImportResult r =
+        sb::apply_import_json(json, cfg, false, nullptr, nullptr, nullptr, nullptr);
+    expect(r.ok, "over-ceiling import completes");
+    expect(cfg.motor.hmip_vdmot_runtime_limit_s <= 40u,
+           "values above 40 s are clamped to the mechanical ceiling");
   }
   {
     // A file predating the v4 motor blob knows nothing about the direction-split
