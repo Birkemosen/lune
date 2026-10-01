@@ -30,6 +30,10 @@ python3 -m http.server 8765 -d lune-v6/web
 # → http://127.0.0.1:8765/preview.html
 ```
 
+Product screenshot used in the root README:
+[`docs/shots/lune-v6-dashboard-split.png`](../../docs/shots/lune-v6-dashboard-split.png)
+(light / dark split).
+
 Requires a checkout of [`lune-design-system`](https://github.com/Birkemosen/lune-design-system)
 as a sibling of this repo.
 

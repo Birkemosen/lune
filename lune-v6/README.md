@@ -25,12 +25,26 @@ See [Firmware entrypoints](#firmware-entrypoints).
 |----------|--------|-------------|
 | [`rev3.0`](hardware/lune-v6-rev3.0/) | superseded | — |
 | [`rev3.1-lean`](hardware/lune-v6-rev3.1-lean/) | superseded | 6× DRV8215 over I2C |
-| [**`rev3.2`**](hardware/lune-v6-rev3.2/) | **current** — schematic complete, PCB not yet routed | 3× DRV8411 + hardware one-hot decoder |
+| [`rev3.2`](hardware/lune-v6-rev3.2/) | previous production path — keep `lune-v6-rev32.yaml` for that PCB | 3× DRV8411 + hardware one-hot + fault latch |
+| [**`rev3.3`**](hardware/lune-v6-rev3.3/) | **current** — `lune.yaml` → `lune-v6-rev33.yaml` / `rev33_gpio` | 3× DRV8411 + one-hot; no latch; firmware `DRIVER_N_SLEEP` |
 
-Rev3.2 is at `SCHEMATIC_ECO_PENDING_PCB_PLACEMENT_ROUTING_AND_PHYSICAL_VALIDATION`: the
-schematic and design contract are complete and checked, but no `.kicad_pcb` exists yet.
+Default firmware entrypoint (`configurations/lune-v6.yaml` → `lune.yaml`) includes
+`packages/board/lune-v6-rev33.yaml`. See
+[`hardware/lune-v6-rev3.3/firmware-integration.md`](hardware/lune-v6-rev3.3/firmware-integration.md).
+Rev 3.2 and 3.3 pin maps collide — never flash across revisions.
 
-## Rev3.2 Board
+## Rev3.3 Board
+
+Authoritative hardware docs live under
+[`hardware/lune-v6-rev3.3/`](hardware/lune-v6-rev3.3/) (design contract ECO
+`rev3.3-P`, EasyEDA project). Outline ~90 × 70 mm, ESP32-S3-WROOM-1-N8R8,
+USB-C powered, six RJ9 valve channels.
+
+Compared with rev 3.2: fault latch / `LATCH_ARM` removed; `DRIVER_N_SLEEP` and
+active-low `FAULT_N_RAW`; rail overcurrent trip ~150 mA (`rev3.3-P`). Shared
+current sense + commutation tacho remain.
+
+## Rev3.2 Board (previous)
 
 Two-layer board, outline **100 × 70 mm** with a 22 × 7 mm antenna cutout in the north
 edge, ESP32-S3-WROOM-1-N8R8 (8 MB flash, 8 MB octal PSRAM), USB-C powered. All connectors
@@ -139,13 +153,14 @@ deliberately spent on digital: `GPIO4` on `STATUS_LED_N` (rev3.2-G) and `GPIO8` 
 ## Firmware entrypoints
 
 The firmware identity is `lune-v6` (WiFi/DHCP/OTA hostname `lune-v6-<mac>`).
-Hardware revision 3.2 is the board package, not part of the device name.
+Hardware revision 3.3 is the default board package, not part of the device name.
 
 | File | Role |
 |---|---|
 | `configurations/lune-v6.yaml` | Firmware entrypoint (`device_name: lune-v6`) |
 | `configurations/lune-v6-release.yaml` | Public release entrypoint — same firmware, no WiFi credentials |
-| `packages/board/lune-v6-rev32.yaml` | Rev 3.2 PCB pins, motor backend, status LED |
+| `packages/board/lune-v6-rev33.yaml` | **Current** Rev 3.3 PCB pins, `rev33_gpio` motor backend, status LED |
+| `packages/board/lune-v6-rev32.yaml` | Rev 3.2 PCB only — do not mix with a 3.3 board |
 | `packages/board/esp32-s3.yaml` | ESP32-S3-WROOM-1-N8R8 (8 MB flash, octal PSRAM) |
 
 ```sh

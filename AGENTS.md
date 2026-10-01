@@ -8,10 +8,9 @@ This is a Birkemosen monorepo. Each hardware product owns its code in a
 dedicated subfolder:
 
 ```text
-devices/
-  lune-v6/       ESPHome firmware, local dashboard, hardware files, V6 tests/docs
+lune-v6/         ESPHome firmware, local dashboard, hardware files, V6 tests/docs
 docs/            Cross-device notes; brand architecture lives in lune-coordinator
-shared/          Shared contracts/design notes; no shared runtime dashboard code yet
+shared/          Shared contracts/design notes; no shared runtime dashboard code
 ```
 
 Lune Touch / Lune Mini coordinator code lives in the private repository
@@ -61,8 +60,8 @@ The Makefiles resolve `esphome`, `platformio`, and `python3` from the repo-root
 lune-v6/configurations/lune-v6.yaml
 ```
 
-The hostname is `lune-v6-<mac>`. Hardware revision 3.2 is a board package
-(`packages/board/lune-v6-rev32.yaml`), not part of the device name.
+The hostname is `lune-v6-<mac>`. Hardware revision 3.3 is a board package
+(`packages/board/lune-v6-rev33.yaml`), not part of the device name.
 
 `secrets.yaml` stays at the repository root and remains gitignored.
 
