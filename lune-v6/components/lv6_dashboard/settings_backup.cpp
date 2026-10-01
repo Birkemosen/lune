@@ -766,6 +766,38 @@ size_t write_export_json(char *out, size_t out_cap, const lv6::DeviceConfig &cfg
     b.addf(",");
     b.key_int("sync_to_zone", z.sync_to_zone);
     b.addf(",");
+    b.key_int("exterior_walls", z.exterior_walls);
+    b.addf(",");
+    b.key_str("slab_type", lv6::slab_type_to_string(z.slab_type));
+    b.addf(",");
+    b.key_str("covering", lv6::covering_type_to_string(z.covering));
+    b.addf(",");
+    b.key_num("active_thickness_cm", z.active_thickness_cm);
+    b.addf(",");
+    if (std::isfinite(z.r_override_m2k_per_w)) {
+      b.key_num("r_override_m2k_per_w", z.r_override_m2k_per_w);
+      b.addf(",");
+    }
+    b.key_num("ua_weight_override", z.ua_weight_override);
+    b.addf(",");
+    if (std::isfinite(z.ua_learned_w_per_k)) {
+      b.key_num("ua_learned_w_per_k", z.ua_learned_w_per_k);
+      b.addf(",");
+      b.key_num("ua_learned_confidence", z.ua_learned_confidence);
+      b.addf(",");
+      b.key_int("ua_learned_observed_days", z.ua_learned_observed_days);
+      b.addf(",");
+      b.key_int("ua_learned_ts_epoch_s", z.ua_learned_ts_epoch_s);
+      b.addf(",");
+    }
+    if (std::isfinite(z.tau_learned_h)) {
+      b.key_num("tau_learned_h", z.tau_learned_h);
+      b.addf(",");
+    }
+    b.key_num("wind_exposure", z.wind_exposure);
+    b.addf(",");
+    b.key_num("solar_gain", z.solar_gain);
+    b.addf(",");
     b.key_str("motor_profile_override", motor_profile_str(z.motor_profile_override));
     b.addf(",");
     b.key_num("min_offset_c", z.min_offset_c);
@@ -1181,6 +1213,30 @@ ImportResult apply_import_json(const char *json, lv6::DeviceConfig &cfg, bool re
       apply_int(z_json, "sync_to_zone", z.sync_to_zone, -1, lv6::NUM_ZONES - 1, result.applied);
       if (z.sync_to_zone == static_cast<int8_t>(i))
         z.sync_to_zone = -1;  // a zone cannot follow itself
+
+      apply_int(z_json, "exterior_walls", z.exterior_walls, 0, 15, result.applied);
+      lv6::SlabType st{};
+      if (read_enum_str(z_json, "slab_type", text, sizeof(text)) &&
+          lv6::slab_type_from_string(text, &st)) {
+        z.slab_type = st;
+        result.applied++;
+      }
+      lv6::CoveringType ct{};
+      if (read_enum_str(z_json, "covering", text, sizeof(text)) &&
+          lv6::covering_type_from_string(text, &ct)) {
+        z.covering = ct;
+        result.applied++;
+      }
+      apply_float(z_json, "active_thickness_cm", z.active_thickness_cm, 0.0, 15.0, result.applied);
+      apply_float(z_json, "r_override_m2k_per_w", z.r_override_m2k_per_w, 0.0, 0.25, result.applied);
+      apply_float(z_json, "ua_weight_override", z.ua_weight_override, 0.25, 4.0, result.applied);
+      apply_float(z_json, "ua_learned_w_per_k", z.ua_learned_w_per_k, 0.0, 500.0, result.applied);
+      apply_float(z_json, "ua_learned_confidence", z.ua_learned_confidence, 0.0, 1.0, result.applied);
+      apply_int(z_json, "ua_learned_observed_days", z.ua_learned_observed_days, 0, 3650, result.applied);
+      apply_int(z_json, "ua_learned_ts_epoch_s", z.ua_learned_ts_epoch_s, 0, 4102444800u, result.applied);
+      apply_float(z_json, "tau_learned_h", z.tau_learned_h, 4.0, 400.0, result.applied);
+      apply_float(z_json, "wind_exposure", z.wind_exposure, 0.0, 1.0, result.applied);
+      apply_float(z_json, "solar_gain", z.solar_gain, 0.0, 1.0, result.applied);
 
       lv6::MotorProfile profile{};
       if (read_enum_str(z_json, "motor_profile_override", text, sizeof(text)) &&

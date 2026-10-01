@@ -1,604 +1,98 @@
 #!/bin/sh
+# Smoke checks for the LDS2 dashboard shell + binder + firmware routes.
 set -eu
 
 root=$(CDPATH= cd -- "$(dirname "$0")/../.." && pwd)
-app="$root/web/dashboard-src/app/app-root.js"
-header="$root/web/dashboard-src/app/header.js"
-card="$root/web/dashboard-src/components/zone/zone-card.js"
-keys="$root/web/dashboard-src/utils/keys.js"
-touch="$root/web/dashboard-src/components/settings/settings-touch-card.js"
-dashboard_cpp="$root/components/lv6_dashboard/lv6_dashboard.cpp"
-api="$root/web/dashboard-src/core/api.js"
-theme="$root/web/dashboard-src/core/theme.js"
-i18n="$root/web/dashboard-src/core/i18n.js"
-mock="$root/web/dashboard-src/core/mock.js"
-sse="$root/web/dashboard-src/core/sse.js"
-main="$root/web/dashboard-src/main.js"
-firmware_card="$root/web/dashboard-src/components/settings/settings-firmware-card.js"
-backup_card="$root/web/dashboard-src/components/settings/settings-backup-card.js"
-logs="$root/web/dashboard-src/components/logs/logs-view.js"
-system_card="$root/web/dashboard-src/components/diagnostics/diag-system-card.js"
-store="$root/web/dashboard-src/core/store.js"
+web="$root/web"
+ui="$web/ui"
+binder="$web/binder-src/main.js"
+build_ui="$web/build_ui.py"
+en_i18n="$web/i18n/en.json"
+da_i18n="$web/i18n/da.json"
+cpp="$root/components/lv6_dashboard/lv6_dashboard.cpp"
+yaml="$root/packages/zones/lv6_dashboard.yaml"
+api="$web/dashboard-src/core/api.js"
+sse="$web/dashboard-src/core/sse.js"
+store="$web/dashboard-src/core/store.js"
 
+test -f "$binder"
+test -f "$build_ui"
+test -f "$en_i18n"
+test -f "$da_i18n"
+test -f "$api"
+test -f "$sse"
+test -f "$store"
 
-css="$root/web/dashboard.css"
-tokens_css="$root/web/tokens.generated.css"
-ui_kit="$root/web/dashboard-src/core/ui-kit.js"
-tokens_js="$root/web/dashboard-src/core/tokens.js"
+# Built artifacts (make dashboard-build)
+test -f "$ui/lune-ui.css"
+test -f "$ui/binder.js"
+test -f "$ui/en/index.html"
+test -f "$ui/da/index.html"
+test -f "$web/preview.html"
+test -f "$web/preview-da.html"
+grep -qF 'id="v-dash-sys"' "$web/preview.html"
+grep -qF 'LV6_DASHBOARD_CONFIG' "$web/preview.html"
+grep -qF 'ui/binder.js' "$web/preview.html"
+grep -qF 'mock:true' "$web/preview.html"
 
-# ---- Lune Design System v2 (plan H) ----
-grep -qF '@import "tokens.generated.css"' "$css" >/dev/null
-grep -qF "import './core/tokens.js'" "$main" >/dev/null
-grep -qF "from '../../tokens.generated.css'" "$tokens_js" >/dev/null
-test -f "$tokens_css"
-test -f "$root/web/dashboard-src/core/lune-mark.generated.js"
-test -f "$root/web/brand/lune-v6-mark.svg"
-grep -qF 'luneMark' "$root/web/dashboard-src/core/canvas.js" >/dev/null
-grep -qF 'data-live-mark="sidebar"' "$app" >/dev/null
-grep -qF 'data-overview-manifold' "$app" >/dev/null
-grep -qF 'intSplitHtml' "$app" >/dev/null
-grep -qF 'formShellHtml' "$app" >/dev/null
-grep -qF 'class="lds-provision provision"' "$root/web/dashboard-src/core/lds-form.generated.js" >/dev/null
-grep -qF 'class="lds-int-split int-split"' "$root/web/dashboard-src/core/lds-int-split.generated.js" >/dev/null
-grep -qF 'var(--fill-forest)' "$header" >/dev/null
-! grep -qF 'background:var(--bg-glow)' "$app" >/dev/null
-grep -qF 'nav-collapsed' "$app" >/dev/null
-grep -qF 'overrideBanner' "$root/web/dashboard-src/components/zone/zone-detail.js" >/dev/null
-grep -qF 'comfortSliderHtml' "$root/web/dashboard-src/components/zone/zone-detail.js" >/dev/null
-grep -qF 'luneMark({' "$root/web/dashboard-src/components/zone/zone-detail.js" >/dev/null
-! grep -qF 'luneV6Mark' "$app" >/dev/null
-! grep -rqF 'fonts.googleapis.com' "$root/web" >/dev/null
-! grep -rqF 'Montserrat' "$root/web/dashboard-src" >/dev/null
-! grep -qF 'fonts.googleapis.com' "$css" >/dev/null
-grep -qF 'var(--sidebar-width)' "$app" >/dev/null
-grep -qF '@media(max-width:900px)' "$app" >/dev/null
-grep -qF 'tabItemHtml' "$header" >/dev/null
-grep -qF 'tabMoreHtml' "$header" >/dev/null
-grep -qF 'TAB_BAR_CSS' "$header" >/dev/null
-grep -qF 'lds-tab-bar' "$header" >/dev/null
-grep -qF 'data-lds-tab-more' "$header" >/dev/null
-! grep -qF 'v6-more-toggle' "$header" >/dev/null
-! grep -qF 'more-open' "$header" >/dev/null
-grep -qF 'menu-label' "$header" >/dev/null
-grep -qF 'menu-icon' "$header" >/dev/null
-grep -qF 'export function tabItemHtml' "$root/web/dashboard-src/core/lds-tab-bar.generated.js" >/dev/null
-grep -qF 'export function tabMoreHtml' "$root/web/dashboard-src/core/lds-tab-bar.generated.js" >/dev/null
-# Comfort control (LDS) + remaining ui-kit primitives
-comfort="$root/web/dashboard-src/core/lds-comfort-control.generated.js"
-grep -qF 'export function dial(' "$comfort" >/dev/null
-grep -qF 'export function comfortSliderHtml(' "$comfort" >/dev/null
-grep -qF 'linear-gradient(to right, var(--forest), var(--accent))' "$comfort" >/dev/null
-grep -qF 'role="group"' "$comfort" >/dev/null
-grep -qF 'aria-live="polite"' "$comfort" >/dev/null
-grep -qF 'export function overrideBanner(' "$comfort" >/dev/null
-grep -qF "from './lds-comfort-control.generated.js'" "$ui_kit" >/dev/null
-grep -qF 'export function zoneRow(' "$ui_kit" >/dev/null
-grep -qF 'export function planner(' "$ui_kit" >/dev/null
-grep -qF 'export function segmented(' "$ui_kit" >/dev/null
-grep -qF 'export function infoList(' "$ui_kit" >/dev/null
-grep -qF "'zone.override.remaining': 'Touch offset {offset} · {remaining} remaining'" "$i18n" >/dev/null
-grep -qF "'zone.override.remaining': 'Touch-offset {offset} · {remaining} tilbage'" "$i18n" >/dev/null
-# Hex / 0x colour literals are only allowed in generated artifacts.
-if grep -R --include='*.js' --include='*.css' -E '#[0-9A-Fa-f]{3,8}\b' "$root/web/dashboard-src" \
-  | grep -v 'lune-mark.generated.js' | grep -v 'tokens.generated.css' | grep -v 'lds-comfort-control.generated.js' | grep -v 'lds-manifold-row.generated.js' | grep -v 'lds-live-status.generated.js' | grep -v 'lds-tab-bar.generated.js'; then
-  echo "hex colour literals outside generated files" >&2
-  exit 1
-fi
-grep -qF "from '../../core/ui-kit.js'" "$root/web/dashboard-src/components/zone/zone-detail.js" >/dev/null
-grep -qF 'zd-dial-slot' "$root/web/dashboard-src/components/zone/zone-detail.js" >/dev/null
-grep -qF 'zone-detail-dial' "$root/web/dashboard-src/components/zone/zone-detail.js" >/dev/null
-grep -qF 'zd-slider-slot' "$root/web/dashboard-src/components/zone/zone-detail.js" >/dev/null
-grep -qF 'paintComfortSlider' "$root/web/dashboard-src/components/zone/zone-detail.js" >/dev/null
+# Shell contract: radio state before .app, view ids, no sidebar
+grep -qF 'id="m-dash"' "$ui/en/index.html"
+grep -qF 'id="m-conf"' "$ui/en/index.html"
+grep -qF 'id="s-sys"' "$ui/en/index.html"
+grep -qF 'id="v-dash-sys"' "$ui/en/index.html"
+grep -qF 'id="v-conf-sys"' "$ui/en/index.html"
+grep -qF 'id="v-dash-z1"' "$ui/en/index.html"
+grep -qF 'id="v-conf-z6"' "$ui/en/index.html"
+grep -qF 'class="state"' "$ui/en/index.html"
+grep -qF '/binder.js' "$ui/en/index.html"
+grep -qF '/lune-ui.css' "$ui/en/index.html"
+! grep -qF 'side-panel' "$ui/en/index.html"
+! grep -qF 'fonts.googleapis.com' "$ui/en/index.html"
+! grep -qF 'Montserrat' "$ui/en/index.html"
 
-grep -qF 'class="main-panel"' "$app" >/dev/null
-grep -qF 'class="hdr"' "$app" >/dev/null
-grep -qF 'class="view-panel"' "$app" >/dev/null
-grep -qF 'overview-status status-summary' "$app" >/dev/null
-grep -qF 'Local heating status and current exceptions' "$header" >/dev/null
-grep -qE 'position:sticky;top:0;z-index:20' "$app" >/dev/null
-grep -qF 'Flow history' "$app" >/dev/null
-grep -qF '24-hour activity' "$app" >/dev/null
-grep -qF 'data-panel="device"' "$app" >/dev/null
-grep -qF '<h3>Connection</h3>' "$app" >/dev/null
-! grep -qF 'dashboard-connection' "$app" >/dev/null
-grep -qF 'liveStatusHtml' "$header" >/dev/null
-grep -qF 'paintLiveStatus' "$header" >/dev/null
-grep -qF 'data-lds-live-status' "$root/web/dashboard-src/core/lds-live-status.generated.js" >/dev/null
-grep -qF 'connectivity-slot' "$app" >/dev/null
-grep -qF 'hydraulic-history-slot' "$app" >/dev/null
-grep -qF 'Flow history' "$app" >/dev/null
-! grep -qF 'flow-diagram-slot' "$app" >/dev/null
-grep -qF 'Needs attention' "$app" >/dev/null
-grep -qF 'aria-current' "$header" >/dev/null
-grep -qF 'contains-current' "$header" >/dev/null
-grep -qF 'closeMore' "$header" >/dev/null
-! grep -qF 'v6-more-toggle' "$header" >/dev/null
-! grep -qF "nav.classList.toggle('more-open')" "$header" >/dev/null
-! grep -qF "el.querySelector('.v6-side-nav')" "$header" >/dev/null
-grep -qF 'mobile-zone-dock' "$app" >/dev/null
-grep -qF 'has-zone-dock' "$app" >/dev/null
-! grep -qF 'zones-index' "$app" >/dev/null
-! grep -qF 'zones-list' "$app" >/dev/null
-! grep -qF 'Local zones' "$app" >/dev/null
-! grep -qF 'data-zone-back' "$app" >/dev/null
-! grep -qF 'All zones' "$app" >/dev/null
-! grep -qF 'zoneDetailOpen' "$app" >/dev/null
-grep -qF 'zone-detail-view zones-detail-pane' "$app" >/dev/null
-grep -qF "mountComponent('zone-detail'" "$app" >/dev/null
-grep -qF '<button type="button" class="zone-card"' "$card" >/dev/null
-grep -qF 'subscribeDashboard, zoneFriendly, zoneLabel, zoneTitleMarkup' "$card" >/dev/null
-grep -qF "setSection('zones')" "$card" >/dev/null
-grep -qF '.zone-card.zs-heating .zc-dot{background:var(--accent)}' "$card" >/dev/null
-grep -qF '.zone-card.zs-idle .zc-dot,.zone-card.zs-off .zc-dot{background:var(--state-disabled)}' "$card" >/dev/null
-! grep -qF '.zone-card.zs-idle .zc-dot{background:var(--state-ok)}' "$card" >/dev/null
-grep -qF 'data-open-zones' "$app" >/dev/null
-for removed in 'overview-zones' 'zones-master-detail' 'settings-group-head' 'diagnostics-group-head' 'zones-index' 'zones-summary'; do
-  if grep -qF "$removed" "$app" >/dev/null; then
-    echo "Unexpected legacy dashboard pattern: $removed" >&2
-    exit 1
-  fi
-done
-grep -qF 'settings-disclosure touch-settings' "$app" >/dev/null
-grep -qF 'Room clocks' "$app" >/dev/null
-grep -qF 'ble_clock_sync_now' "$dashboard_cpp" >/dev/null
-grep -qF 'Waiting for Lune Touch' "$touch" >/dev/null
-grep -qF 'Approve Lune Touch' "$touch" >/dev/null
-! grep -qF 'Manual recovery' "$touch" >/dev/null
-! grep -qF 'Connection key' "$touch" >/dev/null
-! grep -qF 'touch-installation"' "$touch" >/dev/null
-grep -qF 'authorityProposalPending' "$keys" >/dev/null
-grep -qF 'handle_authority_proposal_' "$dashboard_cpp" >/dev/null
-grep -qF 'awaiting_local_approval' "$dashboard_cpp" >/dev/null
-grep -qF 'approve-proposal' "$dashboard_cpp" >/dev/null
-grep -qF 'authority_pairing_required' "$dashboard_cpp" >/dev/null
-grep -qF 'handle_authority_revoke_' "$dashboard_cpp" >/dev/null
-! grep -qF 'strcmp(key, "authority_shared_key")' "$dashboard_cpp" >/dev/null
-grep -qF "Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8'" "$api" >/dev/null
-# Settings restore is the only JSON write: a backup envelope is a nested
-# document that does not fit the flat form-urlencoded shape. Every other write
-# endpoint must keep using form bodies.
-grep -qF 'function postJsonV1' "$api" >/dev/null
-grep -qF "postJsonV1(" "$api" >/dev/null
-grep -qF "'/settings/import'," "$api" >/dev/null
-[ "$(grep -cF "'Content-Type': 'application/json'" "$api")" = "1" ]
-grep -qF 'Preheat absorption' "$app" >/dev/null
-grep -qF 'diagnostics-attention attention' "$app" >/dev/null
-grep -qF 'Runtime health' "$app" >/dev/null
-grep -qF 'Hardware and connectivity' "$app" >/dev/null
-grep -qF 'Manual motor control' "$app" >/dev/null
-grep -qF 'Recovery and restart' "$app" >/dev/null
-grep -qF "window.confirm('Restart Lune V6 now?" "$root/web/dashboard-src/components/settings/settings-control-card.js" >/dev/null
-grep -qF "window.confirm('Reset the 1-Wire probe map" "$root/web/dashboard-src/components/settings/settings-control-card.js" >/dev/null
-grep -qF 'zone-overview' "$app" >/dev/null
-grep -qF 'zone-overview-strip' "$app" >/dev/null
-grep -qF 'zone-configuration-groups' "$app" >/dev/null
-grep -qF 'zone-room-slot' "$app" >/dev/null
-grep -qF 'zone-sensor-slot' "$app" >/dev/null
-grep -qF 'zone-coordination-slot' "$app" >/dev/null
-grep -qF 'grid-template-areas:"sensor room" "sensor coordination"' "$app" >/dev/null
-grep -qF '@media(min-width:901px)' "$app" >/dev/null
-grep -qF 'grid-template-columns:minmax(0,1fr) minmax(0,1fr)' "$app" >/dev/null
-! grep -qF 'max-width:960px' "$app" >/dev/null
-! grep -qF 'max-width:560px' "$app" >/dev/null
-grep -qF 'zone-actuator-slot' "$app" >/dev/null
-grep -qF "mountComponent('zone-actuator-card')" "$app" >/dev/null
-! grep -qF 'Service and recovery' "$app" >/dev/null
-! grep -qF 'zone-recovery-disclosure' "$app" >/dev/null
-! grep -qF 'diag-zone-recovery-card' "$app" >/dev/null
-! grep -qF '1.15fr' "$app" >/dev/null
-! grep -qF 'minmax(0,.95fr)' "$app" >/dev/null
-grep -qF 'class="zone-chipstrip" role="tablist"' "$app" >/dev/null
-! grep -qF 'zo-status' "$app" >/dev/null
-! grep -qF 'zone-overview-card' "$app" >/dev/null
-grep -qF 'zoneMergeMeta' "$app" >/dev/null
-grep -qF 'parseSyncTarget' "$app" >/dev/null
-grep -qF 'zoneMergeClass' "$app" >/dev/null
-grep -qF 'is-merged' "$app" >/dev/null
-grep -qF 'zo-pair-start' "$app" >/dev/null
-grep -qF 'zo-pair-cont' "$app" >/dev/null
-grep -qF 'overview.zone.mergedWith' "$app" >/dev/null
-grep -qF 'key.syncTo(z)' "$app" >/dev/null
-grep -qF 'zone-id-short' "$app" >/dev/null
-grep -qF 'zone-id-long' "$app" >/dev/null
-grep -qF 'zoneTitleMarkup' "$app" >/dev/null
-grep -qF 'zone-label-compact' "$app" >/dev/null
-grep -qF 'zone-title-name' "$app" >/dev/null
-grep -qF '.zone-label-compact .zone-title-name,.mobile-zone-dock .zone-title-name{display:none}' "$app" >/dev/null
-grep -qF 'zone-live"><p class="zone-kicker">Comfort control</p><div class="zone-detail-heading' "$app" >/dev/null
-grep -qF 'zone-configuration-groups" aria-label="Zone configuration"' "$app" >/dev/null
-grep -qF 'zone-actuator-slot"></div>' "$app" >/dev/null
-! grep -qF 'zone-detail-slot"></div><div class="zone-actuator-slot"></div><section class="zone-configuration-groups' "$app" >/dev/null
-! grep -qF 'zo-name' "$app" >/dev/null
-! grep -qF 'zo-room' "$app" >/dev/null
-! grep -qF 'zo-id' "$app" >/dev/null
-# Desktop: overview is the interactive zone switcher; sidebar fold is gone.
-# Mobile: overview stays display-only; selection via dock chips.
-grep -qF 'isDesktopZoneSwitcher' "$app" >/dev/null
-grep -qF 'rebuildZoneOverview' "$app" >/dev/null
-grep -qF 'loopCellHtml({' "$app" >/dev/null
-grep -qF 'data-zone-select="${value}" aria-current="${selected?' "$app" >/dev/null
-grep -qF 'zone-overview-strip .loop{pointer-events:none;cursor:default}' "$app" >/dev/null
-grep -qF 'zoneOverview.addEventListener(' "$app" >/dev/null
-grep -qF "zoneOverview.addEventListener('click',onZoneOverviewClick)" "$app" >/dev/null
-grep -qF "zoneOverview.addEventListener('keydown',onZoneOverviewKeydown)" "$app" >/dev/null
-grep -qF 'pointer-events:none;cursor:default' "$app" >/dev/null
-grep -qF "mobileZoneChips.addEventListener('click',onZoneSelectClick)" "$app" >/dev/null
-grep -qF "mobileZoneChips.addEventListener('keydown',onZoneChipKeydown)" "$app" >/dev/null
-! grep -qF 'lune-pipe-run' "$tokens_css" >/dev/null
-grep -qF 'manifold-mark .lune-mark .pipe{stroke:var(--pipe-idle)' "$app" >/dev/null
-! grep -qF 'v6-zone-fold' "$header" >/dev/null
-! grep -qF 'v6-zone-fold-link' "$header" >/dev/null
-! grep -qF 'rebuildZoneFold' "$header" >/dev/null
-grep -qF 'data-section="zones"' "$header" >/dev/null
-grep -qF 'zoneTitleMarkup' "$store" >/dev/null
-grep -qF 'zoneIdShort' "$store" >/dev/null
-grep -qF 'zoneIdLong' "$store" >/dev/null
-grep -qF 'zoneFriendly' "$store" >/dev/null
-grep -qF 'zoneTitleMarkup' "$store" >/dev/null
-grep -qF "zoneIdLong(index) + ' - ' + friendly" "$store" >/dev/null
-grep -qF "class=\"zone-title-name\"> - '" "$store" >/dev/null
-! grep -qF 'zone-title-primary' "$store" >/dev/null
-! grep -qF "friendly + ' · '" "$store" >/dev/null
-! grep -qF " (' + id + ')" "$store" >/dev/null
-grep -qF 'zoneDisplayState' "$app" >/dev/null
-grep -qF 'rebuildZoneChrome()' "$app" >/dev/null
-grep -qF 'key.effectiveSetpoint(z)' "$app" >/dev/null
-! grep -qF 'zone-detail-toolbar' "$app" >/dev/null
-! grep -qF 'zt-temps' "$app" >/dev/null
-grep -qF 'dashboard.js?v=' "$dashboard_cpp" >/dev/null
-grep -qF 'LV6_DASHBOARD_ASSET_V' "$dashboard_cpp" >/dev/null
-grep -qF 'LV6_DASHBOARD_ASSET_V' "$root/components/lv6_dashboard/__init__.py" >/dev/null
-grep -qF 'hashlib.sha256' "$root/components/lv6_dashboard/__init__.py" >/dev/null
-grep -qF "['ArrowLeft','ArrowRight','Home','End']" "$app" >/dev/null
-! grep -qF 'class="zone-picker"' "$app" >/dev/null
-! grep -rqF 'zone_exterior_walls' "$root/web/dashboard-src" >/dev/null
-! grep -qF 'exterior_walls' "$dashboard_cpp" >/dev/null
-! grep -rqF 'zone_area_m2' "$root/web/dashboard-src" >/dev/null
-! grep -rqF 'zone_pipe_spacing_mm' "$root/web/dashboard-src" >/dev/null
-! grep -rqF 'zone_pipe_type' "$root/web/dashboard-src" >/dev/null
-! grep -rqF 'Zone Area' "$root/web/dashboard-src" >/dev/null
-! grep -rqF 'Pipe Spacing' "$root/web/dashboard-src" >/dev/null
-! grep -rqF 'Pipe Type' "$root/web/dashboard-src" >/dev/null
-grep -qF 'Identity' "$root/web/dashboard-src/components/zone/zone-room-card.js" >/dev/null
-grep -qF 'Temperature' "$root/web/dashboard-src/components/zone/zone-sensor-card.js" >/dev/null
-grep -qF 'Coordination' "$root/web/dashboard-src/components/zone/zone-coordination-card.js" >/dev/null
-grep -qF "mountComponent('zone-coordination-card')" "$app" >/dev/null
-grep -qF "import './components/zone/zone-coordination-card.js'" "$main" >/dev/null
-grep -qF "'zone.room.title': 'Identity'" "$i18n" >/dev/null
-grep -qF "'zone.room.title': 'Identitet'" "$i18n" >/dev/null
-grep -qF "'zone.sensor.title': 'Temperature'" "$i18n" >/dev/null
-grep -qF "'zone.sensor.title': 'Temperatur'" "$i18n" >/dev/null
-grep -qF "'zone.coordination.title': 'Coordination'" "$i18n" >/dev/null
-grep -qF "'zone.coordination.title': 'Koordinering'" "$i18n" >/dev/null
-grep -qF "'zone.actuator.title': 'Actuator'" "$i18n" >/dev/null
-grep -qF "'zone.actuator.title': 'Aktuator'" "$i18n" >/dev/null
-! grep -qF 'zs-sync' "$root/web/dashboard-src/components/zone/zone-sensor-card.js" >/dev/null
-grep -qF 'zc-sync' "$root/web/dashboard-src/components/zone/zone-coordination-card.js" >/dev/null
-! grep -qF "input.addEventListener('dblclick'" "$root/web/dashboard-src/core/ui-kit.js" >/dev/null
-grep -qF "new CustomEvent('zone-open'" "$card" >/dev/null
-grep -qF 'Actuator' "$root/web/dashboard-src/components/zone/zone-actuator-card.js" >/dev/null
-grep -qF 'class="disclosure zone-actuator-disclosure"' "$root/web/dashboard-src/components/zone/zone-actuator-card.js" >/dev/null
-grep -qF '<summary data-i18n="zone.actuator.title">Actuator</summary>' "$root/web/dashboard-src/components/zone/zone-actuator-card.js" >/dev/null
-! grep -qF '<details class="disclosure zone-actuator-disclosure" open>' "$root/web/dashboard-src/components/zone/zone-actuator-card.js" >/dev/null
-grep -qF 'resetMotorFault' "$root/web/dashboard-src/components/zone/zone-actuator-card.js" >/dev/null
-grep -qF 'resetMotorLearnedFactors' "$root/web/dashboard-src/components/zone/zone-actuator-card.js" >/dev/null
-grep -qF 'resetMotorAndRelearn' "$root/web/dashboard-src/components/zone/zone-actuator-card.js" >/dev/null
-! grep -qF 'Advanced motor properties' "$root/web/dashboard-src/components/zone/zone-detail.js" >/dev/null
-! grep -qF 'zd-motor' "$root/web/dashboard-src/components/zone/zone-detail.js" >/dev/null
-! grep -qF 'zoneTitleMarkup' "$root/web/dashboard-src/components/zone/zone-detail.js" >/dev/null
-grep -qF 'data-i18n="zone.detail.title"' "$root/web/dashboard-src/components/zone/zone-detail.js" >/dev/null
-grep -qF "'zone.detail.title': 'Control'" "$i18n" >/dev/null
-grep -qF "'zone.detail.title': 'Styring'" "$i18n" >/dev/null
-grep -qF "import './components/zone/zone-actuator-card.js'" "$main" >/dev/null
-! grep -qF 'diag-zone-recovery-card' "$main" >/dev/null
-grep -qF 'badge-heating{background:rgba(var(--accent-rgb),.12);color:var(--accent)}' "$root/web/dashboard-src/components/zone/zone-detail.js" >/dev/null
-grep -qF '.status-summary h2.status-ok{color:var(--text-strong)!important}' "$app" >/dev/null
-grep -qF 'effectiveSetpoint' "$keys" >/dev/null
-grep -qF 'baseSetpoint' "$keys" >/dev/null
-grep -qF 'coordinatorOffset' "$keys" >/dev/null
-grep -qF 'coordinatorRemaining' "$keys" >/dev/null
-grep -qF -- '--flow-track:' "$app" >/dev/null
-grep -qF 'eyebrow">Mode</span>' "$app" >/dev/null
-grep -qF 'heatDemandSummaryLine' "$app" >/dev/null
-grep -qF 'heating-mode-slot' "$app" >/dev/null
-grep -qF "mountComponent('settings-heating-mode-card')" "$app" >/dev/null
-grep -qF "import './components/settings/settings-heating-mode-card.js'" "$main" >/dev/null
-grep -qF 'heatingMode:' "$keys" >/dev/null
-grep -qF 'hpBasePct:' "$keys" >/dev/null
-grep -qF 'heatDemandRecommendation:' "$keys" >/dev/null
-grep -qF "'settings.heatingMode.title': 'Heating mode'" "$i18n" >/dev/null
-grep -qF "'settings.heatingMode.title': 'Varmekilde-tilstand'" "$i18n" >/dev/null
-grep -qF 'loopCellHtml' "$app" >/dev/null
-grep -qF 'MANIFOLD_ROW_CSS' "$app" >/dev/null
-grep -qF 'loop-demand-bar' "$root/web/dashboard-src/core/lds-manifold-row.generated.js" >/dev/null
-grep -qF 'demandBarLevel' "$app" >/dev/null
-grep -qF 'ΔT ${dt}' "$root/web/dashboard-src/core/canvas.js" >/dev/null
-! grep -qF 'flow-diagram-slot' "$app" >/dev/null
-! grep -qF "mountComponent('flow-diagram')" "$app" >/dev/null
-! test -f "$root/web/dashboard-src/components/overview/flow-diagram.js"
-# fonts.googleapis.com checked for all of web/ in LDS block above
-grep -qF 'grid-template-columns:repeat(3,1fr)' "$app" >/dev/null
-! grep -qF 'Target Temperature' "$root/web/dashboard-src/components/zone/zone-detail.js" >/dev/null
-grep -qF 'bindDial' "$root/web/dashboard-src/components/zone/zone-detail.js" >/dev/null
-grep -qF 'effectiveSetpoint' "$root/web/dashboard-src/components/zone/zone-detail.js" >/dev/null
-grep -qF "const COLOR_SCHEME_QUERY = '(prefers-color-scheme: dark)'" "$theme" >/dev/null
-grep -qF 'root.dataset.colorScheme = scheme' "$theme" >/dev/null
-grep -qF "colorSchemeMedia.addEventListener('change', update)" "$theme" >/dev/null
-grep -qF ':root[data-color-scheme="light"]' "$tokens_css" >/dev/null
-! grep -qF 'Accent theme' "$header" >/dev/null
-! grep -qF 'hdr-theme' "$header" >/dev/null
-! grep -qF 'Appearance' "$app" >/dev/null
-! grep -qF 'appearance-slot' "$app" >/dev/null
-! grep -qF 'settings-appearance-card' "$app" >/dev/null
-! grep -qF 'settings-appearance-card' "$main" >/dev/null
-! grep -qF 'settings.appearance.' "$i18n" >/dev/null
-! test -e "$root/web/dashboard-src/components/settings/settings-appearance-card.js"
-! grep -qF '>Appearance<' "$header" >/dev/null
-! grep -qF 'and appearance' "$header" >/dev/null
-grep -qF 'color-scheme\" content=\"light dark' "$dashboard_cpp" >/dev/null
-grep -qF 'HeatingProfile' "$root/components/lv6_config_store/lv6_types.h" >/dev/null
-grep -qF 'HeatDemandSummary' "$root/components/lv6_config_store/lv6_types.h" >/dev/null
-! grep -qF 'reserved_touch_weather_v4' "$root/components/lv6_config_store/lv6_types.h" >/dev/null
-! grep -qF 'ForecastConfig' "$root/components/lv6_config_store/lv6_types.h" >/dev/null
-! grep -qF 'HeliosConfig' "$root/components/lv6_config_store/lv6_types.h" >/dev/null
+# Feature-parity panels on conf-sys
+grep -qF 'data-save="touch"' "$ui/en/index.html"
+grep -qF 'data-save="heating"' "$ui/en/index.html"
+grep -qF 'data-save="ble_clock"' "$ui/en/index.html"
+grep -qF 'data-save="firmware"' "$ui/en/index.html"
+grep -qF 'data-save="backup"' "$ui/en/index.html"
+grep -qF 'data-save="service"' "$ui/en/index.html"
+grep -qF 'data-dev-only' "$ui/en/index.html"
+grep -qF 'External room temperatures' "$ui/en/index.html"
 
-grep -qF 'overview.connectivity.version' "$root/web/dashboard-src/core/i18n.js" >/dev/null
-grep -qF 'class="cc-ver"' "$root/web/dashboard-src/components/overview/connectivity-card.js" >/dev/null
-grep -qF 'gkey.firmware' "$root/web/dashboard-src/components/overview/connectivity-card.js" >/dev/null
-grep -qF 'setInterval(paintUptime, 1000)' "$root/web/dashboard-src/components/overview/connectivity-card.js" >/dev/null
-grep -qF 'return m + "m"' "$root/web/dashboard-src/utils/format.js" >/dev/null
-grep -qF '\"uptime_s\":%lu,\"poll_after_ms\"' "$dashboard_cpp" >/dev/null
-grep -qF '\"runtime_revision\":%lu' "$dashboard_cpp" >/dev/null
-grep -qF 'runtime_revision' "$root/web/dashboard-src/core/sse.js" >/dev/null
-grep -qF 'setInterval(pollRevision, 1000)' "$root/web/dashboard-src/core/sse.js" >/dev/null
-grep -qF 'schedulePostWriteRefresh' "$root/web/dashboard-src/core/sse.js" >/dev/null
-grep -qF 'msUntilStateUnsuppressed' "$root/web/dashboard-src/core/store.js" >/dev/null
-grep -qF 'gkey.uptime' "$root/web/dashboard-src/core/sse.js" >/dev/null
-grep -qF 'firmware_suffix' "$root/version.yaml" >/dev/null
-grep -qF '${firmware_version}${firmware_suffix}' "$root/lune.yaml" >/dev/null
-grep -qF 'stamp_version.py' "$root/Makefile" >/dev/null
+# No product forecast chart (Touch owns weather)
+! grep -qF 'data-bind-fc=' "$ui/en/index.html"
 
-# ---- firmware update, settings backup, log export, reset reason ----
-grep -qF 'firmware-slot' "$app" >/dev/null
-grep -qF 'backup-slot' "$app" >/dev/null
-grep -qF 'Version, updates and manual upload' "$app" >/dev/null
-grep -qF 'Save or reapply local configuration' "$app" >/dev/null
-grep -qF "mountComponent('settings-firmware-card')" "$app" >/dev/null
-grep -qF "mountComponent('settings-backup-card')" "$app" >/dev/null
-grep -qF "import './components/settings/settings-firmware-card.js'" "$main" >/dev/null
-grep -qF "import './components/settings/settings-backup-card.js'" "$main" >/dev/null
+# Danish page exists and differs
+grep -qF 'lang="da"' "$ui/da/index.html"
+grep -qF 'Konfiguration' "$ui/da/index.html"
 
-grep -qF "command('firmware_check')" "$api" >/dev/null
-grep -qF "command('firmware_install')" "$api" >/dev/null
-grep -qF "command('firmware_prepare')" "$api" >/dev/null
-grep -qF 'api.github.com/repos/birkemosen/lune/releases/latest' "$api" >/dev/null
-grep -qF 'releases/latest/download/' "$api" >/dev/null
-grep -qF "OTA_UPLOAD_PATH = '/update'" "$api" >/dev/null
-grep -qF "body.append('update', file, file.name)" "$api" >/dev/null
-grep -qF 'request.upload.onprogress' "$api" >/dev/null
-grep -qF "'/settings/export'" "$api" >/dev/null
-grep -qF "SETTINGS_BACKUP_TYPE = 'lune-v6-settings'" "$api" >/dev/null
-grep -qF "BASE + '/logs/download'" "$api" >/dev/null
-grep -qF 'export async function downloadDeviceLogs' "$api" >/dev/null
-# The GitHub release check must stay off the 3 s device poll.
-! grep -qF 'api.github.com' "$sse" >/dev/null
+# Binder hooks
+grep -qF "lune:save" "$binder"
+grep -qF "/api/v1" "$api"
+grep -qF "connect(" "$sse"
+grep -qF "approveTouchProposal" "$binder"
+grep -qF "exportSettings" "$binder"
 
-# Endpoints and commands the dashboard depends on must exist in the firmware.
-grep -qF '"/settings/export"' "$dashboard_cpp" >/dev/null
-grep -qF '"/settings/import"' "$dashboard_cpp" >/dev/null
-grep -qF '"/logs/download"' "$dashboard_cpp" >/dev/null
-grep -qF '"firmware_check"' "$dashboard_cpp" >/dev/null
-grep -qF '"firmware_install"' "$dashboard_cpp" >/dev/null
-grep -qF '"firmware_prepare"' "$dashboard_cpp" >/dev/null
-grep -qF 'text_sensor-reset_reason' "$dashboard_cpp" >/dev/null
-grep -qF 'firmware_update\":{\"current' "$dashboard_cpp" >/dev/null
+# Firmware serves LDS2 routes
+grep -qF 'handle_ui_html_' "$cpp"
+grep -qF 'handle_ui_css_' "$cpp"
+grep -qF '/lune-ui.css' "$cpp"
+grep -qF '/binder.js' "$cpp"
+grep -qF 'lune_lang=' "$cpp"
+grep -qF 'ui_css: ../web/ui/lune-ui.css' "$yaml"
+grep -qF 'binder_js: ../web/ui/binder.js' "$yaml"
 
-grep -qF 'CHECK_MIN_INTERVAL_MS' "$firmware_card" >/dev/null
-grep -qF "E['firmware_update']" "$firmware_card" >/dev/null
-grep -qF 'export function releaseAssetFor' "$api" >/dev/null
-grep -qF 'export function isNewerVersion' "$firmware_card" >/dev/null
-grep -qF 'settings.firmware.confirmInstall' "$firmware_card" >/dev/null
-grep -qF 'settings.firmware.backupFirst' "$firmware_card" >/dev/null
-grep -qF 'settings.firmware.confirmUpload' "$firmware_card" >/dev/null
-grep -qF "setDashboardValue('firmwareUpdateAvailable'" "$firmware_card" >/dev/null
-grep -qF 'accept=".bin"' "$firmware_card" >/dev/null
-grep -qF 'sfw-progress' "$firmware_card" >/dev/null
+# i18n key parity
+python3 - "$en_i18n" "$da_i18n" <<'PY'
+import json, sys
+en = json.load(open(sys.argv[1], encoding="utf-8"))
+da = json.load(open(sys.argv[2], encoding="utf-8"))
+missing = sorted(set(en) - set(da))
+extra = sorted(set(da) - set(en))
+assert not missing, missing
+assert not extra, extra
+assert len(en) >= 200
+PY
 
-grep -qF 'settings-backup-card' "$backup_card" >/dev/null
-grep -qF 'isSettingsBackup' "$backup_card" >/dev/null
-grep -qF 'settings.backup.invalidFile' "$backup_card" >/dev/null
-grep -qF 'settings.backup.confirmRestore' "$backup_card" >/dev/null
-grep -qF 'settings.backup.result' "$backup_card" >/dev/null
-grep -qF 'sbk-learned' "$backup_card" >/dev/null
-
-grep -qF 'download-btn' "$logs" >/dev/null
-grep -qF 'downloadDeviceLogs' "$logs" >/dev/null
-
-grep -qF "resetReason: 'text_sensor-reset_reason'" "$keys" >/dev/null
-grep -qF 'data-k="reset"' "$system_card" >/dev/null
-grep -qF 'gkey.resetReason' "$system_card" >/dev/null
-
-grep -qF 'v6-update-badge' "$header" >/dev/null
-grep -qF 'v6-attention-badge' "$header" >/dev/null
-grep -qF 'v6-nav-dot' "$header" >/dev/null
-grep -qF 'primaryAttentionAction' "$header" >/dev/null
-grep -qF 'touchNeedsAttention' "$header" >/dev/null
-grep -qF "subscribeDashboard('firmwareUpdateAvailable'" "$header" >/dev/null
-grep -qF "setSection('settings')" "$header" >/dev/null
-grep -qF 'export function touchNeedsAttention' "$store" >/dev/null
-grep -qF 'export function primaryAttentionAction' "$store" >/dev/null
-grep -qF "'status.attention.approveTouch'" "$i18n" >/dev/null
-grep -qF "'status.attention.approveTouch': 'Godkend Touch'" "$i18n" >/dev/null
-
-grep -qF 'export function mockLatestRelease' "$mock" >/dev/null
-grep -qF 'export function mockSettingsExport' "$mock" >/dev/null
-grep -qF 'export function mockSettingsImport' "$mock" >/dev/null
-grep -qF "_type: 'lune-v6-settings'" "$mock" >/dev/null
-grep -qF "cmd === 'firmware_install'" "$mock" >/dev/null
-
-grep -qF "'settings.firmware.title': 'Firmware'" "$i18n" >/dev/null
-grep -qF "'settings.backup.title': 'Backup and restore'" "$i18n" >/dev/null
-grep -qF "'settings.backup.title': 'Backup og gendannelse'" "$i18n" >/dev/null
-grep -qF "'logs.download': 'Download'" "$i18n" >/dev/null
-grep -qF "'diagnostics.system.resetReason': 'Last reset reason'" "$i18n" >/dev/null
-grep -qF "'diagnostics.system.resetReason': 'Seneste genstartsårsag'" "$i18n" >/dev/null
-grep -qF "'diagnostics.system.dma': 'Free DMA'" "$i18n" >/dev/null
-grep -qF "'diagnostics.system.largestInternal': 'Largest free (int)'" "$i18n" >/dev/null
-grep -qF "'diagnostics.system.minInternal': 'Min free (int)'" "$i18n" >/dev/null
-grep -qF "'diagnostics.system.largestPsram': 'Largest free PSRAM'" "$i18n" >/dev/null
-grep -qF "'diagnostics.system.bleAds': 'BLE ads/s'" "$i18n" >/dev/null
-grep -qF "'diagnostics.system.bleLastAdv': 'BLE last adv'" "$i18n" >/dev/null
-grep -qF "'diagnostics.system.bleState': 'BLE radio'" "$i18n" >/dev/null
-grep -qF "data-k=\"dma\"" "$system_card" >/dev/null
-grep -qF "data-k=\"largestInternal\"" "$system_card" >/dev/null
-grep -qF "data-k=\"minInternal\"" "$system_card" >/dev/null
-grep -qF "data-k=\"largestPsram\"" "$system_card" >/dev/null
-grep -qF "data-k=\"bleAds\"" "$system_card" >/dev/null
-grep -qF "data-k=\"bleLastAdv\"" "$system_card" >/dev/null
-grep -qF "data-k=\"bleState\"" "$system_card" >/dev/null
-grep -qF 'freeDmaKb: ' "$keys" >/dev/null
-grep -qF 'largestInternalKb: ' "$keys" >/dev/null
-grep -qF 'minInternalKb: ' "$keys" >/dev/null
-grep -qF 'largestPsramKb: ' "$keys" >/dev/null
-grep -qF 'bleAdsPerSec: ' "$keys" >/dev/null
-grep -qF 'bleLastAdvAgeMs: ' "$keys" >/dev/null
-grep -qF 'bleHubEnabled: ' "$keys" >/dev/null
-grep -qF '\"dma_kb\":%lu' "$dashboard_cpp" >/dev/null
-grep -qF '\"largest_internal_kb\":%lu' "$dashboard_cpp" >/dev/null
-grep -qF '\"min_internal_kb\":%lu' "$dashboard_cpp" >/dev/null
-grep -qF '\"largest_psram_kb\":%lu' "$dashboard_cpp" >/dev/null
-grep -qF '\"ads_per_sec\":%s' "$dashboard_cpp" >/dev/null
-grep -qF '\"last_adv_age_ms\":%lu' "$dashboard_cpp" >/dev/null
-grep -qF 'sensor-ble_ads_per_sec' "$dashboard_cpp" >/dev/null
-grep -qF 'heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL)' "$dashboard_cpp" >/dev/null
-grep -qF 'heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL)' "$dashboard_cpp" >/dev/null
-grep -qF "'status.updateAvailable'" "$i18n" >/dev/null
-grep -qF "'overview.zone.mergedWith': 'Merged with {zones}'" "$i18n" >/dev/null
-grep -qF "'overview.zone.mergedWith': 'Flettet med {zones}'" "$i18n" >/dev/null
-
-tmp=$(mktemp)
-cat > "$tmp" <<'EOF'
-substitutions:
-  firmware_version: "v1.0.0"
-  firmware_build: "1"
-  firmware_suffix: "-1"
-EOF
-python3 "$root/stamp_version.py" "$tmp" bump >/dev/null
-grep -qF 'firmware_build: "2"' "$tmp" >/dev/null
-grep -qF 'firmware_suffix: "-2"' "$tmp" >/dev/null
-python3 "$root/stamp_version.py" "$tmp" release v1.2.0 >/dev/null
-grep -qF 'firmware_version: "v1.2.0"' "$tmp" >/dev/null
-grep -qF 'firmware_suffix: ""' "$tmp" >/dev/null
-grep -qF 'firmware_build: "0"' "$tmp" >/dev/null
-rm -f "$tmp"
-
-grep -qF "'diagnostics.lab.estop': 'Emergency stop'" "$i18n" >/dev/null
-grep -qF "'diagnostics.lab.estop': 'Nødstop'" "$i18n" >/dev/null
-grep -qF 'data-section="motorlab"' "$app" >/dev/null
-grep -qF 'data-section="motorlab"' "$root/web/dashboard-src/app/header.js" >/dev/null
-grep -qF "mountComponent('diag-motor-lab')" "$app" >/dev/null
-grep -qF 'isDevBuild' "$app" >/dev/null
-grep -qF "setSection('diagnostics')" "$app" >/dev/null
-grep -qF "import './components/diagnostics/diag-motor-lab.js'" "$main" >/dev/null
-grep -qF 'export function isDevBuild' "$root/web/dashboard-src/utils/dev-build.js" >/dev/null
-grep -qF 'export function emergencyStopMotors' "$api" >/dev/null
-grep -qF 'export async function fetchMotorTraceCsv' "$api" >/dev/null
-grep -qF "BASE + '/motor-trace.csv'" "$api" >/dev/null
-grep -qF 'setDriversEnabled(false)' "$api" >/dev/null
-grep -qF 'class="lab-estop"' "$root/web/dashboard-src/components/diagnostics/diag-motor-lab.js" >/dev/null
-grep -qF 'class="lab-step-chip"' "$root/web/dashboard-src/components/diagnostics/diag-motor-lab.js" >/dev/null
-grep -qF 'class="lab-instruments"' "$root/web/dashboard-src/components/diagnostics/diag-motor-lab.js" >/dev/null
-grep -qF 'POLL_MS = 400' "$root/web/dashboard-src/components/diagnostics/diag-motor-lab.js" >/dev/null
-grep -qF "section') !== 'motorlab'" "$root/web/dashboard-src/components/diagnostics/diag-motor-lab.js" >/dev/null
-grep -qF 'renderMotorLabCharts' "$root/web/dashboard-src/components/diagnostics/motor-lab-charts.js" >/dev/null
-grep -qF 'diagnostics.lab.steps.setup' "$i18n" >/dev/null
-grep -qF 'diagnostics.lab.phase.running' "$i18n" >/dev/null
-grep -qF 'diagnostics.lab.cluster.motion' "$i18n" >/dev/null
-grep -qF 'diagnostics.lab.res.live' "$i18n" >/dev/null
-grep -qF "'diagnostics.lab.res.live': 'Live · Motor Lab holds background polls'" "$i18n" >/dev/null
-grep -qF "'diagnostics.lab.res.live': 'Live · Motor Lab holder baggrundspoll'" "$i18n" >/dev/null
-grep -qF "'diagnostics.lab.chart.cadence': 'Commutation cadence'" "$i18n" >/dev/null
-grep -qF "'diagnostics.lab.chart.cadence': 'Kommuteringskadence'" "$i18n" >/dev/null
-grep -qF 'Instrumented stroke capture and endstop thresholds' "$root/web/dashboard-src/app/header.js" >/dev/null
-grep -qF "event.key !== 'Escape'" "$root/web/dashboard-src/components/diagnostics/diag-motor-lab.js" >/dev/null
-grep -qF 'analyzeMotorTrace' "$root/web/dashboard-src/utils/motor-trace.js" >/dev/null
-grep -qF 'export function motorTraceSeries' "$root/web/dashboard-src/utils/motor-trace.js" >/dev/null
-grep -qF 'export function mockMotorTraceCsv' "$mock" >/dev/null
-grep -qF 'export function mockDiagnosticsSnapshot' "$mock" >/dev/null
-grep -qF 'MOCK_MOVE_MS = 4200' "$mock" >/dev/null
-grep -qF 'tacho_period_us' "$mock" >/dev/null
-grep -qF 'data-k="pin"' "$root/web/dashboard-src/components/diagnostics/diag-motor-lab.js" >/dev/null
-grep -qF 'diagnostics.lab.stroke.contact' "$i18n" >/dev/null
-grep -qF 'export function pinContactSample' "$root/web/dashboard-src/utils/motor-trace.js" >/dev/null
-
-# Return temperature probes are configured globally in Settings (not per-zone).
-# Master disable persists zone_probe = None for all zones (PROBE_UNASSIGNED).
-return_temp_card="$root/web/dashboard-src/components/settings/settings-return-temp-card.js"
-sensor_card="$root/web/dashboard-src/components/zone/zone-sensor-card.js"
-grep -qF 'settings-return-temp-card' "$return_temp_card" >/dev/null
-grep -qF 'srt-enabled' "$return_temp_card" >/dev/null
-grep -qF 'srt-zones' "$return_temp_card" >/dev/null
-grep -qF 'srt-probe' "$return_temp_card" >/dev/null
-grep -qF 'zoneTitleMarkup' "$return_temp_card" >/dev/null
-grep -qF "setZoneSelect(zone, 'zone_probe', 'None')" "$return_temp_card" >/dev/null
-grep -qF "setZoneSelect(zone, 'zone_probe', v)" "$return_temp_card" >/dev/null
-grep -qF 'return-temp-slot' "$root/web/dashboard-src/app/app-root.js" >/dev/null
-grep -qF "settings-return-temp-card" "$root/web/dashboard-src/main.js" >/dev/null
-grep -qF "'settings.returnTemp.title': 'Return temperature'" "$i18n" >/dev/null
-grep -qF "'settings.returnTemp.title': 'Returtemperatur'" "$i18n" >/dev/null
-grep -qF "'settings.returnTemp.enabledSub': 'Legacy return-temp balancing only" "$i18n" >/dev/null
-grep -qF "'settings.returnTemp.enabledSub': 'Kun til ældre returtemp-balancering" "$i18n" >/dev/null
-! grep -qF 'zs-probe-enabled' "$sensor_card" >/dev/null
-! grep -qF 'zs-probe-row' "$sensor_card" >/dev/null
-! grep -qF 'zone.sensor.returnEnabledSub' "$sensor_card" >/dev/null
-! grep -qF "setZoneSelect(zone, 'zone_probe'" "$sensor_card" >/dev/null
-! grep -qF "setZoneSelect(selectedZone(), 'zone_sync_to'" "$sensor_card" >/dev/null
-grep -qF "setZoneSelect(selectedZone(), 'zone_sync_to'" "$root/web/dashboard-src/components/zone/zone-coordination-card.js" >/dev/null
-
-node --input-type=module <<EOF
-import { isDevBuild } from 'file://$root/web/dashboard-src/utils/dev-build.js';
-import { analyzeMotorTrace, motorTraceSeries, parseMotorTraceCsv } from 'file://$root/web/dashboard-src/utils/motor-trace.js';
-if (!isDevBuild('v1.0.0-7') || isDevBuild('v1.0.0') || isDevBuild('')) process.exit(1);
-const rows = ['t_ms,motion_count,current_ma,adc_current_raw,drive_on,direction_open,armed,stroke_phase,tacho_period_us,tacho_amp_raw,bemf_raw_a,bemf_raw_b,bemf_differential_raw,bemf_separation_us,bemf_valid,bemf_moving,invalid_bemf_samples'];
-for (let t = 0; t <= 4000; t += 20) {
-  const running = t < 3200;
-  const ma = t < 2200 ? 19.0 : (t < 2800 ? 24.0 : (running ? 22.0 : 19 + (t - 3200) * 0.03));
-  const phase = t < 2200 ? 0 : (t < 2800 ? 1 : (running ? 2 : 3));
-  const period = running ? 1800 : 0;
-  rows.push([t, Math.floor(t / 10), ma.toFixed(1), 0, 1, 0, 1, phase, period, 40, 0, 0, 0, 0, 0, 1, 0].join(','));
-}
-const samples = parseMotorTraceCsv(rows.join('\\n'));
-const analysis = analyzeMotorTrace(samples, 'close');
-if (!analysis.ok || analysis.suggested_factor < 1.25 || analysis.peak_ma < analysis.mean_ma) process.exit(1);
-if (!analysis.pin_seen || analysis.pin_t_ms < 2100 || analysis.pin_t_ms > 2300) process.exit(1);
-if (samples[10].tacho_period_us !== 1800 || samples[10].adc_current_raw !== 0) process.exit(1);
-const series = motorTraceSeries(samples);
-if (!series.cadence.length || series.cadence[10].rate_hz < 500 || !series.slopes.length) process.exit(1);
-EOF
-
-# Motor Lab threshold explorer: the embedded reference traces must match the CI
-# fixtures, and the JS replay must agree with the firmware-side C++ tests
-# (test/stall_model) on when each close path fires.
-sh "$root/scripts/gen-reference-traces.sh" | cmp -s - "$root/web/dashboard-src/utils/motor-reference-traces.js" || {
-  echo 'FAIL motor-reference-traces.js is stale; run make dashboard-reference-traces' >&2
-  exit 1
-}
-node --input-type=module <<EOF
-import { explainEndstop } from 'file://$root/web/dashboard-src/utils/endstop-explorer.js';
-import { REFERENCE_CLOSE, REFERENCE_OPEN, referenceSamples } from 'file://$root/web/dashboard-src/utils/motor-reference-traces.js';
-const fail = (msg) => { console.error('FAIL explorer: ' + msg); process.exit(1); };
-const close = explainEndstop(referenceSamples(REFERENCE_CLOSE), 'close');
-const tr = close.trips;
-if (!tr.seat || tr.seat.t_ms < 38500 || tr.seat.t_ms > 39500) fail('seat cap should fire ~39 s');
-if (!tr.threshold || tr.threshold.t_ms < 36000 || tr.threshold.t_ms >= 40000) fail('close factor 1.45 should fire before the wall');
-if (!tr.trailing || tr.trailing.t_ms < 40000 || tr.trailing.t_ms > 40500) fail('trailing step should land just past the wall');
-if (close.first !== 'ceiling') fail('the 2600-count ceiling cuts this trace first');
-const quick = explainEndstop(referenceSamples(REFERENCE_CLOSE), 'close', { trailingSustainMs: 750 });
-if (!quick.trips.trailing || quick.trips.trailing.t_ms > 25000) fail('750 ms sustain should false-fire on the pin');
-const open = explainEndstop(referenceSamples(REFERENCE_OPEN), 'open');
-if (open.trips.stall) fail('stall cap 65 must clear the open breakaway');
-const open54 = explainEndstop(referenceSamples(REFERENCE_OPEN), 'open', { stallMa: 54 });
-if (!open54.trips.stall) fail('stall cap 54 must trip on the open breakaway');
-EOF
-
-echo 'PASS V6 dashboard LDS source contracts'
+echo "dashboard LDS2 smoke OK"

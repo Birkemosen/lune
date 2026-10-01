@@ -115,8 +115,14 @@ and clamps every command locally.
 
 ## Dashboard Sharing
 
-Design tokens, brand marks, and shell helpers (sidebar live status, manifold row,
-comfort control) live in the sibling [`lds`](https://github.com/Birkemosen/lds)
-repository. Keep Lune V6 and Lune Touch dashboard implementations separate until
-shared runtime components are deliberately introduced. Install generated artifacts
-with `make design-tokens` (see `lds.yaml`).
+Design tokens, CSS components, and the V6 reference shell live in the sibling
+[`lune-design-system`](https://github.com/Birkemosen/lune-design-system)
+repository (`DESIGN.md`, `AGENTS.md`, `tokens/tokens.json`, `css/lune-ui.src.css`,
+`examples/v6/`). Install/build with `make design-tokens` / `make dashboard-build`
+(see `lds.yaml`). The product UI is static HTML/CSS (radio navigation) plus a
+thin `binder.js` for `/api/v1` live data — not the legacy LDS1 component kit.
+
+**Design changes must land in `lune-design-system` first** (CSS, reference
+HTML/i18n), then rebuild into `lune-v6`. Do not fix visual structure only under
+`lune-v6/web/`.
+

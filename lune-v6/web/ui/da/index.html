@@ -1,0 +1,1146 @@
+<!doctype html>
+<html lang="da">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" media="(prefers-color-scheme: light)" content="#fbfaf8">
+<meta name="theme-color" media="(prefers-color-scheme: dark)" content="#121210">
+<title>Lune V6</title>
+<link rel="alternate" hreflang="en" href="/en/">
+<link rel="stylesheet" href="/lune-ui.css">
+</head>
+<body>
+
+<!-- TILSTAND — før .app. Rækkefølge: tilstand → omfang → tema -->
+<input class="state" type="radio" name="mode" id="m-dash" checked aria-label="Dashboard">
+<input class="state" type="radio" name="mode" id="m-conf" aria-label="Konfiguration">
+<input class="state" type="radio" name="scope" id="s-sys" checked aria-label="Manifold">
+<input class="state" type="radio" name="scope" id="s-z1" aria-label="Zone 1">
+<input class="state" type="radio" name="scope" id="s-z2" aria-label="Zone 2">
+<input class="state" type="radio" name="scope" id="s-z3" aria-label="Zone 3">
+<input class="state" type="radio" name="scope" id="s-z4" aria-label="Zone 4">
+<input class="state" type="radio" name="scope" id="s-z5" aria-label="Zone 5">
+<input class="state" type="radio" name="scope" id="s-z6" aria-label="Zone 6">
+<input class="state" type="checkbox" id="theme" aria-label="Skift lyst/mørkt tema">
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M4.9 19.1l1.8-1.8M17.3 6.7l1.8-1.8"/></symbol>
+  <symbol id="i-moon" viewBox="0 0 24 24"><path d="M19 14.5A7.5 7.5 0 1 1 9.5 5a6 6 0 0 0 9.5 9.5z"/></symbol>
+  <symbol id="i-cloud" viewBox="0 0 24 24"><path d="M7 18h10a4 4 0 0 0 0-8 5.5 5.5 0 0 0-10.6 1.5A3.3 3.3 0 0 0 7 18z"/></symbol>
+  <symbol id="i-partly" viewBox="0 0 24 24"><path d="M8 5V3.5M3.5 8H2M4.6 4.6l-1-1M11.4 4.6l1-1"/><path d="M5.4 10.4A3.5 3.5 0 0 1 11 6.6"/><path d="M9 19h8a3.5 3.5 0 0 0 0-7 4.8 4.8 0 0 0-9.2 1.3A2.9 2.9 0 0 0 9 19z"/></symbol>
+  <symbol id="i-rain" viewBox="0 0 24 24"><path d="M7 14h10a4 4 0 0 0 0-8 5.5 5.5 0 0 0-10.6 1.5A3.3 3.3 0 0 0 7 14z"/><path d="M8 17l-1 3M12 17l-1 3M16 17l-1 3"/></symbol>
+</svg>
+
+<div class="app">
+  <div class="top">
+    <div class="wrap">
+      <header class="header">
+        <details class="device">
+          <summary><svg class="logo" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="15" fill="var(--fg)"/><path d="M10 22V12M14 22V10M18 22V13M22 22V11" stroke="var(--accent)" stroke-width="2.4" stroke-linecap="round"/></svg><span class="name"><b>Lune V6</b><small data-bind="device.about.place">Stueetage manifold</small></span><span class="caret" aria-hidden="true"></span></summary>
+          <div class="device-menu">
+            <section class="device-about" aria-labelledby="device-about-h">
+              <h3 id="device-about-h">Om enhed</h3>
+              <dl class="kv">
+                <div><dt>Navn</dt><dd data-bind="device.about.name">Lune V6</dd></div>
+                <div><dt>Placering</dt><dd data-bind="device.about.place">Stueetage manifold</dd></div>
+                <div><dt>IP</dt><dd data-bind="device.about.ip">—</dd></div>
+                <div><dt>MAC</dt><dd data-bind="device.about.mac">—</dd></div>
+                <div><dt>Firmware</dt><dd data-bind="device.about.firmware">—</dd></div>
+                <div><dt>ESPHome</dt><dd data-bind="device.about.esphome">—</dd></div>
+                <div><dt>Oppetid</dt><dd data-bind="device.about.uptime">—</dd></div>
+              </dl>
+              <button type="button" class="btn" data-action="copy-diag">Kopiér diagnostik</button>
+            </section>
+            <nav aria-label="Enheder">
+              <a href="http://192.168.20.106/" aria-current="page"><i></i>Lune V6<small>192.168.20.106 · denne enhed</small></a>
+              <a href="http://192.168.20.186/"><i></i>Lune Touch<small>192.168.20.186</small></a>
+            </nav>
+          </div>
+        </details>
+
+        <nav class="mode" aria-label="Tilstand">
+          <label for="m-dash"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 14a8 8 0 0 1 16 0"/><path d="M12 14l4-4"/><circle cx="12" cy="14" r="1.2"/></svg>Dashboard</label>
+          <label for="m-conf"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></svg>Konfiguration</label>
+        </nav>
+
+        <div class="tools">
+          <nav class="lang" aria-label="Sprog"><a href="/en/" hreflang="en" lang="en" title="English">EN</a><a href="/da/" hreflang="da" lang="da" title="Dansk" aria-current="true">DA</a></nav>
+          <label class="icon-btn theme-btn" for="theme" title="Skift lyst/mørkt tema">
+            <svg class="i-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5 19 19M5 19l1.5-1.5M17.5 6.5 19 5"/></svg>
+            <svg class="i-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></svg>
+            <span class="sr-only">Skift lyst/mørkt tema</span>
+          </label>
+        </div>
+      </header>
+
+      <nav class="strip" aria-label="Vælg zone eller manifold">
+          <label class="tile tile-sys" for="s-sys" title="Manifold">
+            <span class="tile-id">Manifold</span>
+            <span class="temps">
+              <span class="temp flow">
+                <span class="temp-lab" title="Fremløb">F</span>
+                <span class="tile-val" data-bind="strip.flow">34,2°</span>
+              </span>
+              <span class="temp ret">
+                <span class="temp-lab" title="Retur">R</span>
+                <span class="tile-val" data-bind="strip.return">29,8°</span>
+              </span>
+            </span>
+          </label>
+          <label class="tile" for="s-z1" data-state="calling" data-level="4">
+            <span class="lvl" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>
+            <span class="tile-id">Z1</span>
+            <span class="tile-name" data-bind="z1.name">Josephine</span>
+            <span class="tile-val" data-bind="z1.temp">21,4°</span>
+          </label>
+          <label class="tile" for="s-z2" data-state="idle" data-level="1">
+            <span class="lvl" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>
+            <span class="tile-id">Z2</span>
+            <span class="tile-name" data-bind="z2.name">Laura</span>
+            <span class="tile-val" data-bind="z2.temp">20,8°</span>
+          </label>
+          <label class="tile" for="s-z3" data-state="idle" data-level="1">
+            <span class="lvl" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>
+            <span class="tile-id">Z3</span>
+            <span class="tile-name" data-bind="z3.name">Toilet</span>
+            <span class="tile-val" data-bind="z3.temp">22,6°</span>
+          </label>
+          <label class="tile" for="s-z4" data-state="calling" data-level="3" data-group="primary">
+            <span class="lvl" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>
+            <span class="tile-id">Z4–5</span>
+            <span class="tile-name" data-bind="z4.name">Stue rum 1</span>
+            <span class="tile-val" data-bind="z4.temp">21,1°</span>
+          </label>
+          <label class="tile" for="s-z5" data-state="calling" data-level="3" data-group="member">
+            <span class="lvl" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>
+            <span class="tile-id">Z5</span>
+            <span class="tile-name" data-bind="z5.name">Stue rum 2</span>
+            <span class="tile-val" data-bind="z5.temp">21,0°</span>
+          </label>
+          <label class="tile" for="s-z6" data-state="fault" data-level="0">
+            <span class="lvl" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>
+            <span class="tile-id">Z6</span>
+            <span class="tile-name" data-bind="z6.name">Soveværelse</span>
+            <span class="tile-val" data-bind="z6.temp">Fejl</span>
+          </label>
+        </nav>
+    </div>
+  </div>
+
+  <main class="content wrap">
+      <section class="view" id="v-dash-sys" aria-labelledby="h-dash-sys">
+        <header class="view-head"><h2 id="h-dash-sys">Manifold</h2><p>6 zoner · 3 kalder varme · 1 fejl</p></header>
+
+        <div class="panel alert">
+          <div class="panel-head"><h3>Z6 Soveværelse har motorfejl</h3></div>
+          <p class="note">Ventilen holdes lukket, indtil fejlen er nulstillet. Tjek aktuatoren først.</p>
+          <div class="panel-foot" style="justify-content:flex-start"><label class="btn" for="s-z6">Åbn Z6</label></div>
+        </div>
+
+        <section class="panel c5">
+          <header class="panel-head"><h3>Varme nu</h3><span class="badge hot">Kalder</span></header>
+          <dl class="metrics">
+            <div class="metric"><dt>Fremløb</dt><dd data-bind="manifold.flow">34,2 <small>°C</small></dd></div>
+            <div class="metric"><dt>Retur</dt><dd data-bind="manifold.return">29,8 <small>°C</small></dd></div>
+            <div class="metric"><dt>ΔT</dt><dd data-bind="manifold.dt">4,4 <small>K</small></dd></div>
+            <div class="metric"><dt>Samlet åbning</dt><dd data-bind="manifold.opening">32 <small>%</small></dd></div>
+          </dl>
+          <div class="bar" style="--v:32%" role="meter" aria-valuenow="32" aria-valuemin="0" aria-valuemax="100" aria-label="Samlet ventilåbning"><i></i></div>
+          <div class="sub trend-wrap">
+            <h4>Sidste 24 timer <span class="legend"><i class="lf"></i>Fremløb<i class="lr"></i>Retur</span></h4>
+            <svg class="trend" viewBox="0 0 240 80" preserveAspectRatio="none" role="img" aria-label="Fremløb og retur, sidste 24 timer" data-bind-trend="manifold"><polygon class="dt" points="0.0,37.3 5.1,37.1 10.2,36.0 15.3,37.3 20.4,37.5 25.5,35.0 30.6,33.5 35.7,33.1 40.9,32.7 46.0,32.9 51.1,32.4 56.2,31.8 61.3,32.9 66.4,31.7 71.5,31.4 76.6,31.1 81.7,32.0 86.8,32.6 91.9,31.4 97.0,33.3 102.1,31.7 107.2,31.6 112.3,32.0 117.4,33.0 122.6,29.1 127.7,25.7 132.8,22.3 137.9,20.3 143.0,18.0 148.1,16.0 153.2,15.1 158.3,13.9 163.4,15.0 168.5,13.8 173.6,15.6 178.7,15.9 183.8,16.6 188.9,14.9 194.0,14.6 199.1,14.0 204.3,16.5 209.4,20.0 214.5,23.4 219.6,25.2 224.7,28.0 229.8,28.8 234.9,31.5 240.0,32.6 240.0,58.3 234.9,59.2 229.8,60.1 224.7,59.0 219.6,58.4 214.5,56.4 209.4,54.2 204.3,54.2 199.1,54.1 194.0,54.0 188.9,53.1 183.8,51.9 178.7,52.6 173.6,51.6 168.5,52.3 163.4,53.8 158.3,52.9 153.2,53.2 148.1,52.6 143.0,52.9 137.9,54.4 132.8,53.9 127.7,55.8 122.6,58.0 117.4,60.7 112.3,61.1 107.2,60.9 102.1,60.5 97.0,60.3 91.9,59.5 86.8,58.0 81.7,58.8 76.6,59.3 71.5,60.4 66.4,61.5 61.3,61.8 56.2,60.7 51.1,61.1 46.0,59.9 40.9,60.5 35.7,61.7 30.6,61.0 25.5,61.1 20.4,61.2 15.3,60.6 10.2,61.7 5.1,60.8 0.0,61.2"/><polyline class="f" points="0.0,37.3 5.1,37.1 10.2,36.0 15.3,37.3 20.4,37.5 25.5,35.0 30.6,33.5 35.7,33.1 40.9,32.7 46.0,32.9 51.1,32.4 56.2,31.8 61.3,32.9 66.4,31.7 71.5,31.4 76.6,31.1 81.7,32.0 86.8,32.6 91.9,31.4 97.0,33.3 102.1,31.7 107.2,31.6 112.3,32.0 117.4,33.0 122.6,29.1 127.7,25.7 132.8,22.3 137.9,20.3 143.0,18.0 148.1,16.0 153.2,15.1 158.3,13.9 163.4,15.0 168.5,13.8 173.6,15.6 178.7,15.9 183.8,16.6 188.9,14.9 194.0,14.6 199.1,14.0 204.3,16.5 209.4,20.0 214.5,23.4 219.6,25.2 224.7,28.0 229.8,28.8 234.9,31.5 240.0,32.6"/><polyline class="r" points="0.0,61.2 5.1,60.8 10.2,61.7 15.3,60.6 20.4,61.2 25.5,61.1 30.6,61.0 35.7,61.7 40.9,60.5 46.0,59.9 51.1,61.1 56.2,60.7 61.3,61.8 66.4,61.5 71.5,60.4 76.6,59.3 81.7,58.8 86.8,58.0 91.9,59.5 97.0,60.3 102.1,60.5 107.2,60.9 112.3,61.1 117.4,60.7 122.6,58.0 127.7,55.8 132.8,53.9 137.9,54.4 143.0,52.9 148.1,52.6 153.2,53.2 158.3,52.9 163.4,53.8 168.5,52.3 173.6,51.6 178.7,52.6 183.8,51.9 188.9,53.1 194.0,54.0 199.1,54.1 204.3,54.2 209.4,54.2 214.5,56.4 219.6,58.4 224.7,59.0 229.8,60.1 234.9,59.2 240.0,58.3"/></svg>
+            <div class="axis" aria-hidden="true"><span>−24 t</span><span>−12 t</span><span>nu</span></div>
+          </div>
+        </section>
+
+        <section class="panel c7">
+          <header class="panel-head"><h3>Komfort pr. zone</h3><p>Sidste 24 timer</p><span class="legend" aria-hidden="true"><i class="lt"></i>Temperatur<i class="lg"></i>Mål</span></header>
+          <div class="comfort">
+            <label for="s-z1" data-state="calling">
+              <span class="id">Z1</span>
+              <span class="name">Josephine</span>
+              <span class="val"><b class="c-warn">21,4°</b> / 22,0°</span>
+              <svg class="spark" viewBox="0 0 240 40" preserveAspectRatio="none" aria-hidden="true" data-bind-spark="z1"><polygon class="a" points="0.0,23.1 5.1,22.6 10.2,21.1 15.3,21.2 20.4,20.2 25.5,19.8 30.6,20.1 35.7,19.3 40.9,19.8 46.0,19.3 51.1,19.6 56.2,19.9 61.3,19.4 66.4,18.1 71.5,18.6 76.6,18.7 81.7,18.0 86.8,16.7 91.9,16.5 97.0,16.6 102.1,15.5 107.2,16.6 112.3,15.8 117.4,16.3 122.6,18.2 127.7,19.9 132.8,20.8 137.9,20.5 143.0,21.6 148.1,21.7 153.2,21.6 158.3,22.1 163.4,22.1 168.5,23.2 173.6,24.1 178.7,24.5 183.8,23.8 188.9,23.8 194.0,24.0 199.1,23.6 204.3,23.3 209.4,23.5 214.5,22.8 219.6,22.6 224.7,23.6 229.8,23.9 234.9,24.4 240.0,24.2 240.0,16.2 234.9,16.2 229.8,16.2 224.7,16.2 219.6,16.2 214.5,16.2 209.4,16.2 204.3,16.2 204.3,22.9 199.1,22.9 194.0,22.9 188.9,22.9 183.8,22.9 178.7,22.9 173.6,22.9 168.5,22.9 163.4,22.9 158.3,22.9 153.2,22.9 148.1,22.9 143.0,22.9 137.9,22.9 132.8,22.9 127.7,22.9 122.6,22.9 122.6,16.2 117.4,16.2 112.3,16.2 107.2,16.2 102.1,16.2 97.0,16.2 91.9,16.2 86.8,16.2 81.7,16.2 76.6,16.2 71.5,16.2 66.4,16.2 61.3,16.2 56.2,16.2 51.1,16.2 46.0,16.2 40.9,16.2 35.7,16.2 30.6,16.2 25.5,16.2 20.4,16.2 15.3,16.2 10.2,16.2 5.1,16.2 0.0,16.2"/><polyline class="g" points="0.0,16.2 5.1,16.2 10.2,16.2 15.3,16.2 20.4,16.2 25.5,16.2 30.6,16.2 35.7,16.2 40.9,16.2 46.0,16.2 51.1,16.2 56.2,16.2 61.3,16.2 66.4,16.2 71.5,16.2 76.6,16.2 81.7,16.2 86.8,16.2 91.9,16.2 97.0,16.2 102.1,16.2 107.2,16.2 112.3,16.2 117.4,16.2 122.6,16.2 122.6,22.9 127.7,22.9 132.8,22.9 137.9,22.9 143.0,22.9 148.1,22.9 153.2,22.9 158.3,22.9 163.4,22.9 168.5,22.9 173.6,22.9 178.7,22.9 183.8,22.9 188.9,22.9 194.0,22.9 199.1,22.9 204.3,22.9 204.3,16.2 209.4,16.2 214.5,16.2 219.6,16.2 224.7,16.2 229.8,16.2 234.9,16.2 240.0,16.2"/><polyline class="t" points="0.0,23.1 5.1,22.6 10.2,21.1 15.3,21.2 20.4,20.2 25.5,19.8 30.6,20.1 35.7,19.3 40.9,19.8 46.0,19.3 51.1,19.6 56.2,19.9 61.3,19.4 66.4,18.1 71.5,18.6 76.6,18.7 81.7,18.0 86.8,16.7 91.9,16.5 97.0,16.6 102.1,15.5 107.2,16.6 112.3,15.8 117.4,16.3 122.6,18.2 127.7,19.9 132.8,20.8 137.9,20.5 143.0,21.6 148.1,21.7 153.2,21.6 158.3,22.1 163.4,22.1 168.5,23.2 173.6,24.1 178.7,24.5 183.8,23.8 188.9,23.8 194.0,24.0 199.1,23.6 204.3,23.3 209.4,23.5 214.5,22.8 219.6,22.6 224.7,23.6 229.8,23.9 234.9,24.4 240.0,24.2"/></svg>
+            </label>
+            <label for="s-z2" data-state="idle">
+              <span class="id">Z2</span>
+              <span class="name">Laura</span>
+              <span class="val"><b class="">20,8°</b> / 21,0°</span>
+              <svg class="spark" viewBox="0 0 240 40" preserveAspectRatio="none" aria-hidden="true" data-bind-spark="z2"><polygon class="a" points="0.0,17.4 5.1,15.7 10.2,14.3 15.3,12.6 20.4,12.6 25.5,12.7 30.6,11.7 35.7,11.1 40.9,11.3 46.0,10.7 51.1,10.8 56.2,10.0 61.3,10.9 66.4,11.3 71.5,10.2 76.6,10.5 81.7,10.9 86.8,10.1 91.9,9.8 97.0,10.6 102.1,10.4 107.2,10.0 112.3,10.7 117.4,10.2 122.6,14.6 127.7,17.7 132.8,20.8 137.9,23.1 143.0,23.3 148.1,24.7 153.2,24.6 158.3,25.7 163.4,26.3 168.5,26.2 173.6,26.5 178.7,27.9 183.8,28.1 188.9,28.2 194.0,29.2 199.1,30.2 204.3,25.5 209.4,22.3 214.5,20.4 219.6,18.2 224.7,16.8 229.8,14.4 234.9,13.0 240.0,12.7 240.0,10.0 234.9,10.0 229.8,10.0 224.7,10.0 219.6,10.0 214.5,10.0 209.4,10.0 204.3,10.0 204.3,30.0 199.1,30.0 194.0,30.0 188.9,30.0 183.8,30.0 178.7,30.0 173.6,30.0 168.5,30.0 163.4,30.0 158.3,30.0 153.2,30.0 148.1,30.0 143.0,30.0 137.9,30.0 132.8,30.0 127.7,30.0 122.6,30.0 122.6,10.0 117.4,10.0 112.3,10.0 107.2,10.0 102.1,10.0 97.0,10.0 91.9,10.0 86.8,10.0 81.7,10.0 76.6,10.0 71.5,10.0 66.4,10.0 61.3,10.0 56.2,10.0 51.1,10.0 46.0,10.0 40.9,10.0 35.7,10.0 30.6,10.0 25.5,10.0 20.4,10.0 15.3,10.0 10.2,10.0 5.1,10.0 0.0,10.0"/><polyline class="g" points="0.0,10.0 5.1,10.0 10.2,10.0 15.3,10.0 20.4,10.0 25.5,10.0 30.6,10.0 35.7,10.0 40.9,10.0 46.0,10.0 51.1,10.0 56.2,10.0 61.3,10.0 66.4,10.0 71.5,10.0 76.6,10.0 81.7,10.0 86.8,10.0 91.9,10.0 97.0,10.0 102.1,10.0 107.2,10.0 112.3,10.0 117.4,10.0 122.6,10.0 122.6,30.0 127.7,30.0 132.8,30.0 137.9,30.0 143.0,30.0 148.1,30.0 153.2,30.0 158.3,30.0 163.4,30.0 168.5,30.0 173.6,30.0 178.7,30.0 183.8,30.0 188.9,30.0 194.0,30.0 199.1,30.0 204.3,30.0 204.3,10.0 209.4,10.0 214.5,10.0 219.6,10.0 224.7,10.0 229.8,10.0 234.9,10.0 240.0,10.0"/><polyline class="t" points="0.0,17.4 5.1,15.7 10.2,14.3 15.3,12.6 20.4,12.6 25.5,12.7 30.6,11.7 35.7,11.1 40.9,11.3 46.0,10.7 51.1,10.8 56.2,10.0 61.3,10.9 66.4,11.3 71.5,10.2 76.6,10.5 81.7,10.9 86.8,10.1 91.9,9.8 97.0,10.6 102.1,10.4 107.2,10.0 112.3,10.7 117.4,10.2 122.6,14.6 127.7,17.7 132.8,20.8 137.9,23.1 143.0,23.3 148.1,24.7 153.2,24.6 158.3,25.7 163.4,26.3 168.5,26.2 173.6,26.5 178.7,27.9 183.8,28.1 188.9,28.2 194.0,29.2 199.1,30.2 204.3,25.5 209.4,22.3 214.5,20.4 219.6,18.2 224.7,16.8 229.8,14.4 234.9,13.0 240.0,12.7"/></svg>
+            </label>
+            <label for="s-z3" data-state="idle">
+              <span class="id">Z3</span>
+              <span class="name">Toilet</span>
+              <span class="val"><b class="">22,6°</b> / 22,0°</span>
+              <svg class="spark" viewBox="0 0 240 40" preserveAspectRatio="none" aria-hidden="true" data-bind-spark="z3"><polygon class="a" points="0.0,27.3 5.1,25.6 10.2,24.3 15.3,23.6 20.4,23.5 25.5,22.3 30.6,21.2 35.7,21.0 40.9,20.8 46.0,21.2 51.1,22.1 56.2,22.0 61.3,21.4 66.4,22.1 71.5,21.1 76.6,21.5 81.7,21.8 86.8,22.5 91.9,21.0 97.0,20.3 102.1,19.4 107.2,19.3 112.3,20.4 117.4,20.7 122.6,21.8 127.7,23.5 132.8,23.1 137.9,24.0 143.0,25.3 148.1,24.8 153.2,26.0 158.3,25.2 163.4,25.6 168.5,25.7 173.6,26.2 178.7,26.3 183.8,27.0 188.9,28.0 194.0,27.0 199.1,27.5 204.3,24.6 209.4,23.3 214.5,20.4 219.6,18.1 224.7,16.3 229.8,14.6 234.9,13.5 240.0,12.0 240.0,20.0 234.9,20.0 229.8,20.0 224.7,20.0 219.6,20.0 214.5,20.0 209.4,20.0 204.3,20.0 204.3,26.7 199.1,26.7 194.0,26.7 188.9,26.7 183.8,26.7 178.7,26.7 173.6,26.7 168.5,26.7 163.4,26.7 158.3,26.7 153.2,26.7 148.1,26.7 143.0,26.7 137.9,26.7 132.8,26.7 127.7,26.7 122.6,26.7 122.6,20.0 117.4,20.0 112.3,20.0 107.2,20.0 102.1,20.0 97.0,20.0 91.9,20.0 86.8,20.0 81.7,20.0 76.6,20.0 71.5,20.0 66.4,20.0 61.3,20.0 56.2,20.0 51.1,20.0 46.0,20.0 40.9,20.0 35.7,20.0 30.6,20.0 25.5,20.0 20.4,20.0 15.3,20.0 10.2,20.0 5.1,20.0 0.0,20.0"/><polyline class="g" points="0.0,20.0 5.1,20.0 10.2,20.0 15.3,20.0 20.4,20.0 25.5,20.0 30.6,20.0 35.7,20.0 40.9,20.0 46.0,20.0 51.1,20.0 56.2,20.0 61.3,20.0 66.4,20.0 71.5,20.0 76.6,20.0 81.7,20.0 86.8,20.0 91.9,20.0 97.0,20.0 102.1,20.0 107.2,20.0 112.3,20.0 117.4,20.0 122.6,20.0 122.6,26.7 127.7,26.7 132.8,26.7 137.9,26.7 143.0,26.7 148.1,26.7 153.2,26.7 158.3,26.7 163.4,26.7 168.5,26.7 173.6,26.7 178.7,26.7 183.8,26.7 188.9,26.7 194.0,26.7 199.1,26.7 204.3,26.7 204.3,20.0 209.4,20.0 214.5,20.0 219.6,20.0 224.7,20.0 229.8,20.0 234.9,20.0 240.0,20.0"/><polyline class="t" points="0.0,27.3 5.1,25.6 10.2,24.3 15.3,23.6 20.4,23.5 25.5,22.3 30.6,21.2 35.7,21.0 40.9,20.8 46.0,21.2 51.1,22.1 56.2,22.0 61.3,21.4 66.4,22.1 71.5,21.1 76.6,21.5 81.7,21.8 86.8,22.5 91.9,21.0 97.0,20.3 102.1,19.4 107.2,19.3 112.3,20.4 117.4,20.7 122.6,21.8 127.7,23.5 132.8,23.1 137.9,24.0 143.0,25.3 148.1,24.8 153.2,26.0 158.3,25.2 163.4,25.6 168.5,25.7 173.6,26.2 178.7,26.3 183.8,27.0 188.9,28.0 194.0,27.0 199.1,27.5 204.3,24.6 209.4,23.3 214.5,20.4 219.6,18.1 224.7,16.3 229.8,14.6 234.9,13.5 240.0,12.0"/></svg>
+            </label>
+            <label for="s-z4" data-state="calling">
+              <span class="id">Z4–5</span>
+              <span class="name">Stue rum 1</span>
+              <span class="val"><b class="">21,1°</b> / 21,5°</span>
+              <svg class="spark" viewBox="0 0 240 40" preserveAspectRatio="none" aria-hidden="true" data-bind-spark="z4"><polygon class="a" points="0.0,23.4 5.1,22.9 10.2,21.4 15.3,21.2 20.4,21.0 25.5,20.2 30.6,19.6 35.7,19.6 40.9,19.2 46.0,17.9 51.1,18.3 56.2,18.6 61.3,19.1 66.4,19.1 71.5,19.4 76.6,17.8 81.7,17.9 86.8,16.5 91.9,17.2 97.0,16.1 102.1,16.1 107.2,15.7 112.3,15.4 117.4,16.0 122.6,17.8 127.7,18.3 132.8,19.9 137.9,21.4 143.0,21.1 148.1,21.1 153.2,21.9 158.3,22.0 163.4,21.2 168.5,22.0 173.6,22.9 178.7,23.0 183.8,23.7 188.9,23.8 194.0,24.6 199.1,23.7 204.3,22.2 209.4,22.0 214.5,21.9 219.6,22.1 224.7,21.0 229.8,20.3 234.9,20.3 240.0,21.4 240.0,16.0 234.9,16.0 229.8,16.0 224.7,16.0 219.6,16.0 214.5,16.0 209.4,16.0 204.3,16.0 204.3,22.7 199.1,22.7 194.0,22.7 188.9,22.7 183.8,22.7 178.7,22.7 173.6,22.7 168.5,22.7 163.4,22.7 158.3,22.7 153.2,22.7 148.1,22.7 143.0,22.7 137.9,22.7 132.8,22.7 127.7,22.7 122.6,22.7 122.6,16.0 117.4,16.0 112.3,16.0 107.2,16.0 102.1,16.0 97.0,16.0 91.9,16.0 86.8,16.0 81.7,16.0 76.6,16.0 71.5,16.0 66.4,16.0 61.3,16.0 56.2,16.0 51.1,16.0 46.0,16.0 40.9,16.0 35.7,16.0 30.6,16.0 25.5,16.0 20.4,16.0 15.3,16.0 10.2,16.0 5.1,16.0 0.0,16.0"/><polyline class="g" points="0.0,16.0 5.1,16.0 10.2,16.0 15.3,16.0 20.4,16.0 25.5,16.0 30.6,16.0 35.7,16.0 40.9,16.0 46.0,16.0 51.1,16.0 56.2,16.0 61.3,16.0 66.4,16.0 71.5,16.0 76.6,16.0 81.7,16.0 86.8,16.0 91.9,16.0 97.0,16.0 102.1,16.0 107.2,16.0 112.3,16.0 117.4,16.0 122.6,16.0 122.6,22.7 127.7,22.7 132.8,22.7 137.9,22.7 143.0,22.7 148.1,22.7 153.2,22.7 158.3,22.7 163.4,22.7 168.5,22.7 173.6,22.7 178.7,22.7 183.8,22.7 188.9,22.7 194.0,22.7 199.1,22.7 204.3,22.7 204.3,16.0 209.4,16.0 214.5,16.0 219.6,16.0 224.7,16.0 229.8,16.0 234.9,16.0 240.0,16.0"/><polyline class="t" points="0.0,23.4 5.1,22.9 10.2,21.4 15.3,21.2 20.4,21.0 25.5,20.2 30.6,19.6 35.7,19.6 40.9,19.2 46.0,17.9 51.1,18.3 56.2,18.6 61.3,19.1 66.4,19.1 71.5,19.4 76.6,17.8 81.7,17.9 86.8,16.5 91.9,17.2 97.0,16.1 102.1,16.1 107.2,15.7 112.3,15.4 117.4,16.0 122.6,17.8 127.7,18.3 132.8,19.9 137.9,21.4 143.0,21.1 148.1,21.1 153.2,21.9 158.3,22.0 163.4,21.2 168.5,22.0 173.6,22.9 178.7,23.0 183.8,23.7 188.9,23.8 194.0,24.6 199.1,23.7 204.3,22.2 209.4,22.0 214.5,21.9 219.6,22.1 224.7,21.0 229.8,20.3 234.9,20.3 240.0,21.4"/></svg>
+            </label>
+            <label for="s-z5" data-state="calling">
+              <span class="id">Z5</span>
+              <span class="name">Stue rum 2</span>
+              <span class="val"><b class="">21,0°</b> / 21,5°</span>
+              <svg class="spark" viewBox="0 0 240 40" preserveAspectRatio="none" aria-hidden="true" data-bind-spark="z5"><polygon class="a" points="0.0,23.1 5.1,21.4 10.2,20.0 15.3,18.6 20.4,18.7 25.5,17.3 30.6,17.1 35.7,16.4 40.9,15.9 46.0,15.1 51.1,15.9 56.2,16.3 61.3,15.9 66.4,15.8 71.5,15.4 76.6,15.9 81.7,15.1 86.8,16.4 91.9,16.0 97.0,16.4 102.1,17.4 107.2,16.9 112.3,17.8 117.4,18.2 122.6,19.4 127.7,20.9 132.8,22.0 137.9,23.2 143.0,22.4 148.1,23.5 153.2,24.2 158.3,24.9 163.4,23.7 168.5,23.6 173.6,22.8 178.7,21.9 183.8,22.2 188.9,22.6 194.0,22.9 199.1,23.5 204.3,23.0 209.4,21.9 214.5,22.1 219.6,22.0 224.7,21.7 229.8,21.8 234.9,22.4 240.0,23.3 240.0,16.6 234.9,16.6 229.8,16.6 224.7,16.6 219.6,16.6 214.5,16.6 209.4,16.6 204.3,16.6 204.3,23.3 199.1,23.3 194.0,23.3 188.9,23.3 183.8,23.3 178.7,23.3 173.6,23.3 168.5,23.3 163.4,23.3 158.3,23.3 153.2,23.3 148.1,23.3 143.0,23.3 137.9,23.3 132.8,23.3 127.7,23.3 122.6,23.3 122.6,16.6 117.4,16.6 112.3,16.6 107.2,16.6 102.1,16.6 97.0,16.6 91.9,16.6 86.8,16.6 81.7,16.6 76.6,16.6 71.5,16.6 66.4,16.6 61.3,16.6 56.2,16.6 51.1,16.6 46.0,16.6 40.9,16.6 35.7,16.6 30.6,16.6 25.5,16.6 20.4,16.6 15.3,16.6 10.2,16.6 5.1,16.6 0.0,16.6"/><polyline class="g" points="0.0,16.6 5.1,16.6 10.2,16.6 15.3,16.6 20.4,16.6 25.5,16.6 30.6,16.6 35.7,16.6 40.9,16.6 46.0,16.6 51.1,16.6 56.2,16.6 61.3,16.6 66.4,16.6 71.5,16.6 76.6,16.6 81.7,16.6 86.8,16.6 91.9,16.6 97.0,16.6 102.1,16.6 107.2,16.6 112.3,16.6 117.4,16.6 122.6,16.6 122.6,23.3 127.7,23.3 132.8,23.3 137.9,23.3 143.0,23.3 148.1,23.3 153.2,23.3 158.3,23.3 163.4,23.3 168.5,23.3 173.6,23.3 178.7,23.3 183.8,23.3 188.9,23.3 194.0,23.3 199.1,23.3 204.3,23.3 204.3,16.6 209.4,16.6 214.5,16.6 219.6,16.6 224.7,16.6 229.8,16.6 234.9,16.6 240.0,16.6"/><polyline class="t" points="0.0,23.1 5.1,21.4 10.2,20.0 15.3,18.6 20.4,18.7 25.5,17.3 30.6,17.1 35.7,16.4 40.9,15.9 46.0,15.1 51.1,15.9 56.2,16.3 61.3,15.9 66.4,15.8 71.5,15.4 76.6,15.9 81.7,15.1 86.8,16.4 91.9,16.0 97.0,16.4 102.1,17.4 107.2,16.9 112.3,17.8 117.4,18.2 122.6,19.4 127.7,20.9 132.8,22.0 137.9,23.2 143.0,22.4 148.1,23.5 153.2,24.2 158.3,24.9 163.4,23.7 168.5,23.6 173.6,22.8 178.7,21.9 183.8,22.2 188.9,22.6 194.0,22.9 199.1,23.5 204.3,23.0 209.4,21.9 214.5,22.1 219.6,22.0 224.7,21.7 229.8,21.8 234.9,22.4 240.0,23.3"/></svg>
+            </label>
+            <label for="s-z6" data-state="fault">
+              <span class="id">Z6</span>
+              <span class="name">Soveværelse</span>
+              <span class="val"><b class="bad">Motorfejl</b></span>
+              <svg class="spark" viewBox="0 0 240 40" preserveAspectRatio="none" aria-hidden="true" data-bind-spark="z6"><polygon class="a" points="0.0,16.3 5.1,16.1 10.2,15.5 15.3,15.1 20.4,13.7 25.5,12.7 30.6,11.3 35.7,12.0 40.9,11.8 46.0,12.5 51.1,12.6 56.2,12.1 61.3,12.8 66.4,12.9 71.5,12.1 76.6,11.6 81.7,11.9 86.8,11.4 91.9,10.5 97.0,11.4 102.1,10.5 107.2,10.0 112.3,10.3 117.4,11.0 122.6,13.5 127.7,16.8 132.8,20.0 137.9,22.7 143.0,23.3 148.1,24.3 153.2,24.6 158.3,25.1 163.4,25.9 168.5,25.6 173.6,26.7 178.7,27.2 183.8,27.0 188.9,27.3 194.0,27.0 199.1,27.4 204.3,23.2 209.4,21.1 214.5,22.6 219.6,23.7 224.7,24.8 229.8,25.4 234.9,26.0 240.0,26.0 240.0,10.0 234.9,10.0 229.8,10.0 224.7,10.0 219.6,10.0 214.5,10.0 209.4,10.0 204.3,10.0 204.3,30.0 199.1,30.0 194.0,30.0 188.9,30.0 183.8,30.0 178.7,30.0 173.6,30.0 168.5,30.0 163.4,30.0 158.3,30.0 153.2,30.0 148.1,30.0 143.0,30.0 137.9,30.0 132.8,30.0 127.7,30.0 122.6,30.0 122.6,10.0 117.4,10.0 112.3,10.0 107.2,10.0 102.1,10.0 97.0,10.0 91.9,10.0 86.8,10.0 81.7,10.0 76.6,10.0 71.5,10.0 66.4,10.0 61.3,10.0 56.2,10.0 51.1,10.0 46.0,10.0 40.9,10.0 35.7,10.0 30.6,10.0 25.5,10.0 20.4,10.0 15.3,10.0 10.2,10.0 5.1,10.0 0.0,10.0"/><polyline class="g" points="0.0,10.0 5.1,10.0 10.2,10.0 15.3,10.0 20.4,10.0 25.5,10.0 30.6,10.0 35.7,10.0 40.9,10.0 46.0,10.0 51.1,10.0 56.2,10.0 61.3,10.0 66.4,10.0 71.5,10.0 76.6,10.0 81.7,10.0 86.8,10.0 91.9,10.0 97.0,10.0 102.1,10.0 107.2,10.0 112.3,10.0 117.4,10.0 122.6,10.0 122.6,30.0 127.7,30.0 132.8,30.0 137.9,30.0 143.0,30.0 148.1,30.0 153.2,30.0 158.3,30.0 163.4,30.0 168.5,30.0 173.6,30.0 178.7,30.0 183.8,30.0 188.9,30.0 194.0,30.0 199.1,30.0 204.3,30.0 204.3,10.0 209.4,10.0 214.5,10.0 219.6,10.0 224.7,10.0 229.8,10.0 234.9,10.0 240.0,10.0"/><polyline class="t" points="0.0,16.3 5.1,16.1 10.2,15.5 15.3,15.1 20.4,13.7 25.5,12.7 30.6,11.3 35.7,12.0 40.9,11.8 46.0,12.5 51.1,12.6 56.2,12.1 61.3,12.8 66.4,12.9 71.5,12.1 76.6,11.6 81.7,11.9 86.8,11.4 91.9,10.5 97.0,11.4 102.1,10.5 107.2,10.0 112.3,10.3 117.4,11.0 122.6,13.5 127.7,16.8 132.8,20.0 137.9,22.7 143.0,23.3 148.1,24.3 153.2,24.6 158.3,25.1 163.4,25.9 168.5,25.6 173.6,26.7 178.7,27.2 183.8,27.0 188.9,27.3 194.0,27.0 199.1,27.4 204.3,23.2 209.4,21.1 214.5,22.6 219.6,23.7 224.7,24.8 229.8,25.4 234.9,26.0 240.0,26.0"/></svg>
+            </label>
+          </div>
+        </section>
+
+
+        <section class="panel c6">
+          <header class="panel-head"><h3>Balancering</h3><span class="badge violet">Adaptiv</span></header>
+          <div class="table-wrap"><table class="table">
+            <thead><tr><th>Zone</th><th class="num">Prior</th><th class="num">Lært</th><th class="num">Effektiv</th></tr></thead>
+            <tbody><tr><td>Z1</td><td class="num">1,00</td><td class="num c-violet">1,08</td><td class="num">1,08</td></tr><tr><td>Z2</td><td class="num">0,85</td><td class="num c-violet">0,81</td><td class="num">0,81</td></tr><tr><td>Z3</td><td class="num">0,40</td><td class="num c-violet">0,44</td><td class="num">0,44</td></tr><tr><td>Z4–5</td><td class="num">1,00</td><td class="num c-violet">0,97</td><td class="num">0,97</td></tr><tr><td>Z5</td><td class="num">1,00</td><td class="num c-violet">0,97</td><td class="num">0,97</td></tr><tr><td>Z6</td><td class="num">0,85</td><td class="num c-violet">—</td><td class="num">0,85</td></tr></tbody>
+          </table></div>
+        </section>
+
+        <section class="panel c6">
+          <header class="panel-head"><h3>Enhed</h3><span class="badge ok">Online</span></header>
+          <dl class="metrics">
+            <div class="metric"><dt>Wi-Fi</dt><dd data-bind="wifi.rssi">−58 <small>dBm</small></dd></div>
+            <div class="metric"><dt>Oppetid</dt><dd data-bind="sys.uptime">6 <small>dage</small></dd></div>
+          </dl>
+          <pre class="log" data-bind="log" aria-live="polite" lang="en">14:06  <span class="bad">zone Z6</span> FAULT, valve closed
+14:06  <span class="bad">motor Z6</span> end-stop timeout (45 s)
+14:05  <span class="violet">balancing</span> Z3 0.42 → 0.44
+14:05  <span class="info">forecast</span> fetched, max wind 11 m/s</pre>
+        </section>
+      </section>
+      <section class="view" id="v-dash-z1" aria-labelledby="h-dash-z1">
+        <header class="view-head"><h2 id="h-dash-z1">Z1 Josephine</h2><p>Kalder varme</p></header>
+
+        <form class="panel c7" data-save="zone/1/target">
+          <header class="panel-head"><h3>Komfort</h3><span class="badge hot">Kalder varme</span></header>
+          <p class="msg info"><span><b>Vejr-preload aktiv:</b> målet hæves +0,4 °C frem til kl. 06.</span></p>
+          <div class="climate">
+            <div class="now" data-bind="z1.temp">21,4<small>°C</small></div>
+            <div class="target">
+              <button type="button" data-step="-1" aria-label="Sænk måltemperatur">−</button>
+              <label class="value"><small>Mål °C</small><input type="number" inputmode="decimal" name="z1_target" value="22.0" min="16" max="28" step="0.5"></label>
+              <button type="button" data-step="1" aria-label="Hæv måltemperatur">+</button>
+            </div>
+          </div>
+          <footer class="panel-foot"><button class="btn primary" type="submit">Gem mål</button></footer>
+        </form>
+
+        <section class="panel c5">
+          <header class="panel-head"><h3>Ventil og motor</h3></header>
+          <dl class="metrics">
+            <div class="metric"><dt>Åbning</dt><dd data-bind="z1.flow">62 <small>%</small></dd></div>
+            <div class="metric"><dt>Retur</dt><dd data-bind="z1.return">29,1 <small>°C</small></dd></div>
+          </dl>
+          <div class="bar" style="--v:62%" aria-hidden="true"><i></i></div>
+          <dl class="kv">
+            <div><dt>Motor</dt><dd class="c-ok">Lært</dd></div>
+            <div><dt>Preheat adv.</dt><dd>0,35 °C</dd></div>
+            <div><dt>Vejr-offset nu</dt><dd class="c-info">+0,4 °C</dd></div>
+            <div><dt>Temperatur fra</dt><dd class="c-info">BLE-sensor</dd></div>
+          </dl>
+        </section>
+      </section>
+      <section class="view" id="v-dash-z2" aria-labelledby="h-dash-z2">
+        <header class="view-head"><h2 id="h-dash-z2">Z2 Laura</h2><p>Hviler</p></header>
+
+        <form class="panel c7" data-save="zone/2/target">
+          <header class="panel-head"><h3>Komfort</h3><span class="badge">Hviler</span></header>
+          
+          <div class="climate">
+            <div class="now" data-bind="z2.temp">20,8<small>°C</small></div>
+            <div class="target">
+              <button type="button" data-step="-1" aria-label="Sænk måltemperatur">−</button>
+              <label class="value"><small>Mål °C</small><input type="number" inputmode="decimal" name="z2_target" value="21.0" min="16" max="28" step="0.5"></label>
+              <button type="button" data-step="1" aria-label="Hæv måltemperatur">+</button>
+            </div>
+          </div>
+          <footer class="panel-foot"><button class="btn primary" type="submit">Gem mål</button></footer>
+        </form>
+
+        <section class="panel c5">
+          <header class="panel-head"><h3>Ventil og motor</h3></header>
+          <dl class="metrics">
+            <div class="metric"><dt>Åbning</dt><dd data-bind="z2.flow">18 <small>%</small></dd></div>
+            <div class="metric"><dt>Retur</dt><dd data-bind="z2.return">28,2 <small>°C</small></dd></div>
+          </dl>
+          <div class="bar" style="--v:18%" aria-hidden="true"><i></i></div>
+          <dl class="kv">
+            <div><dt>Motor</dt><dd class="c-ok">Lært</dd></div>
+            <div><dt>Preheat adv.</dt><dd>0,35 °C</dd></div>
+            <div><dt>Vejr-offset nu</dt><dd class="">0,0 °C</dd></div>
+            <div><dt>Temperatur fra</dt><dd class="c-info">BLE-sensor</dd></div>
+          </dl>
+        </section>
+      </section>
+      <section class="view" id="v-dash-z3" aria-labelledby="h-dash-z3">
+        <header class="view-head"><h2 id="h-dash-z3">Z3 Toilet</h2><p>Hviler</p></header>
+
+        <form class="panel c7" data-save="zone/3/target">
+          <header class="panel-head"><h3>Komfort</h3><span class="badge">Hviler</span></header>
+          
+          <div class="climate">
+            <div class="now" data-bind="z3.temp">22,6<small>°C</small></div>
+            <div class="target">
+              <button type="button" data-step="-1" aria-label="Sænk måltemperatur">−</button>
+              <label class="value"><small>Mål °C</small><input type="number" inputmode="decimal" name="z3_target" value="22.0" min="16" max="28" step="0.5"></label>
+              <button type="button" data-step="1" aria-label="Hæv måltemperatur">+</button>
+            </div>
+          </div>
+          <footer class="panel-foot"><button class="btn primary" type="submit">Gem mål</button></footer>
+        </form>
+
+        <section class="panel c5">
+          <header class="panel-head"><h3>Ventil og motor</h3></header>
+          <dl class="metrics">
+            <div class="metric"><dt>Åbning</dt><dd data-bind="z3.flow">6 <small>%</small></dd></div>
+            <div class="metric"><dt>Retur</dt><dd data-bind="z3.return">28,9 <small>°C</small></dd></div>
+          </dl>
+          <div class="bar" style="--v:6%" aria-hidden="true"><i></i></div>
+          <dl class="kv">
+            <div><dt>Motor</dt><dd class="c-ok">Lært</dd></div>
+            <div><dt>Preheat adv.</dt><dd>0,35 °C</dd></div>
+            <div><dt>Vejr-offset nu</dt><dd class="">0,0 °C</dd></div>
+            <div><dt>Temperatur fra</dt><dd class="c-info">Lokal probe</dd></div>
+          </dl>
+        </section>
+      </section>
+      <section class="view" id="v-dash-z4" aria-labelledby="h-dash-z4">
+        <header class="view-head"><h2 id="h-dash-z4">Z4–5 Stue rum 1</h2><p>Kalder varme · primær i gruppe Z4–5</p></header>
+
+        <form class="panel c7" data-save="zone/4/target">
+          <header class="panel-head"><h3>Komfort</h3><span class="badge hot">Kalder varme</span></header>
+          
+          <div class="climate">
+            <div class="now" data-bind="z4.temp">21,1<small>°C</small></div>
+            <div class="target">
+              <button type="button" data-step="-1" aria-label="Sænk måltemperatur">−</button>
+              <label class="value"><small>Mål °C</small><input type="number" inputmode="decimal" name="z4_target" value="21.5" min="16" max="28" step="0.5"></label>
+              <button type="button" data-step="1" aria-label="Hæv måltemperatur">+</button>
+            </div>
+          </div>
+          <footer class="panel-foot"><button class="btn primary" type="submit">Gem mål</button></footer>
+        </form>
+
+        <section class="panel c5">
+          <header class="panel-head"><h3>Ventil og motor</h3></header>
+          <dl class="metrics">
+            <div class="metric"><dt>Åbning</dt><dd data-bind="z4.flow">54 <small>%</small></dd></div>
+            <div class="metric"><dt>Retur</dt><dd data-bind="z4.return">28,4 <small>°C</small></dd></div>
+          </dl>
+          <div class="bar" style="--v:54%" aria-hidden="true"><i></i></div>
+          <dl class="kv">
+            <div><dt>Motor</dt><dd class="c-ok">Lært</dd></div>
+            <div><dt>Preheat adv.</dt><dd>0,35 °C</dd></div>
+            <div><dt>Vejr-offset nu</dt><dd class="">0,0 °C</dd></div>
+            <div><dt>Temperatur fra</dt><dd class="c-info">Lokal probe</dd></div>
+          </dl>
+        </section>
+      </section>
+      <section class="view" id="v-dash-z5" aria-labelledby="h-dash-z5">
+        <header class="view-head"><h2 id="h-dash-z5">Z5 Stue rum 2</h2><p>Kalder varme · følger Z4</p></header>
+
+        <form class="panel c7" data-save="zone/5/target">
+          <header class="panel-head"><h3>Komfort</h3><span class="badge hot">Kalder varme</span></header>
+          <p class="msg info"><span><b>Vejr-preload aktiv:</b> målet hæves +0,4 °C frem til kl. 06.</span></p>
+          <div class="climate">
+            <div class="now" data-bind="z5.temp">21,0<small>°C</small></div>
+            <div class="target">
+              <button type="button" data-step="-1" aria-label="Sænk måltemperatur" disabled>−</button>
+              <label class="value"><small>Mål °C</small><input type="number" inputmode="decimal" name="z5_target" value="21.5" min="16" max="28" step="0.5" disabled></label>
+              <button type="button" data-step="1" aria-label="Hæv måltemperatur" disabled>+</button>
+            </div>
+          </div>
+          <footer class="panel-foot"><span class="note">Z5 følger Z4. Ret målet dér.</span><label class="btn" for="s-z4">Åbn Z4–5</label></footer>
+        </form>
+
+        <section class="panel c5">
+          <header class="panel-head"><h3>Ventil og motor</h3></header>
+          <dl class="metrics">
+            <div class="metric"><dt>Åbning</dt><dd data-bind="z5.flow">54 <small>%</small></dd></div>
+            <div class="metric"><dt>Retur</dt><dd data-bind="z5.return">28,5 <small>°C</small></dd></div>
+          </dl>
+          <div class="bar" style="--v:54%" aria-hidden="true"><i></i></div>
+          <dl class="kv">
+            <div><dt>Motor</dt><dd class="c-ok">Lært</dd></div>
+            <div><dt>Preheat adv.</dt><dd>0,35 °C</dd></div>
+            <div><dt>Vejr-offset nu</dt><dd class="c-info">+0,4 °C</dd></div>
+            <div><dt>Temperatur fra</dt><dd class="c-info">Lokal probe</dd></div>
+          </dl>
+        </section>
+      </section>
+      <section class="view" id="v-dash-z6" aria-labelledby="h-dash-z6">
+        <header class="view-head"><h2 id="h-dash-z6">Z6 Soveværelse</h2><p>Motorfejl</p></header>
+        <form class="panel alert" data-save="zone/6/recovery">
+          <div class="panel-head"><h3>Motorfejl: endestop timeout</h3></div>
+          <p class="note">Motoren nåede ikke endestop på 45 s. Ventilen holdes lukket. Tjek aktuatoren, og nulstil så fejlen.</p>
+          <div class="panel-foot" style="justify-content:flex-start"><button class="btn" type="submit" name="action" value="reset_fault">Nulstil fejl</button></div>
+        </form>
+
+        <form class="panel c7" data-save="zone/6/target">
+          <header class="panel-head"><h3>Komfort</h3><span class="badge bad">Motorfejl</span></header>
+          
+          <div class="climate">
+            <div class="now" data-bind="z6.temp">17,8<small>°C</small></div>
+            <div class="target">
+              <button type="button" data-step="-1" aria-label="Sænk måltemperatur">−</button>
+              <label class="value"><small>Mål °C</small><input type="number" inputmode="decimal" name="z6_target" value="19.0" min="16" max="28" step="0.5"></label>
+              <button type="button" data-step="1" aria-label="Hæv måltemperatur">+</button>
+            </div>
+          </div>
+          <footer class="panel-foot"><button class="btn primary" type="submit">Gem mål</button></footer>
+        </form>
+
+        <section class="panel c5">
+          <header class="panel-head"><h3>Ventil og motor</h3></header>
+          <dl class="metrics">
+            <div class="metric"><dt>Åbning</dt><dd data-bind="z6.flow">0 <small>%</small></dd></div>
+            <div class="metric"><dt>Retur</dt><dd data-bind="z6.return">22,1 <small>°C</small></dd></div>
+          </dl>
+          <div class="bar" style="--v:0%" aria-hidden="true"><i></i></div>
+          <dl class="kv">
+            <div><dt>Motor</dt><dd class="c-warn">Kræver læring</dd></div>
+            <div><dt>Preheat adv.</dt><dd>0,00 °C</dd></div>
+            <div><dt>Vejr-offset nu</dt><dd class="">0,0 °C</dd></div>
+            <div><dt>Temperatur fra</dt><dd class="c-info">BLE-sensor</dd></div>
+          </dl>
+        </section>
+      </section>
+      <section class="view" id="v-conf-sys" aria-labelledby="h-conf-sys">
+        <header class="view-head"><h2 id="h-conf-sys">Manifold</h2><p>Gælder alle zoner på denne V6</p></header>
+
+        <header class="section-head"><span>Opsætning</span></header>
+
+        <form class="panel c6" data-save="manifold">
+          <header class="panel-head"><h3>Manifold og motorer</h3><button class="help-btn" type="button" popovertarget="help-manifold" style="anchor-name:--a-help-manifold" aria-label="Hjælp: Manifold og motorer">?</button></header>
+          <div id="help-manifold" popover class="help-pop" style="position-anchor:--a-help-manifold"><p>Ventiltypen (normalt åben/lukket) og hvilke prober der måler fremløb og retur. Bruges til ΔT og til at vide, hvilken vej motorerne skal køre.</p><a href="https://github.com/Birkemosen/lune/blob/main/lune-v6/docs/Manual.md#manifold">Læs mere</a></div>
+          <div class="sub">
+            <h4>Manifold</h4>
+            <div class="field"><span class="label">Ventiltype</span><div class="seg" role="radiogroup" aria-label="Ventiltype"><label><input type="radio" name="manifold_type" value="no"><span>Normally open</span></label><label><input type="radio" name="manifold_type" value="nc" checked><span>Normally closed</span></label></div></div>
+            <div class="field row"><label for="probe_flow">Fremløbsprobe</label><select class="select" id="probe_flow" name="probe_flow"><option value="1">Probe 1</option><option value="2">Probe 2</option><option value="3">Probe 3</option><option value="4">Probe 4</option><option value="5">Probe 5</option><option value="6">Probe 6</option><option value="7" selected>Probe 7</option><option value="8">Probe 8</option></select></div>
+            <div class="field row"><label for="probe_return">Returprobe</label><select class="select" id="probe_return" name="probe_return"><option value="1">Probe 1</option><option value="2">Probe 2</option><option value="3">Probe 3</option><option value="4">Probe 4</option><option value="5">Probe 5</option><option value="6">Probe 6</option><option value="7">Probe 7</option><option value="8" selected>Probe 8</option></select></div>
+          </div>
+          <div class="sub">
+            <h4>Motorer</h4>
+            <label class="switch"><span class="switch-text"><b>Motordrivere</b><small>Slå fra for at frakoble alle 6</small></span><input type="checkbox" role="switch" name="motor_drivers" checked></label>
+            <div class="field row"><label for="motor_type">Motortype</label><select class="select" id="motor_type" name="motor_type"><option>Generic</option><option selected>HmIP VdMot</option></select></div>
+            <div class="field row"><label for="m_runtime">Maks. køretid</label><div class="stepper"><button type="button" data-step="-1" aria-label="Sænk maks. køretid">−</button><span class="value"><input type="number" inputmode="decimal" id="m_runtime" name="m_runtime" value="45" min="10" max="120" step="5"><span class="unit">s</span></span><button type="button" data-step="1" aria-label="Hæv maks. køretid">+</button></div></div>
+          </div>
+          <details class="more">
+            <summary>Endestop- og læringsgrænser</summary>
+            <p class="msg violet"><span>Startværdier før motoren har lært sin aktuator. Lærte faktorer pr. zone overskriver dem.</span></p>
+            <div class="subs">
+              <div class="sub">
+                <h4>Lukke-endestop</h4>
+                <div class="field row"><label for="m_cthr">Grænse</label><div class="stepper"><button type="button" data-step="-1" aria-label="Sænk grænse">−</button><span class="value"><input type="number" inputmode="decimal" id="m_cthr" name="m_cthr" value="180" min="50" max="500" step="10"><span class="unit">mA</span></span><button type="button" data-step="1" aria-label="Hæv grænse">+</button></div></div>
+                <div class="field row"><label for="m_cslope">Hældning</label><div class="stepper"><button type="button" data-step="-1" aria-label="Sænk hældning">−</button><span class="value"><input type="number" inputmode="decimal" id="m_cslope" name="m_cslope" value="12" min="1" max="50" step="1"><span class="unit"></span></span><button type="button" data-step="1" aria-label="Hæv hældning">+</button></div></div>
+                <div class="field row"><label for="m_cfloor">Hældningsgulv</label><div class="stepper"><button type="button" data-step="-1" aria-label="Sænk hældningsgulv">−</button><span class="value"><input type="number" inputmode="decimal" id="m_cfloor" name="m_cfloor" value="4" min="0" max="20" step="1"><span class="unit"></span></span><button type="button" data-step="1" aria-label="Hæv hældningsgulv">+</button></div></div>
+              </div>
+              <div class="sub">
+                <h4>Åbne-endestop</h4>
+                <div class="field row"><label for="m_othr">Grænse</label><div class="stepper"><button type="button" data-step="-1" aria-label="Sænk grænse">−</button><span class="value"><input type="number" inputmode="decimal" id="m_othr" name="m_othr" value="160" min="50" max="500" step="10"><span class="unit">mA</span></span><button type="button" data-step="1" aria-label="Hæv grænse">+</button></div></div>
+                <div class="field row"><label for="m_oslope">Hældning</label><div class="stepper"><button type="button" data-step="-1" aria-label="Sænk hældning">−</button><span class="value"><input type="number" inputmode="decimal" id="m_oslope" name="m_oslope" value="10" min="1" max="50" step="1"><span class="unit"></span></span><button type="button" data-step="1" aria-label="Hæv hældning">+</button></div></div>
+                <div class="field row"><label for="m_ofloor">Hældningsgulv</label><div class="stepper"><button type="button" data-step="-1" aria-label="Sænk hældningsgulv">−</button><span class="value"><input type="number" inputmode="decimal" id="m_ofloor" name="m_ofloor" value="4" min="0" max="20" step="1"><span class="unit"></span></span><button type="button" data-step="1" aria-label="Hæv hældningsgulv">+</button></div></div>
+                <div class="field row"><label for="m_ripple">Ripple-grænse</label><div class="stepper"><button type="button" data-step="-1" aria-label="Sænk ripple-grænse">−</button><span class="value"><input type="number" inputmode="decimal" id="m_ripple" name="m_ripple" value="600" min="100" max="2000" step="50"><span class="unit"></span></span><button type="button" data-step="1" aria-label="Hæv ripple-grænse">+</button></div></div>
+              </div>
+              <div class="sub">
+                <h4>Genlæring</h4>
+                <div class="field row"><label for="m_relmov">Efter bevægelser</label><div class="stepper"><button type="button" data-step="-1" aria-label="Sænk efter bevægelser">−</button><span class="value"><input type="number" inputmode="decimal" id="m_relmov" name="m_relmov" value="200" min="10" max="2000" step="10"><span class="unit"></span></span><button type="button" data-step="1" aria-label="Hæv efter bevægelser">+</button></div></div>
+                <div class="field row"><label for="m_relh">Efter timer</label><div class="stepper"><button type="button" data-step="-1" aria-label="Sænk efter timer">−</button><span class="value"><input type="number" inputmode="decimal" id="m_relh" name="m_relh" value="168" min="1" max="720" step="1"><span class="unit">t</span></span><button type="button" data-step="1" aria-label="Hæv efter timer">+</button></div></div>
+                <div class="field row"><label for="m_minsamp">Min. samples</label><div class="stepper"><button type="button" data-step="-1" aria-label="Sænk min. samples">−</button><span class="value"><input type="number" inputmode="decimal" id="m_minsamp" name="m_minsamp" value="3" min="1" max="20" step="1"><span class="unit"></span></span><button type="button" data-step="1" aria-label="Hæv min. samples">+</button></div></div>
+                <div class="field row"><label for="m_maxdev">Maks. afvigelse</label><div class="stepper"><button type="button" data-step="-1" aria-label="Sænk maks. afvigelse">−</button><span class="value"><input type="number" inputmode="decimal" id="m_maxdev" name="m_maxdev" value="0.15" min="0.01" max="1" step="0.01"><span class="unit"></span></span><button type="button" data-step="1" aria-label="Hæv maks. afvigelse">+</button></div></div>
+              </div>
+            </div>
+          </details>
+          <footer class="panel-foot"><button class="btn primary" type="submit">Gem manifold</button></footer>
+        </form>
+
+        <form class="panel c6" data-save="regulation">
+          <header class="panel-head"><h3>Regulering</h3><button class="help-btn" type="button" popovertarget="help-regulation" style="anchor-name:--a-help-regulation" aria-label="Hjælp: Regulering">?</button></header>
+          <div id="help-regulation" popover class="help-pop" style="position-anchor:--a-help-regulation"><p>Balanceringsfaktorer og valgfri forvarming. Adaptiv tilstand lærer over tid; nulstilling glemmer lærte faktorer for alle zoner.</p><a href="https://github.com/Birkemosen/lune/blob/main/lune-v6/docs/Manual.md#regulation">Læs mere</a></div>
+          <div class="sub">
+            <h4>Hydraulisk balancering <span class="badge violet" style="margin-left:6px">Lærer løbende</span></h4>
+            <div class="field"><span class="label">Tilstand</span><div class="seg" role="radiogroup" aria-label="Tilstand"><label><input type="radio" name="bal_mode" value="static"><span>Statisk</span></label><label><input type="radio" name="bal_mode" value="adaptive" checked><span>Adaptiv</span></label></div></div>
+            <div class="field row"><label for="bal_interval">Interval</label><div class="stepper"><button type="button" data-step="-1" aria-label="Sænk interval">−</button><span class="value"><input type="number" inputmode="decimal" id="bal_interval" name="bal_interval" value="300" min="60" max="3600" step="60"><span class="unit">s</span></span><button type="button" data-step="1" aria-label="Hæv interval">+</button></div></div>
+            <div class="field row"><label for="bal_step">Skridt (k)</label><div class="stepper"><button type="button" data-step="-1" aria-label="Sænk skridt (k)">−</button><span class="value"><input type="number" inputmode="decimal" id="bal_step" name="bal_step" value="0.02" min="0.01" max="0.2" step="0.01"><span class="unit"></span></span><button type="button" data-step="1" aria-label="Hæv skridt (k)">+</button></div></div>
+            <div class="field row"><label for="bal_min">Min. faktor</label><div class="stepper"><button type="button" data-step="-1" aria-label="Sænk min. faktor">−</button><span class="value"><input type="number" inputmode="decimal" id="bal_min" name="bal_min" value="0.30" min="0.1" max="1" step="0.05"><span class="unit"></span></span><button type="button" data-step="1" aria-label="Hæv min. faktor">+</button></div></div>
+            <div class="field row"><label for="bal_max">Maks. faktor</label><div class="stepper"><button type="button" data-step="-1" aria-label="Sænk maks. faktor">−</button><span class="value"><input type="number" inputmode="decimal" id="bal_max" name="bal_max" value="1.50" min="1" max="3" step="0.05"><span class="unit"></span></span><button type="button" data-step="1" aria-label="Hæv maks. faktor">+</button></div></div>
+          </div>
+          <div class="sub gated">
+            <h4>Preheat-absorption</h4>
+            <label class="switch"><span class="switch-text"><b>Opsug overskudsvarme</b><small>Bruger gulvet som buffer</small></span><input type="checkbox" role="switch" name="preheat_enabled"></label>
+            <div class="gated-body sub">
+              <div class="field row"><label for="ph_band">Absorb-bånd</label><div class="stepper"><button type="button" data-step="-1" aria-label="Sænk absorb-bånd">−</button><span class="value"><input type="number" inputmode="decimal" id="ph_band" name="ph_band" value="0.5" min="0.1" max="3" step="0.1"><span class="unit">°C</span></span><button type="button" data-step="1" aria-label="Hæv absorb-bånd">+</button></div></div>
+              <div class="field row"><label for="ph_delta">Detektions-delta</label><div class="stepper"><button type="button" data-step="-1" aria-label="Sænk detektions-delta">−</button><span class="value"><input type="number" inputmode="decimal" id="ph_delta" name="ph_delta" value="0.3" min="0.1" max="2" step="0.1"><span class="unit">°C</span></span><button type="button" data-step="1" aria-label="Hæv detektions-delta">+</button></div></div>
+            </div>
+          </div>
+          <footer class="panel-foot">
+            <details class="confirm" style="margin-right:auto">
+              <summary class="btn danger">Nulstil balancering…</summary>
+              <p class="note">Rydder alle lærte faktorer. Prior-værdierne bruges igen.</p>
+              <button class="btn danger" type="submit" name="action" value="reset_balancing">Nulstil balancering</button>
+            </details>
+            <button class="btn primary" type="submit">Gem regulering</button>
+          </footer>
+        </form>
+
+        <form class="panel c6" data-save="heating">
+          <header class="panel-head"><h3>Varmetilstand</h3><button class="help-btn" type="button" popovertarget="help-heating" style="anchor-name:--a-help-heating" aria-label="Hjælp: Varmetilstand">?</button></header>
+          <div id="help-heating" popover class="help-pop" style="position-anchor:--a-help-heating"><p>Opvarmningstilstand og mindste åbning. Varmepumpe-grænser gælder kun i den tilstand og begrænser, hvor hårdt manifolden må kalde.</p><a href="https://github.com/Birkemosen/lune/blob/main/lune-v6/docs/Manual.md#heating">Læs mere</a></div>
+          <div class="field"><span class="label">Tilstand</span><div class="seg" role="radiogroup" aria-label="Tilstand"><label><input type="radio" name="heat_mode" value="normal" checked><span>Normal</span></label><label><input type="radio" name="heat_mode" value="heat_pump"><span>Varmepumpe</span></label></div></div>
+          <div class="field row"><label for="heat_min_open">Min. samlet åbning</label><div class="stepper"><button type="button" data-step="-1" aria-label="Sænk min. samlet åbning">−</button><span class="value"><input type="number" inputmode="decimal" id="heat_min_open" name="heat_min_open" value="15" min="0" max="100" step="1"><span class="unit">%</span></span><button type="button" data-step="1" aria-label="Hæv min. samlet åbning">+</button></div></div>
+          <div class="sub gated">
+            <h4>Varmepumpegrænser</h4>
+            <div class="field row"><label for="hp_base">Basis fremløb</label><div class="stepper"><button type="button" data-step="-1" aria-label="Sænk basis fremløb">−</button><span class="value"><input type="number" inputmode="decimal" id="hp_base" name="hp_base" value="35.0" min="20" max="55" step="0.5"><span class="unit">°C</span></span><button type="button" data-step="1" aria-label="Hæv basis fremløb">+</button></div></div>
+            <div class="field row"><label for="hp_overheat">Overhedningsmargin</label><div class="stepper"><button type="button" data-step="-1" aria-label="Sænk overhedningsmargin">−</button><span class="value"><input type="number" inputmode="decimal" id="hp_overheat" name="hp_overheat" value="8.0" min="0" max="20" step="0.5"><span class="unit">K</span></span><button type="button" data-step="1" aria-label="Hæv overhedningsmargin">+</button></div></div>
+            <div class="field row"><label for="hp_trim">Trimgulv</label><div class="stepper"><button type="button" data-step="-1" aria-label="Sænk trimgulv">−</button><span class="value"><input type="number" inputmode="decimal" id="hp_trim" name="hp_trim" value="-2.0" min="-10" max="10" step="0.5"><span class="unit">K</span></span><button type="button" data-step="1" aria-label="Hæv trimgulv">+</button></div></div>
+          </div>
+          <footer class="panel-foot"><button class="btn primary" type="submit">Gem varmetilstand</button></footer>
+        </form>
+
+        <form class="panel c6" data-save="return_probes">
+          <header class="panel-head"><h3>Returfølere</h3><button class="help-btn" type="button" popovertarget="help-return-probes" style="anchor-name:--a-help-return-probes" aria-label="Hjælp: Returfølere">?</button></header>
+          <div id="help-return-probes" popover class="help-pop" style="position-anchor:--a-help-return-probes"><p>To prober deler frem/retur på manifolden; otte prober tilføjer en returføler pr. zone til finere balancering.</p><a href="https://github.com/Birkemosen/lune/blob/main/lune-v6/docs/Manual.md#return-probes">Læs mere</a></div>
+          <div class="field"><span class="label">Følerlayout</span><div class="seg" role="radiogroup" aria-label="Følerlayout"><label><input type="radio" name="return_probe_mode" value="2"><span>2 følere (frem/retur)</span></label><label><input type="radio" name="return_probe_mode" value="8" checked><span>8 følere</span></label></div></div>
+          <p class="note">Tildel returfølere pr. zone, når otte 1-Wire-sensorer er monteret.</p>
+          <footer class="panel-foot"><button class="btn primary" type="submit">Gem returfølere</button></footer>
+        </form>
+
+        <header class="section-head"><span>Forbindelse</span></header>
+
+        <form class="panel c6" data-save="touch">
+          <header class="panel-head"><h3>Lune Touch</h3><button class="help-btn" type="button" popovertarget="help-touch" style="anchor-name:--a-help-touch" aria-label="Hjælp: Lune Touch">?</button><span class="badge" data-bind="touch.badge">Afventer</span></header>
+          <div id="help-touch" popover class="help-pop" style="position-anchor:--a-help-touch"><p>Godkend eller tilbagekald Lune Touch-styring af denne manifold. Uden godkendelse forbliver V6 lokalt og konservativt.</p><a href="https://github.com/Birkemosen/lune/blob/main/lune-v6/docs/Manual.md#touch">Læs mere</a></div>
+          <p class="note" data-bind="touch.status">Tilføj denne manifold i Lune Touch. Identiteten vises her automatisk.</p>
+          <dl class="kv" data-bind-show="touch.identity">
+            <div><dt>Touch</dt><dd data-bind="touch.name">—</dd></div>
+            <div><dt>Sted</dt><dd data-bind="touch.site">—</dd></div>
+            <div><dt>Installation</dt><dd data-bind="touch.install">—</dd></div>
+            <div><dt>Koordinator</dt><dd data-bind="touch.coord">—</dd></div>
+          </dl>
+          <footer class="panel-foot">
+            <details class="confirm" style="margin-right:auto">
+              <summary class="btn danger">Afbryd Touch…</summary>
+              <p class="note">Fjerner godkendt styring. Opdagelse alene giver aldrig kontrol.</p>
+              <button class="btn danger" type="submit" name="action" value="revoke">Afbryd nu</button>
+            </details>
+            <button class="btn primary" type="submit" name="action" value="approve">Godkend Lune Touch</button>
+          </footer>
+        </form>
+
+        <form class="panel c6" data-save="ble_clock">
+          <header class="panel-head"><h3>BLE-ur</h3><button class="help-btn" type="button" popovertarget="help-ble-clock" style="anchor-name:--a-help-ble-clock" aria-label="Hjælp: BLE-ur">?</button></header>
+          <div id="help-ble-clock" popover class="help-pop" style="position-anchor:--a-help-ble-clock"><p>Valgfri BLE-tidsbeacon, så rumfølere holder trit uden NTP på hver enhed.</p><a href="https://github.com/Birkemosen/lune/blob/main/lune-v6/docs/Manual.md#ble-clock">Læs mere</a></div>
+          <label class="switch"><span class="switch-text"><b>Send tid</b><small>Synk til Shelly BLU-display</small></span><input type="checkbox" role="switch" name="ble_clock_enabled"></label>
+          <div class="field row"><label for="ble_clock_interval">Interval</label><div class="stepper"><button type="button" data-step="-1" aria-label="Sænk interval">−</button><span class="value"><input type="number" inputmode="decimal" id="ble_clock_interval" name="ble_clock_interval" value="60" min="10" max="600" step="10"><span class="unit">s</span></span><button type="button" data-step="1" aria-label="Hæv interval">+</button></div></div>
+          <footer class="panel-foot">
+            <button class="btn" type="submit" name="action" value="sync">Synk nu</button>
+            <button class="btn primary" type="submit">Gem BLE-ur</button>
+          </footer>
+        </form>
+
+        <section class="panel c6">
+          <header class="panel-head"><h3>Vejr-preload</h3><span class="badge info">På Touch</span></header>
+          <p class="msg info"><span>Vejrudsigt og vind-preload ejes af Lune Touch. Denne V6 anvender preload-offsets den modtager og gemmer vejr-eksponering pr. zone.</span></p>
+          <p class="note">Sæt ydervægge, vind og sol på hver zone under Gulv og vejr.</p>
+        </section>
+
+        <header class="section-head"><span>Vedligehold</span></header>
+
+        <form class="panel c6" data-save="firmware">
+          <header class="panel-head"><h3>Firmware</h3><button class="help-btn" type="button" popovertarget="help-firmware" style="anchor-name:--a-help-firmware" aria-label="Hjælp: Firmware">?</button></header>
+          <div id="help-firmware" popover class="help-pop" style="position-anchor:--a-help-firmware"><p>Tjek opdateringer, installer fra netværket, eller upload en .bin. Ventilerne holder position under genstart.</p><a href="https://github.com/Birkemosen/lune/blob/main/lune-v6/docs/Manual.md#firmware">Læs mere</a></div>
+          <dl class="kv">
+            <div><dt>Installeret</dt><dd data-bind="fw.installed">—</dd></div>
+            <div><dt>Seneste udgivelse</dt><dd data-bind="fw.latest">—</dd></div>
+          </dl>
+          <div class="actions">
+            <button class="btn" type="submit" name="action" value="check">Søg efter opdatering</button>
+            <button class="btn" type="submit" name="action" value="install">Installer seneste</button>
+          </div>
+          <div class="field"><label for="ota_file">Manuel .bin-upload</label><label class="input file" for="ota_file"><input class="sr-only" id="ota_file" name="ota_file" type="file" accept=".bin,.ota.bin"><span class="file-pick">Vælg fil</span><span class="file-name" data-empty="Ingen fil valgt">Ingen fil valgt</span></label></div>
+          <footer class="panel-foot"><button class="btn primary" type="submit" name="action" value="upload">Upload firmware</button></footer>
+        </form>
+
+        <form class="panel c6" data-save="backup">
+          <header class="panel-head"><h3>Sikkerhedskopi</h3><button class="help-btn" type="button" popovertarget="help-backup" style="anchor-name:--a-help-backup" aria-label="Hjælp: Sikkerhedskopi">?</button></header>
+          <div id="help-backup" popover class="help-pop" style="position-anchor:--a-help-backup"><p>Eksportér eller importér indstillinger som JSON. Lærte motorfaktorer er valgfrie og kan udelades.</p><a href="https://github.com/Birkemosen/lune/blob/main/lune-v6/docs/Manual.md#backup">Læs mere</a></div>
+          <p class="note">Eksportér indstillinger som JSON. Hemmeligheder og authority-nøgler medtages aldrig.</p>
+          <label class="switch"><span class="switch-text"><b>Medtag lærte motorværdier</b><small>Ripples og strømfaktorer</small></span><input type="checkbox" role="switch" name="include_learned"></label>
+          <div class="field"><label for="backup_file">Importfil</label><label class="input file" for="backup_file"><input class="sr-only" id="backup_file" name="backup_file" type="file" accept="application/json,.json"><span class="file-pick">Vælg fil</span><span class="file-name" data-empty="Ingen fil valgt">Ingen fil valgt</span></label></div>
+          <footer class="panel-foot">
+            <button class="btn" type="submit" name="action" value="export">Eksportér kopi</button>
+            <button class="btn primary" type="submit" name="action" value="import">Importér kopi</button>
+          </footer>
+        </form>
+
+        <header class="section-head"><span>Service</span></header>
+
+        <form class="panel" data-save="service">
+          <header class="panel-head"><h3>Manuel motorstyring</h3><button class="help-btn" type="button" popovertarget="help-manual" style="anchor-name:--a-help-manual" aria-label="Hjælp: Manuel motorstyring">?</button></header>
+          <div id="help-manual" popover class="help-pop" style="position-anchor:--a-help-manual"><p>Manuel tilstand suspenderer automatisk styring af alle zoner, indtil den slås fra. Brug stop eller kør-til-mål ved service.</p><a href="https://github.com/Birkemosen/lune/blob/main/lune-v6/docs/Manual.md#manual">Læs mere</a></div>
+          <div class="sub gated">
+            <p class="msg warn"><span>Manuel tilstand suspenderer automatisk styring af alle zoner, indtil den slås fra.</span></p>
+            <label class="switch"><span class="switch-text"><b>Manuel tilstand</b></span><input type="checkbox" role="switch" name="manual_mode"></label>
+            <div class="gated-body sub">
+              <div class="field row"><label for="man_zone">Motor</label><select class="select" id="man_zone" name="man_zone"><option value="1">Z1 Josephine</option><option value="2">Z2 Laura</option><option value="3">Z3 Toilet</option><option value="4">Z4 Stue rum 1</option><option value="5">Z5 Stue rum 2</option><option value="6">Z6 Soveværelse</option></select></div>
+              <div class="field row"><label for="man_target">Motormål</label><div class="stepper"><button type="button" data-step="-1" aria-label="Sænk motormål">−</button><span class="value"><input type="number" inputmode="decimal" id="man_target" name="man_target" value="50" min="0" max="100" step="5"><span class="unit">%</span></span><button type="button" data-step="1" aria-label="Hæv motormål">+</button></div></div>
+              <div class="actions"><button class="btn" type="submit" name="action" value="stop">Stop</button><button class="btn" type="submit" name="action" value="move">Kør til mål</button></div>
+            </div>
+          </div>
+        </form>
+
+        <form class="panel c6" data-save="service">
+          <header class="panel-head"><h3>Kørselsstatus</h3><button class="help-btn" type="button" popovertarget="help-health" style="anchor-name:--a-help-health" aria-label="Hjælp: Kørselsstatus">?</button></header>
+          <div id="help-health" popover class="help-pop" style="position-anchor:--a-help-health"><p>Live CPU, heap og PSRAM. Task-dump og bus-scans skriver til loggen herunder til installatører.</p><a href="https://github.com/Birkemosen/lune/blob/main/lune-v6/docs/Manual.md#health">Læs mere</a></div>
+          <dl class="metrics">
+            <div class="metric"><dt>CPU0</dt><dd data-bind="diag.cpu0">— <small>%</small></dd></div>
+            <div class="metric"><dt>CPU1</dt><dd data-bind="diag.cpu1">— <small>%</small></dd></div>
+            <div class="metric"><dt>Heap</dt><dd data-bind="diag.heap">— <small>kB</small></dd></div>
+            <div class="metric"><dt>PSRAM</dt><dd data-bind="diag.psram">— <small>kB</small></dd></div>
+          </dl>
+          <div class="actions">
+            <button class="btn" type="submit" name="action" value="dump_tasks">Task-statistik til log</button>
+            <button class="btn" type="submit" name="action" value="i2c_scan">I²C-scan</button>
+            <button class="btn" type="submit" name="action" value="dump_ow">Dump 1-Wire</button>
+          </div>
+          <pre class="log" data-bind="diag.i2c" aria-live="polite" lang="en"></pre>
+        </form>
+
+        <form class="panel c6" data-save="service">
+          <header class="panel-head"><h3>Enhedslog</h3><button class="help-btn" type="button" popovertarget="help-logs" style="anchor-name:--a-help-logs" aria-label="Hjælp: Enhedslog">?</button></header>
+          <div id="help-logs" popover class="help-pop" style="position-anchor:--a-help-logs"><p>Løbende enhedslog. Pause, ryd eller download ved fejlsøgning.</p><a href="https://github.com/Birkemosen/lune/blob/main/lune-v6/docs/Manual.md#logs">Læs mere</a></div>
+          <div class="actions">
+            <button class="btn" type="submit" name="action" value="logs_pause">Pause</button>
+            <button class="btn" type="submit" name="action" value="logs_clear">Ryd</button>
+            <button class="btn" type="submit" name="action" value="logs_download">Download</button>
+          </div>
+          <pre class="log" data-bind="log" aria-live="polite" lang="en"></pre>
+        </form>
+
+        <form class="panel c6" data-save="service">
+          <header class="panel-head"><h3>Enhed</h3><button class="help-btn" type="button" popovertarget="help-device-actions" style="anchor-name:--a-help-device-actions" aria-label="Hjælp: Enhed">?</button></header>
+          <div id="help-device-actions" popover class="help-pop" style="position-anchor:--a-help-device-actions"><p>Destruktive servicehandlinger for denne manifold. Identitet ligger under enhedsmenuen; genstart og nulstil probe-map bliver her.</p><a href="https://github.com/Birkemosen/lune/blob/main/lune-v6/docs/Manual.md#device-actions">Læs mere</a></div>
+          <div class="actions">
+            <details class="confirm">
+              <summary class="btn danger">Nulstil probe-map…</summary>
+              <p class="note">Proberne skal tildeles igen på manifolden og hver zone.</p>
+              <button class="btn danger" type="submit" name="action" value="reset_probe_map">Nulstil probe-map</button>
+            </details>
+            <details class="confirm">
+              <summary class="btn danger">Genstart…</summary>
+              <p class="note">Ventilerne holder position under genstart (ca. 10 s).</p>
+              <button class="btn danger" type="submit" name="action" value="restart">Genstart nu</button>
+            </details>
+          </div>
+        </form>
+
+        <section class="panel" data-dev-only hidden>
+          <header class="panel-head"><h3>Motorlab (dev)</h3></header>
+          <p class="msg warn"><span>Suspenderer automatisk styring under stroke-optagelse. Kun i dev-builds.</span></p>
+          <div class="actions">
+            <button class="btn" type="button" data-action="motorlab-start">Start optagelse</button>
+            <button class="btn danger" type="button" data-action="motorlab-estop">Nødstop alle motorer</button>
+          </div>
+          <div class="field"><canvas data-motorlab-chart width="480" height="160" style="width:100%;height:auto;background:var(--field)"></canvas></div>
+        </section>
+      </section>
+      <section class="view" id="v-conf-z1" aria-labelledby="h-conf-z1">
+        <header class="view-head"><h2 id="h-conf-z1">Z1 Josephine</h2><p>Opsætning af zonen</p></header>
+
+        <header class="section-head"><span>Zone</span></header>
+
+        <form class="panel c6" data-save="zone/1/room">
+          <header class="panel-head"><h3>Rum og følere</h3><button class="help-btn" type="button" popovertarget="help-zone-room" style="anchor-name:--a-help-zone-room" aria-label="Hjælp: Rum og følere">?</button></header>
+          <div class="subs cols-2">
+            <div class="sub">
+              <h4>Rum</h4>
+              
+              <label class="switch"><span class="switch-text"><b>Zone aktiveret</b></span><input type="checkbox" role="switch" name="z1_enabled" checked></label>
+              <div class="field"><label for="z1_name">Navn</label><input class="input" id="z1_name" name="z1_name" value="Josephine" maxlength="24"></div>
+              <div class="field"><label for="z1_area">Areal</label><div class="stepper"><button type="button" data-step="-1" aria-label="Sænk areal">−</button><span class="value"><input type="number" inputmode="decimal" id="z1_area" name="z1_area" value="12.0" min="0" max="200" step="0.5"><span class="unit">m²</span></span><button type="button" data-step="1" aria-label="Hæv areal">+</button></div></div>
+              <div class="field"><label for="z1_merge">Gruppér med<span class="hint">Ét rum: fælles mål, ventiler åbner ens</span></label><select class="select" id="z1_merge" name="z1_merge"><option value="">Ingen</option><option value="2">Z2 Laura</option><option value="3">Z3 Toilet</option><option value="4">Z4 Stue rum 1</option><option value="5">Z5 Stue rum 2</option><option value="6">Z6 Soveværelse</option></select></div>
+            </div>
+            <div class="sub">
+              <h4>Følere</h4>
+              <div class="field"><span class="label">Rumtemperatur fra</span><div class="seg" role="radiogroup" aria-label="Rumtemperatur fra"><label><input type="radio" name="z1_src" value="probe"><span>Probe</span></label><label><input type="radio" name="z1_src" value="ble" checked><span>BLE</span></label></div></div>
+              <div class="field">
+                <label for="z1_ble">BLE-sensor (MAC)<span class="hint">BTHome, fx Shelly BLU H&amp;T</span></label>
+                <div class="pair wide-first">
+                  <input class="input" id="z1_ble" name="z1_ble" placeholder="AA:BB:CC:DD:EE:FF" pattern="^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$" autocomplete="off" spellcheck="false">
+                  <button type="button" class="btn" data-action="ble-scan" data-zone="1">Scan</button>
+                </div>
+              </div>
+              <div class="field"><label for="z1_ret">Returføler</label><select class="select" id="z1_ret" name="z1_ret"><option value="1" selected>Probe 1</option><option value="2">Probe 2</option><option value="3">Probe 3</option><option value="4">Probe 4</option><option value="5">Probe 5</option><option value="6">Probe 6</option><option value="7">Probe 7</option><option value="8">Probe 8</option></select></div>
+            </div>
+          </div>
+          <footer class="panel-foot"><button class="btn primary" type="submit">Gem rum og følere</button></footer>
+        </form>
+
+        <form class="panel c6" data-save="zone/1/floor">
+          <header class="panel-head"><h3>Gulv og vejr</h3><button class="help-btn" type="button" popovertarget="help-zone-floor" style="anchor-name:--a-help-zone-floor" aria-label="Hjælp: Gulv og vejr">?</button></header>
+          <div class="subs cols-2">
+            <div class="sub">
+              <h4>Gulv og rør</h4>
+              <div class="field"><label for="z1_spacing">Rørafstand C-C</label><div class="stepper"><button type="button" data-step="-1" aria-label="Sænk rørafstand c-c">−</button><span class="value"><input type="number" inputmode="decimal" id="z1_spacing" name="z1_spacing" value="150" min="50" max="300" step="25"><span class="unit">mm</span></span><button type="button" data-step="1" aria-label="Hæv rørafstand c-c">+</button></div></div>
+              <div class="field"><label for="z1_pipe">Rørtype</label><select class="select" id="z1_pipe" name="z1_pipe"><option>PEX 12mm</option><option>PEX 14mm</option><option selected>PEX 16mm</option><option>PEX 17mm</option><option>PEX 18mm</option><option>PEX 20mm</option><option>ALUPEX 16mm</option><option>ALUPEX 20mm</option><option>Unknown</option></select></div>
+              <div class="field"><label for="z1_slab">Gulvkonstruktion</label><select class="select" id="z1_slab" name="z1_slab"><option value="unset">Ikke sat</option><option value="cast_concrete">Støbt beton</option><option value="screed">Spartel</option><option value="dry_plates">Tørre plader</option><option value="timber_joists">Træbjælker</option></select></div>
+              <div class="field"><label for="z1_covering">Belægning</label><select class="select" id="z1_covering" name="z1_covering"><option value="unset">Ikke sat</option><option value="tile_stone">Flise / sten</option><option value="vinyl_linoleum">Vinyl / linoleum</option><option value="parquet_laminate">Parket / laminat</option><option value="carpet">Tæppe</option></select></div>
+              <div class="field"><label for="z1_thick">Aktiv tykkelse</label><div class="stepper"><button type="button" data-step="-1" aria-label="Sænk aktiv tykkelse">−</button><span class="value"><input type="number" inputmode="decimal" id="z1_thick" name="z1_thick" value="0.0" min="0" max="15" step="0.5"><span class="unit">cm</span></span><button type="button" data-step="1" aria-label="Hæv aktiv tykkelse">+</button></div></div>
+              <div class="field"><label for="z1_lead">Termisk lead</label><div class="stepper"><button type="button" data-step="-1" aria-label="Sænk termisk lead">−</button><span class="value"><input type="number" inputmode="decimal" id="z1_lead" name="z1_lead" value="3.0" min="0" max="12" step="0.5"><span class="unit">t</span></span><button type="button" data-step="1" aria-label="Hæv termisk lead">+</button></div></div>
+            </div>
+            <div class="sub">
+              <h4>Vejr-preload</h4>
+              <div class="field"><span class="label">Ydervægge</span><div class="compass" role="group" aria-label="Ydervægge"><i class="c"></i><label data-wall="n"><input type="checkbox" name="z1_wall" value="n" aria-label="Nord"><span>N</span></label><label data-wall="e"><input type="checkbox" name="z1_wall" value="e" aria-label="Øst"><span>Ø</span></label><label data-wall="s"><input type="checkbox" name="z1_wall" value="s" checked aria-label="Syd"><span>S</span></label><label data-wall="w"><input type="checkbox" name="z1_wall" value="w" checked aria-label="Vest"><span>V</span></label></div></div>
+              <div class="field"><label for="z1_wind">Vindeksponering</label><div class="stepper"><button type="button" data-step="-1" aria-label="Sænk vindeksponering">−</button><span class="value"><input type="number" inputmode="decimal" id="z1_wind" name="z1_wind" value="1.0" min="0" max="2" step="0.1"><span class="unit">×</span></span><button type="button" data-step="1" aria-label="Hæv vindeksponering">+</button></div></div>
+              <div class="field"><label for="z1_solar">Solindfald</label><div class="stepper"><button type="button" data-step="-1" aria-label="Sænk solindfald">−</button><span class="value"><input type="number" inputmode="decimal" id="z1_solar" name="z1_solar" value="0.6" min="0" max="2" step="0.1"><span class="unit">×</span></span><button type="button" data-step="1" aria-label="Hæv solindfald">+</button></div></div>
+            </div>
+          </div>
+          <footer class="panel-foot"><button class="btn primary" type="submit">Gem gulv og vejr</button></footer>
+        </form>
+
+        <form class="panel" data-save="zone/1/motor">
+          <header class="panel-head"><h3>Motor</h3><button class="help-btn" type="button" popovertarget="help-zone-motor" style="anchor-name:--a-help-zone-motor" aria-label="Hjælp: Motor">?</button><span class="badge ok">Lært</span></header>
+          <div class="subs cols-2">
+            <dl class="kv"><div><dt>Åbne / lukke ripples</dt><dd>412 / 398</dd></div><div><dt>Åbne / lukke faktor</dt><dd>0,96 / 1,04</dd></div></dl>
+            <dl class="kv"><div><dt>Preheat adv.</dt><dd>0,35 °C</dd></div><div><dt>Seneste fejl</dt><dd class="">Ingen</dd></div></dl>
+          </div>
+          <footer class="panel-foot">
+            <button class="btn" type="submit" name="action" value="reset_fault" disabled>Nulstil fejl</button>
+            <details class="confirm">
+              <summary class="btn danger">Nulstil og genlær…</summary>
+              <p class="note">Sletter de lærte faktorer for Z1. Motoren lærer igen ved næste bevægelse.</p>
+              <button class="btn danger" type="submit" name="action" value="reset_relearn">Nulstil og genlær Z1</button>
+            </details>
+          </footer>
+        </form>
+      </section>
+      <section class="view" id="v-conf-z2" aria-labelledby="h-conf-z2">
+        <header class="view-head"><h2 id="h-conf-z2">Z2 Laura</h2><p>Opsætning af zonen</p></header>
+
+        <header class="section-head"><span>Zone</span></header>
+
+        <form class="panel c6" data-save="zone/2/room">
+          <header class="panel-head"><h3>Rum og følere</h3><button class="help-btn" type="button" popovertarget="help-zone-room" style="anchor-name:--a-help-zone-room" aria-label="Hjælp: Rum og følere">?</button></header>
+          <div class="subs cols-2">
+            <div class="sub">
+              <h4>Rum</h4>
+              
+              <label class="switch"><span class="switch-text"><b>Zone aktiveret</b></span><input type="checkbox" role="switch" name="z2_enabled" checked></label>
+              <div class="field"><label for="z2_name">Navn</label><input class="input" id="z2_name" name="z2_name" value="Laura" maxlength="24"></div>
+              <div class="field"><label for="z2_area">Areal</label><div class="stepper"><button type="button" data-step="-1" aria-label="Sænk areal">−</button><span class="value"><input type="number" inputmode="decimal" id="z2_area" name="z2_area" value="11.0" min="0" max="200" step="0.5"><span class="unit">m²</span></span><button type="button" data-step="1" aria-label="Hæv areal">+</button></div></div>
+              <div class="field"><label for="z2_merge">Gruppér med<span class="hint">Ét rum: fælles mål, ventiler åbner ens</span></label><select class="select" id="z2_merge" name="z2_merge"><option value="">Ingen</option><option value="1">Z1 Josephine</option><option value="3">Z3 Toilet</option><option value="4">Z4 Stue rum 1</option><option value="5">Z5 Stue rum 2</option><option value="6">Z6 Soveværelse</option></select></div>
+            </div>
+            <div class="sub">
+              <h4>Følere</h4>
+              <div class="field"><span class="label">Rumtemperatur fra</span><div class="seg" role="radiogroup" aria-label="Rumtemperatur fra"><label><input type="radio" name="z2_src" value="probe"><span>Probe</span></label><label><input type="radio" name="z2_src" value="ble" checked><span>BLE</span></label></div></div>
+              <div class="field">
+                <label for="z2_ble">BLE-sensor (MAC)<span class="hint">BTHome, fx Shelly BLU H&amp;T</span></label>
+                <div class="pair wide-first">
+                  <input class="input" id="z2_ble" name="z2_ble" placeholder="AA:BB:CC:DD:EE:FF" pattern="^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$" autocomplete="off" spellcheck="false">
+                  <button type="button" class="btn" data-action="ble-scan" data-zone="2">Scan</button>
+                </div>
+              </div>
+              <div class="field"><label for="z2_ret">Returføler</label><select class="select" id="z2_ret" name="z2_ret"><option value="1">Probe 1</option><option value="2" selected>Probe 2</option><option value="3">Probe 3</option><option value="4">Probe 4</option><option value="5">Probe 5</option><option value="6">Probe 6</option><option value="7">Probe 7</option><option value="8">Probe 8</option></select></div>
+            </div>
+          </div>
+          <footer class="panel-foot"><button class="btn primary" type="submit">Gem rum og følere</button></footer>
+        </form>
+
+        <form class="panel c6" data-save="zone/2/floor">
+          <header class="panel-head"><h3>Gulv og vejr</h3><button class="help-btn" type="button" popovertarget="help-zone-floor" style="anchor-name:--a-help-zone-floor" aria-label="Hjælp: Gulv og vejr">?</button></header>
+          <div class="subs cols-2">
+            <div class="sub">
+              <h4>Gulv og rør</h4>
+              <div class="field"><label for="z2_spacing">Rørafstand C-C</label><div class="stepper"><button type="button" data-step="-1" aria-label="Sænk rørafstand c-c">−</button><span class="value"><input type="number" inputmode="decimal" id="z2_spacing" name="z2_spacing" value="150" min="50" max="300" step="25"><span class="unit">mm</span></span><button type="button" data-step="1" aria-label="Hæv rørafstand c-c">+</button></div></div>
+              <div class="field"><label for="z2_pipe">Rørtype</label><select class="select" id="z2_pipe" name="z2_pipe"><option>PEX 12mm</option><option>PEX 14mm</option><option selected>PEX 16mm</option><option>PEX 17mm</option><option>PEX 18mm</option><option>PEX 20mm</option><option>ALUPEX 16mm</option><option>ALUPEX 20mm</option><option>Unknown</option></select></div>
+              <div class="field"><label for="z2_slab">Gulvkonstruktion</label><select class="select" id="z2_slab" name="z2_slab"><option value="unset">Ikke sat</option><option value="cast_concrete">Støbt beton</option><option value="screed">Spartel</option><option value="dry_plates">Tørre plader</option><option value="timber_joists">Træbjælker</option></select></div>
+              <div class="field"><label for="z2_covering">Belægning</label><select class="select" id="z2_covering" name="z2_covering"><option value="unset">Ikke sat</option><option value="tile_stone">Flise / sten</option><option value="vinyl_linoleum">Vinyl / linoleum</option><option value="parquet_laminate">Parket / laminat</option><option value="carpet">Tæppe</option></select></div>
+              <div class="field"><label for="z2_thick">Aktiv tykkelse</label><div class="stepper"><button type="button" data-step="-1" aria-label="Sænk aktiv tykkelse">−</button><span class="value"><input type="number" inputmode="decimal" id="z2_thick" name="z2_thick" value="0.0" min="0" max="15" step="0.5"><span class="unit">cm</span></span><button type="button" data-step="1" aria-label="Hæv aktiv tykkelse">+</button></div></div>
+              <div class="field"><label for="z2_lead">Termisk lead</label><div class="stepper"><button type="button" data-step="-1" aria-label="Sænk termisk lead">−</button><span class="value"><input type="number" inputmode="decimal" id="z2_lead" name="z2_lead" value="3.0" min="0" max="12" step="0.5"><span class="unit">t</span></span><button type="button" data-step="1" aria-label="Hæv termisk lead">+</button></div></div>
+            </div>
+            <div class="sub">
+              <h4>Vejr-preload</h4>
+              <div class="field"><span class="label">Ydervægge</span><div class="compass" role="group" aria-label="Ydervægge"><i class="c"></i><label data-wall="n"><input type="checkbox" name="z2_wall" value="n" checked aria-label="Nord"><span>N</span></label><label data-wall="e"><input type="checkbox" name="z2_wall" value="e" checked aria-label="Øst"><span>Ø</span></label><label data-wall="s"><input type="checkbox" name="z2_wall" value="s" aria-label="Syd"><span>S</span></label><label data-wall="w"><input type="checkbox" name="z2_wall" value="w" aria-label="Vest"><span>V</span></label></div></div>
+              <div class="field"><label for="z2_wind">Vindeksponering</label><div class="stepper"><button type="button" data-step="-1" aria-label="Sænk vindeksponering">−</button><span class="value"><input type="number" inputmode="decimal" id="z2_wind" name="z2_wind" value="1.0" min="0" max="2" step="0.1"><span class="unit">×</span></span><button type="button" data-step="1" aria-label="Hæv vindeksponering">+</button></div></div>
+              <div class="field"><label for="z2_solar">Solindfald</label><div class="stepper"><button type="button" data-step="-1" aria-label="Sænk solindfald">−</button><span class="value"><input type="number" inputmode="decimal" id="z2_solar" name="z2_solar" value="0.2" min="0" max="2" step="0.1"><span class="unit">×</span></span><button type="button" data-step="1" aria-label="Hæv solindfald">+</button></div></div>
+            </div>
+          </div>
+          <footer class="panel-foot"><button class="btn primary" type="submit">Gem gulv og vejr</button></footer>
+        </form>
+
+        <form class="panel" data-save="zone/2/motor">
+          <header class="panel-head"><h3>Motor</h3><button class="help-btn" type="button" popovertarget="help-zone-motor" style="anchor-name:--a-help-zone-motor" aria-label="Hjælp: Motor">?</button><span class="badge ok">Lært</span></header>
+          <div class="subs cols-2">
+            <dl class="kv"><div><dt>Åbne / lukke ripples</dt><dd>412 / 398</dd></div><div><dt>Åbne / lukke faktor</dt><dd>0,96 / 1,04</dd></div></dl>
+            <dl class="kv"><div><dt>Preheat adv.</dt><dd>0,35 °C</dd></div><div><dt>Seneste fejl</dt><dd class="">Ingen</dd></div></dl>
+          </div>
+          <footer class="panel-foot">
+            <button class="btn" type="submit" name="action" value="reset_fault" disabled>Nulstil fejl</button>
+            <details class="confirm">
+              <summary class="btn danger">Nulstil og genlær…</summary>
+              <p class="note">Sletter de lærte faktorer for Z2. Motoren lærer igen ved næste bevægelse.</p>
+              <button class="btn danger" type="submit" name="action" value="reset_relearn">Nulstil og genlær Z2</button>
+            </details>
+          </footer>
+        </form>
+      </section>
+      <section class="view" id="v-conf-z3" aria-labelledby="h-conf-z3">
+        <header class="view-head"><h2 id="h-conf-z3">Z3 Toilet</h2><p>Opsætning af zonen</p></header>
+
+        <header class="section-head"><span>Zone</span></header>
+
+        <form class="panel c6" data-save="zone/3/room">
+          <header class="panel-head"><h3>Rum og følere</h3><button class="help-btn" type="button" popovertarget="help-zone-room" style="anchor-name:--a-help-zone-room" aria-label="Hjælp: Rum og følere">?</button></header>
+          <div class="subs cols-2">
+            <div class="sub">
+              <h4>Rum</h4>
+              
+              <label class="switch"><span class="switch-text"><b>Zone aktiveret</b></span><input type="checkbox" role="switch" name="z3_enabled" checked></label>
+              <div class="field"><label for="z3_name">Navn</label><input class="input" id="z3_name" name="z3_name" value="Toilet" maxlength="24"></div>
+              <div class="field"><label for="z3_area">Areal</label><div class="stepper"><button type="button" data-step="-1" aria-label="Sænk areal">−</button><span class="value"><input type="number" inputmode="decimal" id="z3_area" name="z3_area" value="4.5" min="0" max="200" step="0.5"><span class="unit">m²</span></span><button type="button" data-step="1" aria-label="Hæv areal">+</button></div></div>
+              <div class="field"><label for="z3_merge">Gruppér med<span class="hint">Ét rum: fælles mål, ventiler åbner ens</span></label><select class="select" id="z3_merge" name="z3_merge"><option value="">Ingen</option><option value="1">Z1 Josephine</option><option value="2">Z2 Laura</option><option value="4">Z4 Stue rum 1</option><option value="5">Z5 Stue rum 2</option><option value="6">Z6 Soveværelse</option></select></div>
+            </div>
+            <div class="sub">
+              <h4>Følere</h4>
+              <div class="field"><span class="label">Rumtemperatur fra</span><div class="seg" role="radiogroup" aria-label="Rumtemperatur fra"><label><input type="radio" name="z3_src" value="probe" checked><span>Probe</span></label><label><input type="radio" name="z3_src" value="ble"><span>BLE</span></label></div></div>
+              <div class="field">
+                <label for="z3_ble">BLE-sensor (MAC)<span class="hint">BTHome, fx Shelly BLU H&amp;T</span></label>
+                <div class="pair wide-first">
+                  <input class="input" id="z3_ble" name="z3_ble" placeholder="AA:BB:CC:DD:EE:FF" pattern="^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$" autocomplete="off" spellcheck="false">
+                  <button type="button" class="btn" data-action="ble-scan" data-zone="3">Scan</button>
+                </div>
+              </div>
+              <div class="field"><label for="z3_ret">Returføler</label><select class="select" id="z3_ret" name="z3_ret"><option value="1">Probe 1</option><option value="2">Probe 2</option><option value="3" selected>Probe 3</option><option value="4">Probe 4</option><option value="5">Probe 5</option><option value="6">Probe 6</option><option value="7">Probe 7</option><option value="8">Probe 8</option></select></div>
+            </div>
+          </div>
+          <footer class="panel-foot"><button class="btn primary" type="submit">Gem rum og følere</button></footer>
+        </form>
+
+        <form class="panel c6" data-save="zone/3/floor">
+          <header class="panel-head"><h3>Gulv og vejr</h3><button class="help-btn" type="button" popovertarget="help-zone-floor" style="anchor-name:--a-help-zone-floor" aria-label="Hjælp: Gulv og vejr">?</button></header>
+          <div class="subs cols-2">
+            <div class="sub">
+              <h4>Gulv og rør</h4>
+              <div class="field"><label for="z3_spacing">Rørafstand C-C</label><div class="stepper"><button type="button" data-step="-1" aria-label="Sænk rørafstand c-c">−</button><span class="value"><input type="number" inputmode="decimal" id="z3_spacing" name="z3_spacing" value="100" min="50" max="300" step="25"><span class="unit">mm</span></span><button type="button" data-step="1" aria-label="Hæv rørafstand c-c">+</button></div></div>
+              <div class="field"><label for="z3_pipe">Rørtype</label><select class="select" id="z3_pipe" name="z3_pipe"><option>PEX 12mm</option><option>PEX 14mm</option><option selected>PEX 16mm</option><option>PEX 17mm</option><option>PEX 18mm</option><option>PEX 20mm</option><option>ALUPEX 16mm</option><option>ALUPEX 20mm</option><option>Unknown</option></select></div>
+              <div class="field"><label for="z3_slab">Gulvkonstruktion</label><select class="select" id="z3_slab" name="z3_slab"><option value="unset">Ikke sat</option><option value="cast_concrete">Støbt beton</option><option value="screed">Spartel</option><option value="dry_plates">Tørre plader</option><option value="timber_joists">Træbjælker</option></select></div>
+              <div class="field"><label for="z3_covering">Belægning</label><select class="select" id="z3_covering" name="z3_covering"><option value="unset">Ikke sat</option><option value="tile_stone">Flise / sten</option><option value="vinyl_linoleum">Vinyl / linoleum</option><option value="parquet_laminate">Parket / laminat</option><option value="carpet">Tæppe</option></select></div>
+              <div class="field"><label for="z3_thick">Aktiv tykkelse</label><div class="stepper"><button type="button" data-step="-1" aria-label="Sænk aktiv tykkelse">−</button><span class="value"><input type="number" inputmode="decimal" id="z3_thick" name="z3_thick" value="0.0" min="0" max="15" step="0.5"><span class="unit">cm</span></span><button type="button" data-step="1" aria-label="Hæv aktiv tykkelse">+</button></div></div>
+              <div class="field"><label for="z3_lead">Termisk lead</label><div class="stepper"><button type="button" data-step="-1" aria-label="Sænk termisk lead">−</button><span class="value"><input type="number" inputmode="decimal" id="z3_lead" name="z3_lead" value="3.0" min="0" max="12" step="0.5"><span class="unit">t</span></span><button type="button" data-step="1" aria-label="Hæv termisk lead">+</button></div></div>
+            </div>
+            <div class="sub">
+              <h4>Vejr-preload</h4>
+              <div class="field"><span class="label">Ydervægge</span><div class="compass" role="group" aria-label="Ydervægge"><i class="c"></i><label data-wall="n"><input type="checkbox" name="z3_wall" value="n" aria-label="Nord"><span>N</span></label><label data-wall="e"><input type="checkbox" name="z3_wall" value="e" aria-label="Øst"><span>Ø</span></label><label data-wall="s"><input type="checkbox" name="z3_wall" value="s" aria-label="Syd"><span>S</span></label><label data-wall="w"><input type="checkbox" name="z3_wall" value="w" aria-label="Vest"><span>V</span></label></div></div>
+              <div class="field"><label for="z3_wind">Vindeksponering</label><div class="stepper"><button type="button" data-step="-1" aria-label="Sænk vindeksponering">−</button><span class="value"><input type="number" inputmode="decimal" id="z3_wind" name="z3_wind" value="0.0" min="0" max="2" step="0.1"><span class="unit">×</span></span><button type="button" data-step="1" aria-label="Hæv vindeksponering">+</button></div></div>
+              <div class="field"><label for="z3_solar">Solindfald</label><div class="stepper"><button type="button" data-step="-1" aria-label="Sænk solindfald">−</button><span class="value"><input type="number" inputmode="decimal" id="z3_solar" name="z3_solar" value="0.2" min="0" max="2" step="0.1"><span class="unit">×</span></span><button type="button" data-step="1" aria-label="Hæv solindfald">+</button></div></div>
+            </div>
+          </div>
+          <footer class="panel-foot"><button class="btn primary" type="submit">Gem gulv og vejr</button></footer>
+        </form>
+
+        <form class="panel" data-save="zone/3/motor">
+          <header class="panel-head"><h3>Motor</h3><button class="help-btn" type="button" popovertarget="help-zone-motor" style="anchor-name:--a-help-zone-motor" aria-label="Hjælp: Motor">?</button><span class="badge ok">Lært</span></header>
+          <div class="subs cols-2">
+            <dl class="kv"><div><dt>Åbne / lukke ripples</dt><dd>412 / 398</dd></div><div><dt>Åbne / lukke faktor</dt><dd>0,96 / 1,04</dd></div></dl>
+            <dl class="kv"><div><dt>Preheat adv.</dt><dd>0,35 °C</dd></div><div><dt>Seneste fejl</dt><dd class="">Ingen</dd></div></dl>
+          </div>
+          <footer class="panel-foot">
+            <button class="btn" type="submit" name="action" value="reset_fault" disabled>Nulstil fejl</button>
+            <details class="confirm">
+              <summary class="btn danger">Nulstil og genlær…</summary>
+              <p class="note">Sletter de lærte faktorer for Z3. Motoren lærer igen ved næste bevægelse.</p>
+              <button class="btn danger" type="submit" name="action" value="reset_relearn">Nulstil og genlær Z3</button>
+            </details>
+          </footer>
+        </form>
+      </section>
+      <section class="view" id="v-conf-z4" aria-labelledby="h-conf-z4">
+        <header class="view-head"><h2 id="h-conf-z4">Z4–5 Stue rum 1</h2><p>Opsætning af zonen</p></header>
+
+        <header class="section-head"><span>Zone</span></header>
+
+        <form class="panel c6" data-save="zone/4/room">
+          <header class="panel-head"><h3>Rum og følere</h3><button class="help-btn" type="button" popovertarget="help-zone-room" style="anchor-name:--a-help-zone-room" aria-label="Hjælp: Rum og følere">?</button></header>
+          <div class="subs cols-2">
+            <div class="sub">
+              <h4>Rum</h4>
+              
+              <label class="switch"><span class="switch-text"><b>Zone aktiveret</b></span><input type="checkbox" role="switch" name="z4_enabled" checked></label>
+              <div class="field"><label for="z4_name">Navn</label><input class="input" id="z4_name" name="z4_name" value="Stue rum 1" maxlength="24"></div>
+              <div class="field"><label for="z4_area">Areal</label><div class="stepper"><button type="button" data-step="-1" aria-label="Sænk areal">−</button><span class="value"><input type="number" inputmode="decimal" id="z4_area" name="z4_area" value="22.0" min="0" max="200" step="0.5"><span class="unit">m²</span></span><button type="button" data-step="1" aria-label="Hæv areal">+</button></div></div>
+              <div class="field"><label for="z4_merge">Gruppér med<span class="hint">Ét rum: fælles mål, ventiler åbner ens</span></label><select class="select" id="z4_merge" name="z4_merge"><option value="">Ingen</option><option value="1">Z1 Josephine</option><option value="2">Z2 Laura</option><option value="3">Z3 Toilet</option><option value="5">Z5 Stue rum 2</option><option value="6">Z6 Soveværelse</option></select></div>
+            </div>
+            <div class="sub">
+              <h4>Følere</h4>
+              <div class="field"><span class="label">Rumtemperatur fra</span><div class="seg" role="radiogroup" aria-label="Rumtemperatur fra"><label><input type="radio" name="z4_src" value="probe" checked><span>Probe</span></label><label><input type="radio" name="z4_src" value="ble"><span>BLE</span></label></div></div>
+              <div class="field">
+                <label for="z4_ble">BLE-sensor (MAC)<span class="hint">BTHome, fx Shelly BLU H&amp;T</span></label>
+                <div class="pair wide-first">
+                  <input class="input" id="z4_ble" name="z4_ble" placeholder="AA:BB:CC:DD:EE:FF" pattern="^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$" autocomplete="off" spellcheck="false">
+                  <button type="button" class="btn" data-action="ble-scan" data-zone="4">Scan</button>
+                </div>
+              </div>
+              <div class="field"><label for="z4_ret">Returføler</label><select class="select" id="z4_ret" name="z4_ret"><option value="1">Probe 1</option><option value="2">Probe 2</option><option value="3">Probe 3</option><option value="4" selected>Probe 4</option><option value="5">Probe 5</option><option value="6">Probe 6</option><option value="7">Probe 7</option><option value="8">Probe 8</option></select></div>
+            </div>
+          </div>
+          <footer class="panel-foot"><button class="btn primary" type="submit">Gem rum og følere</button></footer>
+        </form>
+
+        <form class="panel c6" data-save="zone/4/floor">
+          <header class="panel-head"><h3>Gulv og vejr</h3><button class="help-btn" type="button" popovertarget="help-zone-floor" style="anchor-name:--a-help-zone-floor" aria-label="Hjælp: Gulv og vejr">?</button></header>
+          <div class="subs cols-2">
+            <div class="sub">
+              <h4>Gulv og rør</h4>
+              <div class="field"><label for="z4_spacing">Rørafstand C-C</label><div class="stepper"><button type="button" data-step="-1" aria-label="Sænk rørafstand c-c">−</button><span class="value"><input type="number" inputmode="decimal" id="z4_spacing" name="z4_spacing" value="150" min="50" max="300" step="25"><span class="unit">mm</span></span><button type="button" data-step="1" aria-label="Hæv rørafstand c-c">+</button></div></div>
+              <div class="field"><label for="z4_pipe">Rørtype</label><select class="select" id="z4_pipe" name="z4_pipe"><option>PEX 12mm</option><option>PEX 14mm</option><option selected>PEX 16mm</option><option>PEX 17mm</option><option>PEX 18mm</option><option>PEX 20mm</option><option>ALUPEX 16mm</option><option>ALUPEX 20mm</option><option>Unknown</option></select></div>
+              <div class="field"><label for="z4_slab">Gulvkonstruktion</label><select class="select" id="z4_slab" name="z4_slab"><option value="unset">Ikke sat</option><option value="cast_concrete">Støbt beton</option><option value="screed">Spartel</option><option value="dry_plates">Tørre plader</option><option value="timber_joists">Træbjælker</option></select></div>
+              <div class="field"><label for="z4_covering">Belægning</label><select class="select" id="z4_covering" name="z4_covering"><option value="unset">Ikke sat</option><option value="tile_stone">Flise / sten</option><option value="vinyl_linoleum">Vinyl / linoleum</option><option value="parquet_laminate">Parket / laminat</option><option value="carpet">Tæppe</option></select></div>
+              <div class="field"><label for="z4_thick">Aktiv tykkelse</label><div class="stepper"><button type="button" data-step="-1" aria-label="Sænk aktiv tykkelse">−</button><span class="value"><input type="number" inputmode="decimal" id="z4_thick" name="z4_thick" value="0.0" min="0" max="15" step="0.5"><span class="unit">cm</span></span><button type="button" data-step="1" aria-label="Hæv aktiv tykkelse">+</button></div></div>
+              <div class="field"><label for="z4_lead">Termisk lead</label><div class="stepper"><button type="button" data-step="-1" aria-label="Sænk termisk lead">−</button><span class="value"><input type="number" inputmode="decimal" id="z4_lead" name="z4_lead" value="3.0" min="0" max="12" step="0.5"><span class="unit">t</span></span><button type="button" data-step="1" aria-label="Hæv termisk lead">+</button></div></div>
+            </div>
+            <div class="sub">
+              <h4>Vejr-preload</h4>
+              <div class="field"><span class="label">Ydervægge</span><div class="compass" role="group" aria-label="Ydervægge"><i class="c"></i><label data-wall="n"><input type="checkbox" name="z4_wall" value="n" aria-label="Nord"><span>N</span></label><label data-wall="e"><input type="checkbox" name="z4_wall" value="e" aria-label="Øst"><span>Ø</span></label><label data-wall="s"><input type="checkbox" name="z4_wall" value="s" checked aria-label="Syd"><span>S</span></label><label data-wall="w"><input type="checkbox" name="z4_wall" value="w" aria-label="Vest"><span>V</span></label></div></div>
+              <div class="field"><label for="z4_wind">Vindeksponering</label><div class="stepper"><button type="button" data-step="-1" aria-label="Sænk vindeksponering">−</button><span class="value"><input type="number" inputmode="decimal" id="z4_wind" name="z4_wind" value="1.0" min="0" max="2" step="0.1"><span class="unit">×</span></span><button type="button" data-step="1" aria-label="Hæv vindeksponering">+</button></div></div>
+              <div class="field"><label for="z4_solar">Solindfald</label><div class="stepper"><button type="button" data-step="-1" aria-label="Sænk solindfald">−</button><span class="value"><input type="number" inputmode="decimal" id="z4_solar" name="z4_solar" value="0.6" min="0" max="2" step="0.1"><span class="unit">×</span></span><button type="button" data-step="1" aria-label="Hæv solindfald">+</button></div></div>
+            </div>
+          </div>
+          <footer class="panel-foot"><button class="btn primary" type="submit">Gem gulv og vejr</button></footer>
+        </form>
+
+        <form class="panel" data-save="zone/4/motor">
+          <header class="panel-head"><h3>Motor</h3><button class="help-btn" type="button" popovertarget="help-zone-motor" style="anchor-name:--a-help-zone-motor" aria-label="Hjælp: Motor">?</button><span class="badge ok">Lært</span></header>
+          <div class="subs cols-2">
+            <dl class="kv"><div><dt>Åbne / lukke ripples</dt><dd>412 / 398</dd></div><div><dt>Åbne / lukke faktor</dt><dd>0,96 / 1,04</dd></div></dl>
+            <dl class="kv"><div><dt>Preheat adv.</dt><dd>0,35 °C</dd></div><div><dt>Seneste fejl</dt><dd class="">Ingen</dd></div></dl>
+          </div>
+          <footer class="panel-foot">
+            <button class="btn" type="submit" name="action" value="reset_fault" disabled>Nulstil fejl</button>
+            <details class="confirm">
+              <summary class="btn danger">Nulstil og genlær…</summary>
+              <p class="note">Sletter de lærte faktorer for Z4. Motoren lærer igen ved næste bevægelse.</p>
+              <button class="btn danger" type="submit" name="action" value="reset_relearn">Nulstil og genlær Z4</button>
+            </details>
+          </footer>
+        </form>
+      </section>
+      <section class="view" id="v-conf-z5" aria-labelledby="h-conf-z5">
+        <header class="view-head"><h2 id="h-conf-z5">Z5 Stue rum 2</h2><p>Opsætning af zonen</p></header>
+
+        <header class="section-head"><span>Zone</span></header>
+
+        <form class="panel c6" data-save="zone/5/room">
+          <header class="panel-head"><h3>Rum og følere</h3><button class="help-btn" type="button" popovertarget="help-zone-room" style="anchor-name:--a-help-zone-room" aria-label="Hjælp: Rum og følere">?</button></header>
+          <div class="subs cols-2">
+            <div class="sub">
+              <h4>Rum</h4>
+              <p class="msg violet"><span><b>Grupperet med Z4.</b> Mål og tidsplan styres fra Z4; følere og gulv indstilles her.</span></p>
+              <label class="switch"><span class="switch-text"><b>Zone aktiveret</b></span><input type="checkbox" role="switch" name="z5_enabled" checked></label>
+              <div class="field"><label for="z5_name">Navn</label><input class="input" id="z5_name" name="z5_name" value="Stue rum 2" maxlength="24"></div>
+              <div class="field"><label for="z5_area">Areal</label><div class="stepper"><button type="button" data-step="-1" aria-label="Sænk areal">−</button><span class="value"><input type="number" inputmode="decimal" id="z5_area" name="z5_area" value="18.0" min="0" max="200" step="0.5"><span class="unit">m²</span></span><button type="button" data-step="1" aria-label="Hæv areal">+</button></div></div>
+              <div class="field"><label for="z5_merge">Gruppér med<span class="hint">Ét rum: fælles mål, ventiler åbner ens</span></label><select class="select" id="z5_merge" name="z5_merge"><option value="">Ingen</option><option value="1">Z1 Josephine</option><option value="2">Z2 Laura</option><option value="3">Z3 Toilet</option><option value="4" selected>Z4 Stue rum 1</option><option value="6">Z6 Soveværelse</option></select></div>
+            </div>
+            <div class="sub">
+              <h4>Følere</h4>
+              <div class="field"><span class="label">Rumtemperatur fra</span><div class="seg" role="radiogroup" aria-label="Rumtemperatur fra"><label><input type="radio" name="z5_src" value="probe" checked><span>Probe</span></label><label><input type="radio" name="z5_src" value="ble"><span>BLE</span></label></div></div>
+              <div class="field">
+                <label for="z5_ble">BLE-sensor (MAC)<span class="hint">BTHome, fx Shelly BLU H&amp;T</span></label>
+                <div class="pair wide-first">
+                  <input class="input" id="z5_ble" name="z5_ble" placeholder="AA:BB:CC:DD:EE:FF" pattern="^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$" autocomplete="off" spellcheck="false">
+                  <button type="button" class="btn" data-action="ble-scan" data-zone="5">Scan</button>
+                </div>
+              </div>
+              <div class="field"><label for="z5_ret">Returføler</label><select class="select" id="z5_ret" name="z5_ret"><option value="1">Probe 1</option><option value="2">Probe 2</option><option value="3">Probe 3</option><option value="4">Probe 4</option><option value="5" selected>Probe 5</option><option value="6">Probe 6</option><option value="7">Probe 7</option><option value="8">Probe 8</option></select></div>
+            </div>
+          </div>
+          <footer class="panel-foot"><button class="btn primary" type="submit">Gem rum og følere</button></footer>
+        </form>
+
+        <form class="panel c6" data-save="zone/5/floor">
+          <header class="panel-head"><h3>Gulv og vejr</h3><button class="help-btn" type="button" popovertarget="help-zone-floor" style="anchor-name:--a-help-zone-floor" aria-label="Hjælp: Gulv og vejr">?</button></header>
+          <div class="subs cols-2">
+            <div class="sub">
+              <h4>Gulv og rør</h4>
+              <div class="field"><label for="z5_spacing">Rørafstand C-C</label><div class="stepper"><button type="button" data-step="-1" aria-label="Sænk rørafstand c-c">−</button><span class="value"><input type="number" inputmode="decimal" id="z5_spacing" name="z5_spacing" value="150" min="50" max="300" step="25"><span class="unit">mm</span></span><button type="button" data-step="1" aria-label="Hæv rørafstand c-c">+</button></div></div>
+              <div class="field"><label for="z5_pipe">Rørtype</label><select class="select" id="z5_pipe" name="z5_pipe"><option>PEX 12mm</option><option>PEX 14mm</option><option selected>PEX 16mm</option><option>PEX 17mm</option><option>PEX 18mm</option><option>PEX 20mm</option><option>ALUPEX 16mm</option><option>ALUPEX 20mm</option><option>Unknown</option></select></div>
+              <div class="field"><label for="z5_slab">Gulvkonstruktion</label><select class="select" id="z5_slab" name="z5_slab"><option value="unset">Ikke sat</option><option value="cast_concrete">Støbt beton</option><option value="screed">Spartel</option><option value="dry_plates">Tørre plader</option><option value="timber_joists">Træbjælker</option></select></div>
+              <div class="field"><label for="z5_covering">Belægning</label><select class="select" id="z5_covering" name="z5_covering"><option value="unset">Ikke sat</option><option value="tile_stone">Flise / sten</option><option value="vinyl_linoleum">Vinyl / linoleum</option><option value="parquet_laminate">Parket / laminat</option><option value="carpet">Tæppe</option></select></div>
+              <div class="field"><label for="z5_thick">Aktiv tykkelse</label><div class="stepper"><button type="button" data-step="-1" aria-label="Sænk aktiv tykkelse">−</button><span class="value"><input type="number" inputmode="decimal" id="z5_thick" name="z5_thick" value="0.0" min="0" max="15" step="0.5"><span class="unit">cm</span></span><button type="button" data-step="1" aria-label="Hæv aktiv tykkelse">+</button></div></div>
+              <div class="field"><label for="z5_lead">Termisk lead</label><div class="stepper"><button type="button" data-step="-1" aria-label="Sænk termisk lead">−</button><span class="value"><input type="number" inputmode="decimal" id="z5_lead" name="z5_lead" value="3.0" min="0" max="12" step="0.5"><span class="unit">t</span></span><button type="button" data-step="1" aria-label="Hæv termisk lead">+</button></div></div>
+            </div>
+            <div class="sub">
+              <h4>Vejr-preload</h4>
+              <div class="field"><span class="label">Ydervægge</span><div class="compass" role="group" aria-label="Ydervægge"><i class="c"></i><label data-wall="n"><input type="checkbox" name="z5_wall" value="n" aria-label="Nord"><span>N</span></label><label data-wall="e"><input type="checkbox" name="z5_wall" value="e" aria-label="Øst"><span>Ø</span></label><label data-wall="s"><input type="checkbox" name="z5_wall" value="s" checked aria-label="Syd"><span>S</span></label><label data-wall="w"><input type="checkbox" name="z5_wall" value="w" checked aria-label="Vest"><span>V</span></label></div></div>
+              <div class="field"><label for="z5_wind">Vindeksponering</label><div class="stepper"><button type="button" data-step="-1" aria-label="Sænk vindeksponering">−</button><span class="value"><input type="number" inputmode="decimal" id="z5_wind" name="z5_wind" value="1.0" min="0" max="2" step="0.1"><span class="unit">×</span></span><button type="button" data-step="1" aria-label="Hæv vindeksponering">+</button></div></div>
+              <div class="field"><label for="z5_solar">Solindfald</label><div class="stepper"><button type="button" data-step="-1" aria-label="Sænk solindfald">−</button><span class="value"><input type="number" inputmode="decimal" id="z5_solar" name="z5_solar" value="0.6" min="0" max="2" step="0.1"><span class="unit">×</span></span><button type="button" data-step="1" aria-label="Hæv solindfald">+</button></div></div>
+            </div>
+          </div>
+          <footer class="panel-foot"><button class="btn primary" type="submit">Gem gulv og vejr</button></footer>
+        </form>
+
+        <form class="panel" data-save="zone/5/motor">
+          <header class="panel-head"><h3>Motor</h3><button class="help-btn" type="button" popovertarget="help-zone-motor" style="anchor-name:--a-help-zone-motor" aria-label="Hjælp: Motor">?</button><span class="badge ok">Lært</span></header>
+          <div class="subs cols-2">
+            <dl class="kv"><div><dt>Åbne / lukke ripples</dt><dd>412 / 398</dd></div><div><dt>Åbne / lukke faktor</dt><dd>0,96 / 1,04</dd></div></dl>
+            <dl class="kv"><div><dt>Preheat adv.</dt><dd>0,35 °C</dd></div><div><dt>Seneste fejl</dt><dd class="">Ingen</dd></div></dl>
+          </div>
+          <footer class="panel-foot">
+            <button class="btn" type="submit" name="action" value="reset_fault" disabled>Nulstil fejl</button>
+            <details class="confirm">
+              <summary class="btn danger">Nulstil og genlær…</summary>
+              <p class="note">Sletter de lærte faktorer for Z5. Motoren lærer igen ved næste bevægelse.</p>
+              <button class="btn danger" type="submit" name="action" value="reset_relearn">Nulstil og genlær Z5</button>
+            </details>
+          </footer>
+        </form>
+      </section>
+      <section class="view" id="v-conf-z6" aria-labelledby="h-conf-z6">
+        <header class="view-head"><h2 id="h-conf-z6">Z6 Soveværelse</h2><p>Opsætning af zonen</p></header>
+
+        <header class="section-head"><span>Zone</span></header>
+
+        <form class="panel c6" data-save="zone/6/room">
+          <header class="panel-head"><h3>Rum og følere</h3><button class="help-btn" type="button" popovertarget="help-zone-room" style="anchor-name:--a-help-zone-room" aria-label="Hjælp: Rum og følere">?</button></header>
+          <div class="subs cols-2">
+            <div class="sub">
+              <h4>Rum</h4>
+              
+              <label class="switch"><span class="switch-text"><b>Zone aktiveret</b></span><input type="checkbox" role="switch" name="z6_enabled" checked></label>
+              <div class="field"><label for="z6_name">Navn</label><input class="input" id="z6_name" name="z6_name" value="Soveværelse" maxlength="24"></div>
+              <div class="field"><label for="z6_area">Areal</label><div class="stepper"><button type="button" data-step="-1" aria-label="Sænk areal">−</button><span class="value"><input type="number" inputmode="decimal" id="z6_area" name="z6_area" value="14.0" min="0" max="200" step="0.5"><span class="unit">m²</span></span><button type="button" data-step="1" aria-label="Hæv areal">+</button></div></div>
+              <div class="field"><label for="z6_merge">Gruppér med<span class="hint">Ét rum: fælles mål, ventiler åbner ens</span></label><select class="select" id="z6_merge" name="z6_merge"><option value="">Ingen</option><option value="1">Z1 Josephine</option><option value="2">Z2 Laura</option><option value="3">Z3 Toilet</option><option value="4">Z4 Stue rum 1</option><option value="5">Z5 Stue rum 2</option></select></div>
+            </div>
+            <div class="sub">
+              <h4>Følere</h4>
+              <div class="field"><span class="label">Rumtemperatur fra</span><div class="seg" role="radiogroup" aria-label="Rumtemperatur fra"><label><input type="radio" name="z6_src" value="probe"><span>Probe</span></label><label><input type="radio" name="z6_src" value="ble" checked><span>BLE</span></label></div></div>
+              <div class="field">
+                <label for="z6_ble">BLE-sensor (MAC)<span class="hint">BTHome, fx Shelly BLU H&amp;T</span></label>
+                <div class="pair wide-first">
+                  <input class="input" id="z6_ble" name="z6_ble" placeholder="AA:BB:CC:DD:EE:FF" pattern="^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$" autocomplete="off" spellcheck="false">
+                  <button type="button" class="btn" data-action="ble-scan" data-zone="6">Scan</button>
+                </div>
+              </div>
+              <div class="field"><label for="z6_ret">Returføler</label><select class="select" id="z6_ret" name="z6_ret"><option value="1">Probe 1</option><option value="2">Probe 2</option><option value="3">Probe 3</option><option value="4">Probe 4</option><option value="5">Probe 5</option><option value="6" selected>Probe 6</option><option value="7">Probe 7</option><option value="8">Probe 8</option></select></div>
+            </div>
+          </div>
+          <footer class="panel-foot"><button class="btn primary" type="submit">Gem rum og følere</button></footer>
+        </form>
+
+        <form class="panel c6" data-save="zone/6/floor">
+          <header class="panel-head"><h3>Gulv og vejr</h3><button class="help-btn" type="button" popovertarget="help-zone-floor" style="anchor-name:--a-help-zone-floor" aria-label="Hjælp: Gulv og vejr">?</button></header>
+          <div class="subs cols-2">
+            <div class="sub">
+              <h4>Gulv og rør</h4>
+              <div class="field"><label for="z6_spacing">Rørafstand C-C</label><div class="stepper"><button type="button" data-step="-1" aria-label="Sænk rørafstand c-c">−</button><span class="value"><input type="number" inputmode="decimal" id="z6_spacing" name="z6_spacing" value="200" min="50" max="300" step="25"><span class="unit">mm</span></span><button type="button" data-step="1" aria-label="Hæv rørafstand c-c">+</button></div></div>
+              <div class="field"><label for="z6_pipe">Rørtype</label><select class="select" id="z6_pipe" name="z6_pipe"><option>PEX 12mm</option><option>PEX 14mm</option><option>PEX 16mm</option><option>PEX 17mm</option><option>PEX 18mm</option><option>PEX 20mm</option><option selected>ALUPEX 16mm</option><option>ALUPEX 20mm</option><option>Unknown</option></select></div>
+              <div class="field"><label for="z6_slab">Gulvkonstruktion</label><select class="select" id="z6_slab" name="z6_slab"><option value="unset">Ikke sat</option><option value="cast_concrete">Støbt beton</option><option value="screed">Spartel</option><option value="dry_plates">Tørre plader</option><option value="timber_joists">Træbjælker</option></select></div>
+              <div class="field"><label for="z6_covering">Belægning</label><select class="select" id="z6_covering" name="z6_covering"><option value="unset">Ikke sat</option><option value="tile_stone">Flise / sten</option><option value="vinyl_linoleum">Vinyl / linoleum</option><option value="parquet_laminate">Parket / laminat</option><option value="carpet">Tæppe</option></select></div>
+              <div class="field"><label for="z6_thick">Aktiv tykkelse</label><div class="stepper"><button type="button" data-step="-1" aria-label="Sænk aktiv tykkelse">−</button><span class="value"><input type="number" inputmode="decimal" id="z6_thick" name="z6_thick" value="0.0" min="0" max="15" step="0.5"><span class="unit">cm</span></span><button type="button" data-step="1" aria-label="Hæv aktiv tykkelse">+</button></div></div>
+              <div class="field"><label for="z6_lead">Termisk lead</label><div class="stepper"><button type="button" data-step="-1" aria-label="Sænk termisk lead">−</button><span class="value"><input type="number" inputmode="decimal" id="z6_lead" name="z6_lead" value="3.0" min="0" max="12" step="0.5"><span class="unit">t</span></span><button type="button" data-step="1" aria-label="Hæv termisk lead">+</button></div></div>
+            </div>
+            <div class="sub">
+              <h4>Vejr-preload</h4>
+              <div class="field"><span class="label">Ydervægge</span><div class="compass" role="group" aria-label="Ydervægge"><i class="c"></i><label data-wall="n"><input type="checkbox" name="z6_wall" value="n" checked aria-label="Nord"><span>N</span></label><label data-wall="e"><input type="checkbox" name="z6_wall" value="e" aria-label="Øst"><span>Ø</span></label><label data-wall="s"><input type="checkbox" name="z6_wall" value="s" aria-label="Syd"><span>S</span></label><label data-wall="w"><input type="checkbox" name="z6_wall" value="w" aria-label="Vest"><span>V</span></label></div></div>
+              <div class="field"><label for="z6_wind">Vindeksponering</label><div class="stepper"><button type="button" data-step="-1" aria-label="Sænk vindeksponering">−</button><span class="value"><input type="number" inputmode="decimal" id="z6_wind" name="z6_wind" value="1.0" min="0" max="2" step="0.1"><span class="unit">×</span></span><button type="button" data-step="1" aria-label="Hæv vindeksponering">+</button></div></div>
+              <div class="field"><label for="z6_solar">Solindfald</label><div class="stepper"><button type="button" data-step="-1" aria-label="Sænk solindfald">−</button><span class="value"><input type="number" inputmode="decimal" id="z6_solar" name="z6_solar" value="0.2" min="0" max="2" step="0.1"><span class="unit">×</span></span><button type="button" data-step="1" aria-label="Hæv solindfald">+</button></div></div>
+            </div>
+          </div>
+          <footer class="panel-foot"><button class="btn primary" type="submit">Gem gulv og vejr</button></footer>
+        </form>
+
+        <form class="panel" data-save="zone/6/motor">
+          <header class="panel-head"><h3>Motor</h3><button class="help-btn" type="button" popovertarget="help-zone-motor" style="anchor-name:--a-help-zone-motor" aria-label="Hjælp: Motor">?</button><span class="badge warn">Kræver læring</span></header>
+          <div class="subs cols-2">
+            <dl class="kv"><div><dt>Åbne / lukke ripples</dt><dd>—</dd></div><div><dt>Åbne / lukke faktor</dt><dd>—</dd></div></dl>
+            <dl class="kv"><div><dt>Preheat adv.</dt><dd>0,00 °C</dd></div><div><dt>Seneste fejl</dt><dd class="bad">Endestop timeout</dd></div></dl>
+          </div>
+          <footer class="panel-foot">
+            <button class="btn" type="submit" name="action" value="reset_fault">Nulstil fejl</button>
+            <details class="confirm">
+              <summary class="btn danger">Nulstil og genlær…</summary>
+              <p class="note">Sletter de lærte faktorer for Z6. Motoren lærer igen ved næste bevægelse.</p>
+              <button class="btn danger" type="submit" name="action" value="reset_relearn">Nulstil og genlær Z6</button>
+            </details>
+          </footer>
+        </form>
+      </section><div id="help-zone-room" popover class="help-pop" style="position-anchor:--a-help-zone-room"><p>Rummets navn, areal, gruppering og temperaturkilde. Grupperede zoner deler mål; ventiler åbner ens.</p><a href="https://github.com/Birkemosen/lune/blob/main/lune-v6/docs/Manual.md#zone-room">Læs mere</a></div><div id="help-zone-floor" popover class="help-pop" style="position-anchor:--a-help-zone-floor"><p>Rørlægning, dæk/overflade og vejrpåvirkning. Ydervægge og vind/sol styrer preload fra Touch.</p><a href="https://github.com/Birkemosen/lune/blob/main/lune-v6/docs/Manual.md#zone-floor">Læs mere</a></div><div id="help-zone-motor" popover class="help-pop" style="position-anchor:--a-help-zone-motor"><p>Lært slaglængde og seneste fejl. Genindlæring nulstiller kalibrering og kører endestop-læring igen.</p><a href="https://github.com/Birkemosen/lune/blob/main/lune-v6/docs/Manual.md#zone-motor">Læs mere</a></div>
+  </main>
+</div>
+
+<!-- Strenge til binderen: statusser og beskeder der skrives ved runtime -->
+<script type="application/json" id="i18n">{"state.calling":"Kalder varme","state.idle":"Hviler","state.fault":"Motorfejl","state.off":"Ikke i brug","tile.fault":"Fejl","badge.calling":"Kalder","sys.dt":"ΔT {dt}°","sys.dtstate":"ΔT {dt}° · kalder","dash.sys.sub":"{zones} zoner · {calling} kalder varme · {faults} fejl","common.days":"dage","rt.savedOk":"Gemt","rt.saveFailed":"Kunne ikke gemme. Tjek forbindelsen til enheden.","rt.secondsAgo":"{v} s siden","rt.minutesAgo":"{v} min siden","rt.offline":"Offline","common.learned":"Lært","common.needsLearning":"Kræver læring","device.copyDiag":"Kopiér diagnostik","device.copied":"Kopieret","device.sample":"Stueetage manifold","_dec":",","_lang":"da"}</script>
+
+<!-- Progressive enhancement: +/−, luk enhedsmenu, hjælp-popover nær ?, filnavn, submit-hook -->
+<script>
+(function(){
+var helpBtn=null;
+function placeHelp(pop, btn){
+  if(!pop||!btn||window.matchMedia('(max-width:599.98px)').matches) return;
+  var r=btn.getBoundingClientRect(), gap=8;
+  pop.style.position='fixed';
+  pop.style.inset='unset';
+  pop.style.right='auto';
+  pop.style.bottom='auto';
+  pop.style.margin='0';
+  // Mål efter layout i top-lag
+  pop.style.top='0px';
+  pop.style.left='0px';
+  var w=pop.offsetWidth||280, h=pop.offsetHeight||120;
+  var left=Math.min(Math.max(8, r.left), Math.max(8, window.innerWidth-w-8));
+  var top=r.bottom+gap;
+  if(top+h>window.innerHeight-8) top=Math.max(8, r.top-h-gap);
+  pop.style.top=top+'px';
+  pop.style.left=left+'px';
+}
+document.addEventListener('pointerdown',function(e){
+  var h=e.target.closest&&e.target.closest('.help-btn');
+  if(h) helpBtn=h;
+}, true);
+document.addEventListener('beforetoggle',function(e){
+  if(e.newState!=='open'||!e.target.classList||!e.target.classList.contains('help-pop')) return;
+  var id=e.target.id;
+  var btn=(helpBtn&&helpBtn.getAttribute('popovertarget')===id)?helpBtn:null;
+  if(!btn&&document.activeElement&&document.activeElement.getAttribute&&document.activeElement.getAttribute('popovertarget')===id)
+    btn=document.activeElement;
+  if(!btn) btn=document.querySelector('[popovertarget="'+id+'"]');
+  if(btn){ helpBtn=btn; placeHelp(e.target, btn); }
+}, true);
+document.addEventListener('toggle',function(e){
+  if(e.newState!=='open'||!e.target.classList||!e.target.classList.contains('help-pop')) return;
+  var id=e.target.id;
+  var btn=(helpBtn&&helpBtn.getAttribute('popovertarget')===id)?helpBtn:document.querySelector('[popovertarget="'+id+'"]');
+  if(btn) placeHelp(e.target, btn);
+}, true);
+document.addEventListener('click',function(e){
+  var h=e.target.closest&&e.target.closest('.help-btn');
+  if(h){
+    helpBtn=h;
+    var id=h.getAttribute('popovertarget');
+    var pop=id&&document.getElementById(id);
+    if(pop) requestAnimationFrame(function(){ if(pop.matches(':popover-open')) placeHelp(pop,h); });
+  }
+  var b=e.target.closest('[data-step]');
+  if(b&&!b.disabled){var i=b.parentNode.querySelector('input');b.dataset.step>0?i.stepUp():i.stepDown();i.dispatchEvent(new Event('change',{bubbles:true}));}
+  var d=document.querySelector('.device[open]');if(d&&!d.contains(e.target))d.open=false;
+});
+document.addEventListener('change',function(e){
+  var inp=e.target; if(!inp||inp.type!=='file') return;
+  var lab=inp.closest('label.file'); if(!lab) return;
+  var name=lab.querySelector('.file-name'); if(!name) return;
+  name.textContent=(inp.files&&inp.files[0])?inp.files[0].name:(name.dataset.empty||'');
+});
+document.addEventListener('submit',function(e){e.preventDefault();document.dispatchEvent(new CustomEvent('lune:save',{detail:{key:e.target.dataset.save,data:new FormData(e.target,e.submitter)}}));});
+})();
+</script>
+<script src="/binder.js" defer></script>
+</body>
+</html>

@@ -57,5 +57,6 @@ python3 lune-v6/hardware/lune-v6-rev3.2/check_design.py
 
 Lune V6 remains a safe local manifold node. Lune Touch / Mini owns whole-house
 coordination, forecast preload, learned house behavior, and command strategy in its
-separate private repository. Shared dashboard tokens and brand marks live in the
-sibling [`lds`](https://github.com/Birkemosen/lds) repository; runtime implementations remain product-specific.
+separate private repository. Shared dashboard tokens and CSS components live in the
+sibling [`lune-design-system`](https://github.com/Birkemosen/lune-design-system)
+repository; runtime HTML shells remain product-specific.

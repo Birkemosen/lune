@@ -5,12 +5,13 @@ import {
   setEntity, setLive, sampleHistory, addActivity, setI2cResult,
   shouldSuppressStateUpdate, msUntilStateUnsuppressed, getDashboardValue, subscribeDashboard,
 } from './store.js';
-import { fetchHistory, fetchLogs } from './api.js';
+import { fetchHistory, fetchLogs, fetchPhysicsAlerts } from './api.js';
 import { gkey } from '../utils/keys.js';
 import { zoneLearningProgress } from '../utils/learning-progress.js';
 
 let pollAbortController = null;
 let historyRefreshTimer = null;
+let physicsAlertTimer = null;
 let logsRefreshTimer = null;
 let revisionTimer = null;
 let lastRevision = null;
@@ -130,6 +131,14 @@ function ensureAuxiliaryPollers() {
     historyRefreshTimer = setInterval(() => {
       if (labOwnsHttp()) return;
       fetchHistory();
+    }, 5 * 60 * 1000);
+  }
+  if (!labOwnsHttp()) fetchPhysicsAlerts();
+  // Soft poll for floor.unset / high-R attention (same cadence as history).
+  if (!physicsAlertTimer) {
+    physicsAlertTimer = setInterval(() => {
+      if (labOwnsHttp()) return;
+      fetchPhysicsAlerts();
     }, 5 * 60 * 1000);
   }
   // Live device logs: poll fast (~3 s) so the Logs view feels live.

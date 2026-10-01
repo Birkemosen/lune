@@ -85,4 +85,8 @@ lv6_dashboard:
     - motor_6_last_fault
   reset_reason_id: reset_reason_text
   firmware_update_id: firmware_update
-  dashboard_js: ../web/dashboard.js
+  ui_css: ../web/ui/lune-ui.css
+  ui_html_en: ../web/ui/en/index.html
+  ui_html_da: ../web/ui/da/index.html
+  binder_js: ../web/ui/binder.js
+  dashboard_js: ../web/ui/binder.js

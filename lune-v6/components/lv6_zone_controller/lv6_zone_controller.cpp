@@ -16,6 +16,7 @@
 #include "preheat_policy.h"
 #include "probe_mapping.h"
 #include "thermal_model.h"
+#include "../lv6_config_store/group_model.h"
 #include "esphome/core/log.h"
 #include "esp_timer.h"
 #include <algorithm>
@@ -31,8 +32,6 @@ namespace lv6 {
 
 static const char *const TAG = "hv6_zone_ctrl";
 static constexpr float ALPHA_TOP = 10.8f;  // W/(m²·K) convective+radiative at floor
-
-static float floor_absorb_factor(FloorType type);
 
 // =============================================================================
 // ESPHome Lifecycle
@@ -736,14 +735,13 @@ void Lv6ZoneController::set_zone_sync(uint8_t zone, int8_t target_zone) {
   if (target_zone >= static_cast<int8_t>(NUM_ZONES))
     return;
   auto cfg = config_store_->get_config();
-  // Prevent self-sync
   if (target_zone == static_cast<int8_t>(zone))
     target_zone = -1;
 
-  // Keep merge groups as stars: if the chosen target is already a secondary,
-  // store the root primary instead of creating a chain.
+  // Resolve target to an explicit group primary (star topology).
   if (target_zone >= 0) {
-    int8_t root = target_zone;
+    int8_t root = group_model::primary_for_loop(cfg.groups, cfg.zones,
+                                                static_cast<uint8_t>(target_zone));
     for (uint8_t guard = 0; guard < NUM_ZONES; guard++) {
       int8_t next = cfg.zones[root].sync_to_zone;
       if (next < 0 || next >= static_cast<int8_t>(NUM_ZONES))
@@ -757,10 +755,45 @@ void Lv6ZoneController::set_zone_sync(uint8_t zone, int8_t target_zone) {
     target_zone = root;
   }
 
-  if (cfg.zones[zone].sync_to_zone == target_zone)
+  // Rebuild groups from the desired sync edge (atomic replace).
+  ZoneConfig zones_tmp[NUM_ZONES];
+  for (uint8_t i = 0; i < NUM_ZONES; i++)
+    zones_tmp[i] = cfg.zones[i];
+  zones_tmp[zone].sync_to_zone = target_zone;
+  GroupsConfig next = group_model::from_sync_to_zone(zones_tmp);
+  // Preserve include_in_house / sensor_ids / revision where group_id matches.
+  for (uint8_t i = 0; i < MAX_GROUPS; i++) {
+    if (!group_model::group_active(next.groups[i]))
+      continue;
+    for (uint8_t j = 0; j < MAX_GROUPS; j++) {
+      if (!group_model::group_active(cfg.groups.groups[j]))
+        continue;
+      if (cfg.groups.groups[j].primary_loop == next.groups[i].primary_loop) {
+        next.groups[i].include_in_house_temperature =
+            cfg.groups.groups[j].include_in_house_temperature;
+        next.groups[i].revision = cfg.groups.groups[j].revision + 1;
+        std::memcpy(next.groups[i].sensor_ids, cfg.groups.groups[j].sensor_ids,
+                    sizeof(next.groups[i].sensor_ids));
+        if (cfg.groups.groups[j].group_id[0] != '\0')
+          std::memcpy(next.groups[i].group_id, cfg.groups.groups[j].group_id,
+                      sizeof(next.groups[i].group_id));
+        break;
+      }
+    }
+  }
+  bool faults[NUM_ZONES]{};
+  if (valve_controller_) {
+    for (uint8_t i = 0; i < NUM_ZONES; i++) {
+      auto telem = valve_controller_->get_telemetry(i);
+      faults[i] = telem.last_fault_code != FaultCode::NONE;
+    }
+  }
+  auto err = group_model::validate(next, faults);
+  if (err != group_model::ValidateError::OK) {
+    ESP_LOGW(TAG, "Zone %d sync rejected: %s", zone + 1, group_model::validate_error_string(err));
     return;
-  cfg.zones[zone].sync_to_zone = target_zone;
-  config_store_->update_zone(zone, cfg.zones[zone]);
+  }
+  config_store_->update_groups(next);
   ESP_LOGI(TAG, "Zone %d sync: %s", zone + 1,
            target_zone >= 0 ? ("Zone " + std::to_string(target_zone + 1)).c_str() : "None");
 }
@@ -1052,31 +1085,125 @@ void Lv6ZoneController::run_cycle_() {
   // overheat cutoff is raised (per zone, weighted by absorb capacity rank).
   update_preheat_absorb_(cfg, zone_temps, zone_setpoints);
 
-  // Capacity ranking: thermal mass × floor seed (learned mass replaces seed later).
+  // Capacity ranking per group (contract §7): absorb_capacity_kwh descending.
   {
-    struct CapEntry { uint8_t zi; float cap; };
+    const HousePhysicsConfig house = cfg.house_physics;
+    struct CapEntry { uint8_t zi; float cap; float r_eff; uint8_t gid; };
     CapEntry caps[NUM_ZONES];
     uint8_t ncap = 0;
+    float group_cap[MAX_GROUPS]{};
+    float group_r[MAX_GROUPS]{};
+    float absorb_band = cfg.control.preheat_absorb_band_c > 0.0f ? cfg.control.preheat_absorb_band_c : 1.0f;
+
+    for (uint8_t gi = 0; gi < MAX_GROUPS; gi++) {
+      const GroupConfig &g = cfg.groups.groups[gi];
+      if (!group_model::group_active(g) || g.member_mask == 0)
+        continue;
+      float sum = 0.0f;
+      float r_sum = 0.0f;
+      uint8_t r_n = 0;
+      bool any_fresh = false;
+      bool any_fault = false;
+      float t_room = NAN;
+      float sp = NAN;
+      float t_sum = 0.0f;
+      uint8_t t_n = 0;
+      const uint8_t mask = group_model::group_loop_mask(g);
+      for (uint8_t i = 0; i < NUM_ZONES; i++) {
+        if ((mask & (1u << i)) == 0)
+          continue;
+        if (!cfg.zones[i].enabled) {
+          any_fault = true;
+          continue;
+        }
+        if (std::isfinite(zone_temps[i])) {
+          any_fresh = true;
+          t_sum += zone_temps[i];
+          t_n++;
+        }
+        sp = zone_setpoints[g.primary_loop];
+        const auto th = thermal_model::estimate(cfg.zones[i], house);
+        sum += thermal_model::c_slab_eff_kwh_per_k(cfg.zones[i], th) * th.absorb_headroom_k;
+        if (std::isfinite(th.r_m2k_per_w)) {
+          r_sum += th.r_m2k_per_w;
+          r_n++;
+        }
+      }
+      if (t_n > 0)
+        t_room = t_sum / static_cast<float>(t_n);
+      float m_band = 0.0f;
+      if (std::isfinite(t_room) && std::isfinite(sp)) {
+        const float t_max = sp + absorb_band;
+        const float den = t_max - sp;
+        if (den > 1e-3f)
+          m_band = std::clamp((t_max - t_room) / den, 0.0f, 1.0f);
+      }
+      if (!any_fresh || any_fault || !(m_band > 0.0f))
+        group_cap[gi] = 0.0f;
+      else
+        group_cap[gi] = m_band * sum;
+      group_r[gi] = r_n > 0 ? r_sum / static_cast<float>(r_n) : 1.0f;
+    }
+
+    // Singletons (loops not in an explicit multi-member group)
     for (uint8_t i = 0; i < NUM_ZONES; i++) {
       absorb_capacity_rank_[i] = 0;
       if (!cfg.zones[i].enabled)
         continue;
-      const auto th = thermal_model::estimate(cfg.zones[i]);
-      float mass = std::isfinite(th.thermal_mass_kwh_per_k) ? th.thermal_mass_kwh_per_k : 1.0f;
-      caps[ncap++] = {i, mass * floor_absorb_factor(cfg.zones[i].floor_type)};
+      const int8_t gi = group_model::find_group_index(cfg.groups, i);
+      float cap = 0.0f;
+      float r_eff = 1.0f;
+      uint8_t gid = i;
+      if (gi >= 0 && group_model::group_active(cfg.groups.groups[gi]) &&
+          cfg.groups.groups[gi].member_mask != 0) {
+        // Only rank the primary of multi-member groups; members inherit.
+        if (cfg.groups.groups[gi].primary_loop != static_cast<int8_t>(i))
+          continue;
+        cap = group_cap[gi];
+        r_eff = group_r[gi];
+        gid = static_cast<uint8_t>(gi);
+      } else {
+        const auto th = thermal_model::estimate(cfg.zones[i], house);
+        float m_band = 0.0f;
+        if (std::isfinite(zone_temps[i]) && std::isfinite(zone_setpoints[i])) {
+          const float t_max = zone_setpoints[i] + absorb_band;
+          const float den = t_max - zone_setpoints[i];
+          if (den > 1e-3f)
+            m_band = std::clamp((t_max - zone_temps[i]) / den, 0.0f, 1.0f);
+        }
+        if (std::isfinite(zone_temps[i]) && m_band > 0.0f)
+          cap = m_band * thermal_model::c_slab_eff_kwh_per_k(cfg.zones[i], th) *
+                th.absorb_headroom_k;
+        r_eff = std::isfinite(th.r_m2k_per_w) ? th.r_m2k_per_w : 1.0f;
+      }
+      if (!(cap > 0.0f))
+        continue;
+      caps[ncap++] = {i, cap, r_eff, gid};
     }
-    // Sort descending capacity (simple insertion — N≤6).
     for (uint8_t a = 1; a < ncap; a++) {
       CapEntry key = caps[a];
       int b = static_cast<int>(a) - 1;
-      while (b >= 0 && caps[b].cap < key.cap) {
+      while (b >= 0 && (caps[b].cap < key.cap ||
+                        (caps[b].cap == key.cap &&
+                         (caps[b].r_eff > key.r_eff ||
+                          (caps[b].r_eff == key.r_eff && caps[b].gid > key.gid))))) {
         caps[b + 1] = caps[b];
         b--;
       }
       caps[b + 1] = key;
     }
-    for (uint8_t r = 0; r < ncap; r++)
-      absorb_capacity_rank_[caps[r].zi] = static_cast<uint8_t>(r + 1);  // 1 = highest
+    for (uint8_t r = 0; r < ncap; r++) {
+      absorb_capacity_rank_[caps[r].zi] = static_cast<uint8_t>(r + 1);
+      // Propagate rank to group members
+      const int8_t gi = group_model::find_group_index(cfg.groups, caps[r].zi);
+      if (gi >= 0) {
+        const uint8_t mask = group_model::group_loop_mask(cfg.groups.groups[gi]);
+        for (uint8_t m = 0; m < NUM_ZONES; m++) {
+          if ((mask & (1u << m)) != 0)
+            absorb_capacity_rank_[m] = static_cast<uint8_t>(r + 1);
+        }
+      }
+    }
   }
 
   // Flow allocator: heat-pump mode only (continuous share across demanding zones).
@@ -1094,8 +1221,8 @@ void Lv6ZoneController::run_cycle_() {
     flow_allocator::ZoneSample samples[flow_allocator::MAX_ZONES]{};
     for (uint8_t i = 0; i < NUM_ZONES; i++) {
       samples[i].enabled = cfg.zones[i].enabled;
-      const auto th = thermal_model::estimate(cfg.zones[i]);
-      samples[i].ua_w_per_k = th.plausible ? th.ua_w_per_k : (cfg.zones[i].area_m2 * 2.0f);
+      const auto th = thermal_model::estimate(cfg.zones[i], cfg.house_physics);
+      samples[i].ua_w_per_k = th.plausible ? th.ua_effective_w_per_k : (cfg.zones[i].area_m2 * 2.0f);
       samples[i].temp_c = zone_temps[i];
       samples[i].setpoint_c = zone_setpoints[i];
       samples[i].max_opening_pct = cfg.zones[i].max_opening_pct;
@@ -1151,7 +1278,9 @@ void Lv6ZoneController::run_cycle_() {
     // lower ranks scale down so DEMAND zones reclaim flow first (redistribute).
     float absorb_band = 0.0f;
     if (preheat_absorb_active_.load()) {
-      float cap_scale = floor_absorb_factor(cfg.zones[i].floor_type);
+      float r = 0.0f, headroom = 1.8f;
+      thermal_model::covering_priors(cfg.zones[i].covering, &r, &headroom);
+      float cap_scale = headroom / 3.0f;  // tile_stone baseline
       if (absorb_capacity_rank_[i] > 0) {
         const float rank_scale =
             1.0f - 0.12f * static_cast<float>(absorb_capacity_rank_[i] - 1);
@@ -1195,22 +1324,52 @@ void Lv6ZoneController::run_cycle_() {
       preheat_episode_active_[i] = false;
   }
 
-  // Merge: a zone merged into another (sync_to_zone) shares the room, so after its
-  // position is computed from the merged (mean) temperature and shared setpoint, force
-  // it to the root primary's opening — all grouped valves open EQUALLY instead of
-  // diverging on per-zone hydraulic balance. Temperature averaging already happened above.
-  for (uint8_t i = 0; i < NUM_ZONES; i++) {
-    int8_t primary = sync_roots[i];
-    if (primary == static_cast<int8_t>(i))
+  // Group flow share: within a multi-loop group, distribute the primary's
+  // commanded opening by loop area (or learned Kv when ripples exist) — not
+  // identical valve positions (contract §2.1).
+  for (uint8_t gi = 0; gi < MAX_GROUPS; gi++) {
+    const GroupConfig &g = cfg.groups.groups[gi];
+    if (!group_model::group_active(g) || g.member_mask == 0)
       continue;
-    if (primary < 0 || primary >= static_cast<int8_t>(NUM_ZONES))
+    if (!cfg.zones[g.primary_loop].enabled)
       continue;
-    if (!cfg.zones[i].enabled || !cfg.zones[primary].enabled)
+    const uint8_t mask = group_model::group_loop_mask(g);
+    const float primary_open = target_positions[g.primary_loop];
+    float area_sum = 0.0f;
+    float weight[NUM_ZONES]{};
+    for (uint8_t i = 0; i < NUM_ZONES; i++) {
+      if ((mask & (1u << i)) == 0 || !cfg.zones[i].enabled)
+        continue;
+      float w = std::max(cfg.zones[i].area_m2, 0.1f);
+      if (valve_controller_) {
+        auto telem = valve_controller_->get_telemetry(i);
+        if (telem.learned_open_ripples > 0)
+          w *= flow_allocator::kv_at_pct(std::max(primary_open, 30.0f),
+                                         static_cast<float>(telem.learned_open_ripples));
+      }
+      weight[i] = w;
+      area_sum += w;
+    }
+    if (!(area_sum > 0.0f))
       continue;
-    target_positions[i] = target_positions[primary];
-    xSemaphoreTake(snapshot_mutex_, portMAX_DELAY);
-    snapshots_[i].valve_position_pct = target_positions[i];
-    xSemaphoreGive(snapshot_mutex_);
+    // Scale so weighted mean opening ≈ primary command (preserves total Kv roughly).
+    for (uint8_t i = 0; i < NUM_ZONES; i++) {
+      if ((mask & (1u << i)) == 0 || !cfg.zones[i].enabled)
+        continue;
+      const float share = weight[i] / area_sum;
+      // Map share relative to equal split: opening_i = primary * (share / (1/n))
+      uint8_t n = 0;
+      for (uint8_t j = 0; j < NUM_ZONES; j++)
+        if ((mask & (1u << j)) != 0 && cfg.zones[j].enabled)
+          n++;
+      const float equal = n > 0 ? 1.0f / static_cast<float>(n) : 1.0f;
+      float pos = primary_open * (share / equal);
+      pos = std::clamp(pos, 0.0f, cfg.zones[i].max_opening_pct);
+      target_positions[i] = pos;
+      xSemaphoreTake(snapshot_mutex_, portMAX_DELAY);
+      snapshots_[i].valve_position_pct = pos;
+      xSemaphoreGive(snapshot_mutex_);
+    }
   }
 
   // Snapshot demand-driven openings before the minimum-flow floors are applied —
@@ -1440,18 +1599,6 @@ float Lv6ZoneController::read_manifold_return_() const {
 // Zone Classification + Control
 // =============================================================================
 
-// High-thermal-mass floors absorb the most pre-buffered heat; insulating
-// surfaces (carpet, wood) take a smaller band so room air doesn't overshoot.
-static float floor_absorb_factor(FloorType type) {
-  switch (type) {
-    case FloorType::TILE:    return 1.0f;
-    case FloorType::PARQUET: return 0.6f;
-    case FloorType::OAK:     return 0.6f;
-    case FloorType::CARPET:  return 0.4f;
-  }
-  return 0.6f;
-}
-
 // Detect external pre-buffering: hot water arrives at the manifold while no
 // zone demands heat. While active, the overheat cutoff is raised so satisfied
 // zones keep their maintenance opening and the slab can absorb the buffer.
@@ -1464,14 +1611,37 @@ void Lv6ZoneController::update_preheat_absorb_(const DeviceConfig &cfg,
   expire_absorb_arm_if_needed_();
 
   float flow = read_manifold_flow_();
-  float temp_sum = 0.0f;
-  uint8_t temp_count = 0;
+  float ua_temp_sum = 0.0f;
+  float ua_sum = 0.0f;
   bool any_demand = false;
   for (uint8_t i = 0; i < NUM_ZONES; i++) {
     if (!cfg.zones[i].enabled || std::isnan(temps[i]))
       continue;
-    temp_sum += temps[i];
-    temp_count++;
+    // Weight by ua_effective of the loop's group (or the loop itself).
+    const int8_t gi = group_model::find_group_index(cfg.groups, i);
+    bool include = true;
+    if (gi >= 0)
+      include = cfg.groups.groups[gi].include_in_house_temperature;
+    if (!include)
+      continue;
+    // Only count each group once (primary / singleton).
+    if (gi >= 0 && cfg.groups.groups[gi].member_mask != 0 &&
+        cfg.groups.groups[gi].primary_loop != static_cast<int8_t>(i))
+      continue;
+    const auto th = thermal_model::estimate(cfg.zones[i], cfg.house_physics);
+    float ua = th.ua_effective_w_per_k > 0.0f ? th.ua_effective_w_per_k : cfg.zones[i].area_m2;
+    if (gi >= 0 && cfg.groups.groups[gi].member_mask != 0) {
+      ua = 0.0f;
+      const uint8_t mask = group_model::group_loop_mask(cfg.groups.groups[gi]);
+      for (uint8_t m = 0; m < NUM_ZONES; m++) {
+        if ((mask & (1u << m)) == 0)
+          continue;
+        const auto thm = thermal_model::estimate(cfg.zones[m], cfg.house_physics);
+        ua += thm.ua_effective_w_per_k > 0.0f ? thm.ua_effective_w_per_k : cfg.zones[m].area_m2;
+      }
+    }
+    ua_temp_sum += temps[i] * ua;
+    ua_sum += ua;
     float preheat_advance = std::clamp(preheat_advance_c_[i], 0.0f, SIMPLE_PREHEAT_MAX_ADVANCE_C);
     if (temps[i] < setpoints[i] - cfg.control.comfort_band_c + preheat_advance)
       any_demand = true;
@@ -1480,9 +1650,9 @@ void Lv6ZoneController::update_preheat_absorb_(const DeviceConfig &cfg,
   preheat_absorb::DetectInput in{};
   in.enabled = cfg.control.preheat_absorb_enabled;
   in.arm_active = absorb_arm_active_();
-  in.flow_valid = temp_count > 0 && std::isfinite(flow);
+  in.flow_valid = ua_sum > 0.0f && std::isfinite(flow);
   in.flow_c = flow;
-  in.house_avg_c = temp_count > 0 ? temp_sum / static_cast<float>(temp_count) : NAN;
+  in.house_avg_c = ua_sum > 0.0f ? ua_temp_sum / ua_sum : NAN;
   in.any_demand = any_demand;
   in.detect_delta_c = cfg.control.preheat_detect_delta_c;
   in.currently_active = preheat_absorb_active_.load();

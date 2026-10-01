@@ -24,6 +24,10 @@ PORT ?=
 AUTO_PORT := $(strip $(shell ls /dev/cu.usbmodem* /dev/cu.usbserial* /dev/cu.SLAB_USBtoUART* /dev/cu.wchusbserial* 2>/dev/null | head -n 1))
 SERIAL_PORT := $(if $(PORT),$(PORT),$(AUTO_PORT))
 DASHBOARD_SRC_DIR ?= $(ROOT_ABS)/$(DEVICE_DIR)/web/dashboard-src
+BINDER_SRC ?= $(ROOT_ABS)/$(DEVICE_DIR)/web/binder-src/main.js
+WEB_DIR ?= $(ROOT_ABS)/$(DEVICE_DIR)/web
+WEB_DIST ?= $(WEB_DIR)/ui
+BINDER_OUT_FILE ?= $(WEB_DIST)/binder.js
 DASHBOARD_OUT_FILE ?= $(ROOT_ABS)/$(DEVICE_DIR)/web/dashboard.js
 DASHBOARD_TOOL ?= $(ROOT_ABS)/.tools/esbuild
 SECRETS_LINK ?= configurations/secrets.yaml
@@ -31,13 +35,15 @@ SECRETS_TARGET ?= ../../secrets.yaml
 LANG ?= en
 DASHBOARD_COMPILED_LANG := $(if $(filter en da,$(LANG)),$(LANG),en)
 DESIGN_DIR ?= $(firstword $(wildcard \
+	$(abspath $(ROOT_ABS)/../lune-design-system) \
+	$(abspath $(CURDIR)/../../lune-design-system) \
 	$(abspath $(ROOT_ABS)/../lds) \
 	$(abspath $(CURDIR)/../../lds) \
 ))
 LDS_DIR ?= $(DESIGN_DIR)
 LDS_CONSUMER ?= $(ROOT_ABS)
 
-.PHONY: help check ensure-secrets-link config compile build build-verify bump-build prepare-release release release-deploy release-firmware release-bundle upload deploy ota logs discover monitor erase erase-nvs clean dashboard dashboard-tooling dashboard-build dashboard-reference-traces dashboard-watch design-tokens design-verify test test-dashboard test-ripple test-rev31-logic test-rev32-logic test-safety-limits test-stall-model test-stroke-learning test-balance test-authority-lease test-preheat-policy test-preheat-absorb test-absorb-command test-probe-mapping test-thermal-model test-flow-allocator test-hydraulic-policy test-hydraulic-diagnostics test-commissioning-schema test-request-guard test-ble-time-beacon test-settings-backup test-control-mode
+.PHONY: help check ensure-secrets-link config compile build build-verify bump-build prepare-release release release-deploy release-firmware release-bundle upload deploy ota logs discover monitor erase erase-nvs clean dashboard dashboard-tooling dashboard-build dashboard-reference-traces dashboard-watch design-tokens design-verify test test-dashboard test-ripple test-rev31-logic test-rev32-logic test-safety-limits test-stall-model test-stroke-learning test-balance test-authority-lease test-preheat-policy test-preheat-absorb test-absorb-command test-probe-mapping test-thermal-model test-group-model test-flow-allocator test-hydraulic-policy test-hydraulic-diagnostics test-commissioning-schema test-request-guard test-ble-time-beacon test-settings-backup test-control-mode
 
 help:
 	@echo "Lune V6 ESPHome tasks"
@@ -239,6 +245,8 @@ ABSORB_COMMAND_SRCS = test/absorb_command/test_absorb_command.cpp
 ABSORB_COMMAND_OUT  = /tmp/test_hv6_absorb_command
 THERMAL_MODEL_SRCS = test/thermal_model/test_thermal_model.cpp
 THERMAL_MODEL_OUT  = /tmp/test_hv6_thermal_model
+GROUP_MODEL_SRCS = test/group_model/test_group_model.cpp
+GROUP_MODEL_OUT  = /tmp/test_hv6_group_model
 PROBE_MAPPING_SRCS = test/probe_mapping/test_probe_mapping.cpp
 PROBE_MAPPING_OUT  = /tmp/test_hv6_probe_mapping
 FLOW_ALLOCATOR_SRCS = test/flow_allocator/test_flow_allocator.cpp
@@ -284,6 +292,10 @@ test-thermal-model:
 	$(RIPPLE_CXX) -std=c++17 -O2 -Wall -Wextra -I components/lv6_zone_controller -I components/lv6_config_store $(THERMAL_MODEL_SRCS) -o $(THERMAL_MODEL_OUT) -lm
 	$(THERMAL_MODEL_OUT)
 
+test-group-model:
+	$(RIPPLE_CXX) -std=c++17 -O2 -Wall -Wextra -I components/lv6_config_store $(GROUP_MODEL_SRCS) -o $(GROUP_MODEL_OUT)
+	$(GROUP_MODEL_OUT)
+
 test-flow-allocator:
 	$(RIPPLE_CXX) -std=c++17 -O2 -Wall -Wextra -I components/lv6_zone_controller $(FLOW_ALLOCATOR_SRCS) -o $(FLOW_ALLOCATOR_OUT) -lm
 	$(FLOW_ALLOCATOR_OUT)
@@ -318,7 +330,7 @@ test-control-mode:
 test-dashboard:
 	sh test/dashboard/test_dashboard.sh
 
-test: design-verify test-dashboard test-ripple test-rev31-logic test-rev32-logic test-safety-limits test-stall-model test-stroke-learning test-balance test-authority-lease test-preheat-policy test-preheat-absorb test-absorb-command test-probe-mapping test-thermal-model test-flow-allocator test-hydraulic-policy test-hydraulic-diagnostics test-commissioning-schema test-request-guard test-ble-time-beacon test-settings-backup test-control-mode
+test: design-verify test-dashboard test-ripple test-rev31-logic test-rev32-logic test-safety-limits test-stall-model test-stroke-learning test-balance test-authority-lease test-preheat-policy test-preheat-absorb test-absorb-command test-probe-mapping test-thermal-model test-group-model test-flow-allocator test-hydraulic-policy test-hydraulic-diagnostics test-commissioning-schema test-request-guard test-ble-time-beacon test-settings-backup test-control-mode
 
 ota: check
 	$(MAKE) build
@@ -403,25 +415,29 @@ dashboard-tooling:
 	cd $(ROOT_DIR)/.tools && curl -fsSL https://esbuild.github.io/dl/latest | sh
 
 design-tokens:
-	@if [ ! -f "$(LDS_DIR)/generate_tokens.py" ]; then \
-	  echo "LDS checkout not found at $(LDS_DIR)"; \
+	@if [ ! -f "$(LDS_DIR)/tools/lds_build.py" ]; then \
+	  echo "Lune Design System checkout not found at $(LDS_DIR)"; \
 	  exit 1; \
 	fi
-	$(PYTHON) $(LDS_DIR)/generate_tokens.py --install $(LDS_CONSUMER) --no-dist
+	mkdir -p $(WEB_DIST)
+	$(PYTHON) $(LDS_DIR)/tools/lds_build.py $(LDS_DIR)/config/v6.json
+	cp $(LDS_DIR)/dist/v6/lune-ui.css $(WEB_DIST)/lune-ui.css
 
 design-verify:
-	@if [ ! -f "$(LDS_DIR)/generate_tokens.py" ]; then \
-	  echo "WARNING: LDS checkout not found at $(LDS_DIR), skipping"; \
+	@if [ ! -f "$(LDS_DIR)/tools/lds_build.py" ]; then \
+	  echo "WARNING: Lune Design System checkout not found at $(LDS_DIR), skipping"; \
 	  exit 0; \
 	fi
-	$(PYTHON) $(LDS_DIR)/generate_tokens.py --install $(LDS_CONSUMER) --no-dist --check
+	$(PYTHON) $(LDS_DIR)/tools/lds_build.py --check
 
 dashboard-reference-traces:
 	sh $(ROOT_ABS)/$(DEVICE_DIR)/scripts/gen-reference-traces.sh > $(DASHBOARD_SRC_DIR)/utils/motor-reference-traces.js
 
-dashboard-build:
+dashboard-build: design-tokens
 	@command -v $(DASHBOARD_TOOL) >/dev/null 2>&1 || $(MAKE) dashboard-tooling
-	$(DASHBOARD_TOOL) $(DASHBOARD_SRC_DIR)/main.js \
+	mkdir -p $(WEB_DIST)
+	$(PYTHON) $(WEB_DIR)/build_ui.py --out $(WEB_DIST) --css $(WEB_DIST)/lune-ui.css --langs en,da --preview
+	$(DASHBOARD_TOOL) $(BINDER_SRC) \
 	--bundle \
 	--minify \
 	--tree-shaking=true \
@@ -431,12 +447,15 @@ dashboard-build:
 	--loader:.css=text \
 	--define:DEBUG=false \
 	--define:LV6_DASHBOARD_LANG=\"$(DASHBOARD_COMPILED_LANG)\" \
-	--outfile=$(DASHBOARD_OUT_FILE)
-	@echo "dashboard.js: $$(wc -c < $(DASHBOARD_OUT_FILE) | tr -d ' ') bytes raw, $$(gzip -9 -c $(DASHBOARD_OUT_FILE) | wc -c | tr -d ' ') bytes gzipped"
+	--outfile=$(BINDER_OUT_FILE)
+	@# Keep legacy path so firmware YAML that still points at dashboard.js builds
+	cp $(BINDER_OUT_FILE) $(DASHBOARD_OUT_FILE)
+	@echo "binder.js: $$(wc -c < $(BINDER_OUT_FILE) | tr -d ' ') bytes raw, $$(gzip -9 -c $(BINDER_OUT_FILE) | wc -c | tr -d ' ') bytes gzipped"
+	@echo "ui flash: $$(wc -c < $(WEB_DIST)/lune-ui.css.gz | tr -d ' ') css.gz + $$(wc -c < $(WEB_DIST)/en/index.html.gz | tr -d ' ') en + $$(wc -c < $(WEB_DIST)/da/index.html.gz | tr -d ' ') da"
 
 dashboard-watch:
 	@echo "Watching dashboard source for changes... press (ctrl+c to stop)"
-	@fswatch -r -o $(DASHBOARD_SRC_DIR) | \
+	@fswatch -r -o $(WEB_DIR)/binder-src $(WEB_DIR)/build_ui.py $(WEB_DIR)/i18n $(DASHBOARD_SRC_DIR) | \
     while read; do \
         echo "Rebuilding dashboard..."; \
         if ! $(MAKE) dashboard --no-print-directory; then \

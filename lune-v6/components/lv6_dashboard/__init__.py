@@ -13,6 +13,10 @@ AUTO_LOAD = ["web_server_base"]
 
 CONF_WEB_SERVER_BASE_ID = "web_server_base_id"
 CONF_DASHBOARD_JS = "dashboard_js"
+CONF_UI_CSS = "ui_css"
+CONF_UI_HTML_EN = "ui_html_en"
+CONF_UI_HTML_DA = "ui_html_da"
+CONF_BINDER_JS = "binder_js"
 CONF_ZONE_CONTROLLER_ID = "zone_controller_id"
 CONF_WIFI_SIGNAL_ID = "wifi_signal_id"
 CONF_FIRMWARE_VERSION_ID = "firmware_version_id"
@@ -100,6 +104,10 @@ CONFIG_SCHEMA = cv.Schema(
         # a build without an `update:` platform still compiles.
         cv.Optional(CONF_FIRMWARE_UPDATE_ID): cv.use_id(update.UpdateEntity),
         cv.Optional(CONF_DASHBOARD_JS): cv.file_,
+        cv.Optional(CONF_UI_CSS): cv.file_,
+        cv.Optional(CONF_UI_HTML_EN): cv.file_,
+        cv.Optional(CONF_UI_HTML_DA): cv.file_,
+        cv.Optional(CONF_BINDER_JS): cv.file_,
     }
 ).extend(cv.COMPONENT_SCHEMA)
 
@@ -243,10 +251,33 @@ async def to_code(config):
         firmware_update = await cg.get_variable(config[CONF_FIRMWARE_UPDATE_ID])
         cg.add(var.set_firmware_update(firmware_update))
 
-    if CONF_DASHBOARD_JS in config:
-        path = CORE.relative_config_path(config[CONF_DASHBOARD_JS])
-        asset_v = _embed_gzip_as_progmem("LV6_DASHBOARD_JS", path)
+    # LDS2 static UI: CSS + EN/DA HTML shells + binder.js. Prefer the new
+    # keys; fall back to dashboard_js as the binder for older YAML.
+    ui_hashes = []
+    if CONF_UI_CSS in config:
+        path = CORE.relative_config_path(config[CONF_UI_CSS])
+        ui_hashes.append(_embed_gzip_as_progmem("LV6_UI_CSS", path))
+        cg.add_define("LV6_HAS_UI_CSS")
+    if CONF_UI_HTML_EN in config:
+        path = CORE.relative_config_path(config[CONF_UI_HTML_EN])
+        ui_hashes.append(_embed_gzip_as_progmem("LV6_UI_HTML_EN", path))
+        cg.add_define("LV6_HAS_UI_HTML_EN")
+    if CONF_UI_HTML_DA in config:
+        path = CORE.relative_config_path(config[CONF_UI_HTML_DA])
+        ui_hashes.append(_embed_gzip_as_progmem("LV6_UI_HTML_DA", path))
+        cg.add_define("LV6_HAS_UI_HTML_DA")
+
+    binder_path = None
+    if CONF_BINDER_JS in config:
+        binder_path = CORE.relative_config_path(config[CONF_BINDER_JS])
+    elif CONF_DASHBOARD_JS in config:
+        binder_path = CORE.relative_config_path(config[CONF_DASHBOARD_JS])
+    if binder_path:
+        asset_v = _embed_gzip_as_progmem("LV6_DASHBOARD_JS", binder_path)
+        ui_hashes.append(asset_v)
         cg.add_define("LV6_HAS_DASHBOARD_JS")
-        # Content hash of web/dashboard.js so HTML ?v= changes whenever the
-        # bundle changes — manual cache-buster strings were easy to forget.
         cg.add_define("LV6_DASHBOARD_ASSET_V", f'"{asset_v}"')
+
+    if ui_hashes:
+        combined = hashlib.sha256("".join(ui_hashes).encode("utf-8")).hexdigest()[:12]
+        cg.add_define("LV6_UI_ASSET_V", f'"{combined}"')

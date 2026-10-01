@@ -104,14 +104,18 @@ groups, then drives Setpoint Bias from that.
 
 ## Touch room-to-zone mapping
 
-V6 keeps local grouping (`sync_to_zone`) so baseline control works without
-Touch. Touch owns logical rooms across nodes.
+V6 keeps local grouping so baseline control works without Touch. Explicit
+within-manifold groups (`/api/v1/groups`) and loop physics (area, exterior
+walls, floor construction, UA/τ priors) are owned by V6 per
+[`shared/contracts/lune_room_physics_contract_v1.md`](../shared/contracts/lune_room_physics_contract_v1.md).
+Touch owns logical rooms across nodes and weather exposure.
 
 ### What V6 exposes (`GET /api/v1/zones`)
 
 - `node_id` (stable, MAC-based)
 - `zone` (1–6), `name`, `enabled`
-- `group_primary` (sync root) and `group_members`
+- `group_primary` / `group_members` (legacy) plus `group_id` / `group_role`
+- floor / UA / τ priors and learned UA when present
 - merged group temperature and freshness
 - the zone's heat-demand state and opening ratio
 

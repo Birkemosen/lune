@@ -1,26 +1,14 @@
-# Lune V6 — LDS consumer manifest.
-# Destinations are relative to this repository root.
-schema: 1
+# Lune V6 — Lune Design System 2 consumer.
+# Built artifacts live under lune-v6/web/ui/ via `make design-tokens` /
+# `make dashboard-build`. The sibling checkout is ../lune-design-system.
+schema: 2
+design_system: ../lune-design-system
+project: v6
 artifacts:
   - kind: css
-    dest: lune-v6/web/tokens.generated.css
-  - kind: brand-svg
-    dest: lune-v6/web/brand
-  - kind: brand-js
-    dest: lune-v6/web/dashboard-src/core/lune-mark.generated.js
-  - kind: live-status-js
-    dest: lune-v6/web/dashboard-src/core/lds-live-status.generated.js
-  - kind: manifold-row-js
-    dest: lune-v6/web/dashboard-src/core/lds-manifold-row.generated.js
-  - kind: comfort-control-js
-    dest: lune-v6/web/dashboard-src/core/lds-comfort-control.generated.js
-  - kind: nav-switch-js
-    dest: lune-v6/web/dashboard-src/core/lds-nav-switch.generated.js
-  - kind: tab-bar-js
-    dest: lune-v6/web/dashboard-src/core/lds-tab-bar.generated.js
-  - kind: form-js
-    dest: lune-v6/web/dashboard-src/core/lds-form.generated.js
-  - kind: int-split-js
-    dest: lune-v6/web/dashboard-src/core/lds-int-split.generated.js
-  - kind: settings-card-js
-    dest: lune-v6/web/dashboard-src/core/lds-settings-card.generated.js
+    source: dist/v6/lune-ui.css
+    dest: lune-v6/web/ui/lune-ui.css
+  - kind: html
+    note: Built by lune-v6/web/build_ui.py into lune-v6/web/ui/{en,da}/
+  - kind: binder
+    note: Built by esbuild from lune-v6/web/binder-src into lune-v6/web/ui/binder.js

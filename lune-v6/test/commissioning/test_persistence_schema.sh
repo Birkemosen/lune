@@ -5,15 +5,19 @@ repo_root=$(CDPATH= cd -- "$(dirname "$0")/../.." && pwd)
 types="$repo_root/components/lv6_config_store/lv6_types.h"
 store="$repo_root/components/lv6_config_store/lv6_config_store.cpp"
 
-# Layout changes must reject old blobs instead of assigning invented values to
-# an existing installation. Room/manifold identity and weather exposure live on
-# Touch; V6 ZoneConfig v5 dropped those fields.
-grep -qE 'ZONE_CONFIG_VERSION = 5' "$types"
+# Layout changes must migrate or reject old blobs. Room physics contract v1 lives
+# on V6 (ZoneConfig v6); cross-manifold rooms and weather stay on Touch.
+grep -qE 'ZONE_CONFIG_VERSION = 6' "$types"
+grep -qE 'ZONE_CONFIG_VERSION_V5 = 5' "$types"
+grep -qE 'HOUSE_PHYSICS_CONFIG_VERSION = 1' "$types"
+grep -qE 'GROUPS_CONFIG_VERSION = 1' "$types"
 grep -qE 'SYSTEM_CONFIG_VERSION = 4' "$types"
 grep -qE 'CONTROL_CONFIG_VERSION = 2' "$types"
 grep -qE 'BALANCING_CONFIG_VERSION = 3' "$types"
 grep -qE 'zone_config_blob_is_current\(uint32_t version, size_t bytes\)' "$types"
-grep -qE 'if \(!zone_config_blob_is_current\(version, read_size\)\)' "$store"
+grep -qE 'zone_config_blob_is_v5\(uint32_t version, size_t bytes\)' "$types"
+grep -qE 'zone_config_blob_is_current\(version, read_size\)' "$store"
+grep -qE 'zone_config_blob_is_v5\(version, read_size\)' "$store"
 ! grep -qE 'struct ForecastConfig' "$types"
 ! grep -qE 'struct HeliosConfig' "$types"
 ! grep -qE 'manifold_id\[' "$types"

@@ -99,6 +99,7 @@ function seed() {
   setEntity(gkey.mac, { state: 'D8:3B:DA:12:34:56' });
   setEntity(gkey.firmware, { state: 'v1.0.0-1' });
   setEntity(gkey.resetReason, { state: 'Software reset (esp_restart)' });
+  setDashboardValue('esphomeVersion', '2026.9.1');
   setEntity(gkey.manifoldFlowProbe, { state: 'Probe 1' });
   setEntity(gkey.manifoldReturnProbe, { state: 'Probe 2' });
   setEntity(gkey.manifoldType, { state: 'NC (Normally Closed)' });
@@ -226,6 +227,12 @@ function seedMockLogs(n) {
     mockLogSeq++;
   }
   appendDeviceLog(lines, mockLogSeq);
+  // Stagger clocks so a batch seed does not share one timestamp.
+  const log = getDashboardValue('deviceLog') || [];
+  const base = Date.now() - (n - 1) * 1000;
+  for (let i = 0; i < n && i < log.length; i++) {
+    log[log.length - n + i].at = base + i * 1000;
+  }
 }
 
 function simulate() {

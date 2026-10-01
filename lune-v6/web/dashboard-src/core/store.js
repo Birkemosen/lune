@@ -13,6 +13,8 @@ const D = {
   section: 'overview',
   settingsPanel: 'touch',
   selectedZone: 1,
+  // Zone canvas: mutually exclusive Live (dashboard) vs Config panes.
+  zoneViewMode: 'dashboard',
   live: false,
   pendingWrites: 0,
   lastWriteAt: 0,
@@ -32,6 +34,8 @@ const D = {
   zoneStateHistory: null,   // { interval_s, uptime_s, count, entries: [[uptime_s,z0..z5,absorbing],...] }
   deviceLog: [],            // [{ seq, level, tag, msg }] live device log lines (newest last)
   deviceLogSeq: 0,          // highest seq seen → passed as ?since= to /logs
+  // Physics provisioning alerts from GET /zones: [{zone, kind:'unset'|'high_r'}]
+  physicsAlerts: [],
 };
 
 export const DEVICE_LOG_MAX = 300;
@@ -134,6 +138,11 @@ export function countZoneFaults() {
  * Highest-priority chrome attention action (header chip + deep-link).
  * Touch approval beats zone faults; firmware updates stay on their own badge.
  */
+export function countPhysicsAlerts() {
+  const list = getDashboardValue('physicsAlerts');
+  return Array.isArray(list) ? list.length : 0;
+}
+
 export function primaryAttentionAction() {
   if (touchNeedsAttention()) {
     return { kind: 'touch', section: 'settings', focus: 'touch' };
@@ -141,6 +150,10 @@ export function primaryAttentionAction() {
   const faults = countZoneFaults();
   if (faults > 0) {
     return { kind: 'faults', section: 'zones', count: faults };
+  }
+  const physics = countPhysicsAlerts();
+  if (physics > 0) {
+    return { kind: 'physics', section: 'zones', count: physics };
   }
   return null;
 }
@@ -211,13 +224,20 @@ export function setDashboardValue(key, value) {
 
 export function setSection(section) {
   const next = section === 'logs' ? 'diagnostics' : section;
+  // Settings destinations only exist in Configure mode.
+  if (next === 'settings' && D.zoneViewMode !== 'config') {
+    D.zoneViewMode = 'config';
+    notify(dashboardKey('zoneViewMode'));
+  }
   if (D.section === next) return;
   D.section = next;
   notify(dashboardKey('section'));
 }
 
 export function setSettingsPanel(panel) {
-  const next = String(panel || 'touch');
+  let next = String(panel || 'touch');
+  // Hydraulics / Comfort / Motors / legacy Plant are one System settings canvas.
+  if (next === 'hydraulics' || next === 'comfort' || next === 'motors' || next === 'plant') next = 'system';
   if (D.settingsPanel === next) return;
   D.settingsPanel = next;
   notify(dashboardKey('settingsPanel'));
@@ -228,6 +248,19 @@ export function setSelectedZone(zone) {
   if (D.selectedZone === next) return;
   D.selectedZone = next;
   notify(dashboardKey('selectedZone'));
+  // zoneViewMode is global — stay on Configure when switching Z1↔Z6.
+}
+
+export function setZoneViewMode(mode) {
+  const next = mode === 'config' ? 'config' : 'dashboard';
+  if (D.zoneViewMode === next) return;
+  D.zoneViewMode = next;
+  notify(dashboardKey('zoneViewMode'));
+  // Leaving Configure hides Settings destinations — bounce off that section.
+  if (next === 'dashboard' && D.section === 'settings') {
+    D.section = 'overview';
+    notify(dashboardKey('section'));
+  }
 }
 
 export function setLive(value) {
@@ -411,9 +444,10 @@ export function getDeviceLogSeq() {
 
 export function appendDeviceLog(lines, nextSeq) {
   if (Array.isArray(lines) && lines.length) {
+    const receivedAt = Date.now();
     for (const l of lines) {
-      // Wire shape: [seq, level, tag, msg]
-      D.deviceLog.push({ seq: l[0], level: l[1], tag: l[2], msg: l[3] });
+      // Wire shape: [seq, level, tag, msg] — stamp arrival time for the UI clock.
+      D.deviceLog.push({ seq: l[0], level: l[1], tag: l[2], msg: l[3], at: receivedAt });
       if (l[0] > D.deviceLogSeq) D.deviceLogSeq = l[0];
     }
     while (D.deviceLog.length > DEVICE_LOG_MAX) D.deviceLog.shift();

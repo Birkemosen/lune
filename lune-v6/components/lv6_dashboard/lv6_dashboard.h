@@ -25,6 +25,18 @@
 extern const uint8_t LV6_DASHBOARD_JS_DATA[] PROGMEM;
 extern const size_t LV6_DASHBOARD_JS_SIZE;
 #endif
+#ifdef LV6_HAS_UI_CSS
+extern const uint8_t LV6_UI_CSS_DATA[] PROGMEM;
+extern const size_t LV6_UI_CSS_SIZE;
+#endif
+#ifdef LV6_HAS_UI_HTML_EN
+extern const uint8_t LV6_UI_HTML_EN_DATA[] PROGMEM;
+extern const size_t LV6_UI_HTML_EN_SIZE;
+#endif
+#ifdef LV6_HAS_UI_HTML_DA
+extern const uint8_t LV6_UI_HTML_DA_DATA[] PROGMEM;
+extern const size_t LV6_UI_HTML_DA_SIZE;
+#endif
 
 namespace lv6 {
 class Lv6BleTimeBeacon;
@@ -265,6 +277,8 @@ class LV6Dashboard : public Component, public AsyncWebHandler {
  protected:
   void handle_root_(AsyncWebServerRequest *request);
   void handle_js_(AsyncWebServerRequest *request);
+  void handle_ui_css_(AsyncWebServerRequest *request);
+  void handle_ui_html_(AsyncWebServerRequest *request, const char *lang, bool set_cookie);
   void send_text_(AsyncWebServerRequest *request, int code, const char *content_type,
                   const char *body, bool cors = false, const char *cache_control = nullptr);
   void send_gzip_chunked_(AsyncWebServerRequest *request, const char *content_type,
@@ -274,6 +288,13 @@ class LV6Dashboard : public Component, public AsyncWebHandler {
   void handle_overview_(AsyncWebServerRequest *request);
   void handle_zones_(AsyncWebServerRequest *request);
   void handle_zone_(AsyncWebServerRequest *request, uint8_t zone);
+  void handle_groups_(AsyncWebServerRequest *request);
+  void handle_groups_write_(AsyncWebServerRequest *request, const char *body);
+  void handle_group_remove_(AsyncWebServerRequest *request, const char *group_id, const char *body);
+  void handle_zone_physics_(AsyncWebServerRequest *request, uint8_t zone, const char *body);
+  void handle_zone_ua_learned_(AsyncWebServerRequest *request, uint8_t zone, const char *body);
+  void handle_physics_house_(AsyncWebServerRequest *request, const char *body);
+  void handle_forecast_profile_(AsyncWebServerRequest *request, uint8_t zone, const char *body);
   void handle_settings_(AsyncWebServerRequest *request);
   void handle_diagnostics_(AsyncWebServerRequest *request);
   void handle_motor_trace_(AsyncWebServerRequest *request);
@@ -377,7 +398,7 @@ class LV6Dashboard : public Component, public AsyncWebHandler {
   // Allocated from PSRAM in setup() (INTERNAL fallback). Safe as a single shared
   // buffer because ESP-IDF httpd is single-threaded (one worker) — see also the
   // static BleSensorSeen buffer in handle_ble_scan_().
-  static constexpr size_t JSON_BUF_SIZE = 8192;
+  static constexpr size_t JSON_BUF_SIZE = 16384;
   char *json_buf_{nullptr};
   uint32_t snapshot_last_ms_{0};
   bool snapshot_ready_{false};

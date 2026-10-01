@@ -55,6 +55,10 @@ class Lv6ConfigStore : public esphome::Component {
   void update_balancing(const BalancingConfig &balancing);
   void update_authority(const AuthorityConfig &authority);
   AuthorityConfig get_authority_config() const;
+  void update_house_physics(const HousePhysicsConfig &house);
+  HousePhysicsConfig get_house_physics() const;
+  void update_groups(const GroupsConfig &groups);
+  GroupsConfig get_groups() const;
 
   // Motor telemetry persistence (calibration data)
   void save_motor_telemetry(uint8_t motor, const MotorTelemetry &telemetry);
@@ -82,6 +86,8 @@ class Lv6ConfigStore : public esphome::Component {
   static constexpr const char *KEY_MANIFOLD = "manifold";
   static constexpr const char *KEY_BALANCING = "balancing";
   static constexpr const char *KEY_AUTHORITY = "authority";
+  static constexpr const char *KEY_HOUSE_PHYS = "housephys";
+  static constexpr const char *KEY_GROUPS = "groups";
   static constexpr uint64_t DIRTY_DELAY_US = 1000000ULL;  // 1 second
   // Dedicated NVS persistence task — keeps flash commits off the main loop
   // task so loopTask isn't blocked for the 50–500 ms a commit can take.

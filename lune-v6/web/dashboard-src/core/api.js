@@ -95,19 +95,40 @@ function postV1(path, params, mockBody) {
   });
 }
 
-// POST a JSON document to a /api/v1 write endpoint. Only the settings
-// restore path uses this: a backup envelope is a nested document that does not
-// fit the flat form-urlencoded shape every other write endpoint uses. The
-// device reads the raw body from request->arg("plain").
+// POST a JSON document to a /api/v1 write endpoint. Settings restore and
+// room-physics writes use nested JSON; the device reads request->arg("plain").
 function postJsonV1(path, payload, params) {
   beginPendingWrite();
+  if (isMock()) {
+    try {
+      return Promise.resolve({ ok: true });
+    } finally {
+      endPendingWrite();
+    }
+  }
   return fetch(queryUrl(path, params), {
     method: 'POST',
     headers: writeHeaders({ 'Content-Type': 'application/json' }),
     body: JSON.stringify(payload),
+  }).then(async (resp) => {
+    if (!resp.ok) {
+      const detail = `POST ${path} failed (HTTP ${resp.status})`;
+      console.warn('API call failed: ' + detail);
+      addActivity(detail);
+      throw new Error(detail);
+    }
+    return resp;
   }).finally(() => {
     endPendingWrite();
   });
+}
+
+export function postZonePhysics(zone, payload) {
+  return postJsonV1(`/zones/${zone}/physics`, payload || {});
+}
+
+export function postGroups(payload) {
+  return postJsonV1('/groups', payload || {});
 }
 
 export function setSetpoint(zone, value) {
@@ -188,7 +209,9 @@ const globalSelectMap = {
   manifold_return_probe: gkey.manifoldReturnProbe,
   motor_profile_default: gkey.motorProfileDefault,
   simple_preheat_enabled: gkey.simplePreheatEnabled,
-  ble_clock_sync_enabled: gkey.bleClockSyncEnabled
+  ble_clock_sync_enabled: gkey.bleClockSyncEnabled,
+  heating_mode: gkey.heatingMode,
+  minimum_flow_always: gkey.minimumFlowAlways,
 };
 
 const globalNumberMap = {
@@ -399,6 +422,31 @@ export function fetchHistory() {
     .then((response) => response.ok ? response.json() : null)
     .then((data) => { if (data) setZoneStateHistory(data); })
     .catch(() => { /* history fetch errors are non-fatal */ });
+}
+
+/** Soft poll for floor.unset / high floor resistance attention chips. */
+export function fetchPhysicsAlerts() {
+  if (isMock()) {
+    setDashboardValue('physicsAlerts', []);
+    return;
+  }
+  fetch(BASE + '/zones', { cache: 'no-store' })
+    .then((response) => (response.ok ? response.json() : null))
+    .then((json) => {
+      const zones = json?.data?.zones || [];
+      const alerts = [];
+      for (const z of zones) {
+        const zone = Number(z.zone);
+        if (!(zone >= 1 && zone <= 6)) continue;
+        if (z.floor?.unset) alerts.push({ zone, kind: 'unset' });
+        const warns = Array.isArray(z.warnings) ? z.warnings : [];
+        if (warns.includes('high_floor_resistance') || Number(z.floor?.r_m2k_per_w) > 0.15) {
+          alerts.push({ zone, kind: 'high_r' });
+        }
+      }
+      setDashboardValue('physicsAlerts', alerts);
+    })
+    .catch(() => { /* physics alert poll is non-fatal */ });
 }
 
 // ---- firmware updates ----

@@ -126,6 +126,37 @@ enum class FloorType : uint8_t {
   CARPET = 3,
 };
 
+/// Room-physics contract v1 — active floor construction (loop-owned).
+enum class SlabType : uint8_t {
+  CAST_CONCRETE = 0,
+  SCREED = 1,
+  DRY_PLATES = 2,
+  TIMBER_JOISTS = 3,
+  UNSET = 255,
+};
+
+/// Room-physics contract v1 — floor covering (loop-owned).
+enum class CoveringType : uint8_t {
+  TILE_STONE = 0,
+  VINYL_LINOLEUM = 1,
+  PARQUET_LAMINATE = 2,
+  CARPET = 3,
+  UNSET = 255,
+};
+
+/// Origin of calibrated house-physics unit parameters.
+enum class PhysicsParamSource : uint8_t {
+  DEFAULT = 0,
+  CALIBRATED = 1,
+};
+
+/// How a loop participates in a manifold group.
+enum class GroupRole : uint8_t {
+  SINGLE = 0,
+  PRIMARY = 1,
+  MEMBER = 2,
+};
+
 /// Local heating control law. Heat-pump mode keeps loops mostly open so the
 /// source can settle at the lowest constant feed temperature; Normal closes
 /// zones at setpoint like a classic boiler manifold. Touch may override the
@@ -202,6 +233,31 @@ struct ZoneConfig {
   // heating so the zone reaches temperature on time). Adapts over time; persisted
   // so the device doesn't have to re-learn from zero after every reboot.
   float preheat_advance_c = 0.0f;
+
+  // --- Room physics contract v1 (appended; v5→v6 migrates with unset defaults) ---
+  uint8_t exterior_walls = 0;  ///< Bitmask N=1 E=2 S=4 W=8; validate 0–15
+  SlabType slab_type = SlabType::UNSET;
+  CoveringType covering = CoveringType::UNSET;
+  float active_thickness_cm = 0.0f;  ///< 0 → type default; ignored for dry/timber
+  float r_override_m2k_per_w = NAN;  ///< NaN = none; clamp 0–0.25 when set
+  float ua_weight_override = 1.0f;   ///< 0.25–4.0
+  float ua_learned_w_per_k = NAN;    ///< NaN = absent
+  float ua_learned_confidence = NAN;
+  uint16_t ua_learned_observed_days = 0;
+  uint32_t ua_learned_ts_epoch_s = 0;
+  float tau_learned_h = NAN;  ///< NaN = absent; local τ for absorb mass scale
+  // Back-compat only — Touch owns weather; V6 stores but does not use for control.
+  float wind_exposure = 0.0f;
+  float solar_gain = 0.0f;
+};
+
+/// Unit/house thermal parameters (defaults; Touch may calibrate).
+struct HousePhysicsConfig {
+  float u_base = 0.5f;   ///< W/(m²·K)
+  float u_wall = 0.4f;   ///< W/(m²·K) per exterior wall
+  float c_struct = 0.06f;  ///< kWh/(m²·K) walls/furniture
+  PhysicsParamSource source = PhysicsParamSource::DEFAULT;
+  uint32_t calibrated_at_epoch_s = 0;
 };
 
 struct ControlConfig {
@@ -245,6 +301,24 @@ struct ProbeConfig {
 static constexpr uint8_t BLE_MAC_LEN = 18;  // "AA:BB:CC:DD:EE:FF" + null
 static constexpr uint8_t SENSOR_ID_LEN = 48;   ///< EXTERNAL producer id (MAC or hub entity id)
 static constexpr uint8_t SENSOR_NAME_LEN = 24; ///< Optional friendly label (UI only)
+
+static constexpr uint8_t GROUP_ID_LEN = 8;
+static constexpr uint8_t GROUP_MAX_SENSORS = 4;
+static constexpr uint8_t MAX_GROUPS = NUM_ZONES;
+
+/// Explicit manifold group (star: one primary + zero or more members).
+struct GroupConfig {
+  char group_id[GROUP_ID_LEN] = "";
+  int8_t primary_loop = -1;  ///< -1 = inactive slot
+  uint8_t member_mask = 0;   ///< Bits for members excluding primary; primary always counted in group
+  bool include_in_house_temperature = true;
+  uint32_t revision = 0;
+  char sensor_ids[GROUP_MAX_SENSORS][BLE_MAC_LEN] = {};
+};
+
+struct GroupsConfig {
+  GroupConfig groups[MAX_GROUPS]{};
+};
 
 struct SensorConfig {
   TempSource zone_temp_source[NUM_ZONES] = {
@@ -291,12 +365,24 @@ static constexpr size_t SENSOR_CONFIG_V2_SIZE =
 /// invalidated rather than guessing manifold identity or measured values.
 /// v5 drops Touch-owned weather/preload metadata and unused hydraulic
 /// commissioning identity fields (room mapping lives on Touch).
-static constexpr uint32_t ZONE_CONFIG_VERSION = 5;
+/// v6 adds room-physics contract fields (walls, slab, covering, learned UA/τ).
+static constexpr uint32_t ZONE_CONFIG_VERSION = 6;
+static constexpr uint32_t ZONE_CONFIG_VERSION_V5 = 5;
+/// Byte length of one v5 ZoneConfig (fields before the room-physics append).
+static constexpr size_t ZONE_CONFIG_V5_SIZE = offsetof(ZoneConfig, exterior_walls);
 
 inline constexpr bool zone_config_blob_is_current(uint32_t version, size_t bytes) {
   return version == ZONE_CONFIG_VERSION &&
          bytes == sizeof(uint32_t) + sizeof(ZoneConfig) * NUM_ZONES;
 }
+
+inline constexpr bool zone_config_blob_is_v5(uint32_t version, size_t bytes) {
+  return version == ZONE_CONFIG_VERSION_V5 &&
+         bytes == sizeof(uint32_t) + ZONE_CONFIG_V5_SIZE * NUM_ZONES;
+}
+
+static constexpr uint32_t HOUSE_PHYSICS_CONFIG_VERSION = 1;
+static constexpr uint32_t GROUPS_CONFIG_VERSION = 1;
 
 /// Per-section durable NVS blob versions. Each global-settings section is mirrored
 /// to its own NVS key (like zones/sensors above) so it survives any discard of
@@ -705,6 +791,8 @@ struct DeviceConfig {
   SensorConfig sensor_config;
   BalancingConfig balancing;
   AuthorityConfig authority;
+  HousePhysicsConfig house_physics;
+  GroupsConfig groups;
 };
 
 // =============================================================================
@@ -772,6 +860,71 @@ inline const char *heat_demand_recommendation_to_string(HeatDemandRecommendation
     case HeatDemandRecommendation::HOLD:
     default: return "hold";
   }
+}
+
+inline const char *slab_type_to_string(SlabType t) {
+  switch (t) {
+    case SlabType::CAST_CONCRETE: return "cast_concrete";
+    case SlabType::SCREED: return "screed";
+    case SlabType::DRY_PLATES: return "dry_plates";
+    case SlabType::TIMBER_JOISTS: return "timber_joists";
+    case SlabType::UNSET:
+    default: return "unset";
+  }
+}
+
+inline bool slab_type_from_string(const char *s, SlabType *out) {
+  if (s == nullptr || out == nullptr) return false;
+  if (strcasecmp(s, "cast_concrete") == 0) { *out = SlabType::CAST_CONCRETE; return true; }
+  if (strcasecmp(s, "screed") == 0) { *out = SlabType::SCREED; return true; }
+  if (strcasecmp(s, "dry_plates") == 0) { *out = SlabType::DRY_PLATES; return true; }
+  if (strcasecmp(s, "timber_joists") == 0) { *out = SlabType::TIMBER_JOISTS; return true; }
+  if (strcasecmp(s, "unset") == 0) { *out = SlabType::UNSET; return true; }
+  return false;
+}
+
+inline const char *covering_type_to_string(CoveringType t) {
+  switch (t) {
+    case CoveringType::TILE_STONE: return "tile_stone";
+    case CoveringType::VINYL_LINOLEUM: return "vinyl_linoleum";
+    case CoveringType::PARQUET_LAMINATE: return "parquet_laminate";
+    case CoveringType::CARPET: return "carpet";
+    case CoveringType::UNSET:
+    default: return "unset";
+  }
+}
+
+inline bool covering_type_from_string(const char *s, CoveringType *out) {
+  if (s == nullptr || out == nullptr) return false;
+  if (strcasecmp(s, "tile_stone") == 0) { *out = CoveringType::TILE_STONE; return true; }
+  if (strcasecmp(s, "vinyl_linoleum") == 0) { *out = CoveringType::VINYL_LINOLEUM; return true; }
+  if (strcasecmp(s, "parquet_laminate") == 0) { *out = CoveringType::PARQUET_LAMINATE; return true; }
+  if (strcasecmp(s, "carpet") == 0) { *out = CoveringType::CARPET; return true; }
+  if (strcasecmp(s, "unset") == 0) { *out = CoveringType::UNSET; return true; }
+  return false;
+}
+
+inline const char *group_role_to_string(GroupRole r) {
+  switch (r) {
+    case GroupRole::PRIMARY: return "primary";
+    case GroupRole::MEMBER: return "member";
+    case GroupRole::SINGLE:
+    default: return "single";
+  }
+}
+
+inline const char *physics_param_source_to_string(PhysicsParamSource s) {
+  return s == PhysicsParamSource::CALIBRATED ? "calibrated" : "default";
+}
+
+inline uint8_t popcount_walls(uint8_t mask) {
+  uint8_t n = 0;
+  uint8_t m = mask & 0x0F;
+  while (m) {
+    n = static_cast<uint8_t>(n + (m & 1u));
+    m = static_cast<uint8_t>(m >> 1);
+  }
+  return n;
 }
 
 inline const char *zone_state_to_string(ZoneState state) {

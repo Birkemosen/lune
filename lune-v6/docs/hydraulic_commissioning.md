@@ -19,11 +19,14 @@ accepting heat and is off by default.
 
 ## Per-loop record
 
-Zone geometry that V6 still uses (`area_m2`, pipe type/spacing, floor cover,
-`max_opening_pct`, sync groups) is edited via `POST /api/v1/settings/...` and
-returned from `GET /api/v1/zones`. Room identity and weather exposure live on
-Touch; V6 exposes `node_id`, `group_primary`, and `group_members` so Touch can
-map rooms to groups.
+Zone geometry and room physics that V6 owns (`area_m2`, exterior walls, slab/
+covering, pipe type/spacing, `max_opening_pct`, manifold groups) are edited via
+`POST /api/v1/zones/{id}/physics`, `POST /api/v1/groups`, and
+`POST /api/v1/settings/...`, and returned from `GET /api/v1/zones`. See
+[`shared/contracts/lune_room_physics_contract_v1.md`](../../shared/contracts/lune_room_physics_contract_v1.md).
+Room identity and weather exposure live on Touch; V6 exposes `node_id`,
+`group_id` / `group_role` (and legacy `group_primary` / `group_members`) so
+Touch can map rooms to groups.
 
 ## ALPHA2 GO / pump record
 

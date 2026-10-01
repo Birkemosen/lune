@@ -17,14 +17,17 @@ no product segment. Former paths `/api/lv6/v1` and `/api/hv6/v1` have been remov
 - Dashboard transport: HTTP JSON responses, URL-encoded POST forms, and revision polling
 - Home Assistant integration remains on ESPHome API/entities/services
 - Dashboard no longer depends on ESPHome entity-name REST routes
-- Dashboard source is modularized under `devices/lune-v6/web/dashboard-src/` and bundled into `devices/lune-v6/web/dashboard.js`
+- Dashboard source is modularized under `lune-v6/web/` (LDS2 HTML shell +
+  `binder-src/`) and built into `lune-v6/web/ui/` (`lune-ui.css`, `en/`/`da/`
+  HTML, `binder.js`), which is embedded in firmware
 
 ## Current Implementation Status
 
 All endpoints are served by the `lv6_dashboard` component as an `AsyncWebHandler` on the
 device web server (port 80). The legacy `/dashboard/set`, `/dashboard/state`,
-`/dashboard/history` and `/dashboard/ble-scan` routes have been removed; the dashboard app
-itself is served at `/` + `/dashboard.js`; `/dashboard` and `/dashboard/` are
+`/dashboard/history` and `/dashboard/ble-scan` routes have been removed; the dashboard
+itself is served at `/` (language-negotiated), `/en/`, `/da/`, `/lune-ui.css`, and
+`/binder.js` (also aliased as `/dashboard.js`); `/dashboard` and `/dashboard/` are
 legacy bookmarks that redirect to `/`.
 
 - Read endpoints (raw JSON, no envelope yet — see "Planned"):
@@ -224,6 +227,7 @@ Returns controller-level snapshot:
       "method": "mac-fingerprint-v1",
       "fingerprint": "hv6-aabbccddeeff"
     },
+    "physics_contract": 1,
     "coordination": {
       "installation_id": "house-1",
       "coordinator_id": "lune-touch",
@@ -261,15 +265,20 @@ Returns all zones plus a stable `node_id`. Additive fields (schema-compatible;
 older clients ignore):
 
 - `node_id` — MAC-based (`lune-v6-<last6hex>`) for Touch room mapping
-- `group_primary` / `group_members` — sync-group root and members (1-based)
+- `group_primary` / `group_members` — legacy sync-group root and members (1-based)
+- `group_id` / `group_role` — first-class manifold group (`single` | `primary` | `member`)
 - `opening_ratio` — current valve ÷ `max_opening_pct`
-- `ua_w_per_k`, `thermal_mass_kwh_per_k`, `tau_h` — static estimate from area,
-  `heat_loss_w_m2`, and slab thickness (see `thermal_model.h`). Null when the
-  estimate fails plausibility (`τ` outside 8–80 h or rates > 3 °C/h).
+- Floor / UA / τ priors per
+  [`lune_room_physics_contract_v1.md`](../../shared/contracts/lune_room_physics_contract_v1.md):
+  `area_m2`, `exterior_walls`, `floor.{slab_type,covering,active_thickness_cm,r_m2k_per_w,c_slab_kwh_per_k,unset}`,
+  `ua_prior_w_per_k`, `ua_learned_*`, `ua_effective_w_per_k`, `ua_source`, `tau_prior_h`, `warnings`
+- Legacy aliases `ua_w_per_k` / `thermal_mass_kwh_per_k` / `tau_h` remain when present
 - `return_c` — zone return probe °C when mapped, else null.
 - `loop_share_pct` — flow-allocator share of total opening (0–100), Σ ≈ 100 across enabled zones.
-- `absorb_capacity_rank` — 1 = highest thermal absorb capacity (mass × floor seed).
+- `absorb_capacity_rank` — 1 = highest thermal absorb capacity (group-level §7).
 - `absorb_state` — `idle` | `reactive` | `armed`.
+
+`GET /api/v1/overview` includes `physics_contract: 1`.
 
 Manifold overview/diagnostics expose both `flow_c` (legacy) and `flow_temp_c`
 (alias) so volume-flow fields can arrive later without renaming confusion.
@@ -294,9 +303,23 @@ Returns all zones:
         "valve_pct": 47.0,
         "probe_temp_c": 21.2,
         "temp_source": "local_probe",
-        "ua_w_per_k": 35.0,
-        "thermal_mass_kwh_per_k": 1.21,
-        "tau_h": 34.5,
+        "group_id": "g1",
+        "group_role": "single",
+        "area_m2": 21.5,
+        "exterior_walls": 3,
+        "floor": {
+          "slab_type": "cast_concrete",
+          "covering": "tile_stone",
+          "active_thickness_cm": 8,
+          "r_m2k_per_w": 0.02,
+          "c_slab_kwh_per_k": 0.998,
+          "unset": false
+        },
+        "ua_prior_w_per_k": 36.55,
+        "ua_effective_w_per_k": 36.55,
+        "ua_source": "prior",
+        "tau_prior_h": 62.7,
+        "warnings": [],
         "return_c": null,
         "loop_share_pct": 18.5,
         "absorb_state": "idle",
@@ -306,6 +329,27 @@ Returns all zones:
   }
 }
 ```
+
+### `GET /api/v1/groups`
+
+Returns manifold groups (explicit + implicit singletons) with aggregate area/UA
+and per-member flow shares. Write with `POST /api/v1/groups` (atomic validate;
+`expected_revision`) and `POST /api/v1/groups/{id}/remove`.
+
+### `POST /api/v1/zones/{zone}/physics`
+
+Local CSRF (or Touch write-through) provisioning for area, exterior walls, slab,
+covering, thickness, and optional R override. Bumps zone config revision.
+
+### `POST /api/v1/zones/{zone}/ua-learned`
+
+Coordinator authority key (same as `setpoint-command`). Persists learned UA when
+inside 0.2–5× prior; rejects and logs otherwise.
+
+### `POST /api/v1/physics/house`
+
+Trusted write for house `u_base` / `u_wall` / `c_struct` (same authority as
+`ua-learned`).
 
 ### `GET /api/v1/zones/{zone}`
 
@@ -360,7 +404,13 @@ must not send zone numbers — see `POST /api/v1/room-temperatures`.
 ```
 
 Weather exposure (`wind_exposure`, `solar_gain`, `thermal_lead_h`) is owned by
-Lune Touch rooms and is not stored or returned by V6.
+Lune Touch rooms. V6 may still store and return `wind_exposure` / `solar_gain`
+on `/api/v1/zones` for older Touch clients, and accepts
+`POST /api/v1/zones/{id}/forecast-profile` as a store-only no-op. V6 does **not**
+use those values for control. Loop physics (area, walls, floor, UA, τ) and
+within-manifold groups are owned by V6 per
+[`shared/contracts/lune_room_physics_contract_v1.md`](../../shared/contracts/lune_room_physics_contract_v1.md);
+`GET /api/v1/overview` reports `physics_contract: 1`.
 
 ### `GET /api/v1/diagnostics`
 

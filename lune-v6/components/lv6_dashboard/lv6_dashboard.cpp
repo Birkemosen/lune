@@ -3,6 +3,7 @@
 #include "../lv6_zone_controller/hydraulic_diagnostics.h"
 #include "../lv6_zone_controller/probe_mapping.h"
 #include "../lv6_zone_controller/thermal_model.h"
+#include "../lv6_config_store/group_model.h"
 #include "esphome/components/lv6_ble_time_beacon/lv6_ble_time_beacon.h"
 #include "esphome/components/nimble_hub/nimble_hub.h"
 #include "settings_backup.h"
@@ -82,11 +83,57 @@ const char *http_status_line(int code) {
 }
 
 bool is_dashboard_js_url(const char *url) {
-  static constexpr const char PATH[] = "/dashboard.js";
+  if (url == nullptr) return false;
+  static constexpr const char PATHS[][16] = {"/dashboard.js", "/binder.js"};
+  for (const char *path : PATHS) {
+    const size_t path_len = strlen(path);
+    if (strncmp(url, path, path_len) == 0 && (url[path_len] == '\0' || url[path_len] == '?'))
+      return true;
+  }
+  return false;
+}
+
+bool is_ui_css_url(const char *url) {
+  static constexpr const char PATH[] = "/lune-ui.css";
   static constexpr size_t PATH_LEN = sizeof(PATH) - 1;
   return url != nullptr && strncmp(url, PATH, PATH_LEN) == 0 &&
          (url[PATH_LEN] == '\0' || url[PATH_LEN] == '?');
 }
+
+bool is_lang_html_url(const char *url, const char *lang) {
+  if (url == nullptr || lang == nullptr) return false;
+  char path[8];
+  snprintf(path, sizeof(path), "/%s/", lang);
+  const size_t path_len = strlen(path);
+  if (strncmp(url, path, path_len) == 0)
+    return url[path_len] == '\0' || strcmp(url + path_len, "index.html") == 0 ||
+           url[path_len] == '?';
+  // Also accept /en and /da without trailing slash.
+  char bare[6];
+  snprintf(bare, sizeof(bare), "/%s", lang);
+  return strcmp(url, bare) == 0;
+}
+
+const char *pick_ui_lang(AsyncWebServerRequest *request) {
+  const auto cookie = request->get_header("Cookie");
+  if (cookie.has_value()) {
+    const char *c = strstr(cookie->c_str(), "lune_lang=");
+    if (c != nullptr) {
+      c += 10;
+      if (strncmp(c, "da", 2) == 0) return "da";
+      if (strncmp(c, "en", 2) == 0) return "en";
+    }
+  }
+  const auto accept = request->get_header("Accept-Language");
+  if (accept.has_value()) {
+    const char *a = accept->c_str();
+    const char *da = strstr(a, "da");
+    const char *en = strstr(a, "en");
+    if (da && (!en || da < en)) return "da";
+  }
+  return "en";
+}
+
 
 // Append `s` as the body of a JSON string (without surrounding quotes),
 // escaping the characters JSON requires. Control chars become spaces.
@@ -323,17 +370,22 @@ static bool parse_motor_profile(const char *raw, lv6::MotorProfile *out) {
 #ifndef LV6_DASHBOARD_ASSET_V
 #define LV6_DASHBOARD_ASSET_V "dev"
 #endif
+#ifndef LV6_UI_ASSET_V
+#define LV6_UI_ASSET_V LV6_DASHBOARD_ASSET_V
+#endif
 
-static const char DASHBOARD_HTML[] =
+// Legacy fallback shell used only when LDS2 HTML assets are not embedded.
+static const char DASHBOARD_HTML_FALLBACK[] =
     "<!doctype html><html><head>"
     "<meta charset=\"utf-8\">"
     "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
     "<meta name=\"color-scheme\" content=\"light dark\">"
     "<link rel=\"icon\" href=\"data:,\">"
     "<title>Lune V6</title>"
+    "<link rel=\"stylesheet\" href=\"/lune-ui.css?v=" LV6_UI_ASSET_V "\">"
     "</head><body>"
-    "<div id=\"app\">Loading dashboard...</div>"
-    "<script src=\"/dashboard.js?v=" LV6_DASHBOARD_ASSET_V "\"></script>"
+    "<p>Dashboard UI assets missing. Run <code>make dashboard-build</code>.</p>"
+    "<script src=\"/binder.js?v=" LV6_DASHBOARD_ASSET_V "\"></script>"
     "</body></html>";
 
 void LV6Dashboard::update_snapshot_() {
@@ -979,7 +1031,7 @@ void LV6Dashboard::setup() {
 
   this->base_->init();
   this->base_->add_handler(this);
-  ESP_LOGI(TAG, "Dashboard endpoints registered: /, /dashboard (redirect), /dashboard.js");
+  ESP_LOGI(TAG, "Dashboard endpoints registered: /, /en/, /da/, /lune-ui.css, /binder.js");
 }
 
 // =============================================================================
@@ -1125,7 +1177,9 @@ static constexpr size_t V1_PREFIX_LEN = sizeof(V1_PREFIX) - 1;
 bool LV6Dashboard::canHandle(AsyncWebServerRequest *request) const {
   char url_buf[AsyncWebServerRequest::URL_BUF_SIZE];
   auto url = request->url_to(url_buf);
-  if (url == "/" || url == "/dashboard" || url == "/dashboard/" || is_dashboard_js_url(url.c_str()))
+  if (url == "/" || url == "/dashboard" || url == "/dashboard/" || is_dashboard_js_url(url.c_str()) ||
+      is_ui_css_url(url.c_str()) || is_lang_html_url(url.c_str(), "en") ||
+      is_lang_html_url(url.c_str(), "da"))
     return true;
   return strncmp(url.c_str(), V1_PREFIX, V1_PREFIX_LEN) == 0 && url.c_str()[V1_PREFIX_LEN] == '/';
 }
@@ -1146,6 +1200,18 @@ void LV6Dashboard::handleRequest(AsyncWebServerRequest *request) {
     this->handle_root_(request);
     return;
   }
+  if (is_lang_html_url(url.c_str(), "en")) {
+    this->handle_ui_html_(request, "en", true);
+    return;
+  }
+  if (is_lang_html_url(url.c_str(), "da")) {
+    this->handle_ui_html_(request, "da", true);
+    return;
+  }
+  if (is_ui_css_url(url.c_str())) {
+    this->handle_ui_css_(request);
+    return;
+  }
   if (is_dashboard_js_url(url.c_str())) {
     this->handle_js_(request);
     return;
@@ -1159,8 +1225,42 @@ void LV6Dashboard::handleRequest(AsyncWebServerRequest *request) {
 }
 
 void LV6Dashboard::handle_root_(AsyncWebServerRequest *request) {
-  send_text_(request, 200, "text/html; charset=utf-8", DASHBOARD_HTML, false,
+  this->handle_ui_html_(request, pick_ui_lang(request), false);
+}
+
+void LV6Dashboard::handle_ui_html_(AsyncWebServerRequest *request, const char *lang, bool set_cookie) {
+  httpd_req_t *req = *request;
+  static char cookie_hdr[48];
+  if (set_cookie && lang != nullptr) {
+    snprintf(cookie_hdr, sizeof(cookie_hdr), "lune_lang=%s; Path=/; Max-Age=31536000", lang);
+    httpd_resp_set_hdr(req, "Set-Cookie", cookie_hdr);
+  }
+#if defined(LV6_HAS_UI_HTML_DA) || defined(LV6_HAS_UI_HTML_EN)
+  const bool want_da = lang != nullptr && strncmp(lang, "da", 2) == 0;
+#ifdef LV6_HAS_UI_HTML_DA
+  if (want_da) {
+    send_gzip_chunked_(request, "text/html; charset=utf-8", LV6_UI_HTML_DA_DATA, LV6_UI_HTML_DA_SIZE,
+                       "no-store, no-cache, max-age=0, must-revalidate");
+    return;
+  }
+#endif
+#ifdef LV6_HAS_UI_HTML_EN
+  send_gzip_chunked_(request, "text/html; charset=utf-8", LV6_UI_HTML_EN_DATA, LV6_UI_HTML_EN_SIZE,
+                     "no-store, no-cache, max-age=0, must-revalidate");
+  return;
+#endif
+#endif
+  send_text_(request, 200, "text/html; charset=utf-8", DASHBOARD_HTML_FALLBACK, false,
              "no-store, no-cache, max-age=0, must-revalidate");
+}
+
+void LV6Dashboard::handle_ui_css_(AsyncWebServerRequest *request) {
+#ifdef LV6_HAS_UI_CSS
+  send_gzip_chunked_(request, "text/css; charset=utf-8", LV6_UI_CSS_DATA, LV6_UI_CSS_SIZE,
+                     "no-store, no-cache, max-age=0, must-revalidate");
+#else
+  send_text_(request, 404, "text/plain", "lune-ui.css not configured. Run make dashboard-build.");
+#endif
 }
 
 void LV6Dashboard::handle_js_(AsyncWebServerRequest *request) {
@@ -1170,7 +1270,7 @@ void LV6Dashboard::handle_js_(AsyncWebServerRequest *request) {
                      "no-store, no-cache, max-age=0, must-revalidate");
 #else
   send_text_(request, 404, "text/plain",
-             "dashboard.js not configured. Add dashboard_js: web/dashboard.js to lv6_dashboard.");
+             "binder.js not configured. Add binder_js: ../web/ui/binder.js to lv6_dashboard.");
 #endif
 }
 
@@ -1803,7 +1903,7 @@ void LV6Dashboard::handle_overview_(AsyncWebServerRequest *request) {
            "\"ble_enabled\":%s,\"ble_scanning\":%s,\"ble_demanded\":%s,"
            "\"ble_ads_per_sec\":%s,\"ble_last_adv_age_ms\":%lu},"
            "\"safety\":{\"local_authority\":true,\"commands_clamped\":true,"
-           "\"minimum_flow_always\":%s}}}",
+           "\"minimum_flow_always\":%s},\"physics_contract\":1}}",
            snap->firmware_version, snap->ip_address, snap->connected_ssid, snap->mac_address,
            pairing_fingerprint, static_cast<unsigned long>(snap->uptime_s),
            pairing_fingerprint,
@@ -1850,6 +1950,14 @@ void LV6Dashboard::handle_zones_(AsyncWebServerRequest *request) {
   memcpy(&this->state_snap_buf_, &this->snapshot_, sizeof(this->state_snap_buf_));
   xSemaphoreGive(snapshot_lock_);
 
+  // Zone physics / groups write through config_store immediately, but the
+  // periodic snapshot can lag by one tick. Overlay live zone config so
+  // GET /zones reflects the latest provisioned floor fields right after POST.
+  if (this->config_store_) {
+    for (uint8_t i = 0; i < lv6::NUM_ZONES; i++)
+      this->state_snap_buf_.zones[i] = this->config_store_->get_zone_config(i);
+  }
+
   const DashboardSnapshot *snap = &this->state_snap_buf_;
   char *buf = this->json_buf_;
   size_t off = 0;
@@ -1889,7 +1997,7 @@ void LV6Dashboard::handle_zones_(AsyncWebServerRequest *request) {
   appendf(buf, JSON_BUF_SIZE, off,
           "{\"ok\":true,\"version\":\"v1\",\"data\":{\"node_id\":\"%s\",\"count\":%u,\"zones\":[",
           node_id, static_cast<unsigned>(lv6::NUM_ZONES));
-  for (uint8_t i = 0; i < lv6::NUM_ZONES && off + 640 < JSON_BUF_SIZE; i++) {
+  for (uint8_t i = 0; i < lv6::NUM_ZONES && off + 1200 < JSON_BUF_SIZE; i++) {
     char temp[24], setpoint[24], valve[24], preload[24];
     format_float_token(temp, sizeof(temp), snap->zone_temp_c[i], 1);
     format_float_token(setpoint, sizeof(setpoint), snap->zones[i].setpoint_c, 1);
@@ -1897,11 +2005,31 @@ void LV6Dashboard::handle_zones_(AsyncWebServerRequest *request) {
     format_float_token(preload, sizeof(preload), snap->zone_preheat_c[i], 1);
     char max_offset[24];
     format_float_token(max_offset, sizeof(max_offset), snap->zones[i].max_offset_c, 2);
+    lv6::HousePhysicsConfig house{};
+    if (this->config_store_)
+      house = this->config_store_->get_house_physics();
+    const auto th = lv6::thermal_model::estimate(snap->zones[i], house);
     char ua[24], mass[24], tau[24], return_c[24];
-    const auto th = lv6::thermal_model::estimate(snap->zones[i]);
-    format_float_token(ua, sizeof(ua), th.ua_w_per_k, 1);
-    format_float_token(mass, sizeof(mass), th.thermal_mass_kwh_per_k, 2);
-    format_float_token(tau, sizeof(tau), th.tau_h, 1);
+    char ua_prior[24], ua_learned[24], ua_eff[24], conf[24];
+    char c_slab_m2[24], c_slab[24], c_zone[24], r_tok[24], headroom[24];
+    format_float_token(ua, sizeof(ua), th.ua_effective_w_per_k, 1);
+    format_float_token(mass, sizeof(mass), th.c_zone_kwh_per_k, 3);
+    format_float_token(tau, sizeof(tau), th.tau_prior_h, 1);
+    format_float_token(ua_prior, sizeof(ua_prior), th.ua_prior_w_per_k, 1);
+    if (std::isfinite(snap->zones[i].ua_learned_w_per_k))
+      format_float_token(ua_learned, sizeof(ua_learned), snap->zones[i].ua_learned_w_per_k, 1);
+    else
+      snprintf(ua_learned, sizeof(ua_learned), "null");
+    format_float_token(ua_eff, sizeof(ua_eff), th.ua_effective_w_per_k, 1);
+    if (std::isfinite(snap->zones[i].ua_learned_confidence))
+      format_float_token(conf, sizeof(conf), snap->zones[i].ua_learned_confidence, 2);
+    else
+      snprintf(conf, sizeof(conf), "null");
+    format_float_token(c_slab_m2, sizeof(c_slab_m2), th.c_slab_per_m2, 4);
+    format_float_token(c_slab, sizeof(c_slab), th.c_slab_kwh_per_k, 3);
+    format_float_token(c_zone, sizeof(c_zone), th.c_zone_kwh_per_k, 3);
+    format_float_token(r_tok, sizeof(r_tok), th.r_m2k_per_w, 3);
+    format_float_token(headroom, sizeof(headroom), th.absorb_headroom_k, 1);
     const int8_t zr = snap->probes.zone_return_probe[i];
     if (zr >= 0 && zr < static_cast<int8_t>(lv6::MAX_PROBES))
       format_float_token(return_c, sizeof(return_c), snap->probe_temp_c[zr], 1);
@@ -1921,9 +2049,20 @@ void LV6Dashboard::handle_zones_(AsyncWebServerRequest *request) {
     const char *absorb_state =
         snap->absorb_mode == 2 ? "armed" : (snap->absorb_mode == 1 ? "reactive" : "idle");
     const int8_t primary = sync_roots[i];
+    lv6::GroupsConfig groups{};
+    if (this->config_store_)
+      groups = this->config_store_->get_groups();
+    const lv6::GroupRole role = lv6::group_model::role_for_loop(groups, i);
+    char group_id[lv6::GROUP_ID_LEN] = "";
+    const int8_t gi = lv6::group_model::find_group_index(groups, i);
+    if (gi >= 0)
+      strncpy(group_id, groups.groups[gi].group_id, sizeof(group_id) - 1);
+    else
+      lv6::group_model::make_default_group_id(group_id, sizeof(group_id), i);
+
     appendf(buf, JSON_BUF_SIZE, off,
-            "%s{\"zone\":%u,\"name\":\"",
-            i ? "," : "", static_cast<unsigned>(i + 1));
+            "%s{\"zone\":%u,\"loop_id\":\"z%u\",\"name\":\"",
+            i ? "," : "", static_cast<unsigned>(i + 1), static_cast<unsigned>(i + 1));
     append_json_escaped(buf, JSON_BUF_SIZE, off, snap->zones[i].name);
     appendf(buf, JSON_BUF_SIZE, off,
             "\",\"friendly_name\":\"");
@@ -1943,12 +2082,55 @@ void LV6Dashboard::handle_zones_(AsyncWebServerRequest *request) {
       appendf(buf, JSON_BUF_SIZE, off, "%s%u", first_member ? "" : ",", static_cast<unsigned>(m + 1));
       first_member = false;
     }
+    char days_tok[16];
+    if (std::isfinite(snap->zones[i].ua_learned_w_per_k))
+      snprintf(days_tok, sizeof(days_tok), "%u",
+               static_cast<unsigned>(snap->zones[i].ua_learned_observed_days));
+    else
+      snprintf(days_tok, sizeof(days_tok), "null");
+    char thick_tok[24];
+    if (snap->zones[i].active_thickness_cm > 0.0f)
+      snprintf(thick_tok, sizeof(thick_tok), "%.1f", snap->zones[i].active_thickness_cm);
+    else
+      snprintf(thick_tok, sizeof(thick_tok), "null");
+    char r_ov_tok[24];
+    if (std::isfinite(snap->zones[i].r_override_m2k_per_w))
+      snprintf(r_ov_tok, sizeof(r_ov_tok), "%.3f", snap->zones[i].r_override_m2k_per_w);
+    else
+      snprintf(r_ov_tok, sizeof(r_ov_tok), "null");
     appendf(buf, JSON_BUF_SIZE, off,
-            "],\"ua_w_per_k\":%s,\"thermal_mass_kwh_per_k\":%s,\"tau_h\":%s,"
+            "],\"area_m2\":%.1f,\"exterior_walls\":%u,"
+            "\"floor\":{\"slab_type\":\"%s\",\"active_thickness_cm\":%s,\"covering\":\"%s\","
+            "\"r_override_m2k_per_w\":%s,\"c_slab_per_m2\":%s,\"c_slab_kwh_per_k\":%s,"
+            "\"c_zone_kwh_per_k\":%s,\"r_m2k_per_w\":%s,\"absorb_headroom_k\":%s,\"unset\":%s},"
+            "\"ua_prior_w_per_k\":%s,\"ua_learned_w_per_k\":%s,\"ua_learned_confidence\":%s,"
+            "\"ua_learned_observed_days\":%s,\"ua_source\":\"%s\",\"ua_weight_override\":%.2f,"
+            "\"ua_effective_w_per_k\":%s,\"tau_prior_h\":%s,"
+            "\"ua_w_per_k\":%s,\"thermal_mass_kwh_per_k\":%s,\"tau_h\":%s,"
             "\"return_c\":%s,\"loop_share_pct\":%s,\"absorb_state\":\"%s\","
-            "\"absorb_capacity_rank\":%s,\"max_offset_c\":%s}",
+            "\"absorb_capacity_rank\":%s,\"max_offset_c\":%s,"
+            "\"group_id\":\"%s\",\"group_role\":\"%s\","
+            "\"wind_exposure\":%.2f,\"solar_gain\":%.2f,\"warnings\":[",
+            snap->zones[i].area_m2, static_cast<unsigned>(snap->zones[i].exterior_walls & 0x0F),
+            lv6::slab_type_to_string(snap->zones[i].slab_type), thick_tok,
+            lv6::covering_type_to_string(snap->zones[i].covering), r_ov_tok, c_slab_m2, c_slab,
+            c_zone, r_tok, headroom, th.floor_unset ? "true" : "false", ua_prior, ua_learned, conf,
+            days_tok, th.ua_source, snap->zones[i].ua_weight_override, ua_eff,
+            th.plausible && std::isfinite(th.tau_prior_h) ? tau : "null",
             th.plausible ? ua : "null", th.plausible ? mass : "null",
-            th.plausible ? tau : "null", return_c, share, absorb_state, rank, max_offset);
+            th.plausible && std::isfinite(th.tau_prior_h) ? tau : "null", return_c, share,
+            absorb_state, rank, max_offset, group_id, lv6::group_role_to_string(role),
+            snap->zones[i].wind_exposure, snap->zones[i].solar_gain);
+    bool fw = true;
+    if (th.thickness_ignored) {
+      appendf(buf, JSON_BUF_SIZE, off, "%s\"thickness_ignored\"", fw ? "" : ",");
+      fw = false;
+    }
+    if (th.high_floor_resistance) {
+      appendf(buf, JSON_BUF_SIZE, off, "%s\"high_floor_resistance\"", fw ? "" : ",");
+      fw = false;
+    }
+    appendf(buf, JSON_BUF_SIZE, off, "]}");
   }
   appendf(buf, JSON_BUF_SIZE, off, "]}}");
   send_text_(request, 200, "application/json", buf, true, "no-cache");
@@ -2000,7 +2182,8 @@ void LV6Dashboard::handle_zone_(AsyncWebServerRequest *request, uint8_t zone) {
     snprintf(probe, sizeof(probe), "null");
 
   char ua[24], mass[24], tau[24], share[24], rank[16];
-  const auto th = lv6::thermal_model::estimate(z);
+  const auto th = lv6::thermal_model::estimate(
+      z, this->config_store_ ? this->config_store_->get_house_physics() : lv6::HousePhysicsConfig{});
   format_float_token(ua, sizeof(ua), th.ua_w_per_k, 1);
   format_float_token(mass, sizeof(mass), th.thermal_mass_kwh_per_k, 2);
   format_float_token(tau, sizeof(tau), th.tau_h, 1);
@@ -2679,6 +2862,10 @@ void LV6Dashboard::handle_v1_(AsyncWebServerRequest *request, const char *path) 
     this->handle_zones_(request);
     return;
   }
+  if (strcmp(path, "/groups") == 0) {
+    this->handle_groups_(request);
+    return;
+  }
   if ((zone = match_zone_resource(path, "/zones")) != -1) {
     if (zone == 0) {
       this->send_v1_(request, 400, "invalid_zone", "Zone must be in range 1..6");
@@ -2771,6 +2958,52 @@ void LV6Dashboard::handle_v1_(AsyncWebServerRequest *request, const char *path) 
   }
   if (strcmp(path, "/absorb-window") == 0) {
     this->handle_absorb_window_(request, body);
+    return;
+  }
+  if (strcmp(path, "/groups") == 0) {
+    this->handle_groups_write_(request, body);
+    return;
+  }
+  if (strncmp(path, "/groups/", 8) == 0) {
+    const char *rest = path + 8;
+    const char *slash = strchr(rest, '/');
+    if (slash != nullptr && strcmp(slash, "/remove") == 0) {
+      char gid[lv6::GROUP_ID_LEN]{};
+      size_t n = static_cast<size_t>(slash - rest);
+      if (n >= sizeof(gid))
+        n = sizeof(gid) - 1;
+      memcpy(gid, rest, n);
+      gid[n] = '\0';
+      this->handle_group_remove_(request, gid, body);
+      return;
+    }
+  }
+  if (strcmp(path, "/physics/house") == 0) {
+    this->handle_physics_house_(request, body);
+    return;
+  }
+  if ((zone = match_zone_route(path, "/zones", "physics")) != -1) {
+    if (zone == 0) {
+      this->send_v1_(request, 400, "invalid_zone", "Zone must be in range 1..6");
+      return;
+    }
+    this->handle_zone_physics_(request, static_cast<uint8_t>(zone), body);
+    return;
+  }
+  if ((zone = match_zone_route(path, "/zones", "ua-learned")) != -1) {
+    if (zone == 0) {
+      this->send_v1_(request, 400, "invalid_zone", "Zone must be in range 1..6");
+      return;
+    }
+    this->handle_zone_ua_learned_(request, static_cast<uint8_t>(zone), body);
+    return;
+  }
+  if ((zone = match_zone_route(path, "/zones", "forecast-profile")) != -1) {
+    if (zone == 0) {
+      this->send_v1_(request, 400, "invalid_zone", "Zone must be in range 1..6");
+      return;
+    }
+    this->handle_forecast_profile_(request, static_cast<uint8_t>(zone), body);
     return;
   }
   // Bring-up instrument, not a control surface: it only wiggles LATCH_ARM while

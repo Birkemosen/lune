@@ -170,7 +170,7 @@ int main() {
   expect(doc.find("\"_type\":\"lune-v6-settings\"") != std::string::npos,
          "export carries the envelope type");
   expect(doc.find("\"_version\":1") != std::string::npos, "export carries the schema version");
-  expect(doc.find("\"zone\":5") != std::string::npos, "export carries config_versions from lv6_types");
+  expect(doc.find("\"zone\":6") != std::string::npos, "export carries config_versions from lv6_types");
   expect(doc.find("\"installation_id\":\"house-1\"") != std::string::npos,
          "authority identity is exported as metadata");
 

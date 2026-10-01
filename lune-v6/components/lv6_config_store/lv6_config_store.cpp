@@ -4,10 +4,12 @@
 
 #include "lv6_config_store.h"
 #include "esphome/core/log.h"
+#include "group_model.h"
 #include <cinttypes>
 #include <cctype>
 #include <cstring>
 #include <algorithm>
+#include <cmath>
 #include <vector>
 #include "esp_system.h"
 
@@ -466,6 +468,54 @@ void Lv6ConfigStore::update_authority(const AuthorityConfig &authority) {
   mark_dirty();
 }
 
+void Lv6ConfigStore::update_house_physics(const HousePhysicsConfig &house) {
+  HousePhysicsConfig sanitized = house;
+  sanitized.u_base = std::clamp(sanitized.u_base, 0.1f, 2.0f);
+  sanitized.u_wall = std::clamp(sanitized.u_wall, 0.0f, 2.0f);
+  sanitized.c_struct = std::clamp(sanitized.c_struct, 0.0f, 0.30f);
+  if (mutex_ == nullptr) {
+    config_.house_physics = sanitized;
+    mark_dirty();
+    return;
+  }
+  xSemaphoreTake(mutex_, portMAX_DELAY);
+  config_.house_physics = sanitized;
+  xSemaphoreGive(mutex_);
+  mark_dirty();
+}
+
+HousePhysicsConfig Lv6ConfigStore::get_house_physics() const {
+  if (mutex_ == nullptr)
+    return config_.house_physics;
+  xSemaphoreTake(mutex_, portMAX_DELAY);
+  HousePhysicsConfig copy = config_.house_physics;
+  xSemaphoreGive(mutex_);
+  return copy;
+}
+
+void Lv6ConfigStore::update_groups(const GroupsConfig &groups) {
+  if (mutex_ == nullptr) {
+    config_.groups = groups;
+    group_model::apply_sync_mirror(config_.groups, config_.zones);
+    mark_dirty();
+    return;
+  }
+  xSemaphoreTake(mutex_, portMAX_DELAY);
+  config_.groups = groups;
+  group_model::apply_sync_mirror(config_.groups, config_.zones);
+  xSemaphoreGive(mutex_);
+  mark_dirty();
+}
+
+GroupsConfig Lv6ConfigStore::get_groups() const {
+  if (mutex_ == nullptr)
+    return config_.groups;
+  xSemaphoreTake(mutex_, portMAX_DELAY);
+  GroupsConfig copy = config_.groups;
+  xSemaphoreGive(mutex_);
+  return copy;
+}
+
 void Lv6ConfigStore::save_motor_telemetry(uint8_t motor, const MotorTelemetry &telemetry) {
   if (motor >= NUM_ZONES)
     return;
@@ -575,24 +625,66 @@ bool Lv6ConfigStore::load_zone_config_(nvs_handle_t handle) {
   size_t size = 0;
   if (nvs_get_blob(handle, KEY_ZONES, nullptr, &size) != ESP_OK)
     return false;  // no durable copy yet (first boot, or pre-upgrade firmware)
-  if (size != sizeof(uint32_t) + sizeof(ZoneConfig) * NUM_ZONES)
-    return false;  // layout changed — fall back to whatever the main blob/defaults gave
 
-  uint8_t blob[sizeof(uint32_t) + sizeof(ZoneConfig) * NUM_ZONES];
+  std::vector<uint8_t> blob(size);
   size_t read_size = size;
-  if (nvs_get_blob(handle, KEY_ZONES, blob, &read_size) != ESP_OK)
+  if (nvs_get_blob(handle, KEY_ZONES, blob.data(), &read_size) != ESP_OK)
+    return false;
+  if (read_size < sizeof(uint32_t))
     return false;
 
   uint32_t version = 0;
-  memcpy(&version, blob, sizeof(uint32_t));
-  if (!zone_config_blob_is_current(version, read_size))
-    return false;
+  memcpy(&version, blob.data(), sizeof(uint32_t));
 
-  xSemaphoreTake(mutex_, portMAX_DELAY);
-  memcpy(config_.zones, blob + sizeof(uint32_t), sizeof(ZoneConfig) * NUM_ZONES);
-  xSemaphoreGive(mutex_);
-  ESP_LOGI(TAG, "Zone config restored from durable key");
-  return true;
+  if (zone_config_blob_is_current(version, read_size)) {
+    xSemaphoreTake(mutex_, portMAX_DELAY);
+    memcpy(config_.zones, blob.data() + sizeof(uint32_t), sizeof(ZoneConfig) * NUM_ZONES);
+    xSemaphoreGive(mutex_);
+    ESP_LOGI(TAG, "Zone config restored from durable key (v%" PRIu32 ")", version);
+    return true;
+  }
+
+  // v5 → v6 append-only migration: copy preserved prefix; physics fields keep
+  // struct defaults (unset slab/covering, walls=0, no learned UA).
+  if (zone_config_blob_is_v5(version, read_size)) {
+    xSemaphoreTake(mutex_, portMAX_DELAY);
+    for (uint8_t i = 0; i < NUM_ZONES; i++) {
+      ZoneConfig z{};
+      memcpy(&z, blob.data() + sizeof(uint32_t) + i * ZONE_CONFIG_V5_SIZE, ZONE_CONFIG_V5_SIZE);
+      // Contract §11: migrated loops are unset until provisioned.
+      z.exterior_walls = 0;
+      z.slab_type = SlabType::UNSET;
+      z.covering = CoveringType::UNSET;
+      z.active_thickness_cm = 0.0f;
+      z.r_override_m2k_per_w = NAN;
+      z.ua_weight_override = 1.0f;
+      z.ua_learned_w_per_k = NAN;
+      z.ua_learned_confidence = NAN;
+      z.ua_learned_observed_days = 0;
+      z.ua_learned_ts_epoch_s = 0;
+      z.tau_learned_h = NAN;
+      z.wind_exposure = 0.0f;
+      z.solar_gain = 0.0f;
+      config_.zones[i] = z;
+    }
+    // Seed groups from legacy sync_to_zone stars when groups section is empty.
+    bool any_group = false;
+    for (uint8_t i = 0; i < MAX_GROUPS; i++) {
+      if (group_model::group_active(config_.groups.groups[i])) {
+        any_group = true;
+        break;
+      }
+    }
+    if (!any_group)
+      config_.groups = group_model::from_sync_to_zone(config_.zones);
+    xSemaphoreGive(mutex_);
+    ESP_LOGI(TAG, "Zone config migrated v5→v6 from durable key");
+    return true;
+  }
+
+  ESP_LOGW(TAG, "Zone config blob incompatible (v%" PRIu32 ", %u bytes); keeping defaults",
+           version, static_cast<unsigned>(read_size));
+  return false;
 }
 
 bool Lv6ConfigStore::erase_namespace() {
@@ -732,6 +824,14 @@ void Lv6ConfigStore::load_config_() {
   if (!had_authority)
     had_authority = load_legacy_authority(handle, config_.authority);
   had_all_sections &= had_authority;
+  had_all_sections &= load_section(handle, KEY_HOUSE_PHYS, HOUSE_PHYSICS_CONFIG_VERSION,
+                                   config_.house_physics);
+  bool had_groups = load_section(handle, KEY_GROUPS, GROUPS_CONFIG_VERSION, config_.groups);
+  if (!had_groups) {
+    // First boot of groups section: derive from sync_to_zone on current zones.
+    config_.groups = group_model::from_sync_to_zone(config_.zones);
+  }
+  had_all_sections &= had_groups;
   xSemaphoreGive(mutex_);
   if (had_all_sections)
     ESP_LOGI(TAG, "Global settings restored from durable keys");
@@ -777,6 +877,8 @@ void Lv6ConfigStore::save_config_() {
   save_section(handle, KEY_MANIFOLD, MANIFOLD_CONFIG_VERSION, snapshot.manifold_type);
   save_section(handle, KEY_BALANCING, BALANCING_CONFIG_VERSION, snapshot.balancing);
   save_section(handle, KEY_AUTHORITY, AUTHORITY_CONFIG_VERSION, snapshot.authority);
+  save_section(handle, KEY_HOUSE_PHYS, HOUSE_PHYSICS_CONFIG_VERSION, snapshot.house_physics);
+  save_section(handle, KEY_GROUPS, GROUPS_CONFIG_VERSION, snapshot.groups);
 
   nvs_commit(handle);
   nvs_close(handle);
