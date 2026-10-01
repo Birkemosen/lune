@@ -1,5 +1,8 @@
 # Lune V6 Architecture
 
+Installer- and operator-facing UI help lives in [Manual.md](./Manual.md).
+This file is the engineering overview.
+
 ## System Overview
 
 Lune V6 is a 6-zone underfloor heating (UFH) manifold controller in the Birkemosen Lune product line. It is built on ESP32-S3 with ESPHome firmware. Custom C++
@@ -56,8 +59,11 @@ lune/
 │   ├── lv6_ble_time_beacon/  Shelly Date/Time Broadcast for BLU display clocks
 │   └── lv6_dashboard/        HTTP API (/api/v1), dashboard asset serving
 ├── web/
-│   ├── dashboard-src/        Dashboard source (modular JS, esbuild)
-│   └── dashboard.js          Bundled artifact (committed, embedded in firmware)
+│   ├── build_ui.py           LDS2 HTML shell + i18n build
+│   ├── i18n/                 en/da string catalogues
+│   ├── binder-src/           Live binder (esbuild → dist/binder.js)
+│   ├── dashboard-src/core/   Shared /api/v1 client + store (used by binder)
+│   └── ui/                   Built CSS, HTML, binder (embedded in firmware)
 ├── test/ripple_counter/      Host-side unit tests (clang++, no ESP-IDF)
 ├── docs/                     Architecture, API contract, integration docs
 └── Makefile                  Build/deploy/test targets
@@ -123,13 +129,14 @@ trim contract are documented in
 Dashboard transport uses the dedicated `/api/v1` JSON namespace served by
 `lv6_dashboard` on the device web server (port 80):
 
-- The dashboard app is served at `/` (+ `/dashboard.js`); `/dashboard` and
+- The dashboard is served at `/` (cookie / Accept-Language), `/en/`, `/da/`,
+  `/lune-ui.css`, and `/binder.js` (also `/dashboard.js`); `/dashboard` and
   `/dashboard/` are retained as redirect-only legacy bookmarks
 - All dashboard reads/writes go through `/api/v1` — the dashboard must not call
   ESPHome entity REST routes (`/climate`, `/switch`, `/number`, …)
 - Home Assistant integration continues through the ESPHome native API
 - Contract: [lv6_api_v1.md](lv6_api_v1.md)
 
-Frontend source lives under `devices/lune-v6/web/dashboard-src/` and is bundled by esbuild
-into `devices/lune-v6/web/dashboard.js`, which is committed and embedded into the firmware
+Frontend source lives under `lune-v6/web/` (LDS2 `build_ui.py` + `binder-src/`) and
+is built into `lune-v6/web/ui/`, which is embedded into the firmware
 at build time.
