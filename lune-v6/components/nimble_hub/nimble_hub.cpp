@@ -204,7 +204,7 @@ void NimbleHub::on_sync_() {
   ESP_LOGI(TAG, "NimBLE synced (free_heap=%u internal=%u)",
            static_cast<unsigned>(esp_get_free_heap_size()),
            static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_INTERNAL)));
-  if (this->want_scan_ && !this->advertising_)
+  if (this->want_scan_)
     this->start_scan_locked_();
 #endif
 }
@@ -222,15 +222,6 @@ bool NimbleHub::start_scan(uint16_t interval_ms, uint16_t window_ms, bool active
   this->scan_active_ = active;
   this->continuous_scan_ = continuous;
   this->want_scan_ = true;
-  if (this->advertising_) {
-    // Demand gate may re-call start_scan every loop during a clock advertise
-    // burst (~12s); only log the first defer so DEBUG stays usable.
-    if (!this->scan_paused_for_adv_) {
-      ESP_LOGD(TAG, "Scan deferred until advertise ends");
-    }
-    this->scan_paused_for_adv_ = true;
-    return true;
-  }
   if (!this->synced_) {
     ESP_LOGD(TAG, "Scan queued until NimBLE sync");
     return true;
@@ -244,7 +235,6 @@ bool NimbleHub::start_scan(uint16_t interval_ms, uint16_t window_ms, bool active
 void NimbleHub::stop_scan() {
   this->want_scan_ = false;
   this->continuous_scan_ = false;
-  this->scan_paused_for_adv_ = false;
   this->stop_scan_locked_();
 }
 
@@ -304,21 +294,21 @@ bool NimbleHub::start_raw_advertise(const uint8_t *data, size_t len, const RawAd
     ESP_LOGW(TAG, "invalid advertise payload len=%u", static_cast<unsigned>(len));
     return false;
   }
-  if (this->advertising_) {
-    ESP_LOGW(TAG, "already advertising");
-    return false;
-  }
 
-  // Scan ↔ advertise mutex: pause discovery for the burst.
-  if (this->scanning_ || ble_gap_disc_active()) {
-    this->scan_paused_for_adv_ = this->want_scan_;
-    this->stop_scan_locked_();
+  // Concurrent with scan: do not pause discovery. Observer + Broadcaster roles.
+  if (this->advertising_ || ble_gap_adv_active()) {
+    int rc_data = ble_gap_adv_set_data(data, static_cast<int>(len));
+    if (rc_data != 0) {
+      ESP_LOGW(TAG, "ble_gap_adv_set_data (update) rc=%d", rc_data);
+      return false;
+    }
+    this->advertising_ = true;
+    return true;
   }
 
   int rc = ble_gap_adv_set_data(data, static_cast<int>(len));
   if (rc != 0) {
     ESP_LOGW(TAG, "ble_gap_adv_set_data rc=%d", rc);
-    this->resume_scan_after_advertise_();
     return false;
   }
 
@@ -331,7 +321,31 @@ bool NimbleHub::start_raw_advertise(const uint8_t *data, size_t len, const RawAd
   rc = ble_gap_adv_start(this->own_addr_type_, nullptr, BLE_HS_FOREVER, &adv, gap_event_cb, this);
   if (rc != 0) {
     ESP_LOGW(TAG, "ble_gap_adv_start rc=%d", rc);
-    this->resume_scan_after_advertise_();
+    return false;
+  }
+  this->advertising_ = true;
+  ESP_LOGI(TAG, "Advertise started itvl=%u..%u (concurrent with scan)",
+           static_cast<unsigned>(params.interval_min), static_cast<unsigned>(params.interval_max));
+  return true;
+#else
+  (void) data;
+  (void) len;
+  (void) params;
+  return false;
+#endif
+}
+
+bool NimbleHub::set_raw_advertise_data(const uint8_t *data, size_t len) {
+#ifdef USE_ESP32
+  if (!this->enabled_ || !this->synced_)
+    return false;
+  if (data == nullptr || len == 0 || len > BLE_HS_ADV_MAX_SZ)
+    return false;
+  if (!this->advertising_ && !ble_gap_adv_active())
+    return false;
+  int rc = ble_gap_adv_set_data(data, static_cast<int>(len));
+  if (rc != 0) {
+    ESP_LOGW(TAG, "ble_gap_adv_set_data rc=%d", rc);
     return false;
   }
   this->advertising_ = true;
@@ -339,7 +353,6 @@ bool NimbleHub::start_raw_advertise(const uint8_t *data, size_t len, const RawAd
 #else
   (void) data;
   (void) len;
-  (void) params;
   return false;
 #endif
 }
@@ -355,16 +368,7 @@ void NimbleHub::stop_advertise() {
     ESP_LOGD(TAG, "ble_gap_adv_stop rc=%d", rc);
   }
   this->advertising_ = false;
-  this->resume_scan_after_advertise_();
 #endif
-}
-
-void NimbleHub::resume_scan_after_advertise_() {
-  if (this->scan_paused_for_adv_ || this->want_scan_) {
-    this->scan_paused_for_adv_ = false;
-    if (this->want_scan_ && this->synced_ && this->enabled_)
-      this->start_scan_locked_();
-  }
 }
 
 void NimbleHub::dispatch_advertisement_(const struct ble_gap_disc_desc *disc) {
@@ -419,12 +423,11 @@ int NimbleHub::on_gap_event_(struct ble_gap_event *event) {
       return 0;
     case BLE_GAP_EVENT_DISC_COMPLETE:
       this->scanning_ = false;
-      if (this->want_scan_ && this->continuous_scan_ && !this->advertising_)
+      if (this->want_scan_ && this->continuous_scan_)
         this->start_scan_locked_();
       return 0;
     case BLE_GAP_EVENT_ADV_COMPLETE:
       this->advertising_ = false;
-      this->resume_scan_after_advertise_();
       return 0;
     default:
       return 0;

@@ -197,15 +197,15 @@ RIPPLE_SRCS      = components/lv6_valve_controller/ripple_counter.cpp \
                    test/ripple_counter/test_ripple_counter.cpp
 RIPPLE_OUT       = /tmp/test_ripple_counter
 REV31_LOGIC_SRCS = test/rev31_logic/test_rev31_logic.cpp
-REV31_LOGIC_OUT  = /tmp/test_hv6_rev31_logic
+REV31_LOGIC_OUT  = /tmp/test_lv6_rev31_logic
 REV32_LOGIC_SRCS = test/rev32_logic/test_rev32_logic.cpp
-REV32_LOGIC_OUT  = /tmp/test_hv6_rev32_logic
+REV32_LOGIC_OUT  = /tmp/test_lv6_rev32_logic
 SAFETY_LIMITS_SRCS = test/safety_limits/test_safety_limits.cpp
-SAFETY_LIMITS_OUT  = /tmp/test_hv6_safety_limits
+SAFETY_LIMITS_OUT  = /tmp/test_lv6_safety_limits
 STALL_MODEL_SRCS = test/stall_model/test_stall_model.cpp
 STROKE_LEARNING_SRCS = test/stroke_learning/test_stroke_learning.cpp
-STROKE_LEARNING_OUT  = /tmp/test_hv6_stroke_learning
-STALL_MODEL_OUT  = /tmp/test_hv6_stall_model
+STROKE_LEARNING_OUT  = /tmp/test_lv6_stroke_learning
+STALL_MODEL_OUT  = /tmp/test_lv6_stall_model
 
 test-ripple:
 	$(RIPPLE_CXX) $(RIPPLE_CXXFLAGS) $(RIPPLE_SRCS) -o $(RIPPLE_OUT) -lm
@@ -236,33 +236,33 @@ test-stall-model:
 BALANCE_SRCS = test/adaptive_balance/test_adaptive_balance.cpp
 BALANCE_OUT  = /tmp/test_adaptive_balance
 AUTHORITY_LEASE_SRCS = test/authority_lease/test_authority_lease.cpp
-AUTHORITY_LEASE_OUT  = /tmp/test_hv6_authority_lease
+AUTHORITY_LEASE_OUT  = /tmp/test_lv6_authority_lease
 PREHEAT_POLICY_SRCS = test/preheat_policy/test_preheat_policy.cpp
-PREHEAT_POLICY_OUT  = /tmp/test_hv6_preheat_policy
+PREHEAT_POLICY_OUT  = /tmp/test_lv6_preheat_policy
 PREHEAT_ABSORB_SRCS = test/preheat_absorb/test_preheat_absorb.cpp
-PREHEAT_ABSORB_OUT  = /tmp/test_hv6_preheat_absorb
+PREHEAT_ABSORB_OUT  = /tmp/test_lv6_preheat_absorb
 ABSORB_COMMAND_SRCS = test/absorb_command/test_absorb_command.cpp
-ABSORB_COMMAND_OUT  = /tmp/test_hv6_absorb_command
+ABSORB_COMMAND_OUT  = /tmp/test_lv6_absorb_command
 THERMAL_MODEL_SRCS = test/thermal_model/test_thermal_model.cpp
-THERMAL_MODEL_OUT  = /tmp/test_hv6_thermal_model
+THERMAL_MODEL_OUT  = /tmp/test_lv6_thermal_model
 GROUP_MODEL_SRCS = test/group_model/test_group_model.cpp
-GROUP_MODEL_OUT  = /tmp/test_hv6_group_model
+GROUP_MODEL_OUT  = /tmp/test_lv6_group_model
 PROBE_MAPPING_SRCS = test/probe_mapping/test_probe_mapping.cpp
-PROBE_MAPPING_OUT  = /tmp/test_hv6_probe_mapping
+PROBE_MAPPING_OUT  = /tmp/test_lv6_probe_mapping
 FLOW_ALLOCATOR_SRCS = test/flow_allocator/test_flow_allocator.cpp
-FLOW_ALLOCATOR_OUT  = /tmp/test_hv6_flow_allocator
+FLOW_ALLOCATOR_OUT  = /tmp/test_lv6_flow_allocator
 HYDRAULIC_POLICY_SRCS = test/hydraulic_policy/test_hydraulic_policy.cpp
-HYDRAULIC_POLICY_OUT  = /tmp/test_hv6_hydraulic_policy
+HYDRAULIC_POLICY_OUT  = /tmp/test_lv6_hydraulic_policy
 HYDRAULIC_DIAGNOSTICS_SRCS = test/hydraulic_diagnostics/test_hydraulic_diagnostics.cpp
-HYDRAULIC_DIAGNOSTICS_OUT  = /tmp/test_hv6_hydraulic_diagnostics
+HYDRAULIC_DIAGNOSTICS_OUT  = /tmp/test_lv6_hydraulic_diagnostics
 REQUEST_GUARD_SRCS = test/request_guard/test_request_guard.cpp
-REQUEST_GUARD_OUT  = /tmp/test_hv6_request_guard
+REQUEST_GUARD_OUT  = /tmp/test_lv6_request_guard
 BLE_TIME_BEACON_SRCS = test/ble_time_beacon/test_ble_time_beacon.cpp
-BLE_TIME_BEACON_OUT  = /tmp/test_hv6_ble_time_beacon
+BLE_TIME_BEACON_OUT  = /tmp/test_lv6_ble_time_beacon
 SETTINGS_BACKUP_SRCS = test/settings_backup/test_settings_backup.cpp components/lv6_dashboard/settings_backup.cpp
-SETTINGS_BACKUP_OUT  = /tmp/test_hv6_settings_backup
+SETTINGS_BACKUP_OUT  = /tmp/test_lv6_settings_backup
 CONTROL_MODE_SRCS = test/control_mode/test_control_mode_policy.cpp
-CONTROL_MODE_OUT  = /tmp/test_hv6_control_mode
+CONTROL_MODE_OUT  = /tmp/test_lv6_control_mode
 
 test-balance:
 	$(RIPPLE_CXX) -std=c++17 -O2 -Wall -Wextra -I components/lv6_zone_controller $(BALANCE_SRCS) -o $(BALANCE_OUT) -lm
@@ -395,7 +395,7 @@ erase-nvs: check
 	@# ESPHome 8MB dual-OTA layout (see packages/board/esp32-s3.yaml flash_size):
 	@# otadata@0x9000, app0@0x10000 (0x3C0000), app1@0x3D0000 (0x3C0000),
 	@# nvs@0x790000 (0x70000). The old 0x9000/0x6000 erase hit otadata, not NVS.
-	@echo "Erasing hv6 NVS partition on $(SERIAL_PORT) at 0x790000 (size 0x70000)..."
+	@echo "Erasing lv6 NVS partition on $(SERIAL_PORT) at 0x790000 (size 0x70000)..."
 	$(PYTHON) -m esptool --port $(SERIAL_PORT) erase_region 0x790000 0x70000
 	@echo "NVS erased. Zone settings and calibration cleared — device will use defaults."
 

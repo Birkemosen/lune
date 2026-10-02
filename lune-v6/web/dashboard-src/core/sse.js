@@ -1,9 +1,15 @@
 // core/sse.js
+//
+// Transport: cheap GET /api/v1/revision on a slow cadence; full GET /api/v1/state
+// only when data_revision or runtime_revision moves (or the user comes back to
+// the tab). Temperatures typically change every few minutes — there is no need
+// to hammer either endpoint at 1 Hz while idle.
 
 import { startMock } from './mock.js';
 import {
   setEntity, setLive, sampleHistory, addActivity, setI2cResult,
   shouldSuppressStateUpdate, msUntilStateUnsuppressed, getDashboardValue, subscribeDashboard,
+  setDashboardValue, ev,
 } from './store.js';
 import { fetchHistory, fetchLogs, fetchPhysicsAlerts } from './api.js';
 import { gkey } from '../utils/keys.js';
@@ -19,6 +25,15 @@ let lastRuntimeRevision = null;
 let learningPollTimer = null;
 let postWriteRefreshTimer = null;
 let backgroundSuspended = false;
+/** True while a /state request is in flight. */
+let stateFetchInFlight = false;
+/** Coalesce: one more /state after the in-flight one finishes. */
+let stateFetchQueued = false;
+
+/** Idle revision probe. Learning uses its own 1 s /state poll while active. */
+const REVISION_IDLE_MS = 10 * 1000;
+/** Logs can lag a bit; still feels live without competing with /state. */
+const LOGS_IDLE_MS = 10 * 1000;
 
 function labOwnsHttp() {
   return !!getDashboardValue('motorLabBusy') || backgroundSuspended;
@@ -45,10 +60,6 @@ function schedulePostWriteRefresh() {
 }
 
 async function fetchStateOnce() {
-  if (pollAbortController) {
-    pollAbortController.abort();
-  }
-
   pollAbortController = new AbortController();
 
   const response = await fetch('/api/v1/state', {
@@ -91,16 +102,38 @@ function syncLearningPoller() {
   }
 }
 
+/**
+ * Apply a /state entity map. Skip null/undefined numeric overwrites so a
+ * transient missing sensor reading cannot wipe the last good value (and paint
+ * it as 0.00 via Number(null)).
+ */
 function applyStateMap(payload) {
   if (!payload || typeof payload !== 'object') return;
   if (shouldSuppressStateUpdate()) {
-    // Do not drop the refresh permanently — retry once the echo window ends.
     schedulePostWriteRefresh();
     return;
   }
-  for (const id in payload) setEntity(id, payload[id]);
+  for (const id in payload) {
+    const patch = payload[id];
+    if (!patch || typeof patch !== 'object') continue;
+    const next = patch.value !== undefined ? patch.value
+      : (patch.v !== undefined ? patch.v : undefined);
+    if (next === null || next === undefined) {
+      const prev = ev(id);
+      // Keep last finite reading; still allow state/string updates below.
+      if (prev != null && Number.isFinite(Number(prev))) {
+        const rest = { ...patch };
+        delete rest.value;
+        delete rest.v;
+        if (Object.keys(rest).length) setEntity(id, rest);
+        continue;
+      }
+    }
+    setEntity(id, patch);
+  }
   sampleHistory(false);
   syncLearningPoller();
+  setDashboardValue('stateTick', Date.now());
 }
 
 function onMessage(message) {
@@ -125,7 +158,6 @@ function onMessage(message) {
 }
 
 function ensureAuxiliaryPollers() {
-  // Fetch history on initial connection and then every 5 minutes.
   if (!labOwnsHttp()) fetchHistory();
   if (!historyRefreshTimer) {
     historyRefreshTimer = setInterval(() => {
@@ -134,25 +166,31 @@ function ensureAuxiliaryPollers() {
     }, 5 * 60 * 1000);
   }
   if (!labOwnsHttp()) fetchPhysicsAlerts();
-  // Soft poll for floor.unset / high-R attention (same cadence as history).
   if (!physicsAlertTimer) {
     physicsAlertTimer = setInterval(() => {
       if (labOwnsHttp()) return;
       fetchPhysicsAlerts();
     }, 5 * 60 * 1000);
   }
-  // Live device logs: poll fast (~3 s) so the Logs view feels live.
   if (!labOwnsHttp()) fetchLogs();
   if (!logsRefreshTimer) {
     logsRefreshTimer = setInterval(() => {
       if (labOwnsHttp()) return;
       fetchLogs();
-    }, 3000);
+    }, LOGS_IDLE_MS);
   }
 }
 
 function pollStateCycle() {
   if (labOwnsHttp()) return;
+  // Coalesce: never abort an in-flight /state — that was wiping the UI when
+  // /revision (or learning) re-entered while a large snapshot was still loading.
+  if (stateFetchInFlight) {
+    stateFetchQueued = true;
+    return;
+  }
+  stateFetchInFlight = true;
+  stateFetchQueued = false;
   fetchStateOnce()
     .then((message) => {
       if (labOwnsHttp()) return;
@@ -160,8 +198,18 @@ function pollStateCycle() {
       onMessage(message);
       ensureAuxiliaryPollers();
     })
-    .catch(() => {
+    .catch((err) => {
+      // AbortError only if we explicitly suspended (Motor Lab); ignore.
+      if (err && err.name === 'AbortError') return;
       if (!labOwnsHttp()) setLive(false);
+    })
+    .finally(() => {
+      stateFetchInFlight = false;
+      pollAbortController = null;
+      if (stateFetchQueued && !labOwnsHttp()) {
+        stateFetchQueued = false;
+        pollStateCycle();
+      }
     });
 }
 
@@ -174,10 +222,15 @@ async function pollRevision() {
     const data = payload && payload.data;
     const revision = data && data.data_revision;
     const runtimeRevision = data && data.runtime_revision;
-    // Uptime is not a config revision. Ship it on this cheap poll so the
-    // connectivity card can keep ticking without refetching the full snapshot.
+    // Uptime only — do NOT raise stateTick here. A full repaint on every
+    // revision poll was resetting climate/forms against incomplete store state.
     if (data && data.uptime_s != null) {
-      setEntity(gkey.uptime, { value: Number(data.uptime_s) });
+      const next = Number(data.uptime_s);
+      const prev = Number(ev(gkey.uptime));
+      if (!Number.isFinite(prev) || prev !== next) {
+        setEntity(gkey.uptime, { value: next });
+        setDashboardValue('uptimeTick', Date.now());
+      }
     }
     const dataChanged = lastRevision === null || revision !== lastRevision;
     const runtimeChanged =
@@ -194,13 +247,14 @@ async function pollRevision() {
   }
 }
 
-/** Abort in-flight background GETs so Motor Lab owns the HTTP worker. */
 function suspendBackgroundPolling_() {
   backgroundSuspended = true;
   if (pollAbortController) {
     pollAbortController.abort();
     pollAbortController = null;
   }
+  stateFetchInFlight = false;
+  stateFetchQueued = false;
   if (learningPollTimer) {
     clearInterval(learningPollTimer);
     learningPollTimer = null;
@@ -209,8 +263,18 @@ function suspendBackgroundPolling_() {
 
 function resumeBackgroundPolling_() {
   backgroundSuspended = false;
-  // One immediate refresh so Overview/gauges catch up after a long capture.
   pollStateCycle();
+}
+
+/** Immediate revision check (user focus / visibility / post-interaction). */
+export function refreshDashboard() {
+  if (labOwnsHttp()) return;
+  pollRevision();
+}
+
+function onUserPresence() {
+  if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+  refreshDashboard();
 }
 
 export function connect() {
@@ -226,14 +290,20 @@ export function connect() {
     else resumeBackgroundPolling_();
   });
 
-  // When the last in-flight write settles, schedule a deferred /state pull so
-  // optimistic values converge with the device after the echo-suppress window.
   subscribeDashboard('pendingWrites', () => {
     if (getDashboardValue('pendingWrites') === 0) schedulePostWriteRefresh();
   });
 
   pollStateCycle();
-  // 1 s revision poll so learning progress (runtime_revision) reaches the UI
-  // without waiting for a config write to bump data_revision.
-  if (!revisionTimer) revisionTimer = setInterval(pollRevision, 1000);
+  if (!revisionTimer) revisionTimer = setInterval(pollRevision, REVISION_IDLE_MS);
+
+  if (typeof document !== 'undefined') {
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') onUserPresence();
+    });
+  }
+  if (typeof window !== 'undefined') {
+    window.addEventListener('focus', onUserPresence);
+    window.addEventListener('pageshow', onUserPresence);
+  }
 }

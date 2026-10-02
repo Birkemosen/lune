@@ -319,7 +319,9 @@ class Lv6ValveController : public esphome::Component {
   static constexpr uint32_t TICK_MS = 10;
   static constexpr uint32_t FAST_TICK_MS = 1;
   static constexpr uint8_t TICKS_PER_FSM = TICK_MS / FAST_TICK_MS;
-  static constexpr uint32_t STACK_SIZE = 8192;
+  // Calibration nests execute_move_ → motor_loop_ → process_tick_ with large
+  // locals; 8 KB overflowed on enable→auto-relearn. Match zone task headroom.
+  static constexpr uint32_t STACK_SIZE = 16384;
   static constexpr UBaseType_t PRIORITY = 7;
   static constexpr BaseType_t CORE = 1;
   static constexpr uint8_t CMD_QUEUE_LEN = 12;
@@ -388,6 +390,12 @@ class Lv6ValveController : public esphome::Component {
   static constexpr uint32_t CALIBRATION_REQUEST_GUARD_MS = 15000;  ///< Ignore calibration requests briefly after boot
   static constexpr uint32_t AUTO_START_DELAY_MS = 10000;  ///< Delay after boot before auto-enable + full calibration
   static constexpr uint32_t CALIBRATION_NO_RIPPLE_ABORT_MS = 3000;  ///< Abort a calibration pass if no commutation ripples seen (no motor wired)
+  /// Homing close that hits BLOCKED/overrun (already seated, or seated without
+  /// a confirmed endpoint) opens this long before closing again. Steps up on
+  /// each retry so a short pop-off still leaves enough dead space for pin detect.
+  static constexpr uint32_t LEARN_CLOSE_BACKOFF_OPEN_MS = 10000;
+  static constexpr uint32_t LEARN_CLOSE_BACKOFF_STEP_MS = 5000;
+  static constexpr uint8_t LEARN_CLOSE_BACKOFF_MAX = 3;
   static constexpr UBaseType_t CALIBRATION_BOOST_PRIORITY = PRIORITY + 3;  ///< Modest boost during calibration; stays below ESP-IDF system tasks
   static constexpr bool DEVELOPMENT_KEEP_NSLEEP_AWAKE = false;  ///< Set true only when debugging brownout/resets
   static constexpr uint16_t TRACE_MAX_SAMPLES = 2000;
@@ -507,6 +515,12 @@ class Lv6ValveController : public esphome::Component {
   /// Run a single close-to-endstop or open-to-endstop pass.
   /// Returns the run time in ms, or 0 on fault.
   uint32_t calibration_pass_(uint8_t zone, MotorDirection dir);
+  /// Home to the close seat. If the valve is already seated, GPIO backends
+  /// report BLOCKED instead of an endpoint — back off open, then close again.
+  bool home_to_seat_(uint8_t zone);
+  /// Timed open during learning (endstop still armed). Used to unseat a
+  /// valve that homing-close found already closed. Faults are swallowed.
+  void calibration_backoff_open_(uint8_t zone, uint32_t hold_ms);
   /// Working-range learning (stroke_learning.h): home, bounded open legs and
   /// close passes that must start in dead space. Returns true when learned.
   bool learn_working_range_(uint8_t zone, uint8_t attempt);

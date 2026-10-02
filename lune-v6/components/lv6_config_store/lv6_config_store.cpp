@@ -7,6 +7,7 @@
 #include "group_model.h"
 #include <cinttypes>
 #include <cctype>
+#include <cstdio>
 #include <cstring>
 #include <algorithm>
 #include <cmath>
@@ -160,7 +161,7 @@ void Lv6ConfigStore::setup() {
     return;
   }
   BaseType_t task_ok = xTaskCreatePinnedToCore(
-      &Lv6ConfigStore::nvs_task_entry_, "hv6_nvs", NVS_TASK_STACK, this,
+      &Lv6ConfigStore::nvs_task_entry_, "lv6_nvs", NVS_TASK_STACK, this,
       NVS_TASK_PRIO, &nvs_task_, NVS_TASK_CORE);
   if (task_ok != pdPASS) {
     ESP_LOGE(TAG, "Failed to create NVS persistence task");
@@ -169,6 +170,7 @@ void Lv6ConfigStore::setup() {
   }
 
   initialized_ = true;
+  migrate_legacy_nvs_namespace_();
   load_config_();
 
   ESP_LOGI(TAG, "Config store initialized");
@@ -558,6 +560,40 @@ bool Lv6ConfigStore::load_motor_telemetry(uint8_t motor, MotorTelemetry &telemet
   return err == ESP_OK;
 }
 
+void Lv6ConfigStore::set_drivers_enabled_pref(bool enabled) {
+  nvs_handle_t handle;
+  if (nvs_open(NVS_NAMESPACE, NVS_READWRITE, &handle) != ESP_OK) {
+    ESP_LOGW(TAG, "NVS open for drivers pref failed");
+    return;
+  }
+  const uint8_t v = enabled ? 1 : 0;
+  esp_err_t err = nvs_set_u8(handle, KEY_DRIVERS_EN, v);
+  if (err == ESP_OK)
+    err = nvs_commit(handle);
+  nvs_close(handle);
+  if (err != ESP_OK) {
+    ESP_LOGW(TAG, "Failed to persist drivers_enabled=%d: %s",
+             enabled ? 1 : 0, esp_err_to_name(err));
+    return;
+  }
+  ESP_LOGI(TAG, "Persisted drivers_enabled=%s", enabled ? "on" : "off");
+}
+
+bool Lv6ConfigStore::load_drivers_enabled_pref(bool *out) const {
+  if (out == nullptr)
+    return false;
+  nvs_handle_t handle;
+  if (nvs_open(NVS_NAMESPACE, NVS_READONLY, &handle) != ESP_OK)
+    return false;
+  uint8_t v = 0;
+  esp_err_t err = nvs_get_u8(handle, KEY_DRIVERS_EN, &v);
+  nvs_close(handle);
+  if (err != ESP_OK)
+    return false;
+  *out = (v != 0);
+  return true;
+}
+
 // -----------------------------------------------------------------------------
 // Sensor pairing (BLE MAC + temp source) — persisted under its own key so it
 // survives the version-based discard of the main config blob on firmware update.
@@ -687,6 +723,97 @@ bool Lv6ConfigStore::load_zone_config_(nvs_handle_t handle) {
   return false;
 }
 
+bool Lv6ConfigStore::nvs_namespace_has_config_(const char *ns) {
+  nvs_handle_t handle;
+  if (nvs_open(ns, NVS_READONLY, &handle) != ESP_OK)
+    return false;
+
+  const char *keys[] = {
+      KEY_CONFIG, KEY_SENSORS, KEY_ZONES, KEY_SYSTEM, KEY_CONTROL, KEY_PROBES,
+      KEY_PID, KEY_MOTOR_CFG, KEY_MANIFOLD, KEY_BALANCING, KEY_AUTHORITY,
+      KEY_HOUSE_PHYS, KEY_GROUPS,
+  };
+  bool found = false;
+  for (const char *key : keys) {
+    size_t size = 0;
+    if (nvs_get_blob(handle, key, nullptr, &size) == ESP_OK && size > 0) {
+      found = true;
+      break;
+    }
+  }
+  if (!found) {
+    for (uint8_t i = 0; i < NUM_ZONES; i++) {
+      char key[8];
+      snprintf(key, sizeof(key), "%s%u", KEY_MOTOR_PFX, static_cast<unsigned>(i));
+      size_t size = 0;
+      if (nvs_get_blob(handle, key, nullptr, &size) == ESP_OK && size > 0) {
+        found = true;
+        break;
+      }
+    }
+  }
+  nvs_close(handle);
+  return found;
+}
+
+void Lv6ConfigStore::migrate_legacy_nvs_namespace_() {
+  if (nvs_namespace_has_config_(NVS_NAMESPACE))
+    return;
+  if (!nvs_namespace_has_config_(NVS_NAMESPACE_LEGACY))
+    return;
+
+  nvs_handle_t src = 0;
+  nvs_handle_t dst = 0;
+  if (nvs_open(NVS_NAMESPACE_LEGACY, NVS_READONLY, &src) != ESP_OK)
+    return;
+  if (nvs_open(NVS_NAMESPACE, NVS_READWRITE, &dst) != ESP_OK) {
+    nvs_close(src);
+    return;
+  }
+
+  const char *keys[] = {
+      KEY_CONFIG, KEY_SENSORS, KEY_ZONES, KEY_SYSTEM, KEY_CONTROL, KEY_PROBES,
+      KEY_PID, KEY_MOTOR_CFG, KEY_MANIFOLD, KEY_BALANCING, KEY_AUTHORITY,
+      KEY_HOUSE_PHYS, KEY_GROUPS,
+  };
+  uint32_t copied = 0;
+  auto copy_blob = [&](const char *key) {
+    size_t size = 0;
+    if (nvs_get_blob(src, key, nullptr, &size) != ESP_OK || size == 0)
+      return;
+    std::vector<uint8_t> buf(size);
+    size_t read_size = size;
+    if (nvs_get_blob(src, key, buf.data(), &read_size) != ESP_OK)
+      return;
+    if (nvs_set_blob(dst, key, buf.data(), read_size) == ESP_OK)
+      copied++;
+  };
+
+  for (const char *key : keys)
+    copy_blob(key);
+  for (uint8_t i = 0; i < NUM_ZONES; i++) {
+    char key[8];
+    snprintf(key, sizeof(key), "%s%u", KEY_MOTOR_PFX, static_cast<unsigned>(i));
+    copy_blob(key);
+  }
+
+  nvs_commit(dst);
+  nvs_close(src);
+  nvs_close(dst);
+
+  ESP_LOGW(TAG, "Migrated %" PRIu32 " NVS key(s) from legacy '%s' → '%s'",
+           copied, NVS_NAMESPACE_LEGACY, NVS_NAMESPACE);
+
+  // Drop the legacy namespace so a later factory erase does not leave a stale
+  // copy, and so the HeatValve-era name disappears from the partition table.
+  nvs_handle_t legacy = 0;
+  if (nvs_open(NVS_NAMESPACE_LEGACY, NVS_READWRITE, &legacy) == ESP_OK) {
+    nvs_erase_all(legacy);
+    nvs_commit(legacy);
+    nvs_close(legacy);
+  }
+}
+
 bool Lv6ConfigStore::erase_namespace() {
   if (!initialized_)
     return false;
@@ -695,26 +822,34 @@ bool Lv6ConfigStore::erase_namespace() {
   if (dirty_timer_)
     esp_timer_stop(dirty_timer_);
 
-  nvs_handle_t handle;
-  esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &handle);
-  if (err != ESP_OK) {
-    ESP_LOGE(TAG, "NVS open for erase failed: %s", esp_err_to_name(err));
-    return false;
-  }
-
-  err = nvs_erase_all(handle);
-  if (err != ESP_OK) {
-    ESP_LOGE(TAG, "NVS erase failed: %s", esp_err_to_name(err));
+  auto erase_one = [](const char *ns) -> bool {
+    nvs_handle_t handle;
+    esp_err_t err = nvs_open(ns, NVS_READWRITE, &handle);
+    if (err == ESP_ERR_NVS_NOT_FOUND)
+      return true;  // already gone
+    if (err != ESP_OK) {
+      ESP_LOGE(TAG, "NVS open for erase ('%s') failed: %s", ns, esp_err_to_name(err));
+      return false;
+    }
+    err = nvs_erase_all(handle);
+    if (err != ESP_OK) {
+      ESP_LOGE(TAG, "NVS erase ('%s') failed: %s", ns, esp_err_to_name(err));
+      nvs_close(handle);
+      return false;
+    }
+    err = nvs_commit(handle);
     nvs_close(handle);
-    return false;
-  }
+    if (err != ESP_OK) {
+      ESP_LOGE(TAG, "NVS commit after erase ('%s') failed: %s", ns, esp_err_to_name(err));
+      return false;
+    }
+    return true;
+  };
 
-  err = nvs_commit(handle);
-  nvs_close(handle);
-  if (err != ESP_OK) {
-    ESP_LOGE(TAG, "NVS commit after erase failed: %s", esp_err_to_name(err));
+  if (!erase_one(NVS_NAMESPACE))
     return false;
-  }
+  // Best-effort: also clear any leftover HeatValve-era namespace.
+  erase_one(NVS_NAMESPACE_LEGACY);
 
   ESP_LOGW(TAG, "Erased NVS namespace '%s'", NVS_NAMESPACE);
   return true;

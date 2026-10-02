@@ -191,7 +191,7 @@ script:
       - if:
           condition:
             lambda: |-
-              auto fault = id(hv6_valves).get_last_fault();
+              auto fault = id(lv6_valves).get_last_fault();
               return fault == lv6::FaultCode::OVERCURRENT ||
                      fault == lv6::FaultCode::STALL ||
                      fault == lv6::FaultCode::THERMAL;
@@ -200,13 +200,13 @@ script:
           else:
             - if:
                 condition:
-                  lambda: return id(hv6_valves).is_calibrating();
+                  lambda: return id(lv6_valves).is_calibrating();
                 then:
                   - script.execute: led_status_calibrating
                 else:
                   - if:
                       condition:
-                        lambda: return id(hv6_valves).is_motor_busy();
+                        lambda: return id(lv6_valves).is_motor_busy();
                       then:
                         - script.execute: led_status_motor
                       else:

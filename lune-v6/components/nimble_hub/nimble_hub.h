@@ -62,7 +62,10 @@ class NimbleHub : public Component {
 
   void register_advertisement_callback(AdvertisementCallback cb);
 
+  // Non-connectable raw advertise. Runs concurrently with scan (no scan pause).
   bool start_raw_advertise(const uint8_t *data, size_t len, const RawAdvertiseParams &params);
+  // Update payload while already advertising (keeps interval / does not restart).
+  bool set_raw_advertise_data(const uint8_t *data, size_t len);
   void stop_advertise();
   bool advertising() const { return advertising_; }
 
@@ -76,7 +79,6 @@ class NimbleHub : public Component {
   void deinit_stack_();
   bool start_scan_locked_();
   void stop_scan_locked_();
-  void resume_scan_after_advertise_();
   void dispatch_advertisement_(const struct ble_gap_disc_desc *disc);
   void note_advertisement_();
   void update_ads_rate_();
@@ -89,7 +91,6 @@ class NimbleHub : public Component {
   bool scanning_{false};
   bool continuous_scan_{true};
   bool advertising_{false};
-  bool scan_paused_for_adv_{false};
 
   // Quieter 50% duty default (640/320): longer quiet gaps than 320/160.
   uint16_t scan_interval_ms_{640};

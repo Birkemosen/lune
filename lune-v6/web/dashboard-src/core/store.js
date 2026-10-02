@@ -51,7 +51,11 @@ function createZoneLog() {
 function loadZoneNames() {
   let values = [];
   try {
-    values = JSON.parse(localStorage.getItem('hv6_zone_names') || '[]');
+    const raw =
+      localStorage.getItem('lv6_zone_names') ||
+      localStorage.getItem('hv6_zone_names') ||  // HeatValve-era key
+      '[]';
+    values = JSON.parse(raw);
   } catch (error) {
     values = [];
   }
@@ -61,7 +65,8 @@ function loadZoneNames() {
 
 function persistZoneNames() {
   try {
-    localStorage.setItem('hv6_zone_names', JSON.stringify(D.zoneNames));
+    localStorage.setItem('lv6_zone_names', JSON.stringify(D.zoneNames));
+    localStorage.removeItem('hv6_zone_names');
   } catch (error) {
     // Ignore localStorage failures in constrained/mock environments.
   }
@@ -76,7 +81,8 @@ function normalizeZone(zone) {
 }
 
 function toNumber(value) {
-  if (value == null) return null;
+  // '' and null are missing values, never 0 (DESIGN.md 6.5).
+  if (value == null || value === '') return null;
   if (typeof value === 'number') return Number.isFinite(value) ? value : null;
   if (typeof value === 'string') {
     const direct = Number(value);
@@ -125,13 +131,18 @@ export function touchNeedsAttention() {
   return isEntityOn(gkey.authorityProposalPending);
 }
 
-/** Count zones with an active fault state or non-ok motor last-fault. */
+/** Count zones with a blocking motor fault (not unlearned / in-flight learning). */
 export function countZoneFaults() {
   let faults = 0;
   for (let zone = 1; zone <= NZ; zone++) {
-    const state = String(es(key.state(zone)) || '').toLowerCase();
+    const phase = String(es(key.motorLearnPhase(zone)) || '').toLowerCase();
+    if (phase === 'home' || phase === 'open' || phase === 'close') continue;
+    const open = Number(ev(key.motorOpenRipples(zone)));
+    const close = Number(ev(key.motorCloseRipples(zone)));
+    const learned = (Number.isFinite(open) && open > 0) || (Number.isFinite(close) && close > 0);
+    if (!learned) continue;
     const fault = String(es(key.motorLastFault(zone)) || '').toLowerCase();
-    if (state === 'fault' || (fault && fault !== 'none' && fault !== 'ok')) faults += 1;
+    if (fault && fault !== 'none' && fault !== 'ok' && fault !== 'blocked') faults += 1;
   }
   return faults;
 }

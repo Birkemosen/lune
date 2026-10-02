@@ -58,7 +58,7 @@ display:
         it.printf(cx + 15, cy, id(font_tiny), TextAlign::TOP_CENTER, "Z%d", z + 1);
 
         // Map valve position to filled segment count
-        float pos = id(hv6_zones).get_valve_position(z);
+        float pos = id(lv6_zones).get_valve_position(z);
         if (std::isnan(pos)) pos = 0.0f;
         int filled = 0;
         if      (pos > 80.0f) filled = 5;

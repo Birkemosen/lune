@@ -11,7 +11,7 @@
 
 namespace lv6 {
 
-static const char *const TAG = "hv6_rev32_motor";
+static const char *const TAG = "lv6_rev32_motor";
 
 void Rev32MotorBackend::delay_us_(uint32_t microseconds) const {
   esp_rom_delay_us(microseconds);

@@ -187,13 +187,14 @@ struct DashboardAction {
 // Zone-state history ring buffer
 // Samples every HISTORY_INTERVAL_MS, keeps HISTORY_SLOTS entries (24 h).
 // Each entry: uptime_s + one uint8_t per zone (ZoneDisplayState, 0xFF=unknown)
-// + preheat-absorption flag + manifold flow/return (deci-°C) + mean demand %.
-// Total RAM: HISTORY_SLOTS * sizeof(HistoryEntry) = 288 * 16 = 4608 bytes.
+// + preheat-absorption flag + manifold flow/return (deci-°C) + mean demand %
+// + per-zone room temp and planned setpoint (deci-°C) for the zone chart.
+// Total RAM: HISTORY_SLOTS * sizeof(HistoryEntry) ≈ 288 * 40 ≈ 11.5 KB.
 // -----------------------------------------------------------------------
 static constexpr uint16_t HISTORY_SLOTS         = 288;       // 24 h at 5 min
 static constexpr uint32_t HISTORY_INTERVAL_MS   = 5 * 60 * 1000UL;
 static constexpr uint8_t  HISTORY_STATE_UNKNOWN = 0xFF;
-static constexpr int16_t  HISTORY_TEMP_NONE     = INT16_MIN; ///< flow/return: no reading
+static constexpr int16_t  HISTORY_TEMP_NONE     = INT16_MIN; ///< flow/return/zone: no reading
 static constexpr uint8_t  HISTORY_DEMAND_NONE   = 0xFF;      ///< demand: unknown
 
 struct HistoryEntry {
@@ -203,6 +204,8 @@ struct HistoryEntry {
   int16_t  flow_dc;     ///< manifold flow temp ×10 (deci-°C), HISTORY_TEMP_NONE = no reading
   int16_t  return_dc;   ///< manifold return temp ×10 (deci-°C), HISTORY_TEMP_NONE = no reading
   uint8_t  demand_pct;  ///< mean open-valve % over zones with a reading, HISTORY_DEMAND_NONE = unknown
+  int16_t  zone_temp_dc[lv6::NUM_ZONES]; ///< room temp ×10, HISTORY_TEMP_NONE = no reading
+  int16_t  zone_sp_dc[lv6::NUM_ZONES];   ///< planned/effective setpoint ×10 (sp_plan)
 };
 
 // -----------------------------------------------------------------------
@@ -275,6 +278,8 @@ class LV6Dashboard : public Component, public AsyncWebHandler {
 
   bool canHandle(AsyncWebServerRequest *request) const override;
   void handleRequest(AsyncWebServerRequest *request) override;
+  void handleBody(AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index,
+                  size_t total) override;
   bool isRequestHandlerTrivial() const override { return false; }
 
  protected:
@@ -370,11 +375,15 @@ class LV6Dashboard : public Component, public AsyncWebHandler {
   std::vector<DashboardAction> action_queue_;
   request_guard::Guard<24> request_guard_{};
   uint32_t data_revision_{1};  // runtime-only; resets on boot alongside boot identity
-  /// Bumps when live telemetry the UI must refresh changes (e.g. motor learning).
-  /// Separate from data_revision_ so write guards are not invalidated every tick.
+  /// Bumps when live telemetry the UI must refresh changes (temps, valves,
+  /// learning, faults). Separate from data_revision_ so write guards are not
+  /// invalidated by ordinary sensor ticks.
   uint32_t runtime_revision_{1};
   uint32_t last_learning_progress_packed_{0xFFFFFFFFu};
   uint16_t last_motor_fault_fp_{0xFFFFu};
+  /// Quantized live UI fingerprint (temps/valves/flow/state). Compared each
+  /// snapshot so runtime_revision_ only moves when the dashboard would show a change.
+  uint32_t last_live_telemetry_fp_{0};
   uint32_t write_rate_window_ms_{0};
   uint8_t write_rate_count_{0};
   uint32_t coordinator_command_expires_at_ms_[lv6::NUM_ZONES]{};
@@ -441,6 +450,11 @@ class LV6Dashboard : public Component, public AsyncWebHandler {
                              const char *message, size_t message_len);
   void on_log_(uint8_t level, const char *tag, const char *message, size_t message_len);
   SmartLogBuffer logs_{};
+
+  // Raw POST body for application/json (ESP-IDF web_server delivers it via
+  // handleBody, not as arg("plain") like the Arduino AsyncWebServer did).
+  static constexpr size_t POST_BODY_MAX = 8192;
+  std::string post_body_;
 };
 
 }  // namespace lv6_dashboard

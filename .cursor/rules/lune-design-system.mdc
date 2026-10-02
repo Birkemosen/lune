@@ -29,7 +29,7 @@ needed). Product-only live binding stays in `lune-v6/web/binder-src/`.
 4. Content in 2–4 `.panel`s (widths `c4`–`c8`). Forms are `form.panel` with
    `data-save` and one `.btn.primary` in `.panel-foot`.
 5. All text from the i18n catalogue (`lune-v6/web/i18n/`). Sentence case.
-6. Destructive actions behind `details.confirm`.
+6. Destructive actions use `.confirm-pop`; never an inline disclosure, never "OK".
 7. Colour meaning: orange=heat, blue=weather/sensors, green=ok, yellow=soon,
    red=fault now, violet=learning/groups. Colour is never the only signal.
 8. JS only for live data, +/− steppers, and form submit (`lune:save`). No JS

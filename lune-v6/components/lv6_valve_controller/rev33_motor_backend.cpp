@@ -4,7 +4,7 @@
 
 namespace lv6 {
 
-static const char *const TAG = "hv6_rev33_motor";
+static const char *const TAG = "lv6_rev33_motor";
 
 bool Rev33MotorBackend::setup() {
   // Rev 3.2's LATCH_ARM pin is Rev 3.3's DRIVER_N_SLEEP — the same GPIO17 with a

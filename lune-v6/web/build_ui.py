@@ -109,7 +109,10 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
         return f'<div class="seg" role="radiogroup" aria-label="{label}">'+"".join(f'<label><input type="radio" name="{name}" value="{v}"{" checked" if v==sel else ""}><span>{t}</span></label>' for v,t in opts)+'</div>'
     def row(id_,label,control): return f'<div class="field row"><label for="{id_}">{label}</label>{control}</div>'
     def rstep(id_,label,*a,**k): return row(id_,label,stepper(id_,*a,label=label,**k))
-    def probes(sel,name): return f'<select class="select" id="{name}" name="{name}">'+"".join(f'<option value="{k}"{" selected" if k==sel else ""}>{T("csys.probe",n=k)}</option>' for k in range(1,9))+'</select>'
+    def probes(sel,name,include_none=True):
+        none = f'<option value=""{"" if sel else " selected"}>{T("common.none")}</option>' if include_none else ""
+        opts = "".join(f'<option value="{k}"{" selected" if k==sel else ""}>{T("csys.probe",n=k)}</option>' for k in range(1,9))
+        return f'<select class="select" id="{name}" name="{name}">{none}{opts}</select>'
     def file_input(name, accept):
         return (f'<label class="input file" for="{name}">'
                 f'<input class="sr-only" id="{name}" name="{name}" type="file" accept="{accept}">'
@@ -118,7 +121,8 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
     def metric(label,val,unit,bind="",cls=""):
         b=f' data-bind="{bind}"' if bind else ""
         c=f' {cls}' if cls else ""
-        return f'<div class="metric{c}"><dt>{label}</dt><dd{b}>{val} <small>{unit}</small></dd></div>'
+        u=f' <small>{unit}</small>' if unit else ""
+        return f'<div class="metric{c}"><dt>{label}</dt><dd{b}>{val}{u}</dd></div>'
     def title(z): return f"{tid(z)} {z[1]}"
     def help_btn(hid, topic):
         return f'<button class="help-btn" type="button" popovertarget="{hid}" style="anchor-name:--a-{hid}" aria-label="{T("help.aria", topic=topic)}">?</button>'
@@ -126,6 +130,20 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
         link=(f'<a href="https://github.com/Birkemosen/lune/blob/main/{more}" '
               f'target="_blank" rel="noopener noreferrer">{T("help.readMore")}</a>') if more else ""
         return f'<div id="{hid}" popover class="help-pop" style="position-anchor:--a-{hid}"><p>{T(body_key)}</p>{link}</div>'
+    def confirm_pop(pid, trigger_key, title_key, note_key, value, confirm_key, attrs="", style_extra="", **kw):
+        """Bekræftelses-popover inde i formularen. Trigger slutter med …; submit sender name=action."""
+        style=f' style="{style_extra}"' if style_extra else ""
+        attr=f" {attrs}" if attrs else ""
+        return (
+            f'<button class="btn danger" type="button" popovertarget="{pid}"{style}{attr}>{T(trigger_key, **kw)}</button>'
+            f'<div id="{pid}" popover class="confirm-pop" role="alertdialog" aria-labelledby="{pid}-t" aria-describedby="{pid}-d">'
+            f'<p class="confirm-title" id="{pid}-t">{T(title_key, **kw)}</p>'
+            f'<p id="{pid}-d">{T(note_key, **kw)}</p>'
+            f'<div class="confirm-actions">'
+            f'<button class="btn" type="button" popovertarget="{pid}" popovertargetaction="hide" autofocus>{T("common.cancel")}</button>'
+            f'<button class="btn danger-solid" type="submit" name="action" value="{value}" popovertarget="{pid}" popovertargetaction="hide">{T(confirm_key, **kw)}</button>'
+            f'</div></div>'
+        )
     def ss_id(key): return "ss-" + key.replace("/", "-")
     def foot_save(key, primary, left=""):
         status=f'<span class="save-status" id="{ss_id(key)}" aria-live="polite"></span>'
@@ -141,7 +159,7 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
             <span class="lvl" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>
             <span class="tile-id">{tid(z)}</span>
             <span class="tile-name" data-bind="z{z[0]}.name">{z[1]}</span>
-            <span class="tile-val" data-bind="z{z[0]}.temp">{T("tile.fault") if z[4]=="fault" else T.num(z[2])+"°"}</span>
+            <span class="tile-val" data-bind="z{z[0]}.temp">{T("tile.fault") if z[4]=="fault" else T("tile.learning") if z[4]=="learning" else T.num(z[2])+"°"}</span>
           </label>''' for z in Z)
     strip=f'''<nav class="strip" aria-label="{T("strip.label")}">
           <label class="tile tile-sys" for="s-sys" title="{T("scope.manifold")}">
@@ -246,6 +264,7 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
           <div class="bar" style="--v:0%" role="meter" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100" aria-label="{T("m.openingAria")}"><i></i></div>
           <div class="sub trend-wrap">
             <h4>{T("trend.title")} <span class="legend"><i class="lf"></i>{T("m.supply")}<i class="lr"></i>{T("m.return")}</span></h4>
+            <p class="empty">{T("trend.empty")}</p>
             <svg class="trend" viewBox="0 0 240 80" preserveAspectRatio="none" role="img" aria-label="{T("trend.aria")}" data-bind-trend="manifold"></svg>
             <div class="axis" aria-hidden="true"><span>−24 {H}</span><span>−12 {H}</span><span>{T("trend.now")}</span></div>
           </div>
@@ -270,7 +289,7 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
           <header class="panel-head"><h3>{T("dev.title")}</h3><span class="badge" data-bind="dev.badge">{T("dev.online")}</span></header>
           <dl class="metrics">
             {metric("Wi-Fi","−58","dBm","wifi.rssi")}
-            {metric(T("dev.uptime"),"6",T("common.days"),"sys.uptime")}
+            {metric(T("dev.uptime"),f'6 <small>{T("common.days")}</small> 4 <small>{T("common.hours")}</small> 12 <small>{T("common.minutes")}</small>',"","sys.uptime")}
           </dl>
           <pre class="log" data-bind="log" aria-live="polite" lang="en"></pre>
         </section>
@@ -285,10 +304,10 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
         <form class="panel alert" data-save="zone/{i}/recovery" data-bind-show="z{i}.fault" hidden>
           <div class="panel-head"><h3>{T("zdash.faultTitle")}</h3></div>
           <p class="note">{T("zdash.faultBody")}</p>
-          <div class="panel-foot" style="justify-content:flex-start"><button class="btn" type="submit" name="action" value="reset_fault">{T("common.resetFault")}</button></div>
+          <div class="panel-foot" style="justify-content:flex-start"><button class="btn primary" type="submit" name="action" value="reset_fault">{T("common.resetFault")}</button></div>
         </form>'''
         dis=' disabled' if member else ''
-        badge_cls={"calling":"badge hot","idle":"badge","fault":"badge bad","off":"badge"}.get(st,"badge")
+        badge_cls={"calling":"badge hot","idle":"badge","fault":"badge bad","blocked":"badge warn","learning":"badge violet","off":"badge"}.get(st,"badge")
         badge=f'<span class="{badge_cls}" data-bind="z{i}.badge">{ST.get(st,ST["idle"])}</span>'
         pre=f'<p class="msg info" data-bind-show="z{i}.preload" hidden><span><b>{T("zdash.preloadStrong")}</b> <span data-bind="z{i}.preload">{T("zdash.preload",offset="+0,0")}</span></span></p>'
         foot=(f'<footer class="panel-foot"><span class="note">{T("zdash.memberNote",m="Z5",p="Z4")}</span><label class="btn" for="s-z4">{T("common.open",x="Z4–5")}</label></footer>'
@@ -327,31 +346,76 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
             <div><dt>{T("zdash.tempFrom")}</dt><dd data-bind="z{i}.tempFrom">—</dd></div>
           </dl>
         </section>
+
+        <section class="panel c12">
+          <header class="panel-head"><h3>{T("zchart.title")}</h3><p>{T("zchart.sub")}</p></header>
+          <dl class="metrics">
+            <div data-bind-show="z{i}.expected" hidden>
+              <dt data-bind="z{i}.expectedLabel">{T("zchart.expected",time="—")}</dt>
+              <dd><span data-bind="z{i}.expected">—</span><small>°C</small></dd>
+            </div>
+          </dl>
+          <div class="zchart" style="--now:80%">
+            <div class="zchart-y" data-bind="z{i}.zchartY"><span>—</span><span>—</span><span>—</span></div>
+            <div class="zchart-plot">
+              <svg viewBox="0 0 300 100" preserveAspectRatio="none" role="img" aria-label="{T("zchart.aria")}" data-bind-zchart="z{i}"></svg>
+              <span class="zchart-now">{T("zchart.now")}</span>
+              <span class="zchart-scrub" hidden aria-hidden="true"></span>
+            </div>
+            <div class="zchart-x" data-bind="z{i}.zchartX"><span>−24h</span><span>−12h</span><span>{T("zchart.now")}</span><span>+6h</span></div>
+          </div>
+          <p class="zchart-legend" aria-hidden="true">
+            <span><i class="lt"></i>{T("zchart.lTemp")}</span>
+            <span><i class="lg"></i>{T("zchart.lTarget")}</span>
+            <span><i class="lp"></i>{T("zchart.lForecast")}</span>
+          </p>
+          <p class="note" data-bind="z{i}.zchartNote">{T("zchart.noForecast")}</p>
+          <p class="hint">{T("zchart.projHint")}</p>
+        </section>
       </section>'''
 
     # ---- konfiguration: manifold
     zone_opts="".join(f'<option value="{z[0]}">Z{z[0]} {z[1]}</option>' for z in Z)
+    def sect_h(sid, key, badge=""):
+        b=f' <span class="badge">{badge}</span>' if badge else ''
+        return (f'<h2 class="section-h" id="sec-{sid}-h">{T(key)}{b}'
+                f'<i class="section-h-dot" aria-hidden="true"></i>'
+                f'<i class="section-h-line" aria-hidden="true"></i></h2>')
+    def sect_sum(sid, key, n):
+        badge=T("sections.panels.one",n=n) if n==1 else T("sections.panels.other",n=n)
+        return (f'<summary class="section-h">{T(key)} <span class="badge">{badge}</span>'
+                f'<i class="section-h-dot" aria-hidden="true"></i>'
+                f'<i class="section-h-line" aria-hidden="true"></i></summary>')
+    def sect_nav(items):
+        if len(items)<3: return ""
+        links="".join(f'<a href="#sec-{sid}">{T(key)}</a>' for sid,key in items)
+        return f'<nav class="section-nav" aria-label="{T("sections.label")}">{links}</nav>'
     def sect(key): return f'<header class="section-head"><span>{T(key)}</span></header>'
+    nav_items=[("manifold","sect.manifold"),("regulation","sect.regulation"),
+               ("connect","sect.connect"),("service","sect.service")]
     conf_sys=f'''
       <section class="view" id="v-conf-sys" aria-labelledby="h-conf-sys">
         <header class="view-head"><h2 id="h-conf-sys">{T("scope.manifold")}</h2><p>{T("csys.sub")}</p></header>
+        {sect_nav(nav_items)}
 
-        {sect("sect.setup")}
-
+        <section class="section" id="sec-manifold" aria-labelledby="sec-manifold-h">
+          {sect_h("manifold","sect.manifold")}
+          <div class="section-grid">
         <form class="panel c6" data-save="manifold">
           <header class="panel-head"><h3>{T("csys.mm")}</h3>{help_btn("help-manifold",T("csys.mm"))}</header>
           {help_pop("help-manifold","help.manifold","lune-v6/docs/Manual.md#manifold")}
           <div class="sub">
             <h4>{T("csys.manifold")}</h4>
             <div class="field"><span class="label">{T("csys.valveType")}</span>{seg("manifold_type",[("no",T("csys.no")),("nc",T("csys.nc"))],"nc",T("csys.valveType"))}</div>
-            {row("probe_flow",T("csys.supplyProbe"),probes(1,"probe_flow"))}
-            {row("probe_return",T("csys.returnProbe"),probes(2,"probe_return"))}
+            {row("probe_flow",T("csys.supplyProbe"),probes(1,"probe_flow",include_none=False))}
+            {row("probe_return",T("csys.returnProbe"),probes(2,"probe_return",include_none=False))}
           </div>
           <div class="sub">
             <h4>{T("csys.motors")}</h4>
             {switch("motor_drivers",T("csys.drivers"),T("csys.driversSub"),True)}
             {row("motor_type",T("csys.motorType"),'<select class="select" id="motor_type" name="motor_type"><option>Generic</option><option selected>HmIP VdMot</option></select>')}
             {rstep("m_runtime",T("csys.maxRun"),38,5,40,1,"s",dec=0)}
+            {confirm_pop("confirm-relearn-all","csys.relearnAll","csys.relearnAllTitle","csys.relearnAllNote","relearn_all","csys.relearnAllConfirm")}
           </div>
           <details class="more">
             <summary>{T("csys.limits")}</summary>
@@ -381,7 +445,25 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
           </details>
           {foot_save("manifold",T("csys.saveManifold"))}
         </form>
+        <form class="panel c6" data-save="return_probes">
+          <header class="panel-head"><h3>{T("csys.returnProbes")}</h3>{help_btn("help-return-probes",T("csys.returnProbes"))}</header>
+          {help_pop("help-return-probes","help.returnProbes","lune-v6/docs/Manual.md#return-probes")}
+          <div class="field"><span class="label">{T("csys.probeMode")}</span>{seg("return_probe_mode",[("2",T("csys.probeMode2")),("8",T("csys.probeMode8"))],"2",T("csys.probeMode"))}</div>
+          <p class="note">{T("csys.returnProbesNote")}</p>
+          <div class="sub">
+            <h4>{T("csys.probeLive")}</h4>
+            <dl class="metrics">
+              {"".join(f'<div class="metric" data-probe="{n}"><dt>{T("csys.probe",n=n)}</dt><dd data-bind="probe.{n}">— <small>°C</small></dd></div>' for n in range(1,9))}
+            </dl>
+          </div>
+          {foot_save("return_probes",T("csys.saveReturnProbes"))}
+        </form>
+          </div>
+        </section>
 
+        <section class="section" id="sec-regulation" aria-labelledby="sec-regulation-h">
+          {sect_h("regulation","sect.regulation")}
+          <div class="section-grid">
         <form class="panel c6" data-save="regulation">
           <header class="panel-head"><h3>{T("csys.regulation")}</h3>{help_btn("help-regulation",T("csys.regulation"))}</header>
           {help_pop("help-regulation","help.regulation","lune-v6/docs/Manual.md#regulation")}
@@ -397,13 +479,12 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
             <h4>{T("csys.preheat")}</h4>
             {switch("preheat_enabled",T("csys.absorb"),T("csys.absorbSub"),False)}
             <div class="gated-body sub">
-              {rstep("ph_band",T("csys.band"),0.5,0.1,3,0.1,"°C")}
-              {rstep("ph_delta",T("csys.delta"),0.3,0.1,2,0.1,"°C")}
+              {rstep("ph_band",T("csys.band"),0.5,0.1,5,0.1,"°C")}
+              {rstep("ph_delta",T("csys.delta"),0.3,0.1,10,0.1,"°C")}
             </div>
           </div>
-          {foot_save("regulation",T("csys.saveReg"),left=f'<details class="confirm"><summary class="btn danger">{T("csys.resetBal")}</summary><p class="note">{T("csys.resetBalNote")}</p><button class="btn danger" type="submit" name="action" value="reset_balancing">{T("csys.resetBalConfirm")}</button></details>')}
+          {foot_save("regulation",T("csys.saveReg"),left=confirm_pop("confirm-reset-bal","csys.resetBal","csys.resetBalTitle","csys.resetBalNote","reset_balancing","csys.resetBalConfirm"))}
         </form>
-
         <form class="panel c6" data-save="heating">
           <header class="panel-head"><h3>{T("csys.heating")}</h3>{help_btn("help-heating",T("csys.heating"))}</header>
           {help_pop("help-heating","help.heating","lune-v6/docs/Manual.md#heating")}
@@ -417,62 +498,60 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
           </div>
           {foot_save("heating",T("csys.saveHeating"))}
         </form>
-
-        <form class="panel c6" data-save="return_probes">
-          <header class="panel-head"><h3>{T("csys.returnProbes")}</h3>{help_btn("help-return-probes",T("csys.returnProbes"))}</header>
-          {help_pop("help-return-probes","help.returnProbes","lune-v6/docs/Manual.md#return-probes")}
-          <div class="field"><span class="label">{T("csys.probeMode")}</span>{seg("return_probe_mode",[("2",T("csys.probeMode2")),("8",T("csys.probeMode8"))],"2",T("csys.probeMode"))}</div>
-          <p class="note">{T("csys.returnProbesNote")}</p>
-          <div class="sub">
-            <h4>{T("csys.probeLive")}</h4>
-            <dl class="metrics">
-              {"".join(f'<div class="metric"><dt>{T("csys.probe",n=n)}</dt><dd data-bind="probe.{n}">— <small>°C</small></dd></div>' for n in range(1,9))}
-            </dl>
           </div>
-          {foot_save("return_probes",T("csys.saveReturnProbes"))}
-        </form>
-
-        {sect("sect.connect")}
-
-        <form class="panel c6" data-save="touch">
-          <header class="panel-head"><h3>{T("csys.touch")}</h3>{help_btn("help-touch",T("csys.touch"))}<span class="badge" data-bind="touch.badge">{T("csys.touchWaiting")}</span></header>
-          {help_pop("help-touch","help.touch","lune-v6/docs/Manual.md#touch")}
-          <p class="note" data-bind="touch.status">{T("csys.touchWaitingBody")}</p>
-          <dl class="kv" data-bind-show="touch.identity">
-            <div><dt>{T("csys.touchName")}</dt><dd data-bind="touch.name">—</dd></div>
-            <div><dt>{T("csys.touchSite")}</dt><dd data-bind="touch.site">—</dd></div>
-            <div><dt>{T("csys.touchInstall")}</dt><dd data-bind="touch.install">—</dd></div>
-            <div><dt>{T("csys.touchCoord")}</dt><dd data-bind="touch.coord">—</dd></div>
-          </dl>
-          <footer class="panel-foot">
-            <details class="confirm" style="margin-right:auto">
-              <summary class="btn danger">{T("csys.touchRevoke")}</summary>
-              <p class="note">{T("csys.touchRevokeNote")}</p>
-              <button class="btn danger" type="submit" name="action" value="revoke">{T("csys.touchRevokeConfirm")}</button>
-            </details>
-            <button class="btn primary" type="submit" name="action" value="approve">{T("csys.touchApprove")}</button>
-          </footer>
-        </form>
-
-        <form class="panel c6" data-save="ble_clock">
-          <header class="panel-head"><h3>{T("csys.bleClock")}</h3>{help_btn("help-ble-clock",T("csys.bleClock"))}</header>
-          {help_pop("help-ble-clock","help.bleClock","lune-v6/docs/Manual.md#ble-clock")}
-          {switch("ble_clock_enabled",T("csys.bleClockEnable"),T("csys.bleClockSub"),False)}
-          {rstep("ble_clock_interval",T("csys.bleClockInterval"),60,15,1440,15,"min",dec=0)}
-          <footer class="panel-foot">
-            <button class="btn" type="submit" name="action" value="sync">{T("csys.bleClockSync")}</button>
-            <button class="btn primary" type="submit">{T("csys.saveBleClock")}</button>
-          </footer>
-        </form>
-
-        <section class="panel c6">
-          <header class="panel-head"><h3>{T("csys.weather")}</h3><span class="badge info">{T("csys.weatherTouch")}</span></header>
-          <p class="msg info"><span>{T("csys.weatherTouchBody")}</span></p>
-          <p class="note">{T("csys.weatherTouchHint")}</p>
         </section>
 
-        {sect("sect.maintain")}
+        <section class="section" id="sec-connect" aria-labelledby="sec-connect-h">
+          {sect_h("connect","sect.connect")}
+          <div class="section-grid">
+        <form class="panel c6" data-save="connections" data-state="unpaired">
+          <header class="panel-head"><h3>{T("csys.touch")}</h3>{help_btn("help-connections",T("csys.touch"))}<span class="badge" data-bind="touch.badge">{T("csys.touchWaiting")}</span></header>
+          {help_pop("help-connections","help.connections","lune-v6/docs/Manual.md#touch")}
+          <p class="msg bad" data-show-when="error"><span>{T("csys.touchErrorBody")}</span></p>
+          <p class="note" data-show-when="unpaired pending approved" data-bind="touch.status">{T("csys.touchWaitingBody")}</p>
+          <dl class="kv" data-show-when="approved pending error" data-bind-show="touch.identity">
+            <div><dt>{T("csys.touchName")}</dt><dd data-bind="touch.name">—</dd></div>
+            <div><dt>{T("csys.touchDelivers")}</dt><dd>{T("csys.touchDeliversValue")}</dd></div>
+          </dl>
+          <p class="hint" data-show-when="approved pending error">{T("csys.touchDeliversHint")}</p>
+          <details class="more" data-show-when="approved pending error" data-bind-show="touch.identity">
+            <summary>{T("csys.touchIds")}</summary>
+            <dl class="kv">
+              <div><dt>{T("csys.touchInstall")}</dt><dd class="id-row"><code class="mono" id="touch-install" data-bind="touch.install">—</code><button type="button" class="btn copy" data-copy="#touch-install">{T("common.copy")}</button></dd></div>
+              <div><dt>{T("csys.touchCoord")}</dt><dd class="id-row"><code class="mono" id="touch-coord" data-bind="touch.coord">—</code><button type="button" class="btn copy" data-copy="#touch-coord">{T("common.copy")}</button></dd></div>
+            </dl>
+          </details>
+          <div class="actions">
+            {confirm_pop("confirm-touch","csys.touchRevoke","csys.touchRevokeTitle","csys.touchRevokeNote","revoke","csys.touchRevokeConfirm",attrs='data-show-when="approved error"',style_extra="margin-right:auto")}
+            <button class="btn" type="submit" name="action" value="retry" data-show-when="error">{T("csys.touchRetry")}</button>
+            <button class="btn" type="submit" name="action" value="cancel" data-show-when="pending">{T("csys.touchCancel")}</button>
+            <button class="btn primary" type="submit" name="action" value="approve" data-show-when="unpaired">{T("csys.touchApprove")}</button>
+          </div>
+        </form>
+          <form class="panel c6" data-save="ble_clock">
+            <header class="panel-head"><h3>{T("csys.bleClock")}</h3>{help_btn("help-ble-clock",T("csys.bleClock"))}</header>
+            {help_pop("help-ble-clock","help.bleClock","lune-v6/docs/Manual.md#ble-clock")}
+            {switch("ble_clock_enabled",T("csys.bleClockEnable"),T("csys.bleClockSub"),False)}
+            <dl class="kv">
+              <div><dt>{T("csys.bleClockLastSync")}</dt><dd data-bind="ble.lastSync">—</dd></div>
+            </dl>
+            <div class="actions">
+              <button class="btn" type="submit" name="action" value="sync">{T("csys.bleClockSync")}</button>
+            </div>
+          </form>
+          <form class="panel c6" data-save="device">
+            <header class="panel-head"><h3>{T("device.identity")}</h3>{help_btn("help-device-identity",T("device.identity"))}</header>
+            {help_pop("help-device-identity","help.deviceIdentity","lune-v6/docs/Manual.md#device-identity")}
+            {row("device_display_name",T("device.name"),'<input class="input" id="device_display_name" name="device_display_name" value="Lune V6" maxlength="32" autocomplete="off">')}
+            {row("device_location",T("device.place"),f'<input class="input" id="device_location" name="device_location" value="{T("device.sample")}" maxlength="64" autocomplete="off">')}
+            {foot_save("device",T("device.saveIdentity"))}
+          </form>
+          </div>
+        </section>
 
+        <details class="section" id="sec-service">
+          {sect_sum("service","sect.service",6)}
+          <div class="section-grid">
         <form class="panel c6" data-save="firmware">
           <header class="panel-head"><h3>{T("csys.firmware")}</h3>{help_btn("help-firmware",T("csys.firmware"))}</header>
           {help_pop("help-firmware","help.firmware","lune-v6/docs/Manual.md#firmware")}
@@ -487,7 +566,6 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
           <div class="field"><label for="ota_file">{T("csys.fwUpload")}</label>{file_input("ota_file",".bin,.ota.bin")}</div>
           <footer class="panel-foot"><button class="btn primary" type="submit" name="action" value="upload">{T("csys.fwUploadBtn")}</button></footer>
         </form>
-
         <form class="panel c6" data-save="backup">
           <header class="panel-head"><h3>{T("csys.backup")}</h3>{help_btn("help-backup",T("csys.backup"))}</header>
           {help_pop("help-backup","help.backup","lune-v6/docs/Manual.md#backup")}
@@ -499,10 +577,7 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
             <button class="btn primary" type="submit" name="action" value="import">{T("csys.backupImportBtn")}</button>
           </footer>
         </form>
-
-        {sect("sect.service")}
-
-        <form class="panel" data-save="service">
+        <form class="panel c6" data-save="service">
           <header class="panel-head"><h3>{T("csys.manual")}</h3>{help_btn("help-manual",T("csys.manual"))}</header>
           {help_pop("help-manual","help.manual","lune-v6/docs/Manual.md#manual")}
           <div class="sub gated">
@@ -510,12 +585,20 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
             {switch("manual_mode",T("csys.manualMode"),"",False)}
             <div class="gated-body sub">
               {row("man_zone",T("csys.motor"),f'<select class="select" id="man_zone" name="man_zone">{zone_opts}</select>')}
-              {rstep("man_target",T("csys.motorTarget"),50,0,100,5,"%",dec=0)}
-              <div class="actions"><button class="btn" type="submit" name="action" value="stop">{T("csys.stop")}</button><button class="btn" type="submit" name="action" value="move">{T("csys.move")}</button></div>
+              <div class="sub">
+                <h4>{T("csys.manualTargetHead")}</h4>
+                {rstep("man_target",T("csys.motorTarget"),50,0,100,5,"%",dec=0)}
+                <div class="actions"><button class="btn" type="submit" name="action" value="stop">{T("csys.stop")}</button><button class="btn" type="submit" name="action" value="move">{T("csys.move")}</button></div>
+              </div>
+              <div class="sub">
+                <h4>{T("csys.manualTimedHead")}</h4>
+                <div class="field row"><span class="label">{T("csys.manualDir")}</span>{seg("man_dir",[("open",T("csys.manualOpen")),("close",T("csys.manualClose"))],"open",T("csys.manualDir"))}</div>
+                {rstep("man_seconds",T("csys.manualSeconds"),10,1,45,1,"s",dec=0)}
+                <div class="actions"><button class="btn" type="submit" name="action" value="stop">{T("csys.stop")}</button><button class="btn primary" type="submit" name="action" value="timed">{T("csys.manualRun")}</button></div>
+              </div>
             </div>
           </div>
         </form>
-
         <form class="panel c6" data-save="service">
           <header class="panel-head"><h3>{T("csys.health")}</h3>{help_btn("help-health",T("csys.health"))}</header>
           {help_pop("help-health","help.health","lune-v6/docs/Manual.md#health")}
@@ -532,7 +615,6 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
           </div>
           <pre class="log" data-bind="diag.i2c" aria-live="polite" lang="en"></pre>
         </form>
-
         <form class="panel c6" data-save="service">
           <header class="panel-head"><h3>{T("csys.logs")}</h3>{help_btn("help-logs",T("csys.logs"))}</header>
           {help_pop("help-logs","help.logs","lune-v6/docs/Manual.md#logs")}
@@ -543,33 +625,16 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
           </div>
           <pre class="log" data-bind="log" aria-live="polite" lang="en"></pre>
         </form>
-
         <form class="panel c6" data-save="service">
           <header class="panel-head"><h3>{T("csys.device")}</h3>{help_btn("help-device-actions",T("csys.device"))}</header>
           {help_pop("help-device-actions","help.deviceActions","lune-v6/docs/Manual.md#device-actions")}
           <div class="actions">
-            <details class="confirm">
-              <summary class="btn danger">{T("csys.resetProbes")}</summary>
-              <p class="note">{T("csys.resetProbesNote")}</p>
-              <button class="btn danger" type="submit" name="action" value="reset_probe_map">{T("csys.resetProbesConfirm")}</button>
-            </details>
-            <details class="confirm">
-              <summary class="btn danger">{T("csys.restart")}</summary>
-              <p class="note">{T("csys.restartNote")}</p>
-              <button class="btn danger" type="submit" name="action" value="restart">{T("csys.restartConfirm")}</button>
-            </details>
+            {confirm_pop("confirm-probes","csys.resetProbes","csys.resetProbesTitle","csys.resetProbesNote","reset_probe_map","csys.resetProbesConfirm")}
+            {confirm_pop("confirm-restart","csys.restart","csys.restartTitle","csys.restartNote","restart","csys.restartConfirm")}
           </div>
         </form>
-
-        <section class="panel" data-dev-only hidden>
-          <header class="panel-head"><h3>{T("csys.motorLab")}</h3></header>
-          <p class="msg warn"><span>{T("csys.motorLabMsg")}</span></p>
-          <div class="actions">
-            <button class="btn" type="button" data-action="motorlab-start">{T("csys.motorLabStart")}</button>
-            <button class="btn danger" type="button" data-action="motorlab-estop">{T("csys.motorLabEstop")}</button>
           </div>
-          <div class="field"><canvas data-motorlab-chart width="480" height="160" style="width:100%;height:auto;background:var(--field)"></canvas></div>
-        </section>
+        </details>
       </section>'''
 
     # ---- konfiguration: zone
@@ -596,21 +661,37 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
               <h4>{T("cz.room")}</h4>
               {member}
               {switch(f"z{i}_enabled",T("cz.enabled"),"",st!="off")}
-              <div class="field"><label for="z{i}_name">{T("cz.name")}</label><input class="input" id="z{i}_name" name="z{i}_name" value="{n}" maxlength="24"></div>
-              <div class="field"><label for="z{i}_area">{T("cz.area")}</label>{stepper(f"z{i}_area",area,0,200,0.5,"m²",T("cz.area"))}</div>
-              <div class="field"><label for="z{i}_merge">{T("cz.group")}<span class="hint">{T("cz.groupHint")}</span></label><select class="select" id="z{i}_merge" name="z{i}_merge">{merge}</select></div>
+              {row(f"z{i}_name",T("cz.name"),f'<input class="input" id="z{i}_name" name="z{i}_name" value="{n}" maxlength="24">')}
+              {rstep(f"z{i}_area",T("cz.area"),area,0,200,0.5,"m²")}
+              {row(f"z{i}_merge",f'{T("cz.group")}<span class="hint">{T("cz.groupHint")}</span>',f'<select class="select" id="z{i}_merge" name="z{i}_merge">{merge}</select>')}
             </div>
             <div class="sub">
               <h4>{T("cz.sensors")}</h4>
-              <div class="field"><span class="label">{T("cz.tempFrom")}</span>{seg(f"z{i}_src",[("probe",T("cz.probe")),("ble",T("cz.ble"))],src,T("cz.tempFrom"))}</div>
-              <div class="field">
+              <div class="field row"><span class="label">{T("cz.tempFrom")}</span>{seg(f"z{i}_src",[("probe",T("cz.probe")),("ble",T("cz.ble"))],src,T("cz.tempFrom"))}</div>
+              <div class="field row">
                 <label for="z{i}_ble">{T("cz.bleMac")}<span class="hint">{T("cz.bleHint").replace("&","&amp;")}</span></label>
                 <div class="pair wide-first">
                   <input class="input" id="z{i}_ble" name="z{i}_ble" placeholder="AA:BB:CC:DD:EE:FF" pattern="^([0-9A-Fa-f]{{2}}:){{5}}[0-9A-Fa-f]{{2}}$" autocomplete="off" spellcheck="false">
                   <button type="button" class="btn" data-action="ble-scan" data-zone="{i}">{T("cz.scan")}</button>
                 </div>
               </div>
-              <div class="field zone-ret"><label for="z{i}_ret">{T("cz.returnSensor")}</label>{probes(i + 2,f"z{i}_ret")}</div>
+              <div hidden data-ble-seen-row="{i}">
+                <p class="note" data-ble-seen-status="{i}" aria-live="polite"></p>
+                <div class="table-wrap">
+                  <table class="table" aria-label="{T("cz.bleSeen")}">
+                    <thead>
+                      <tr>
+                        <th>{T("cz.bleSeenSensor")}</th>
+                        <th class="num">{T("cz.bleSeenTemp")}</th>
+                        <th class="num">{T("cz.bleSeenRssi")}</th>
+                        <th></th>
+                      </tr>
+                    </thead>
+                    <tbody data-ble-seen="{i}"></tbody>
+                  </table>
+                </div>
+              </div>
+              {row(f"z{i}_ret",T("cz.returnSensor"),probes(None,f"z{i}_ret")).replace('class="field row"','class="field row zone-ret"',1)}
             </div>
           </div>
           {foot_save(f"zone/{i}/room",T("cz.saveRoom"))}
@@ -621,18 +702,18 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
           <div class="subs cols-2">
             <div class="sub">
               <h4>{T("cz.floorPipes")}</h4>
-              <div class="field"><label for="z{i}_spacing">{T("cz.spacing")}</label>{stepper(f"z{i}_spacing",sp,50,300,25,"mm",T("cz.spacing"),dec=0)}</div>
-              <div class="field"><label for="z{i}_pipe">{T("cz.pipeType")}</label><select class="select" id="z{i}_pipe" name="z{i}_pipe">{pipes}</select></div>
-              <div class="field"><label for="z{i}_slab">{T("cz.slab")}</label><select class="select" id="z{i}_slab" name="z{i}_slab"><option value="unset">{T("cz.slabUnset")}</option><option value="cast_concrete">{T("cz.slabConcrete")}</option><option value="screed">{T("cz.slabScreed")}</option><option value="dry_plates">{T("cz.slabDry")}</option><option value="timber_joists">{T("cz.slabTimber")}</option></select></div>
-              <div class="field"><label for="z{i}_covering">{T("cz.covering")}</label><select class="select" id="z{i}_covering" name="z{i}_covering"><option value="unset">{T("cz.coverUnset")}</option><option value="tile_stone">{T("cz.coverTile")}</option><option value="vinyl_linoleum">{T("cz.coverVinyl")}</option><option value="parquet_laminate">{T("cz.coverParquet")}</option><option value="carpet">{T("cz.coverCarpet")}</option></select></div>
-              <div class="field"><label for="z{i}_thick">{T("cz.thickness")}</label>{stepper(f"z{i}_thick",0,0,15,0.5,"cm",T("cz.thickness"))}</div>
-              <div class="field"><label for="z{i}_lead">{T("cz.lead")}</label>{stepper(f"z{i}_lead",3.0,0,12,0.5,H,T("cz.lead"))}</div>
+              {rstep(f"z{i}_spacing",T("cz.spacing"),sp,50,300,25,"mm",dec=0)}
+              {row(f"z{i}_pipe",T("cz.pipeType"),f'<select class="select" id="z{i}_pipe" name="z{i}_pipe">{pipes}</select>')}
+              {row(f"z{i}_slab",T("cz.slab"),f'<select class="select" id="z{i}_slab" name="z{i}_slab"><option value="unset">{T("cz.slabUnset")}</option><option value="cast_concrete">{T("cz.slabConcrete")}</option><option value="screed">{T("cz.slabScreed")}</option><option value="dry_plates">{T("cz.slabDry")}</option><option value="timber_joists">{T("cz.slabTimber")}</option></select>')}
+              {row(f"z{i}_covering",T("cz.covering"),f'<select class="select" id="z{i}_covering" name="z{i}_covering"><option value="unset">{T("cz.coverUnset")}</option><option value="tile_stone">{T("cz.coverTile")}</option><option value="vinyl_linoleum">{T("cz.coverVinyl")}</option><option value="parquet_laminate">{T("cz.coverParquet")}</option><option value="carpet">{T("cz.coverCarpet")}</option></select>')}
+              {rstep(f"z{i}_thick",T("cz.thickness"),0,0,15,0.5,"cm")}
+              {rstep(f"z{i}_lead",T("cz.lead"),3.0,0,12,0.5,H)}
             </div>
             <div class="sub">
               <h4>{T("cz.weather")}</h4>
-              <div class="field"><span class="label">{T("cz.walls")}</span>{compass(i,walls)}</div>
-              <div class="field"><label for="z{i}_wind">{T("cz.wind")}</label>{stepper(f"z{i}_wind",1.0 if walls else 0.0,0,2,0.1,"×",T("cz.wind"))}</div>
-              <div class="field"><label for="z{i}_solar">{T("cz.solar")}</label>{stepper(f"z{i}_solar",0.6 if "s" in walls else 0.2,0,2,0.1,"×",T("cz.solar"))}</div>
+              <div class="field row"><span class="label">{T("cz.walls")}</span>{compass(i,walls)}</div>
+              {rstep(f"z{i}_wind",T("cz.wind"),1.0 if walls else 0.0,0,2,0.1,"×")}
+              {rstep(f"z{i}_solar",T("cz.solar"),0.6 if "s" in walls else 0.2,0,2,0.1,"×")}
             </div>
           </div>
           {foot_save(f"zone/{i}/floor",T("cz.saveFloor"))}
@@ -644,13 +725,13 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
             <dl class="kv"><div><dt>{T("cz.ripples")}</dt><dd data-bind="z{i}.ripples">—</dd></div><div><dt>{T("cz.factors")}</dt><dd data-bind="z{i}.factors">—</dd></div></dl>
             <dl class="kv"><div><dt>{T("zdash.preheatAdv")}</dt><dd data-bind="z{i}.preheat">—</dd></div><div><dt>{T("cz.lastFault")}</dt><dd data-bind="z{i}.lastFault">—</dd></div></dl>
           </div>
+          <div data-bind-show="z{i}.learnBar" hidden>
+            <p class="hint" data-bind="z{i}.learnPhase"></p>
+            <div class="bar violet" style="--v:0%" data-bind-bar="z{i}.learn" role="meter" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="{T("cz.learnProgress")}"><i></i></div>
+          </div>
           <footer class="panel-foot">
-            <button class="btn" type="submit" name="action" value="reset_fault" data-bind-disable="z{i}.faultOk">{T("common.resetFault")}</button>
-            <details class="confirm">
-              <summary class="btn danger">{T("cz.relearn")}</summary>
-              <p class="note">{T("cz.relearnNote",z=zid)}</p>
-              <button class="btn danger" type="submit" name="action" value="reset_relearn">{T("cz.relearnConfirm",z=zid)}</button>
-            </details>
+            <button class="btn primary" type="submit" name="action" value="reset_fault" data-bind-show="z{i}.fault"{"" if fault else " hidden"}>{T("common.resetFault")}</button>
+            {confirm_pop(f"confirm-relearn-z{i}","cz.relearn","cz.relearnTitle","cz.relearnNote","reset_relearn","cz.relearnConfirm",z=zid)}
           </footer>
         </form>
       </section>'''
@@ -669,14 +750,20 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
         langnav=""
 
     # Dynamiske strenge til binderen (statusser, relative tider, gem-beskeder)
-    rt_keys=("state.calling","state.idle","state.fault","state.off","tile.fault","badge.calling","sys.dt","sys.dtstate","dash.sys.sub",
-             "common.days","common.open","common.none","common.learned","common.needsLearning","common.undo",
+    rt_keys=("state.calling","state.idle","state.fault","state.off","state.learning","state.blocked","tile.fault","tile.learning","tile.learningPct","tile.blocked","badge.calling","sys.dt","sys.dtstate","dash.sys.sub",
+             "cz.learnPhase.home","cz.learnPhase.open","cz.learnPhase.close","cz.learnPhase.pass",
+             "cz.bleAssign","cz.bleAssigned","cz.bleSeen","cz.bleSeenEmpty","cz.bleScanning",
+             "common.days","common.hours","common.minutes","common.open","common.none","common.learned","common.needsLearning","common.notLearned","common.undo","common.on",
              "rt.savedOk","rt.saveFailed","rt.saving","rt.unsaved.one","rt.unsaved.other","rt.nothingToSave","rt.leaveUnsaved",
              "rt.autoSaving","rt.autoSaved","rt.autoFailed","rt.retry","rt.secondsAgo","rt.minutesAgo","rt.offline",
              "device.copyDiag","device.copied","device.sample",
              "alert.zoneFault","bal.adaptive","bal.static","dev.online","dev.offline",
              "zdash.preload","zdash.preloadUntil","src.ble","src.probe",
-             "csys.touchWaiting","csys.touchWaitingBody","csys.touchApprove")
+             "csys.touchWaiting","csys.touchWaitingBody","csys.touchApprove",
+             "csys.touchApproved","csys.touchPending","csys.touchError","csys.touchErrorBody",
+             "csys.touchCancel","csys.touchRetry","csys.touchControls","common.copy","device.copied",
+             "rt.secondsAgo","rt.minutesAgo",
+             "zchart.expected","zchart.at","zchart.noForecast","zchart.faultStrong")
     rt={k:T(k) for k in rt_keys}
     rt["_dec"]=T.meta("_dec"); rt["_lang"]=cur
     rt_json=json.dumps(rt,ensure_ascii=False,separators=(",",":"))
@@ -727,7 +814,7 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
     <div class="wrap">
       <header class="header">
         <details class="device">
-          <summary>{LOGO}<span class="name"><b>Lune V6</b><small data-bind="device.about.place">{T("device.sample")}</small></span><span class="caret" aria-hidden="true"></span></summary>
+          <summary>{LOGO}<span class="name"><b data-bind="device.header.name">Lune V6</b><small data-bind="device.about.place">{T("device.sample")}</small></span><span class="caret" aria-hidden="true"></span></summary>
           <div class="device-menu">
             <section class="device-about" aria-labelledby="device-about-h">
               <h3 id="device-about-h">{T("device.about")}</h3>
@@ -738,7 +825,7 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
                 <div><dt>{T("device.mac")}</dt><dd data-bind="device.about.mac">—</dd></div>
                 <div><dt>{T("device.firmware")}</dt><dd data-bind="device.about.firmware">—</dd></div>
                 <div><dt>{T("device.esphome")}</dt><dd data-bind="device.about.esphome">—</dd></div>
-                <div><dt>{T("device.uptime")}</dt><dd data-bind="device.about.uptime">—</dd></div>
+                <div><dt>{T("device.uptime")}</dt><dd data-bind="device.about.uptime">6 <small>{T("common.days")}</small> 4 <small>{T("common.hours")}</small> 12 <small>{T("common.minutes")}</small></dd></div>
               </dl>
               <button type="button" class="btn" data-action="copy-diag">{T("device.copyDiag")}</button>
             </section>

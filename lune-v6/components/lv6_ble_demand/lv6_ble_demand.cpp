@@ -63,7 +63,7 @@ void Lv6BleDemand::apply_demand_(bool want_on, uint32_t now_ms) {
       ESP_LOGI(TAG, "BLE demanded — starting scan");
       this->hub_->start_scan(true);
     } else if (!this->hub_->scanning()) {
-      // Advertise may have paused scan; ask hub to resume when the burst ends.
+      // Clock beacon advertises concurrently; still ensure scan is running.
       this->hub_->start_scan(true);
     }
     return;

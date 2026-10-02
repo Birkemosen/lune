@@ -391,7 +391,8 @@ static constexpr uint32_t GROUPS_CONFIG_VERSION = 1;
 /// section, not the user's whole configuration. See lv6_config_store.cpp.
 /// v3 removes obsolete heat-source/pump fields from the local system section.
 /// v4 keeps only controller_id (heating mode moved to ControlConfig).
-static constexpr uint32_t SYSTEM_CONFIG_VERSION = 4;
+/// v5 adds user-facing display_name and location for the dashboard device menu.
+static constexpr uint32_t SYSTEM_CONFIG_VERSION = 5;
 /// v2 adds heating mode + heat-pump base/margin/trim; drops unused min_valve_opening_pct.
 static constexpr uint32_t CONTROL_CONFIG_VERSION = 2;
 /// v2 moves defaults to P1 flow / P2 manifold return with zone return probes
@@ -768,6 +769,9 @@ struct SystemSnapshot {
 
 struct SystemConfig {
   char controller_id[33] = "lune";
+  /// Shown in the header and «About device» (defaults to product name when empty).
+  char display_name[33] = "Lune V6";
+  char location[65] = "";
 };
 
 /// Baseline version tag for the legacy all-in-one DeviceConfig blob.

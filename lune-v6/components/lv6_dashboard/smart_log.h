@@ -78,9 +78,11 @@ inline bool tag_in(const char *tag, const char *const *prefixes, size_t count) {
 }
 
 inline LogGroup classify(const char *tag) {
-  static const char *const MOTOR[] = {"hv6_valve", "hv6_rev31", "hv6_rev32", "drv8215"};
-  static const char *const ZONE[]  = {"hv6_zone", "hv6_onewire", "dallas", "one_wire", "ds18b20"};
-  static const char *const PERSIST[] = {"lv6_config", "nvs", "preferences"};
+  static const char *const MOTOR[] = {"lv6_valve", "lv6_valve_ctrl", "lv6_rev31", "lv6_rev31_motor",
+                                      "lv6_rev32", "lv6_rev32_motor", "lv6_rev33_motor", "lv6_ripple",
+                                      "drv8215"};
+  static const char *const ZONE[]  = {"lv6_zone", "lv6_zone_ctrl", "lv6_onewire", "dallas", "one_wire", "ds18b20"};
+  static const char *const PERSIST[] = {"lv6_config", "lv6_config_store", "lv6_nvs", "nvs", "preferences"};
   static const char *const NET[] = {"wifi",     "http_request", "ota",   "lv6_dashboard",
                                     "esp-tls",  "web_server",   "mdns",  "api",
                                     "safe_mode", "update",      "esp_netif"};

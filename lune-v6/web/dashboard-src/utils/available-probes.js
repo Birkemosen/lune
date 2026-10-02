@@ -1,4 +1,4 @@
-const STORAGE_KEY = 'hv6_available_probes';
+const STORAGE_KEY = 'lv6_available_probes';
 const listeners = new Set();
 
 export const PROBES_FLOW_RETURN = 2;

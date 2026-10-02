@@ -19,6 +19,9 @@ export const key = {
   sensorName: (zone) => 'text-zone_' + zone + '_sensor_name',
   externalAge: (zone) => 'sensor-zone_' + zone + '_external_temp_age_ms',
   name: (zone) => 'text-zone_' + zone + '_name',
+  areaM2: (zone) => 'number-zone_' + zone + '_area_m2',
+  pipeSpacingMm: (zone) => 'number-zone_' + zone + '_pipe_spacing_mm',
+  pipeType: (zone) => 'select-zone_' + zone + '_pipe_type',
   motorTarget: (zone) => 'number-motor_' + zone + '_target_position',
   motorOpenRipples: (zone) => 'sensor-motor_' + zone + '_learned_open_ripples',
   motorCloseRipples: (zone) => 'sensor-motor_' + zone + '_learned_close_ripples',
@@ -41,6 +44,9 @@ export const key = {
 
 export const gkey = {
   deviceVariant: 'text-device_variant',
+  deviceDisplayName: 'text-device_display_name',
+  deviceLocation: 'text-device_location',
+  esphomeVersion: 'text-esphome_version',
   flow: 'sensor-manifold_flow_temperature',
   ret: 'sensor-manifold_return_temperature',
   uptime: 'sensor-uptime',

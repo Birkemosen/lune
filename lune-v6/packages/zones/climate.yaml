@@ -4,7 +4,7 @@
 # Home Assistant / API façade only.
 #
 # Persistence rules:
-# - Durable setpoints live in hv6 NVS (ZoneConfig), not in ESPHome climate prefs.
+# - Durable setpoints live in lv6 NVS (ZoneConfig), not in ESPHome climate prefs.
 # - heat_action / idle_action must stay no-ops. They run on every boot with the
 #   thermostat's own target (Home preset 21 °C after a flash wipes prefs) and
 #   previously overwrote NVS via set_zone_setpoint.
@@ -52,7 +52,7 @@ climate:
           if (std::isnan(sp))
             sp = id(climate_zone_1).target_temperature_low;
           if (!std::isnan(sp))
-            id(hv6_zones).set_zone_setpoint(0, sp);
+            id(lv6_zones).set_zone_setpoint(0, sp);
     visual:
       min_temperature: 15
       max_temperature: 30
@@ -87,7 +87,7 @@ climate:
           if (std::isnan(sp))
             sp = id(climate_zone_2).target_temperature_low;
           if (!std::isnan(sp))
-            id(hv6_zones).set_zone_setpoint(1, sp);
+            id(lv6_zones).set_zone_setpoint(1, sp);
     visual:
       min_temperature: 15
       max_temperature: 30
@@ -122,7 +122,7 @@ climate:
           if (std::isnan(sp))
             sp = id(climate_zone_3).target_temperature_low;
           if (!std::isnan(sp))
-            id(hv6_zones).set_zone_setpoint(2, sp);
+            id(lv6_zones).set_zone_setpoint(2, sp);
     visual:
       min_temperature: 15
       max_temperature: 30
@@ -157,7 +157,7 @@ climate:
           if (std::isnan(sp))
             sp = id(climate_zone_4).target_temperature_low;
           if (!std::isnan(sp))
-            id(hv6_zones).set_zone_setpoint(3, sp);
+            id(lv6_zones).set_zone_setpoint(3, sp);
     visual:
       min_temperature: 15
       max_temperature: 30
@@ -192,7 +192,7 @@ climate:
           if (std::isnan(sp))
             sp = id(climate_zone_5).target_temperature_low;
           if (!std::isnan(sp))
-            id(hv6_zones).set_zone_setpoint(4, sp);
+            id(lv6_zones).set_zone_setpoint(4, sp);
     visual:
       min_temperature: 15
       max_temperature: 30
@@ -227,7 +227,7 @@ climate:
           if (std::isnan(sp))
             sp = id(climate_zone_6).target_temperature_low;
           if (!std::isnan(sp))
-            id(hv6_zones).set_zone_setpoint(5, sp);
+            id(lv6_zones).set_zone_setpoint(5, sp);
     visual:
       min_temperature: 15
       max_temperature: 30
@@ -243,7 +243,7 @@ esphome:
       then:
         - lambda: |-
             id(climate_setpoint_sync_ready) = false;
-            const auto cfg = id(hv6_config).get_config();
+            const auto cfg = id(lv6_config).get_config();
             {
               auto call = id(climate_zone_1).make_call();
               call.set_target_temperature(cfg.zones[0].setpoint_c);

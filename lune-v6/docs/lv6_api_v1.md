@@ -8,8 +8,9 @@ The cross-product v1 envelope, compatibility rules, and fixtures are in
 Hydraulic commissioning is documented in [hydraulic_commissioning.md](hydraulic_commissioning.md).
 
 Canonical HTTP namespace is `/api/v1` — V6 owns the device host, so the path needs
-no product segment. Former paths `/api/lv6/v1` and `/api/hv6/v1` have been removed
-(hard cut, no alias). Internal component ids remain `lv6_*`; NVS stays `"hv6"`.
+no product segment. Former paths `/api/lv6/v1` and the HeatValve-era `/api/hv6/v1`
+have been removed (hard cut, no alias). Component ids, log tags, and NVS use `lv6`
+(one-time NVS migrate from the legacy `"hv6"` namespace on first boot).
 
 ## Scope
 
@@ -33,20 +34,26 @@ legacy bookmarks that redirect to `/`.
 - Read endpoints (raw JSON, no envelope yet — see "Planned"):
   - `GET /api/v1/state` — full dashboard snapshot (entity-id → value map consumed by the frontend store)
   - `GET /api/v1/revision` — lightweight revision-polling resource. The dashboard polls
-    this every second and fetches the full state when `data_revision` **or**
-    `runtime_revision` changes. `data_revision` tracks config/command writes (and is
-    used by write guards); `runtime_revision` tracks live telemetry the UI must refresh
-    without invalidating those guards (motor learning progress today). The payload also
-    includes `uptime_s` so the UI can keep device uptime current without a full snapshot.
+    this on a slow idle cadence (~10 s) and fetches the full state when `data_revision`
+    **or** `runtime_revision` changes (also on tab focus / visibility). `data_revision`
+    tracks config/command writes (and is used by write guards); `runtime_revision` tracks
+    live telemetry the UI must refresh without invalidating those guards (zone
+    temperatures / valves / manifold flow-return at display resolution, motor learning,
+    motor faults). The payload also includes `uptime_s` so the UI can keep device uptime
+    current without a full snapshot. While a zone is learning, the binder additionally
+    pulls `/state` at 1 Hz.
   - `GET /api/v1/history` — 24 h ring buffer (288 slots @ 5 min). Each entry is
-    `[uptime_s, z0, z1, z2, z3, z4, z5, absorbing, flow_c, return_c, demand_pct]` where
+    `[uptime_s, z0, z1, z2, z3, z4, z5, absorbing, flow_c, return_c, demand_pct,
+    t0..t5, sp0..sp5]` where
     `z0..z5` are `ZoneDisplayState` codes (`0xFF` = unknown), `absorbing` is `0` idle /
     `1` reactive / `2` armed, `flow_c`/`return_c` are the manifold
-    flow/return temps in °C (`null` if no reading), and `demand_pct` is the mean open-valve %
-    above the active per-zone minimum-flow floor over zones with a reading (`null` if unknown).
-    The trailing `flow_c`/`return_c`/`demand_pct`
-    fields are appended after `absorbing` so index-based consumers (e.g. the zone-state timeline)
-    are unaffected. Shape:
+    flow/return temps in °C (`null` if no reading), `demand_pct` is the mean open-valve %
+    above the active per-zone minimum-flow floor over zones with a reading (`null` if unknown),
+    `t0..t5` are per-zone room temperatures °C, and `sp0..sp5` are planned/effective
+    setpoints °C (`sp_plan`; flat current setpoint on V6 — no local schedule). Binder
+    downsamples to half-hours and computes the damped 6 h projection; there is **no**
+    `fc` / `fc_lo` / `fc_hi` series. Trailing fields are appended so index-based consumers
+    of the zone-state / flow / return columns stay compatible. Shape:
     `{"interval_s":300,"uptime_s":N,"count":N,"entries":[[…],…]}`
   - `GET /api/v1/logs?since=<seq>` — live device-log ring (last ~96 lines). Returns only lines
     newer than `<seq>`. Shape: `{"next_seq":N,"lines":[[seq,level,"tag","msg"],…]}` where `level`
@@ -116,7 +123,7 @@ Implemented command names:
 - `motor_reset_and_relearn` (requires `zone`)
 - `motor_reset_learned_factors` (requires `zone`)
 - `open_motor_timed` / `close_motor_timed` / `stop_motor` (requires `zone`; also exposed as motor routes)
-- `ble_clock_sync_now` — start a Shelly Date/Time Broadcast burst so nearby BLU displays can resync
+- `ble_clock_sync_now` — refresh the continuous Shelly Date/Time Broadcast payload immediately
 - `firmware_check` / `firmware_prepare` / `firmware_install` — managed firmware update
   from GitHub Releases. See "Firmware updates".
 
@@ -127,8 +134,8 @@ to secondary-flow commissioning:
 - `minimum_flow_always` (select: `on` | `off`) — explicit secondary-loop commissioning mode.
   The floor only applies while the effective heating mode is `normal`; in `heat_pump` mode the
   base opening keeps flow and the floor is skipped.
-- `ble_clock_sync_enabled` (select: `on` | `off`) — emit Shelly Date/Time Broadcast advertisements
-- `ble_clock_sync_interval_min` (number, 15–1440) — minutes between broadcast bursts (default 60)
+- `ble_clock_sync_enabled` (select: `on` | `off`) — emit Shelly Date/Time Broadcast (~every 2 s, concurrent with scan)
+- `ble_clock_sync_interval_min` (number, 15–1440) — legacy settings field; continuous beacon ignores it
 
 These controls cannot guarantee primary-side heat delivery and never open a satisfied room merely
 to protect the primary circuit.
@@ -221,11 +228,11 @@ Returns controller-level snapshot:
       "firmware": "1.4.12",
       "ip": "192.168.1.50",
       "mac": "AA:BB:CC:DD:EE:FF",
-      "pairing_fingerprint": "hv6-aabbccddeeff"
+      "pairing_fingerprint": "lv6-aabbccddeeff"
     },
     "pairing": {
       "method": "mac-fingerprint-v1",
-      "fingerprint": "hv6-aabbccddeeff"
+      "fingerprint": "lv6-aabbccddeeff"
     },
     "physics_contract": 1,
     "coordination": {

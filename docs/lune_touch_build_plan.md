@@ -48,7 +48,7 @@ Recommended starting point:
 
 The starter workspace for coordinator-owned code lives in [devices/lune-touch/](../devices/lune-touch/).
 The first extracted module is the legacy wind-aware forecast preload producer, now kept as
-reference implementation under `devices/lune-touch/components/hv6_forecast/`.
+reference implementation under `devices/lune-touch/components/lv6_forecast/`.
 
 Initial firmware scaffolding now exists at
 `devices/lune-touch/configurations/lune-touch-7.yaml`. It includes the 16 MB OTA

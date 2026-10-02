@@ -511,6 +511,41 @@ void LV6Dashboard::handle_zone_physics_(AsyncWebServerRequest *request, uint8_t 
     }
     z.ua_weight_override = f;
   }
+  if (parse_float_field(body, "pipe_spacing_mm", &f, &present) && present) {
+    if (!(f >= 50.0f && f <= 500.0f)) {
+      this->send_v1_(request, 400, "out_of_range", "pipe_spacing_mm");
+      return;
+    }
+    z.pipe_spacing_mm = f;
+  }
+  if (parse_string_field(body, "pipe_type", enum_buf, sizeof(enum_buf), &present) && present) {
+    if (strcasecmp(enum_buf, "Unknown") != 0 && strcasecmp(enum_buf, "UNKNOWN") != 0) {
+      lv6::PipeType pt{};
+      bool ok = false;
+      struct { const char *s; lv6::PipeType v; } map[] = {
+          {"PEX 12mm", lv6::PipeType::PEX_12X2}, {"PEX_12X2", lv6::PipeType::PEX_12X2},
+          {"PEX 14mm", lv6::PipeType::PEX_14X2}, {"PEX_14X2", lv6::PipeType::PEX_14X2},
+          {"PEX 16mm", lv6::PipeType::PEX_16X2}, {"PEX_16X2", lv6::PipeType::PEX_16X2},
+          {"PEX 17mm", lv6::PipeType::PEX_17X2}, {"PEX_17X2", lv6::PipeType::PEX_17X2},
+          {"PEX 18mm", lv6::PipeType::PEX_18X2}, {"PEX_18X2", lv6::PipeType::PEX_18X2},
+          {"PEX 20mm", lv6::PipeType::PEX_20X2}, {"PEX_20X2", lv6::PipeType::PEX_20X2},
+          {"ALUPEX 16mm", lv6::PipeType::ALUPEX_16X2}, {"ALUPEX_16X2", lv6::PipeType::ALUPEX_16X2},
+          {"ALUPEX 20mm", lv6::PipeType::ALUPEX_20X2}, {"ALUPEX_20X2", lv6::PipeType::ALUPEX_20X2},
+      };
+      for (const auto &e : map) {
+        if (strcasecmp(enum_buf, e.s) == 0) {
+          pt = e.v;
+          ok = true;
+          break;
+        }
+      }
+      if (!ok) {
+        this->send_v1_(request, 400, "invalid_enum", "pipe_type");
+        return;
+      }
+      z.pipe_type = pt;
+    }
+  }
   this->config_store_->update_zone(zi, z);
   if (this->data_revision_ != UINT32_MAX) this->data_revision_++;
   const auto th = lv6::thermal_model::estimate(z, this->config_store_->get_house_physics());
@@ -658,9 +693,9 @@ void LV6Dashboard::handle_forecast_profile_(AsyncWebServerRequest *request, uint
       walls <= 15)
     z.exterior_walls = static_cast<uint8_t>(walls);
   if (parse_float_field(body, "wind_exposure", &f, &present) && present)
-    z.wind_exposure = std::clamp(f, 0.0f, 1.0f);
+    z.wind_exposure = std::clamp(f, 0.0f, 2.0f);
   if (parse_float_field(body, "solar_gain", &f, &present) && present)
-    z.solar_gain = std::clamp(f, 0.0f, 1.0f);
+    z.solar_gain = std::clamp(f, 0.0f, 2.0f);
   this->config_store_->update_zone(zi, z);
   if (this->data_revision_ != UINT32_MAX) this->data_revision_++;
   ESP_LOGI(PHYS_TAG, "forecast-profile stored for zone %u (unused by V6 control; Touch owns weather)",

@@ -247,7 +247,7 @@ applied after balancing as today:
 ## Configuration
 
 Add to `BalancingConfig`
-([hv6_types.h](../components/lv6_config_store/hv6_types.h)):
+([lv6_types.h](../components/lv6_config_store/lv6_types.h)):
 
 ```cpp
 enum class BalanceMode : uint8_t { STATIC = 0, RETURN_TEMP = 1, ADAPTIVE = 2 };
@@ -278,7 +278,7 @@ return probes. `RETURN_TEMP` can be retired once `ADAPTIVE` is validated.
 ### Persistence / versioning
 
 - `BalancingConfig` gains fields → bump `BALANCING_CONFIG_VERSION`
-  ([hv6_types.h](../components/lv6_config_store/hv6_types.h)).
+  ([lv6_types.h](../components/lv6_config_store/lv6_types.h)).
 - `balance_adapt` lives in `ZoneConfig`, which is mirrored to the durable `zones` NVS blob —
   bump `ZONE_CONFIG_VERSION` so the learned correction survives a legacy main-config reset like
   the rest of the per-room setup (see CLAUDE.md → NVS Config Store).

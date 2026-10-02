@@ -1,7 +1,7 @@
 // HeatValve-6 Rev 2 — shared-driver / motor-mux block diagram
 // Render:  dot -Tsvg hardware_rev2_block.dot -o hardware_rev2_block.svg
 //          dot -Tpng hardware_rev2_block.dot -o hardware_rev2_block.png
-digraph hv6_rev2 {
+digraph lv6_rev2 {
   rankdir=LR;
   graph [fontname="Helvetica", fontsize=11, splines=ortho, nodesep=0.4, ranksep=0.8];
   node  [fontname="Helvetica", fontsize=10, shape=box, style="rounded,filled", fillcolor="#eef3fb"];

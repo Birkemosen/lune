@@ -111,7 +111,7 @@ sensor:
     unit_of_measurement: "°C"
     accuracy_decimals: 1
     update_interval: 2s
-    lambda: return id(hv6_zones).get_zone_temperature(0);
+    lambda: return id(lv6_zones).get_zone_temperature(0);
 
   - platform: template
     name: "Zone 2 Temperature"
@@ -119,7 +119,7 @@ sensor:
     unit_of_measurement: "°C"
     accuracy_decimals: 1
     update_interval: 2s
-    lambda: return id(hv6_zones).get_zone_temperature(1);
+    lambda: return id(lv6_zones).get_zone_temperature(1);
 
   - platform: template
     name: "Zone 3 Temperature"
@@ -127,7 +127,7 @@ sensor:
     unit_of_measurement: "°C"
     accuracy_decimals: 1
     update_interval: 2s
-    lambda: return id(hv6_zones).get_zone_temperature(2);
+    lambda: return id(lv6_zones).get_zone_temperature(2);
 
   - platform: template
     name: "Zone 4 Temperature"
@@ -135,7 +135,7 @@ sensor:
     unit_of_measurement: "°C"
     accuracy_decimals: 1
     update_interval: 2s
-    lambda: return id(hv6_zones).get_zone_temperature(3);
+    lambda: return id(lv6_zones).get_zone_temperature(3);
 
   - platform: template
     name: "Zone 5 Temperature"
@@ -143,7 +143,7 @@ sensor:
     unit_of_measurement: "°C"
     accuracy_decimals: 1
     update_interval: 2s
-    lambda: return id(hv6_zones).get_zone_temperature(4);
+    lambda: return id(lv6_zones).get_zone_temperature(4);
 
   - platform: template
     name: "Zone 6 Temperature"
@@ -151,7 +151,7 @@ sensor:
     unit_of_measurement: "°C"
     accuracy_decimals: 1
     update_interval: 2s
-    lambda: return id(hv6_zones).get_zone_temperature(5);
+    lambda: return id(lv6_zones).get_zone_temperature(5);
 
   - platform: template
     name: "Manifold Flow Temperature"
@@ -159,7 +159,7 @@ sensor:
     unit_of_measurement: "°C"
     accuracy_decimals: 1
     update_interval: 2s
-    lambda: return id(hv6_zones).get_manifold_flow_temperature();
+    lambda: return id(lv6_zones).get_manifold_flow_temperature();
 
   - platform: template
     name: "Manifold Return Temperature"
@@ -167,7 +167,7 @@ sensor:
     unit_of_measurement: "°C"
     accuracy_decimals: 1
     update_interval: 2s
-    lambda: return id(hv6_zones).get_manifold_return_temperature();
+    lambda: return id(lv6_zones).get_manifold_return_temperature();
 
   - platform: template
     name: "Zone 1 Valve Position"
@@ -175,7 +175,7 @@ sensor:
     unit_of_measurement: "%"
     accuracy_decimals: 0
     update_interval: 5s
-    lambda: return id(hv6_zones).get_valve_position(0);
+    lambda: return id(lv6_zones).get_valve_position(0);
 
   - platform: template
     name: "Zone 2 Valve Position"
@@ -183,7 +183,7 @@ sensor:
     unit_of_measurement: "%"
     accuracy_decimals: 0
     update_interval: 5s
-    lambda: return id(hv6_zones).get_valve_position(1);
+    lambda: return id(lv6_zones).get_valve_position(1);
 
   - platform: template
     name: "Zone 3 Valve Position"
@@ -191,7 +191,7 @@ sensor:
     unit_of_measurement: "%"
     accuracy_decimals: 0
     update_interval: 5s
-    lambda: return id(hv6_zones).get_valve_position(2);
+    lambda: return id(lv6_zones).get_valve_position(2);
 
   - platform: template
     name: "Zone 4 Valve Position"
@@ -199,7 +199,7 @@ sensor:
     unit_of_measurement: "%"
     accuracy_decimals: 0
     update_interval: 5s
-    lambda: return id(hv6_zones).get_valve_position(3);
+    lambda: return id(lv6_zones).get_valve_position(3);
 
   - platform: template
     name: "Zone 5 Valve Position"
@@ -207,7 +207,7 @@ sensor:
     unit_of_measurement: "%"
     accuracy_decimals: 0
     update_interval: 5s
-    lambda: return id(hv6_zones).get_valve_position(4);
+    lambda: return id(lv6_zones).get_valve_position(4);
 
   - platform: template
     name: "Zone 6 Valve Position"
@@ -215,7 +215,7 @@ sensor:
     unit_of_measurement: "%"
     accuracy_decimals: 0
     update_interval: 5s
-    lambda: return id(hv6_zones).get_valve_position(5);
+    lambda: return id(lv6_zones).get_valve_position(5);
 
 text_sensor:
   - platform: template
@@ -223,7 +223,7 @@ text_sensor:
     id: zone_1_state
     update_interval: 5s
     lambda: |-
-      auto snap = id(hv6_zones).get_zone_snapshot(0);
+      auto snap = id(lv6_zones).get_zone_snapshot(0);
       return std::string(lv6::zone_display_state_to_string(snap.display_state));
 
   - platform: template
@@ -231,7 +231,7 @@ text_sensor:
     id: zone_2_state
     update_interval: 5s
     lambda: |-
-      auto snap = id(hv6_zones).get_zone_snapshot(1);
+      auto snap = id(lv6_zones).get_zone_snapshot(1);
       return std::string(lv6::zone_display_state_to_string(snap.display_state));
 
   - platform: template
@@ -239,7 +239,7 @@ text_sensor:
     id: zone_3_state
     update_interval: 5s
     lambda: |-
-      auto snap = id(hv6_zones).get_zone_snapshot(2);
+      auto snap = id(lv6_zones).get_zone_snapshot(2);
       return std::string(lv6::zone_display_state_to_string(snap.display_state));
 
   - platform: template
@@ -247,7 +247,7 @@ text_sensor:
     id: zone_4_state
     update_interval: 5s
     lambda: |-
-      auto snap = id(hv6_zones).get_zone_snapshot(3);
+      auto snap = id(lv6_zones).get_zone_snapshot(3);
       return std::string(lv6::zone_display_state_to_string(snap.display_state));
 
   - platform: template
@@ -255,7 +255,7 @@ text_sensor:
     id: zone_5_state
     update_interval: 5s
     lambda: |-
-      auto snap = id(hv6_zones).get_zone_snapshot(4);
+      auto snap = id(lv6_zones).get_zone_snapshot(4);
       return std::string(lv6::zone_display_state_to_string(snap.display_state));
 
   - platform: template
@@ -263,5 +263,5 @@ text_sensor:
     id: zone_6_state
     update_interval: 5s
     lambda: |-
-      auto snap = id(hv6_zones).get_zone_snapshot(5);
+      auto snap = id(lv6_zones).get_zone_snapshot(5);
       return std::string(lv6::zone_display_state_to_string(snap.display_state));

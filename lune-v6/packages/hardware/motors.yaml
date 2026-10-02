@@ -10,4 +10,4 @@ binary_sensor:
     id: motor_nfault
     device_class: problem
     lambda: |-
-      return id(hv6_valves).get_last_fault() != lv6::FaultCode::NONE;
+      return id(lv6_valves).get_last_fault() != lv6::FaultCode::NONE;

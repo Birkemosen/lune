@@ -32,10 +32,10 @@ class Lv6BleTimeBeacon : public esphome::Component {
  protected:
   bool clock_is_valid_(const esphome::ESPTime &now) const;
   void set_error_(const char *code);
-  bool start_burst_();
-  void stop_burst_();
-  bool start_advertising_(uint32_t unix_s, int year);
+  bool ensure_advertising_();
+  bool refresh_payload_();
   void stop_advertising_();
+  bool encode_payload_(uint8_t *raw, size_t *len_out, uint32_t *unix_s_out);
 
   esphome::time::RealTimeClock *time_{nullptr};
   Lv6ConfigStore *config_store_{nullptr};
@@ -43,9 +43,8 @@ class Lv6BleTimeBeacon : public esphome::Component {
 
   bool pending_now_{false};
   bool advertising_{false};
-  uint32_t burst_start_ms_{0};
-  uint32_t burst_ms_{ble_time::CLOCK_SYNC_BURST_MS};
   uint32_t next_try_ms_{0};
+  uint32_t next_refresh_ms_{0};
   uint32_t last_ok_s_{0};
   char last_error_[16]{};
 };

@@ -30,7 +30,7 @@
 
 namespace lv6 {
 
-static const char *const TAG = "hv6_zone_ctrl";
+static const char *const TAG = "lv6_zone_ctrl";
 static constexpr float ALPHA_TOP = 10.8f;  // W/(m²·K) convective+radiative at floor
 
 // =============================================================================
@@ -114,7 +114,7 @@ void Lv6ZoneController::setup() {
 
   // Start zone control task
   BaseType_t ok = xTaskCreatePinnedToCore(
-      task_func_, "hv6_zone", STACK_SIZE, this, PRIORITY, &task_handle_, CORE);
+      task_func_, "lv6_zone", STACK_SIZE, this, PRIORITY, &task_handle_, CORE);
   if (ok != pdPASS) {
     ESP_LOGE(TAG, "Failed to create zone task");
     this->mark_failed();
@@ -2383,7 +2383,7 @@ void Lv6ZoneController::update_zone_display_states_() {
 
     auto telem = valve_controller_->get_telemetry(i);
     if (telem.learned_open_ms == 0 || telem.learned_close_ms == 0) {
-      snapshots_[i].display_state = ZoneDisplayState::CALIBRATING;
+      snapshots_[i].display_state = ZoneDisplayState::WAITING_CALIBRATION;
       continue;
     }
 

@@ -10,12 +10,17 @@ let timer = null;
 let tick = 0;
 let mockLogSeq = 1;
 
+// preview.html?empty: no supply/return reading and no temperature on Z3, to
+// check the "—" / collapsed-graph empty states (DESIGN.md 5.9, 6.5).
+const EMPTY = typeof location !== 'undefined' && /[?&]empty\b/.test(location.search);
+const EMPTY_ZONE = 3;
+
 // Rotating sample log lines so the mock Logs view looks alive.
 const MOCK_LOG_SAMPLES = [
-  [3, 'hv6_zone', 'Control cycle: 4 zones heating, house avg 21.3°C'],
-  [3, 'hv6_valve', 'Motor 2 reached open endstop (ripples=412)'],
-  [5, 'hv6_ripple', 'ADC DMA buffer drained, 2048 samples'],
-  [2, 'hv6_zone', 'Zone 5 disabled — skipping control'],
+  [3, 'lv6_zone', 'Control cycle: 4 zones heating, house avg 21.3°C'],
+  [3, 'lv6_valve', 'Motor 2 reached open endstop (ripples=412)'],
+  [5, 'lv6_ripple', 'ADC DMA buffer drained, 2048 samples'],
+  [2, 'lv6_zone', 'Zone 5 disabled — skipping control'],
 ];
 
 const MOCK_UPTIME_BASE = 18 * 3600 + 12 * 60;
@@ -50,7 +55,7 @@ function seed() {
     state.enabled[index] = index === 4 ? 0 : 1;
 
     const zone = index + 1;
-    setEntity(key.temp(zone), { value: state.temp[index] });
+    setEntity(key.temp(zone), { value: EMPTY && zone === EMPTY_ZONE ? null : state.temp[index] });
     setEntity(key.setpoint(zone), { value: state.setpoint[index] });
     setEntity(key.baseSetpoint(zone), { value: state.setpoint[index] });
     setEntity(key.effectiveSetpoint(zone), { value: state.setpoint[index] });
@@ -93,8 +98,8 @@ function seed() {
     setEntity(key.probeTemp(probe), { value });
   }
 
-  setEntity(gkey.flow, { value: 34.1 });
-  setEntity(gkey.ret, { value: 30.4 });
+  setEntity(gkey.flow, { value: EMPTY ? null : 34.1 });
+  setEntity(gkey.ret, { value: EMPTY ? null : 30.4 });
   setEntity(gkey.uptime, { value: MOCK_UPTIME_BASE });
   setEntity(gkey.wifi, { value: -57 });
   setEntity(gkey.drivers, { value: true, state: 'on' });
@@ -104,6 +109,9 @@ function seed() {
   setEntity(gkey.mac, { state: 'D8:3B:DA:12:34:56' });
   setEntity(gkey.firmware, { state: 'v1.0.0-1' });
   setEntity(gkey.resetReason, { state: 'Software reset (esp_restart)' });
+  setEntity(gkey.esphomeVersion, { state: '2026.9.1' });
+  setEntity(gkey.deviceDisplayName, { state: 'Lune V6' });
+  setEntity(gkey.deviceLocation, { state: 'Ground floor manifold' });
   setDashboardValue('esphomeVersion', '2026.9.1');
   setEntity(gkey.manifoldFlowProbe, { state: 'Probe 1' });
   setEntity(gkey.manifoldReturnProbe, { state: 'Probe 2' });
@@ -217,7 +225,15 @@ function seed() {
     const demandPct = Math.round(Math.min(100, heating * 15 + Math.abs(Math.sin(i / 8)) * 6));
     const flowC = Number((30 + heating * 1.4 + Math.sin(i / 11) * 1.5).toFixed(1));
     const returnC = Number((flowC - (1.4 + heating * 0.35)).toFixed(1));
-    mockEntries.push([t, ...states, absorbing, flowC, returnC, demandPct]);
+    // Per-zone room temp + sp_plan (indices 11..16 / 17..22) for Fremskrivning.
+    const zoneTemps = state.temp.map((base, zi) => {
+      if (EMPTY && zi === EMPTY_ZONE - 1) return null;
+      const wobble = Math.sin((i + zi * 7) / 18) * 0.25;
+      const drift = (states[zi] === 5 ? 0.15 : -0.08) * Math.sin(i / 40);
+      return Number((base + wobble + drift).toFixed(1));
+    });
+    const zoneSps = state.setpoint.map((sp) => Number(sp.toFixed(1)));
+    mockEntries.push([t, ...states, absorbing, EMPTY ? null : flowC, EMPTY ? null : returnC, demandPct, ...zoneTemps, ...zoneSps]);
   }
   setZoneStateHistory({ interval_s: INTERVAL_S, uptime_s: NOW_S, count: TOTAL, entries: mockEntries });
 
@@ -276,7 +292,7 @@ function simulate() {
       maxValve = Math.max(maxValve, state.valve[index]);
     }
 
-    setEntity(key.temp(zone), { value: state.temp[index] });
+    setEntity(key.temp(zone), { value: EMPTY && zone === EMPTY_ZONE ? null : state.temp[index] });
     setEntity(key.valve(zone), { value: Math.round(state.valve[index]) });
     const preheat = Math.max(0, (state.setpoint[index] - state.temp[index] - 0.15) * 0.22);
     setEntity(key.preheatAdvance(zone), { value: Number(preheat.toFixed(2)) });
@@ -288,8 +304,8 @@ function simulate() {
   const flow = 29.5 + maxValve * 0.075 + activeZones * 0.18 + Math.sin(tick / 6) * 0.25;
   const ret = flow - (activeZones ? 2.1 + openDemand / Math.max(1, activeZones * 50) : 1.1);
 
-  setEntity(gkey.flow, { value: Number(flow.toFixed(1)) });
-  setEntity(gkey.ret, { value: Number(ret.toFixed(1)) });
+  setEntity(gkey.flow, { value: EMPTY ? null : Number(flow.toFixed(1)) });
+  setEntity(gkey.ret, { value: EMPTY ? null : Number(ret.toFixed(1)) });
   setEntity(key.probeTemp(1), { value: Number((flow + 0.2).toFixed(1)) });
   setEntity(key.probeTemp(2), { value: Number((ret - 0.4).toFixed(1)) });
   sampleHistory(true);
@@ -300,6 +316,7 @@ function simulate() {
 
   // Emit a mock log line every few ticks so the Logs view looks live.
   if (tick % 3 === 0) seedMockLogs(1);
+  setDashboardValue('stateTick', Date.now());
 }
 
 function startMockMotor(zone, direction) {
@@ -397,6 +414,33 @@ export function mockDiagnosticsSnapshot() {
   };
 }
 
+/** Discovered BTHome sensors for GET /api/v1/ble-scan (and binder Scan). */
+export function mockBleScan() {
+  setEntity(gkey.bleScanning, { state: 'on' });
+  addActivity('BLE scan refreshed');
+  return {
+    count: 2,
+    sensors: [
+      {
+        mac: 'F8:44:77:2A:CC:68',
+        name: 'SBHT-003C',
+        temp_c: 21.4,
+        rssi: -58,
+        age_s: 2,
+        zone: 1,
+      },
+      {
+        mac: 'B4:E6:2D:8A:11:22',
+        name: 'SBHT-003C',
+        temp_c: 19.8,
+        rssi: -71,
+        age_s: 8,
+        zone: -1,
+      },
+    ],
+  };
+}
+
 function mockTraceCurrent(t, direction) {
   const open = direction === 'open';
   if (t < 180) return open ? 22 - t * 0.03 : 28 - t * 0.04;
@@ -438,6 +482,7 @@ export function startMock() {
   if (timer) return;
   seed();
   setLive(true);
+  setDashboardValue('stateTick', Date.now());
   timer = setInterval(simulate, 1200);
 }
 
@@ -495,6 +540,12 @@ export function handleMockPost(body) {
     if (cmd === 'i2c_scan') {
       setI2cResult('I2C_SCAN: ----- begin -----\nI2C_SCAN: found 0x3C\nI2C_SCAN: found 0x44\nI2C_SCAN: found 0x76\nI2C_SCAN: ----- end -----');
       addActivity('I2C scan complete');
+      return;
+    }
+
+    if (cmd === 'ble_scan') {
+      setEntity(gkey.bleScanning, { state: 'on' });
+      addActivity('BLE scan started');
       return;
     }
 
@@ -561,6 +612,7 @@ export function handleMockPost(body) {
           setEntity(key.motorLearnPhase(zone), { state: step.phase });
           setEntity(key.motorLearnSample(zone), { value: step.sample });
           setEntity(key.motorLearnSamplesNeeded(zone), { value: need });
+          setDashboardValue('stateTick', Date.now());
           if (step.phase === 'done') {
             setEntity(key.state(zone), { state: 'idle' });
             setEntity(key.motorLearnPhase(zone), { state: '' });
@@ -577,11 +629,8 @@ export function handleMockPost(body) {
     if (cmd === 'ble_clock_sync_now') {
       setEntity(gkey.bleClockSyncAdvertising, { state: 'on' });
       setEntity(gkey.bleClockSyncLastError, { state: '' });
-      setTimeout(() => {
-        setEntity(gkey.bleClockSyncAdvertising, { state: 'off' });
-        setEntity(gkey.bleClockSyncLastOkS, { value: (Number(Date.now() / 1000) | 0) });
-      }, 400);
-      addActivity('Room clock broadcast started');
+      setEntity(gkey.bleClockSyncLastOkS, { value: (Number(Date.now() / 1000) | 0) });
+      addActivity('Room clock beacon refreshed');
       return;
     }
     if (cmd === 'dump_task_stats') {
@@ -761,7 +810,7 @@ export function mockSettingsImport(envelope, restoreLearned) {
   };
 }
 
-window.__hv6_mock = {
+window.__lv6_mock = {
   setSetpoint(zone, value) {
     handleMockPost({ key: 'zone_setpoint', value, zone });
   },

@@ -76,6 +76,8 @@
     --fs-xl: 1.5rem;
     --fs-2xl: 2rem;
     --fs-hero: 4rem;
+    --fs-panel: var(--fs-lg);
+    --fs-view: var(--fs-2xl);
     /* space */
     --space-1: 4px;
     --space-2: 8px;
@@ -91,6 +93,11 @@
     --r-pill: 999px;
     /* size */
     --hit: 44px;
+    --field-gap: var(--space-3);
+    --panel-pad: var(--space-5);
+    --panel-gap: var(--space-4);
+    --row-h: 40px;
+    --tile-h: auto;
     --container: 1200px;
     /* shadow */
     --card-edge: 0 0 0 1px var(--card-edge-c);
@@ -144,7 +151,9 @@
     padding-inline: var(--pad);
   }
   .app { --pad: var(--space-5); }
-  @media (max-width: 767.98px) { .app { --pad: var(--space-4); } }
+  @media (max-width: 767.98px) {
+    .app { --pad: var(--space-4); --panel-pad: var(--space-4); --fs-view: var(--fs-lg); }
+  }
 
   /* ---- 3.1 Top: header + zonestrimmel, klæber sammen på web ----------- */
   .top {
@@ -234,6 +243,8 @@
   .tile.tile-manifold .mini i[data-state="fault"] {
     background: var(--danger); height: 100%; min-height: 100%;
   }
+  .tile.tile-manifold .mini i[data-state="blocked"] { background: var(--warn); height: 100%; min-height: 100%; }
+  .tile.tile-manifold .mini i[data-state="learning"] { background: var(--violet); }
   .tile.tile-manifold .mini i[data-state="off"] { background: var(--seg-off); }
   .tile.tile-manifold[data-state="fault"] .tile-id { color: var(--danger); }
   .tile.tile-manifold.is-parent { box-shadow: inset 0 0 0 2px var(--fg); }
@@ -269,6 +280,11 @@
     grid-template-columns: repeat(12, minmax(0, 1fr));
     gap: var(--space-3);             /* Apex: gap-3 mellem kort */
     align-items: stretch;            /* kort side om side får samme højde */
+    /* Sticky header + strip ≈ scroll-mål. Mobil sticky er slået fra. */
+    --section-scroll-margin: calc(var(--hit) + var(--space-7) + var(--space-6));
+  }
+  @media (max-width: 767.98px), (max-height: 600px) {
+    .view { --section-scroll-margin: var(--space-3); }
   }
   /* Kolonnespænd — bento-grid på 12 kolonner, alt fuld bredde < 900px */
   .view > * { grid-column: span 12; }
@@ -287,14 +303,159 @@
     gap: var(--space-2) var(--space-4);
     padding-block: var(--space-2) var(--space-3);
   }
-  .view-head h2 { font-size: var(--fs-2xl); letter-spacing: -.03em; }
+  .view-head h2 { font-size: var(--fs-view); letter-spacing: -.03em; }
   .view-head p  { color: var(--muted); }
-  @media (max-width: 767.98px) { .view-head h2 { font-size: var(--fs-lg); } }
 
-  /* ---- 3.4 Sektionsheader i en visning --------------------------------
-     Del lange konfigurationssider i grupper. Liggende i det åbne `--bg`
-     (ikke på et panel): tekst + horisontal linje. Sentence case — ingen
-     versaler. Kan genbruges i dash- og conf-visninger. */
+  /* ---- 3.4 Sektioner (kun Konfiguration) ------------------------------
+     Grupperer paneler under en overskrift. 3+ sektioner → .section-nav.
+     Kun Service/Udvikler må være details.section (lukket som standard).
+     Markup: h2.section-h > tekst + i.section-h-dot + i.section-h-line
+     Foldbar: summary.section-h > tekst + badge + i.section-h-dot + i.section-h-line
+     (chevron via summary::after). */
+  .section-nav {
+    grid-column: 1 / -1;
+    display: flex;
+    flex-wrap: nowrap;
+    gap: var(--space-2);
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+    padding-block: var(--space-2) var(--space-3);
+  }
+  .section-nav a {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-height: var(--hit);
+    padding: 0 var(--space-4);
+    border-radius: var(--r-pill);
+    background: var(--card);
+    box-shadow: var(--card-edge);
+    font-size: var(--fs-sm);
+    font-weight: 500;
+    text-decoration: none;
+    color: var(--muted);
+  }
+  .section-nav a:hover { color: var(--fg); }
+  .section-nav a[data-dirty]::after,
+  .section-nav a[data-fault]::after {
+    content: "";
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--warn); flex: none;
+  }
+  .section-nav a[data-fault]::after { background: var(--danger); }
+
+  .section,
+  details.section {
+    grid-column: 1 / -1;
+    display: grid;
+    gap: 0;
+    margin: 0;
+    border: 0;
+    padding: 0;
+    background: transparent;
+    scroll-margin-top: var(--section-scroll-margin);
+  }
+
+  .section-h {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    margin: var(--space-6) 0 var(--space-3);
+    padding: 0;
+    min-height: var(--hit);
+    font-size: var(--fs-sm);
+    font-weight: 600;
+    color: var(--muted);
+  }
+  .section:first-of-type > .section-h,
+  details.section:first-of-type > .section-h,
+  .view-head + .section-nav + .section > .section-h,
+  .view-head + .section-nav + details.section > .section-h,
+  .view-head + .section > .section-h {
+    margin-top: 0;
+  }
+  .section-h-line {
+    flex: 1 1 auto;
+    height: 1px;
+    background: var(--border);
+    min-width: var(--space-4);
+  }
+  .section-h-dot {
+    display: none;
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--warn); flex: none;
+  }
+  .section[data-dirty] > .section-h .section-h-dot,
+  details.section[data-dirty] > .section-h .section-h-dot,
+  .section[data-fault] > .section-h .section-h-dot,
+  details.section[data-fault] > .section-h .section-h-dot {
+    display: block;
+  }
+  .section[data-fault] > .section-h .section-h-dot,
+  details.section[data-fault] > .section-h .section-h-dot {
+    background: var(--danger);
+  }
+
+  .section-grid {
+    display: grid;
+    grid-template-columns: repeat(12, minmax(0, 1fr));
+    gap: var(--space-3);
+    align-items: stretch;
+  }
+  .section-grid > * { grid-column: span 12; min-width: 0; }
+  @media (min-width: 900px) {
+    .section-grid > .c4 { grid-column: span 4; }
+    .section-grid > .c5 { grid-column: span 5; }
+    .section-grid > .c6 { grid-column: span 6; }
+    .section-grid > .c7 { grid-column: span 7; }
+    .section-grid > .c8 { grid-column: span 8; }
+  }
+
+  /* Konfiguration: 1/2/3 lige spalter (< 900 / ≥ 900 / ≥ 1280 px). Paneler
+     har naturlig højde og stables oppefra (align-items: start) — ens højde
+     gælder kun Dashboard. cN = én spalte; uden cN, eller med .wide, spænder
+     elementet alle spalter (sektioner, sektionslinks, view-head). */
+  .view[id^="v-conf-"],
+  .view[id^="v-conf-"] .section-grid {
+    --conf-cols: 1;
+    grid-template-columns: repeat(var(--conf-cols), minmax(0, 1fr));
+    align-items: start;
+  }
+  .view[id^="v-conf-"] > *,
+  .view[id^="v-conf-"] .section-grid > * { grid-column: 1 / -1; }
+  @media (min-width: 900px) {
+    .view[id^="v-conf-"],
+    .view[id^="v-conf-"] .section-grid { --conf-cols: 2; }
+    .view[id^="v-conf-"] > :is(.c4, .c5, .c6, .c7, .c8):not(.wide),
+    .view[id^="v-conf-"] .section-grid > :is(.c4, .c5, .c6, .c7, .c8):not(.wide) { grid-column: auto; }
+  }
+  @media (min-width: 1280px) {
+    .view[id^="v-conf-"],
+    .view[id^="v-conf-"] .section-grid { --conf-cols: 3; }
+    /* Kun to paneler i sektionen: to spalter, ingen tom tredje. */
+    .view[id^="v-conf-"] .section-grid:not(:has(> :nth-child(3))) { --conf-cols: 2; }
+  }
+
+  details.section > summary.section-h {
+    list-style: none;
+    cursor: pointer;
+  }
+  details.section > summary.section-h::-webkit-details-marker { display: none; }
+  details.section > summary.section-h::after {
+    content: "";
+    width: 7px; height: 7px; flex: none;
+    border-right: 1.5px solid currentColor;
+    border-bottom: 1.5px solid currentColor;
+    transform: rotate(45deg) translateY(-2px);
+    transition: transform var(--dur) var(--ease);
+  }
+  details.section[open] > summary.section-h::after {
+    transform: rotate(225deg) translateY(-2px);
+  }
+
+  /* Legacy .section-head — midlertidig kompatibilitet */
   .section-head {
     display: flex;
     align-items: center;
@@ -465,7 +626,9 @@
      Struktur genbrugt fra V6-headeren. Valgt felt INVERTERES (Apex'
      "inverted card") — tydeligt på afstand, uden at tilføje en farve. */
   .tile {
+    position: relative;
     min-width: 0;
+    min-height: var(--tile-h);
     display: grid;
     grid-template-columns: 10px minmax(0, 1fr);
     grid-template-rows: auto auto auto;
@@ -503,7 +666,38 @@
 
   .tile[data-state="fault"] :is(.tile-id, .tile-val) { color: var(--danger); }
   .tile[data-state="fault"] .lvl i:last-child { background: var(--danger); }
+  .tile[data-state="blocked"] :is(.tile-id, .tile-val) { color: var(--warn); }
+  .tile[data-state="blocked"] .lvl i:last-child { background: var(--warn); }
+  .tile[data-state="learning"] :is(.tile-id, .tile-val) { color: var(--violet); }
+  .tile[data-state="learning"][data-level="1"] .lvl i:nth-child(n+5),
+  .tile[data-state="learning"][data-level="2"] .lvl i:nth-child(n+4),
+  .tile[data-state="learning"][data-level="3"] .lvl i:nth-child(n+3),
+  .tile[data-state="learning"][data-level="4"] .lvl i:nth-child(n+2),
+  .tile[data-state="learning"][data-level="5"] .lvl i {
+    background: var(--violet);
+    box-shadow: none;
+  }
   .tile[data-state="off"] { opacity: .5; }
+
+  /* Mangler læring: gult advarselsskilt øverst til højre. Farve er aldrig eneste signal. */
+  .tile[data-learn="needed"]::after {
+    content: "!";
+    position: absolute;
+    top: var(--space-2);
+    right: var(--space-2);
+    z-index: 1;
+    display: grid;
+    place-items: center;
+    width: var(--space-4);
+    height: var(--space-4);
+    border-radius: var(--r-pill);
+    background: var(--warn);
+    color: var(--bg);
+    font-size: var(--fs-xs);
+    font-weight: 700;
+    line-height: 1;
+    pointer-events: none;
+  }
 
   /* Valgt uden radio-state (server-renderet side eller JS): samme udtryk
      som det genererede :checked-selektor-sæt i sektion 6. */
@@ -559,6 +753,9 @@
   .tile-sys .temp.flow .tile-val { color: var(--accent-ink); }
   .tile-sys .temp.ret .temp-lab,
   .tile-sys .temp.ret .tile-val { color: var(--info); }
+  /* Uden måling: værdien er "—" og labelen er ikke farvet. */
+  .tile-sys .temp[data-empty] .temp-lab,
+  .tile-sys .temp[data-empty] .tile-val { color: var(--muted); }
   .tile-sys .temp.ret .tile-val {
     font-size: var(--fs-sm);
     font-weight: 500;
@@ -594,10 +791,10 @@
     border-radius: var(--r-card);
     background: var(--card);
     box-shadow: var(--card-edge);
-    padding: var(--space-5);
+    padding: var(--panel-pad);
     display: flex;
     flex-direction: column;
-    gap: var(--space-4);
+    gap: var(--panel-gap);
     container-type: inline-size;
   }
   .panel-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px var(--space-3); }
@@ -605,7 +802,7 @@
     .panel-head p { order: 3; flex-basis: 100%; }     /* undertitel på egen linje */
     .panel .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   }
-  .panel-head h3 { font-size: var(--fs-lg); }
+  .panel-head h3 { font-size: var(--fs-panel); }
   .panel-head p { color: var(--muted); font-size: var(--fs-sm); }
   .panel-head .help-btn { align-self: center; }
   .panel-head .badge { margin-left: auto; }
@@ -694,14 +891,52 @@
   .msg.violet { background: var(--violet-bg); color: var(--violet); }
   .msg span { color: var(--fg); }
 
-  @media (max-width: 767.98px) { .panel { padding: var(--space-4); gap: var(--space-4); } }
+  /* Resultat af Test læsning / Test afsendelse. Bliver stående; gemmes ikke. */
+  .test-result:empty { display: none; }
+  .test-result[data-state="running"] {
+    display: flex;
+    align-items: center;
+    min-height: var(--hit);
+    font-size: var(--fs-sm);
+    color: var(--muted);
+  }
+  .test-result .msg span {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+  }
+
 
   /* Underafsnit side om side når panelet er bredt nok */
   .subs { display: grid; gap: var(--space-5) var(--space-6); }
   @container (min-width: 560px) { .subs.cols-2 { grid-template-columns: 1fr 1fr; } }
-  .sub { display: grid; gap: var(--space-3); align-content: start; min-width: 0; }
-  .sub > h4 { font-size: var(--fs-sm); font-weight: 500; color: var(--muted); }
+  .sub { display: grid; gap: var(--field-gap); align-content: start; min-width: 0; }
+  .subs.cols-2 > .sub {
+    display: flex;
+    flex-direction: column;
+    gap: var(--field-gap);
+    min-height: 100%;
+  }
+  .sub > h4 {
+    display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap;
+    font-size: var(--fs-sm); font-weight: 500; color: var(--muted);
+  }
+  .sub > h4 .badge { margin-left: auto; }
+  .sub > .actions:last-child { margin-top: auto; }
   .note { font-size: var(--fs-sm); color: var(--muted); }
+
+  /* Monospace-id med kopiér (progressiv forstærkning) */
+  .mono { font-family: var(--font-mono); font-size: var(--fs-sm); word-break: break-all; }
+  .id-row {
+    display: flex; align-items: center; gap: var(--space-2);
+    min-width: 0;
+  }
+  .id-row .mono { flex: 1; min-width: 0; }
+  .btn.copy {
+    flex: 0 0 auto;
+    padding-inline: var(--space-3);
+    font-size: var(--fs-xs);
+  }
 
   /* Ekspert-tuning bag et link */
   .more > summary {
@@ -717,6 +952,24 @@
   }
   .more[open] > summary::after { transform: rotate(225deg) translateY(-2px); }
   .more[open] > .subs { padding-top: var(--space-4); }
+
+  /* Tilstandsafhængige handlinger — vis kun det, der passer til data-state.
+     Skjul-reglen skal matche .btn-specificitet (ellers vinder display:inline-flex). */
+  [data-state] [data-show-when] { display: none; }
+  .btn[data-show-when] { --show-display: inline-flex; }
+  .msg[data-show-when] { --show-display: flex; }
+  .note[data-show-when],
+  p[data-show-when],
+  .hint[data-show-when] { --show-display: block; }
+  details[data-show-when] { --show-display: block; }
+  dl[data-show-when] { --show-display: grid; }
+  .actions[data-show-when] { --show-display: flex; }
+  [data-state="unpaired"]  [data-show-when~="unpaired"],
+  [data-state="approved"]  [data-show-when~="approved"],
+  [data-state="pending"]   [data-show-when~="pending"],
+  [data-state="error"]     [data-show-when~="error"] {
+    display: var(--show-display, block);
+  }
 
   /* Badge (pille) */
   .badge {
@@ -743,14 +996,16 @@
   .metric dt { font-size: var(--fs-sm); color: var(--muted); }
 
   .kv { display: grid; font-size: var(--fs-sm); }
-  .kv > div { display: flex; justify-content: space-between; gap: var(--space-3); padding: 10px 0; border-bottom: 1px solid var(--border); }
+  .kv > div { display: flex; justify-content: space-between; align-items: center; gap: var(--space-3); padding: max(0px, (var(--row-h) - 20px) / 2) 0; border-bottom: 1px solid var(--border); }
   .kv > div:last-child { border-bottom: 0; }
   .kv dt { color: var(--muted); }
   .kv dd { font-weight: 500; text-align: right; }
 
-  /* Progress i Apex-stil: tynd orange bjælke */
+  /* Progress i Apex-stil: tynd bjælke (`--accent` varme, `.violet` læring) */
   .bar { height: 4px; border-radius: var(--r-pill); background: var(--seg-off); overflow: hidden; }
   .bar > i { display: block; height: 100%; width: var(--v, 0%); background: var(--accent); border-radius: inherit; }
+  .bar.violet > i { background: var(--violet); }
+  p.hint + .bar { margin-top: var(--space-2); }
 
   /* Komfortliste med 24-timers sparklines -------------------------------
      Hver række er et <label> for zonens scope-radio (klik åbner zonen).
@@ -780,6 +1035,8 @@
   .comfort .val b { color: var(--fg); font-size: var(--fs-md); font-weight: 600; }
   .comfort .spark { grid-area: spark; }
   .comfort [data-state="fault"] :is(.id, .val) { color: var(--danger); }
+  .comfort [data-state="blocked"] :is(.id, .val) { color: var(--warn); }
+  .comfort [data-state="learning"] :is(.id, .val) { color: var(--violet); }
 
   @container (min-width: 560px) {
     .comfort label {
@@ -803,6 +1060,77 @@
   .trend .f  { fill: none; stroke: var(--accent); stroke-width: 1.8; vector-effect: non-scaling-stroke; stroke-linejoin: round; }
   .trend .r  { fill: none; stroke: var(--info);   stroke-width: 1.8; vector-effect: non-scaling-stroke; stroke-linejoin: round; }
   .trend .dt { fill: var(--accent); opacity: .14; }
+
+  /* Tom graf: figuren klapper sammen til én linje (.empty) ved siden af
+     overskriften. Binderen sætter data-empty på grafens beholder. Manglende
+     værdier vises som "—", aldrig 0. */
+  .empty { display: none; margin: 0; font-size: var(--fs-sm); color: var(--muted); }
+  [data-empty] > .empty { display: block; }
+  [data-empty] :is(.trend, .spark, .zchart, .fc, .bars, .axis, .legend, .zchart-legend, .fc-legend, .bars-legend) { display: none; }
+  .sub[data-empty] { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--space-1) var(--space-3); }
+  .trend-wrap[data-empty] { margin-top: 0; }
+  /* Dashboard: et panel hvis bundgraf er tom, strækkes ikke til naboens højde. */
+  .panel:has(> .trend-wrap[data-empty]) { align-self: start; }
+
+  /* Zone 24 t + 6 t fremskrivning (halvtime). Akser/Nu/forklaring i HTML. */
+  .zchart {
+    display: grid;
+    grid-template-columns: 36px minmax(0, 1fr);
+    column-gap: var(--space-2);
+    row-gap: 6px;
+  }
+  .zchart-y {
+    display: flex; flex-direction: column; justify-content: space-between;
+    align-items: flex-end; font-size: var(--fs-xs); color: var(--faint); line-height: 1;
+  }
+  .zchart-plot { position: relative; min-width: 0; height: 140px; cursor: crosshair; }
+  .zchart-plot svg { display: block; width: 100%; height: 100%; overflow: visible; }
+  .zchart .gl { stroke: var(--border); stroke-width: 1; vector-effect: non-scaling-stroke; }
+  .zchart .t  { fill: none; stroke: var(--fg); stroke-width: 2; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+  .zchart .g  { fill: none; stroke: var(--muted); stroke-width: 1.2; stroke-dasharray: 3 3; vector-effect: non-scaling-stroke; }
+  .zchart .pb { fill: var(--info); opacity: .14; }
+  .zchart .pj { fill: none; stroke: var(--info); stroke-width: 1.6; stroke-dasharray: 4 3; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+  .zchart .past { fill: var(--card); opacity: .55; }
+  .zchart .now  { stroke: var(--fg); stroke-width: 1; stroke-dasharray: 3 3; vector-effect: non-scaling-stroke; }
+  .zchart-now {
+    position: absolute; top: -2px; left: var(--now, 80%);
+    transform: translateX(6px);
+    font-size: var(--fs-xs); font-weight: 600;
+  }
+  /* Mus-slider: stiplet lodret linje over plottet (HTML, så SVG-repaint ikke sletter den). */
+  .zchart-scrub {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: 0;
+    border-left: 1px dashed var(--fg);
+    pointer-events: none;
+    z-index: 1;
+  }
+  .zchart-plot[data-scrubbing] .zchart-now { opacity: .45; }
+  .zchart-x {
+    grid-column: 2;
+    display: flex; justify-content: space-between;
+    font-size: var(--fs-xs); color: var(--faint);
+  }
+  .zchart-legend {
+    display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-5);
+    font-size: var(--fs-xs); color: var(--muted); margin: var(--space-2) 0 0;
+  }
+  .zchart-legend span { display: inline-flex; align-items: center; gap: 6px; }
+  .zchart-legend i { display: inline-block; width: 16px; }
+  .zchart-legend .lt { border-top: 2px solid var(--fg); }
+  .zchart-legend .lg { border-top: 1.5px dashed var(--muted); }
+  .zchart-legend .lp {
+    height: 8px;
+    background: color-mix(in srgb, var(--info) 22%, transparent);
+    border-top: 1.6px dashed var(--info);
+  }
+  @media (max-width: 599.98px) {
+    .zchart { grid-template-columns: 28px minmax(0, 1fr); }
+    .zchart-plot { height: 112px; }
+  }
 
   /* .bars: plan vs reality */
   .bars { display: grid; gap: var(--space-2); }
@@ -944,9 +1272,10 @@
   @media (max-width: 767.98px) { .climate .now { font-size: 3.25rem; } }
 
   /* ---- 4.7 Felter ------------------------------------------------------ */
-  .field { display: grid; gap: var(--space-2); }
+  .field { display: grid; gap: min(var(--space-2), var(--field-gap)); }
   .field > label, .field > .label { font-size: var(--fs-sm); font-weight: 500; }
   .field .hint { display: block; font-size: var(--fs-xs); font-weight: 400; color: var(--muted); margin-top: 2px; }
+  p.hint { font-size: var(--fs-xs); color: var(--muted); margin: 0; }
   /* Label + kontrol på samme række. Kontrolbredde = aktiv halvdel af
      2-valg-.seg (padding 4px+4px), så select/stepper/input flugter med
      den hvide pille — ikke hele segløbet. */
@@ -957,7 +1286,10 @@
   }
   .field.row > .input,
   .field.row > .select,
-  .field.row > .stepper { width: 100%; min-width: 0; justify-self: stretch; }
+  .field.row > .stepper,
+  .field.row > .pair,
+  .field.row > .seg,
+  .field.row > .compass { width: 100%; min-width: 0; justify-self: stretch; }
   .pair { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-3); }
   .pair.wide-first { grid-template-columns: 2fr 1fr; }
 
@@ -1066,16 +1398,30 @@
     opacity: .4; pointer-events: none;
   }
 
-  /* 2-probe layout: kun manifold frem/retur — skjul zone-returfelter og -metrics */
+  /* 2-probe layout: kun manifold frem/retur — skjul zone-returfelter og ekstra probes */
   .app[data-probe-layout="2"] .zone-ret { display: none; }
+  .app[data-probe-layout="2"] .metric[data-probe]:not([data-probe="1"]):not([data-probe="2"]) {
+    display: none;
+  }
 
-  /* Segmenteret valg — pille, aktiv inverteret */
+  /* Segmenteret valg — pille, aktiv inverteret.
+     To mønstre: (1) radio inde i label (V6), (2) eksterne .state-radioer + label[for]
+     til typeafhængige felter (Touch varmekilde). Aktiv-stil for (2) genereres i lds_build. */
   .seg { display: flex; min-height: var(--hit); padding: 4px; border-radius: var(--r-pill); background: var(--raised); }
   .seg label { flex: 1; display: grid; }
   .seg input { position: absolute; opacity: 0; pointer-events: none; }
   .seg span { display: grid; place-items: center; padding: 0 var(--space-3); border-radius: var(--r-pill); font-size: var(--fs-sm); font-weight: 500; color: var(--muted); cursor: pointer; text-align: center; }
   .seg input:checked + span { background: var(--inv-bg); color: var(--inv-fg); }
   .seg input:focus-visible + span { outline: 2px solid var(--focus); }
+
+  /* Type-fieldsets: ingen native fieldset-ramme */
+  fieldset.typed-fields,
+  fieldset.hs-fields {
+    border: 0;
+    margin: 0;
+    padding: 0;
+    min-inline-size: 0;
+  }
 
   /* Kompas for ydervægge */
   .compass {
@@ -1094,9 +1440,11 @@
 
   /* Tabel */
   .table-wrap { overflow-x: auto; }
+  .name-edit { display: flex; align-items: center; gap: var(--space-2); min-width: 0; }
+  .name-edit .input { flex: 1 1 auto; min-width: 0; }
   .table { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); }
   .table th { text-align: left; font-weight: 500; color: var(--muted); padding: 8px; border-bottom: 1px solid var(--border); }
-  .table td { padding: 10px 8px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  .table td { padding: max(0px, (var(--row-h) - 20px) / 2) var(--space-2); border-bottom: 1px solid var(--border); white-space: nowrap; }
   .table .num { text-align: right; }
   .table tr:last-child td { border-bottom: 0; }
 
@@ -1170,17 +1518,82 @@
   .autosave .btn { min-height: calc(var(--hit) - 8px); padding: 0 var(--space-3); margin-left: var(--space-2); font-size: var(--fs-xs); }
   .btn.danger { background: var(--danger-bg); color: var(--danger); }
   .btn.danger:hover { background: var(--danger); color: var(--bg); }
+  .btn.danger-solid,
+  .btn.danger-solid:hover { background: var(--danger); color: var(--bg); }
   .btn:disabled { opacity: .35; pointer-events: none; }
   /* Knap på inverteret panel */
   .panel.alert .btn { background: var(--danger); color: var(--bg); }
   .panel.alert .btn:hover { background: var(--inv-bg); color: var(--inv-fg); }
   form:has(:user-invalid) .btn.primary { opacity: .4; pointer-events: none; }
 
-  /* Bekræftelse uden modal */
-  .confirm > summary { list-style: none; }
-  .confirm > summary::-webkit-details-marker { display: none; }
-  .confirm[open] { display: grid; gap: var(--space-3); padding: var(--space-4); border-radius: var(--r-field); background: var(--danger-bg); }
-  .confirm[open] > summary { opacity: .6; }
+  /* Bekræftelse: native popover i top-laget, så siden ikke flytter sig.
+     Uden script: centreret. Scriptet lægger den ved knappen og holder den
+     inde i vinduet. Under 600 px: ark fra bunden. */
+  .confirm-pop {
+    border: 0;
+    padding: var(--space-5);
+    border-radius: var(--r-card);
+    background: var(--card);
+    color: var(--fg);
+    min-inline-size: calc(var(--space-7) * 6);
+    max-inline-size: min(calc(var(--space-7) * 7), calc(100vw - var(--space-6)));
+    max-block-size: calc(100dvh - var(--space-7));
+    overflow: auto;
+    box-shadow: var(--card-edge);
+  }
+  .confirm-pop::backdrop { background: rgb(0 0 0 / 25%); }
+  /* Uden lune-forms.js (Touch): markup kan forankre popoveren med inline
+     position-anchor; så placerer CSS den under knappen. */
+  @supports (anchor-name: --x) {
+    .confirm-pop[style*="position-anchor"] {
+      inset: auto;
+      margin: var(--space-2);
+      position-area: block-end center;
+      position-try-fallbacks: flip-block;
+    }
+  }
+  .confirm-pop:popover-open {
+    display: grid;
+    gap: var(--space-4);
+  }
+  .confirm-pop .confirm-title {
+    margin: 0;
+    font-size: var(--fs-lg);
+    font-weight: 600;
+    line-height: 1.3;
+  }
+  .confirm-pop p {
+    margin: 0;
+    font-size: var(--fs-sm);
+    line-height: 1.5;
+  }
+  .confirm-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: var(--space-2);
+  }
+  @media (max-width: 599.98px) {
+    .confirm-pop {
+      /* Ark fra bunden. Slår en eventuel inline-placering fra. */
+      position-anchor: none !important;
+      position-area: none !important;
+      inset: auto 0 0 0 !important;
+      top: auto !important;
+      left: 0 !important;
+      right: 0 !important;
+      bottom: 0 !important;
+      margin: 0 !important;
+      min-inline-size: 0 !important;
+      max-inline-size: none !important;
+      max-block-size: none;
+      width: auto !important;
+      border-radius: var(--r-card) var(--r-card) 0 0;
+      padding-bottom: calc(var(--space-5) + env(safe-area-inset-bottom));
+    }
+    .confirm-actions { display: grid; grid-template-columns: 1fr 1fr; }
+    .confirm-actions .btn { width: 100%; }
+  }
 
   .log {
     max-height: 240px; overflow: auto; padding: var(--space-4);
@@ -1278,8 +1691,172 @@
    7. TÆTHED
    ========================================================================== */
 @layer utilities {
-  @media (pointer: fine) and (min-width: 1024px) { .app { --hit: 40px; } }
+  /* Tætheden følger inputtypen. Touch: 48 px (uændret). Mus på skærm ≥ 1024 px:
+     kompakt. .app[data-density="compact|comfortable"] tvinger tætheden.
+     Token-værdierne står i tokens.json → density.compact; lds_build.py udfolder
+     blokken herunder både under density.media og for [data-density="compact"].
+     Blokken er CSS-nesting relativt til .app — start hver regel med . eller &. */
   @media (pointer: coarse) { .app { --hit: 48px; } }
+
+  /* Kompakt: genereret fra density i tokens.json + @compact-blokken */
+  @media (pointer: fine) and (min-width: 1024px) {
+  .app:not([data-density="comfortable"]) {
+    --hit: 32px;
+    --field-gap: 6px;
+    --panel-pad: 18px;
+    --panel-gap: 14px;
+    --fs-panel: 15px;
+    --fs-view: 26px;
+    --row-h: 36px;
+    --tile-h: 52px;
+    & .content { padding-block: var(--space-4) var(--space-6); }
+    & .view-head { padding-block: var(--space-1) var(--space-2); }
+    & .section-nav { padding-block: var(--space-1) var(--space-2); }
+    & .section-nav a { padding-inline: var(--space-3); }
+    & .section-h { margin-bottom: var(--space-2); min-height: 0; }
+    & .section ~ .section > .section-h { margin-top: var(--space-5); }
+    & .mode label { padding-inline: var(--space-4); }
+    & .header { min-height: 48px; }
+
+    /* Zonefelt: ID + navn på én linje, værdi under (--tile-h). */
+    & .tile:not(.tile-manifold, .tile-sys) {
+      grid-template-columns: 10px auto minmax(0, 1fr);
+      grid-template-rows: auto auto;
+      column-gap: var(--space-2);
+      padding-block: var(--space-1);
+      line-height: 1.2;
+    }
+    & .tile:not(.tile-manifold, .tile-sys) .tile-id   { grid-column: 2; grid-row: 1; }
+    & .tile:not(.tile-manifold, .tile-sys) .tile-name { grid-column: 3; grid-row: 1; }
+    & .tile:not(.tile-manifold, .tile-sys) .tile-val  { grid-column: 2 / -1; grid-row: 2; }
+    & .tile .lvl { gap: 2px; }
+    & .tile .lvl i { min-height: 5px; }
+    & .tile-sys { padding-block: var(--space-1); line-height: 1.2; align-content: center; }
+    & .tile-sys .temps { flex-direction: row; flex-wrap: wrap; align-items: baseline; column-gap: var(--space-2); }
+    & .strip.strip--tiers :is(.tile-sys, .tile-manifold) { padding-block: var(--space-1); }
+    & .tile.tile-manifold { line-height: 1.2; }
+    & .tile.tile-manifold .mini { height: 18px; }
+
+    /* Indhold i paneler */
+    & .subs { gap: var(--space-4) var(--space-5); }
+    & .msg { padding: var(--space-2) var(--space-3); }
+    & .metrics { gap: var(--space-4) var(--space-3); }
+    & .comfort label { padding-block: 6px; }
+    & .btn { padding-inline: var(--space-4); }
+    & .file-pick { min-height: calc(var(--hit) - 2 * var(--space-1)); }
+    & .more > summary { min-height: var(--hit); }
+
+    /* Kontroller: --hit = 32 px giver højden; skrift 16 px bevares (iPad med mus). */
+    & :is(.input, .select) { padding-inline: var(--space-3); }
+    & .select { padding-right: var(--space-6); background-position: calc(100% - 16px) 50%, calc(100% - 11px) 50%; }
+    & .switch input { width: 40px; height: 24px; }
+    & .switch input::after { top: 3px; left: 3px; width: 18px; height: 18px; }
+    & .switch input:checked::after { transform: translateX(16px); }
+    & .seg { justify-self: start; width: fit-content; max-width: 100%; }
+    & .seg label { flex: 1 1 auto; }
+    & .seg span { padding-inline: var(--space-4); }
+
+    /* .field.row: label ⟷ kontrol med naturlig bredde. Stepper 136 px.
+       Inputs: .w-xs 8ch (port, tal) · .w-sm 14ch · .w-md 22ch (host, entity;
+       standard for tekst) · .w-lg 32ch (URL) — lange felter står under labelen. */
+    & .field.row { grid-template-columns: minmax(0, 1fr) auto; }
+    & .field.row > :is(.input, .select, .stepper, .pair, .seg, .compass) { width: auto; justify-self: end; }
+    & .field.row > .stepper { width: 136px; }
+    & .field.row > .select { min-width: 14ch; max-width: 32ch; }
+    & .field.row > .pair { width: min(100%, 36ch); }
+    & :is(.field, .field.row) > .input { --w: 22ch; width: min(100%, calc(var(--w) + 2 * var(--space-3) + 2px)); justify-self: start; }
+    & .field.row > .input { justify-self: end; }
+    & .field > .input[type="number"] { --w: 8ch; }
+    & .field > .input.w-xs { --w: 8ch; }
+    & .field > .input.w-sm { --w: 14ch; }
+    & .field > .input.w-md { --w: 22ch; }
+    & .field > .input.w-lg { --w: 32ch; }
+    & .field.row:has(> .input.w-lg) { grid-template-columns: minmax(0, 1fr); }
+    & .field.row > .input.w-lg { justify-self: start; }
+    /* To felter i en .pair: label over feltet, ellers klemmes labelen. */
+    & .pair > .field.row { grid-template-columns: minmax(0, 1fr); }
+    & .pair > .field.row > .input { justify-self: stretch; width: 100%; }
+  
+  }
+  }
+  .app[data-density="compact"] {
+    --hit: 32px;
+    --field-gap: 6px;
+    --panel-pad: 18px;
+    --panel-gap: 14px;
+    --fs-panel: 15px;
+    --fs-view: 26px;
+    --row-h: 36px;
+    --tile-h: 52px;
+    & .content { padding-block: var(--space-4) var(--space-6); }
+    & .view-head { padding-block: var(--space-1) var(--space-2); }
+    & .section-nav { padding-block: var(--space-1) var(--space-2); }
+    & .section-nav a { padding-inline: var(--space-3); }
+    & .section-h { margin-bottom: var(--space-2); min-height: 0; }
+    & .section ~ .section > .section-h { margin-top: var(--space-5); }
+    & .mode label { padding-inline: var(--space-4); }
+    & .header { min-height: 48px; }
+
+    /* Zonefelt: ID + navn på én linje, værdi under (--tile-h). */
+    & .tile:not(.tile-manifold, .tile-sys) {
+      grid-template-columns: 10px auto minmax(0, 1fr);
+      grid-template-rows: auto auto;
+      column-gap: var(--space-2);
+      padding-block: var(--space-1);
+      line-height: 1.2;
+    }
+    & .tile:not(.tile-manifold, .tile-sys) .tile-id   { grid-column: 2; grid-row: 1; }
+    & .tile:not(.tile-manifold, .tile-sys) .tile-name { grid-column: 3; grid-row: 1; }
+    & .tile:not(.tile-manifold, .tile-sys) .tile-val  { grid-column: 2 / -1; grid-row: 2; }
+    & .tile .lvl { gap: 2px; }
+    & .tile .lvl i { min-height: 5px; }
+    & .tile-sys { padding-block: var(--space-1); line-height: 1.2; align-content: center; }
+    & .tile-sys .temps { flex-direction: row; flex-wrap: wrap; align-items: baseline; column-gap: var(--space-2); }
+    & .strip.strip--tiers :is(.tile-sys, .tile-manifold) { padding-block: var(--space-1); }
+    & .tile.tile-manifold { line-height: 1.2; }
+    & .tile.tile-manifold .mini { height: 18px; }
+
+    /* Indhold i paneler */
+    & .subs { gap: var(--space-4) var(--space-5); }
+    & .msg { padding: var(--space-2) var(--space-3); }
+    & .metrics { gap: var(--space-4) var(--space-3); }
+    & .comfort label { padding-block: 6px; }
+    & .btn { padding-inline: var(--space-4); }
+    & .file-pick { min-height: calc(var(--hit) - 2 * var(--space-1)); }
+    & .more > summary { min-height: var(--hit); }
+
+    /* Kontroller: --hit = 32 px giver højden; skrift 16 px bevares (iPad med mus). */
+    & :is(.input, .select) { padding-inline: var(--space-3); }
+    & .select { padding-right: var(--space-6); background-position: calc(100% - 16px) 50%, calc(100% - 11px) 50%; }
+    & .switch input { width: 40px; height: 24px; }
+    & .switch input::after { top: 3px; left: 3px; width: 18px; height: 18px; }
+    & .switch input:checked::after { transform: translateX(16px); }
+    & .seg { justify-self: start; width: fit-content; max-width: 100%; }
+    & .seg label { flex: 1 1 auto; }
+    & .seg span { padding-inline: var(--space-4); }
+
+    /* .field.row: label ⟷ kontrol med naturlig bredde. Stepper 136 px.
+       Inputs: .w-xs 8ch (port, tal) · .w-sm 14ch · .w-md 22ch (host, entity;
+       standard for tekst) · .w-lg 32ch (URL) — lange felter står under labelen. */
+    & .field.row { grid-template-columns: minmax(0, 1fr) auto; }
+    & .field.row > :is(.input, .select, .stepper, .pair, .seg, .compass) { width: auto; justify-self: end; }
+    & .field.row > .stepper { width: 136px; }
+    & .field.row > .select { min-width: 14ch; max-width: 32ch; }
+    & .field.row > .pair { width: min(100%, 36ch); }
+    & :is(.field, .field.row) > .input { --w: 22ch; width: min(100%, calc(var(--w) + 2 * var(--space-3) + 2px)); justify-self: start; }
+    & .field.row > .input { justify-self: end; }
+    & .field > .input[type="number"] { --w: 8ch; }
+    & .field > .input.w-xs { --w: 8ch; }
+    & .field > .input.w-sm { --w: 14ch; }
+    & .field > .input.w-md { --w: 22ch; }
+    & .field > .input.w-lg { --w: 32ch; }
+    & .field.row:has(> .input.w-lg) { grid-template-columns: minmax(0, 1fr); }
+    & .field.row > .input.w-lg { justify-self: start; }
+    /* To felter i en .pair: label over feltet, ellers klemmes labelen. */
+    & .pair > .field.row { grid-template-columns: minmax(0, 1fr); }
+    & .pair > .field.row > .input { justify-self: stretch; width: 100%; }
+  
+  }
   .muted { color: var(--muted); } .accent { color: var(--accent-ink); }
   .c-info { color: var(--info); } .c-ok { color: var(--ok); } .c-warn { color: var(--warn); } .c-bad { color: var(--danger); } .c-violet { color: var(--violet); }
   :not(.badge):not(.msg).ok { color: var(--ok); } :not(.badge):not(.msg).bad { color: var(--danger); }

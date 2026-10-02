@@ -64,13 +64,20 @@ class Lv6ConfigStore : public esphome::Component {
   void save_motor_telemetry(uint8_t motor, const MotorTelemetry &telemetry);
   bool load_motor_telemetry(uint8_t motor, MotorTelemetry &telemetry);
 
+  /// User preference: keep motor drivers armed across reboot. Missing key →
+  /// returns false from load (caller keeps boot default).
+  void set_drivers_enabled_pref(bool enabled);
+  bool load_drivers_enabled_pref(bool *out) const;
+
   // Maintenance helpers
   bool erase_namespace();
   bool erase_namespace_and_restart();
 
  protected:
-  // Legacy storage id (HeatValve-era); renaming would wipe persisted device config.
-  static constexpr const char *NVS_NAMESPACE = "hv6";
+  // Current NVS namespace. Legacy HeatValve-era namespace "hv6" is migrated once
+  // on first boot after the rename (see migrate_legacy_nvs_namespace_).
+  static constexpr const char *NVS_NAMESPACE = "lv6";
+  static constexpr const char *NVS_NAMESPACE_LEGACY = "hv6";
   static constexpr const char *KEY_CONFIG = "config";
   static constexpr const char *KEY_MOTOR_PFX = "mot";
   static constexpr const char *KEY_SENSORS = "sensors";  // BLE pairing, survives main-blob resets
@@ -88,6 +95,9 @@ class Lv6ConfigStore : public esphome::Component {
   static constexpr const char *KEY_AUTHORITY = "authority";
   static constexpr const char *KEY_HOUSE_PHYS = "housephys";
   static constexpr const char *KEY_GROUPS = "groups";
+  /// Persisted motor-driver arm preference (u8 0/1). Separate from MotorConfig
+  /// so toggling it does not bump MOTOR_CONFIG_VERSION / reset tuning.
+  static constexpr const char *KEY_DRIVERS_EN = "drven";
   static constexpr uint64_t DIRTY_DELAY_US = 1000000ULL;  // 1 second
   // Dedicated NVS persistence task — keeps flash commits off the main loop
   // task so loopTask isn't blocked for the 50–500 ms a commit can take.
@@ -98,6 +108,10 @@ class Lv6ConfigStore : public esphome::Component {
 
   void load_config_();
   void save_config_();
+  /// One-time copy of keys from NVS_NAMESPACE_LEGACY ("hv6") → NVS_NAMESPACE
+  /// ("lv6") when the new namespace is empty. Safe no-op otherwise.
+  void migrate_legacy_nvs_namespace_();
+  static bool nvs_namespace_has_config_(const char *ns);
 
   /// Persist/restore the sensor pairing (BLE MAC + temp source) under KEY_SENSORS,
   /// independent of the main config blob's version gate. Called from save_config_/

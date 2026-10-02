@@ -14,7 +14,7 @@ Reviewed: the five generated schematic sheets, `generate_kicad.py`, `design-cont
 `layout-audit.md`, `rev2-review-addendum.md`, `erc.rpt` and the project file — against
 `lune-v6-rev3.0/requirements.md`, `lune-v6-rev3.0/pinout-audit.md`, the Rev 3.1 Lean
 folder, and the device docs (`ARCHITECTURE.md`, `endstop_detection.md`,
-`hardware_rev2.md`, `esp32_ripple_spec_strict.md`, `hv6_api_v1.md`).
+`hardware_rev2.md`, `esp32_ripple_spec_strict.md`, `lv6_api_v1.md`).
 
 Datasheet cross-checks were done against TI SLVSGI0C (DRV8411), SLVSAR1E (DRV8833) and
 the installed KiCad 10 symbol libraries. Placement counts and net connectivity were
@@ -359,7 +359,7 @@ serial capture across a reset produced the line the device's own smart-log ring 
 hold:
 
 ```
-[W][hv6_valve_ctrl:1865]: ADC continuous init failed (err=258), ripple counting disabled
+[W][lv6_valve_ctrl:1865]: ADC continuous init failed (err=258), ripple counting disabled
 ```
 
 258 is `ESP_ERR_INVALID_ARG`, from `adc_continuous.c:507-515` in ESP-IDF 5.5.5:

@@ -131,7 +131,7 @@ logger:
     script: ERROR
     dallas.temp.sensor: INFO
     gpio.one_wire: INFO
-    hv6_onewire: INFO
+    lv6_onewire: INFO
     text_sensor: WARN   # suppress text-sensor state-change noise (IP/SSID/zone state)
 
 # =============================================================================
@@ -212,12 +212,12 @@ interval:
     then:
       - lambda: |-
           static const char *const task_names[] = {
-            "hv6_valve", "hv6_ripple", "hv6_zone", "hv6_nvs", "loopTask"
+            "lv6_valve", "lv6_ripple", "lv6_zone", "lv6_nvs", "loopTask"
           };
           for (const char *name : task_names) {
             TaskHandle_t handle = xTaskGetHandle(name);
             if (handle == nullptr) continue;
-            ESP_LOGD("hv6_diag", "Task %-10s stack headroom: %5u bytes",
+            ESP_LOGD("lv6_diag", "Task %-10s stack headroom: %5u bytes",
                      name, (unsigned) uxTaskGetStackHighWaterMark(handle));
           }
 
@@ -247,7 +247,7 @@ interval:
             // Every mapped probe is unavailable at once → almost certainly a
             // 1-Wire bus fault, not a stale ROM map. Resetting would wipe a
             // valid map, so keep it and wait for the bus to recover.
-            ESP_LOGE("hv6_onewire", "All %d mapped probes missing — suspected 1-Wire bus fault; keeping ROM map", mapped);
+            ESP_LOGE("lv6_onewire", "All %d mapped probes missing — suspected 1-Wire bus fault; keeping ROM map", mapped);
           } else if (mapped >= 4 && missing >= 2) {
             // Map reset must stay atomic: a partially cleared map would make
             // index-based fallback assign a ROM another slot already owns.
@@ -255,12 +255,12 @@ interval:
             for (int i = 0; i < 8; i++) {
               if (id(probe_fail_cycles)[i] >= 4) {
                 persistent++;
-                ESP_LOGW("hv6_onewire", "Probe %d ROM 0x%016llx missing for %d cycles",
+                ESP_LOGW("lv6_onewire", "Probe %d ROM 0x%016llx missing for %d cycles",
                          i + 1, (unsigned long long) *slots[i], id(probe_fail_cycles)[i]);
               }
             }
             if (persistent >= 2) {
-              ESP_LOGW("hv6_onewire",
+              ESP_LOGW("lv6_onewire",
                        "Probe map stale (%d/%d mapped probes persistently missing) — resetting map and rebooting. "
                        "Re-verify zone probe assignments after relearn.", persistent, mapped);
               for (int i = 0; i < 8; i++) { *slots[i] = 0; id(probe_fail_cycles)[i] = 0; }
@@ -287,19 +287,19 @@ interval:
             const uint64_t found = parse_addr(probes[i]->get_address_name());
             if (found == 0) continue;
             if (addr_exists(found)) {
-              ESP_LOGW("hv6_onewire", "Skip Probe %d learn: duplicate ROM 0x%016llx", i + 1, (unsigned long long) found);
+              ESP_LOGW("lv6_onewire", "Skip Probe %d learn: duplicate ROM 0x%016llx", i + 1, (unsigned long long) found);
               continue;
             }
             *slots[i] = found;
             learned++;
-            ESP_LOGI("hv6_onewire", "Learned Probe %d ROM 0x%016llx", i + 1, (unsigned long long) found);
+            ESP_LOGI("lv6_onewire", "Learned Probe %d ROM 0x%016llx", i + 1, (unsigned long long) found);
           }
 
           if (learned > 0) {
             int now_mapped = 0;
             for (int i = 0; i < 8; i++)
               if (*slots[i] != 0) now_mapped++;
-            ESP_LOGI("hv6_onewire", "Persistent probe map updated: %d/8 mapped", now_mapped);
+            ESP_LOGI("lv6_onewire", "Persistent probe map updated: %d/8 mapped", now_mapped);
           }
 
 # =============================================================================
@@ -308,12 +308,12 @@ interval:
 
 # NVS config store (zone settings, motor calibration)
 lv6_config_store:
-  id: hv6_config
+  id: lv6_config
 
 # Valve controller — edit motor_addresses to match your PCB wiring
 lv6_valve_controller:
-  id: hv6_valves
-  config_store_id: hv6_config
+  id: lv6_valves
+  config_store_id: lv6_config
   i2c_id: i2c_bus
   nsleep_pin: ${pin_nsleep}
   nfault_pin: ${pin_nfault}
@@ -336,9 +336,9 @@ lv6_valve_controller:
 
 # Zone controller
 lv6_zone_controller:
-  id: hv6_zones
-  config_store_id: hv6_config
-  valve_controller_id: hv6_valves
+  id: lv6_zones
+  config_store_id: lv6_config
+  valve_controller_id: lv6_valves
   cycle_interval: ${zone_cycle_interval}
   probe_sensors:
     - probe_temp_1

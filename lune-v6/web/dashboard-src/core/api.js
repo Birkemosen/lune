@@ -1,7 +1,7 @@
 // core/api.js
 
 import { beginPendingWrite, endPendingWrite, setEntity, es, ev, setI2cResult, setLive, addActivity, setDashboardValue, setZoneStateHistory, appendDeviceLog, getDeviceLogSeq, getDeviceLog } from './store.js';
-import { handleMockPost, mockLatestRelease, mockSettingsExport, mockSettingsImport, mockDiagnosticsSnapshot, mockMotorTraceCsv } from './mock.js';
+import { handleMockPost, mockLatestRelease, mockSettingsExport, mockSettingsImport, mockDiagnosticsSnapshot, mockMotorTraceCsv, mockBleScan } from './mock.js';
 import { saveBlob, saveText, stampedName } from '../utils/download.js';
 import { key, gkey } from '../utils/keys.js';
 
@@ -127,6 +127,11 @@ export function postZonePhysics(zone, payload) {
   return postJsonV1(`/zones/${zone}/physics`, payload || {});
 }
 
+/** Store-only wind/solar (+ optional walls) — Touch owns weather for control. */
+export function postForecastProfile(zone, payload) {
+  return postJsonV1(`/zones/${zone}/forecast-profile`, payload || {});
+}
+
 export function postGroups(payload) {
   return postJsonV1('/groups', payload || {});
 }
@@ -190,10 +195,37 @@ export function runI2cScan() {
   return command('i2c_scan');
 }
 
+/** Start (or bump) NimBLE passive scan, then return discovered BTHome sensors. */
+export async function fetchBleScan({ start = true } = {}) {
+  if (start) {
+    try {
+      await command('ble_scan');
+    } catch (err) {
+      // Still try the read: scan may already be running from demand.
+      console.warn('ble_scan command failed:', err);
+    }
+  }
+  if (isMock()) return mockBleScan();
+  const resp = await fetch(BASE + '/ble-scan', { cache: 'no-store' });
+  if (!resp.ok) throw new Error('BLE scan failed: ' + resp.status);
+  const data = await resp.json();
+  if (!data || data.ok === false) throw new Error(data?.error || 'BLE scan failed');
+  return {
+    count: Number(data.count) || 0,
+    sensors: Array.isArray(data.sensors) ? data.sensors : [],
+  };
+}
+
 const zoneSelectMap = {
   zone_probe: (zone) => key.probe(zone),
   zone_temp_source: (zone) => key.tempSource(zone),
-  zone_sync_to: (zone) => key.syncTo(zone)
+  zone_sync_to: (zone) => key.syncTo(zone),
+  zone_pipe_type: (zone) => key.pipeType(zone),
+};
+
+const zoneNumberMap = {
+  zone_area_m2: (zone) => key.areaM2(zone),
+  zone_pipe_spacing_mm: (zone) => key.pipeSpacingMm(zone),
 };
 
 const zoneTextMap = {
@@ -209,9 +241,15 @@ const globalSelectMap = {
   manifold_return_probe: gkey.manifoldReturnProbe,
   motor_profile_default: gkey.motorProfileDefault,
   simple_preheat_enabled: gkey.simplePreheatEnabled,
+  preheat_absorb_enabled: gkey.preheatAbsorbEnabled,
   ble_clock_sync_enabled: gkey.bleClockSyncEnabled,
   heating_mode: gkey.heatingMode,
   minimum_flow_always: gkey.minimumFlowAlways,
+};
+
+const globalTextMap = {
+  device_display_name: gkey.deviceDisplayName,
+  device_location: gkey.deviceLocation,
 };
 
 const globalNumberMap = {
@@ -258,6 +296,15 @@ export function setZoneSelect(zone, settingKey, value) {
   return postV1('/settings/select', { key: settingKey, value, zone }, { key: settingKey, value, zone });
 }
 
+export function setZoneNumber(zone, settingKey, value) {
+  const numeric = Number(String(value ?? '').replace(',', '.'));
+  const idBuilder = zoneNumberMap[settingKey];
+  if (idBuilder && Number.isFinite(numeric)) setEntity(idBuilder(zone), { value: numeric });
+  return postV1('/settings/number', { key: settingKey, value: numeric, zone }, {
+    key: settingKey, value: numeric, zone,
+  });
+}
+
 export function setZoneText(zone, settingKey, value) {
   const idBuilder = zoneTextMap[settingKey];
   if (idBuilder) setEntity(idBuilder(zone), { state: value });
@@ -278,6 +325,8 @@ export function setGlobalNumber(settingKey, value) {
 }
 
 export function setGlobalText(settingKey, value) {
+  const id = globalTextMap[settingKey];
+  if (id) setEntity(id, { state: value });
   return postV1('/settings/text', { key: settingKey, value }, { key: settingKey, value });
 }
 
@@ -411,6 +460,11 @@ export function resetMotorAndRelearn(zone) {
   return command('motor_reset_and_relearn', zone);
 }
 
+export function calibrateAllMotors() {
+  addActivity('Calibrate all motors started');
+  return command('calibrate_all_motors');
+}
+
 export function dumpTaskStats() {
   addActivity('Task/heap stats dumped to device log');
   return command('dump_task_stats');
@@ -428,22 +482,26 @@ export function fetchHistory() {
 export function fetchPhysicsAlerts() {
   if (isMock()) {
     setDashboardValue('physicsAlerts', []);
-    return;
+    setDashboardValue('zonePhysics', {});
+    return Promise.resolve();
   }
-  fetch(BASE + '/zones', { cache: 'no-store' })
+  return fetch(BASE + '/zones', { cache: 'no-store' })
     .then((response) => (response.ok ? response.json() : null))
     .then((json) => {
       const zones = json?.data?.zones || [];
       const alerts = [];
+      const byZone = {};
       for (const z of zones) {
         const zone = Number(z.zone);
         if (!(zone >= 1 && zone <= 6)) continue;
+        byZone[zone] = z;
         if (z.floor?.unset) alerts.push({ zone, kind: 'unset' });
         const warns = Array.isArray(z.warnings) ? z.warnings : [];
         if (warns.includes('high_floor_resistance') || Number(z.floor?.r_m2k_per_w) > 0.15) {
           alerts.push({ zone, kind: 'high_r' });
         }
       }
+      setDashboardValue('zonePhysics', byZone);
       setDashboardValue('physicsAlerts', alerts);
     })
     .catch(() => { /* physics alert poll is non-fatal */ });

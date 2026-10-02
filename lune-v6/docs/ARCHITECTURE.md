@@ -10,7 +10,7 @@ components run as FreeRTOS tasks alongside the ESPHome main loop and separate ha
 control (motor FSM, endstop detection) from heating logic (zone state machine, control
 algorithms, hydraulic balance).
 
-The current repository and code still use the historical `lune` and `hv6` names.
+The current repository and code still use the historical `lune` and `lv6` names.
 Treat those as internal implementation names until a deliberate migration is planned.
 Public product references should use Lune V6.
 
@@ -73,10 +73,10 @@ lune/
 
 | Task | Core | Priority | Period |
 |------|------|----------|--------|
-| `hv6_valve` (motor FSM) | 1 | 7 | 10 ms tick |
-| `hv6_ripple` (DMA ADC) | 1 | 7 | continuous |
-| `hv6_zone` (control cycle) | 1 | 6 | 10 s (configurable) |
-| `hv6_nvs` (flash commit) | 1 | 1 | event-driven |
+| `lv6_valve` (motor FSM) | 1 | 7 | 10 ms tick |
+| `lv6_ripple` (DMA ADC) | 1 | 7 | continuous |
+| `lv6_zone` (control cycle) | 1 | 6 | 10 s (configurable) |
+| `lv6_nvs` (flash commit) | 1 | 1 | event-driven |
 | ESPHome loopTask | 0 | 1 | — |
 
 Cross-task state is exchanged via FreeRTOS queues and mutexes. Dashboard snapshots are
@@ -105,7 +105,7 @@ continues unchanged. The Helios command slot is runtime state only (Touch offset
 there is no persisted `HeliosConfig` / `ForecastConfig` NVS section.
 
 Whole-house coordination and heat-source integration are provided by Lune Touch,
-not an external HTTP optimizer — the previous `hv6_helios_client` was removed. Removing any
+not an external HTTP optimizer — the previous `lv6_helios_client` was removed. Removing any
 producer reverts transparently to local control: no vendor lock-in, no safety dependency
 on an external service. Heating modes, heat-demand summary, and the Asgard feed-temp
 trim contract are documented in

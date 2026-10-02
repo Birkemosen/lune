@@ -9,6 +9,7 @@
 #include "settings_backup.h"
 
 #include "esphome/core/log.h"
+#include "esphome/core/version.h"
 #ifdef USE_LOGGER
 #include "esphome/components/logger/logger.h"
 #endif
@@ -44,24 +45,37 @@ void *alloc_scratch(size_t bytes) {
   return p != nullptr ? p : malloc(bytes);
 }
 
-bool appendf(char *buffer, size_t capacity, size_t &offset, const char *fmt, ...) {
+// Append formatted text without ever committing a truncated write. A partial
+// vsnprintf into a chunk buffer used to leave a NUL mid-payload; chunked HTTP
+// then shipped that NUL and the dashboard failed to parse /api/v1/state.
+bool appendfv(char *buffer, size_t capacity, size_t &offset, const char *fmt, va_list args) {
   if (offset >= capacity)
     return false;
 
-  va_list args;
-  va_start(args, fmt);
-  const int written = vsnprintf(buffer + offset, capacity - offset, fmt, args);
-  va_end(args);
+  va_list probe;
+  va_copy(probe, args);
+  const int need = vsnprintf(nullptr, 0, fmt, probe);
+  va_end(probe);
+  if (need < 0)
+    return false;
+  // Keep one byte for the C terminator vsnprintf writes; it is not part of offset.
+  if (offset + static_cast<size_t>(need) >= capacity)
+    return false;
 
-  if (written < 0)
+  const int written = vsnprintf(buffer + offset, capacity - offset, fmt, args);
+  if (written < 0 || written != need)
     return false;
-  if (static_cast<size_t>(written) >= capacity - offset) {
-    offset = capacity;
-    return false;
-  }
 
   offset += static_cast<size_t>(written);
   return true;
+}
+
+bool appendf(char *buffer, size_t capacity, size_t &offset, const char *fmt, ...) {
+  va_list args;
+  va_start(args, fmt);
+  const bool ok = appendfv(buffer, capacity, offset, fmt, args);
+  va_end(args);
+  return ok;
 }
 
 // Every code `send_v1_` can emit must appear here: an unmapped code silently
@@ -183,7 +197,7 @@ void format_pairing_fingerprint(const char *mac, char *buffer, size_t capacity) 
   if (capacity == 0)
     return;
   size_t off = 0;
-  off += snprintf(buffer + off, capacity - off, "hv6-");
+  off += snprintf(buffer + off, capacity - off, "lv6-");
   for (const char *p = mac; p != nullptr && *p != '\0' && off + 1 < capacity; ++p) {
     char c = *p;
     if (c >= 'A' && c <= 'F')
@@ -192,8 +206,8 @@ void format_pairing_fingerprint(const char *mac, char *buffer, size_t capacity) 
       buffer[off++] = c;
   }
   buffer[off] = '\0';
-  if (std::strcmp(buffer, "hv6-") == 0)
-    std::strncpy(buffer, "hv6-unknown", capacity - 1);
+  if (std::strcmp(buffer, "lv6-") == 0)
+    std::strncpy(buffer, "lv6-unknown", capacity - 1);
   buffer[capacity - 1] = '\0';
 }
 
@@ -288,7 +302,10 @@ static bool parse_probe_option(const char *raw, int8_t *out) {
 }
 
 static bool parse_temp_source(const char *raw, lv6::TempSource *out) {
-  if (strcasecmp(raw, "Local Probe") == 0) { *out = lv6::TempSource::LOCAL_PROBE; return true; }
+  if (strcasecmp(raw, "Local Probe") == 0 || strcasecmp(raw, "probe") == 0) {
+    *out = lv6::TempSource::LOCAL_PROBE;
+    return true;
+  }
   if (strcasecmp(raw, "BLE") == 0 || strcasecmp(raw, "BLE Sensor") == 0) {
     *out = lv6::TempSource::BLE_SENSOR;
     return true;
@@ -301,8 +318,24 @@ static bool parse_temp_source(const char *raw, lv6::TempSource *out) {
   return false;
 }
 
-static const char *dashboard_variant_str() {
-  return "ble";
+static const char *device_display_name_cstr(const lv6::SystemConfig &sys) {
+  return sys.display_name[0] != '\0' ? sys.display_name : "Lune V6";
+}
+
+static void json_escape_cstr(const char *in, char *out, size_t out_len) {
+  if (out_len == 0)
+    return;
+  size_t o = 0;
+  for (size_t i = 0; in[i] != '\0' && o < out_len - 2; i++) {
+    char c = in[i];
+    if (c == '"' || c == '\\') {
+      if (o + 2 >= out_len)
+        break;
+      out[o++] = '\\';
+    }
+    out[o++] = (c >= 0x20) ? c : ' ';
+  }
+  out[o] = '\0';
 }
 
 static const char *temp_source_to_dashboard_str(lv6::TempSource src) {
@@ -648,6 +681,47 @@ void LV6Dashboard::update_snapshot_() {
   }
 #endif
   s.firmware_update_status[sizeof(s.firmware_update_status) - 1] = '\0';
+
+  // Notify the dashboard only when displayable live values change. Quantize so
+  // sub-display noise does not bump runtime_revision every snapshot tick.
+  {
+    auto mix = [](uint32_t h, uint32_t v) -> uint32_t {
+      h ^= v + 0x9e3779b9u + (h << 6) + (h >> 2);
+      return h;
+    };
+    auto q_dc = [](float c) -> uint32_t {
+      if (!std::isfinite(c)) return 0x7FFFu;
+      long v = lroundf(c * 10.0f);  // 0.1 °C
+      if (v < -2000) v = -2000;
+      if (v > 2000) v = 2000;
+      return static_cast<uint32_t>(v + 2000);
+    };
+    auto q_pct = [](float p) -> uint32_t {
+      if (!std::isfinite(p)) return 0xFFu;
+      long v = lroundf(p);
+      if (v < 0) v = 0;
+      if (v > 100) v = 100;
+      return static_cast<uint32_t>(v);
+    };
+    uint32_t fp = 2166136261u;
+    fp = mix(fp, q_dc(s.manifold_flow_c));
+    fp = mix(fp, q_dc(s.manifold_return_c));
+    for (uint8_t i = 0; i < 6; i++) {
+      fp = mix(fp, q_dc(s.zone_temp_c[i]));
+      fp = mix(fp, q_pct(s.zone_valve_pct[i]));
+      fp = mix(fp, q_dc(s.zone_preheat_c[i]));
+      // Zone state string → cheap length + first byte (enough for idle/heating/fault flips).
+      fp = mix(fp, static_cast<uint32_t>(s.zone_state[i][0]) |
+                       (static_cast<uint32_t>(strnlen(s.zone_state[i], 16)) << 8));
+    }
+    // Learning progress already bumps runtime_revision_ separately above —
+    // keep it out of this fingerprint so idle clients are not woken every %.
+    if (fp != this->last_live_telemetry_fp_) {
+      this->last_live_telemetry_fp_ = fp;
+      if (this->runtime_revision_ != UINT32_MAX)
+        this->runtime_revision_++;
+    }
+  }
 
   if (xSemaphoreTake(snapshot_lock_, pdMS_TO_TICKS(5)) == pdTRUE) {
     memcpy(&this->snapshot_, &s, sizeof(s));
@@ -1191,6 +1265,22 @@ bool LV6Dashboard::canHandle(AsyncWebServerRequest *request) const {
   return strncmp(url.c_str(), V1_PREFIX, V1_PREFIX_LEN) == 0 && url.c_str()[V1_PREFIX_LEN] == '/';
 }
 
+void LV6Dashboard::handleBody(AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index,
+                              size_t total) {
+  if (index == 0) {
+    this->post_body_.clear();
+    if (total > 0 && total <= POST_BODY_MAX)
+      this->post_body_.reserve(total);
+  }
+  if (data == nullptr || len == 0)
+    return;
+  if (this->post_body_.size() + len > POST_BODY_MAX) {
+    this->post_body_.clear();
+    return;
+  }
+  this->post_body_.append(reinterpret_cast<const char *>(data), len);
+}
+
 void LV6Dashboard::handleRequest(AsyncWebServerRequest *request) {
   char url_buf[AsyncWebServerRequest::URL_BUF_SIZE];
   auto url = request->url_to(url_buf);
@@ -1352,25 +1442,45 @@ void LV6Dashboard::handle_state_(AsyncWebServerRequest *request) {
     return ok;
   };
 
+  // Flush the current chunk and retry when a field does not fit — never
+  // truncate mid-token (that shipped a NUL and broke JSON.parse on the binder).
+  auto append = [&](const char *fmt, ...) -> bool {
+    va_list args;
+    va_start(args, fmt);
+    va_list copy;
+    va_copy(copy, args);
+    bool ok = appendfv(buf, BUF_SIZE, offset, fmt, copy);
+    va_end(copy);
+    if (!ok) {
+      if (!flush()) {
+        va_end(args);
+        return false;
+      }
+      ok = appendfv(buf, BUF_SIZE, offset, fmt, args);
+    }
+    va_end(args);
+    return ok;
+  };
+
   char num_buf[24];
 
-  appendf(buf, BUF_SIZE, offset, "{");
+  if (!append("{")) return;
 
   // --- uptime & wifi ---
   char wifi_buf[24] = "null";
   if (std::isfinite(snap->wifi_dbm)) {
     snprintf(wifi_buf, sizeof(wifi_buf), "%ld", static_cast<long>(std::lround(snap->wifi_dbm)));
   }
-  appendf(buf, BUF_SIZE, offset,
+  if (!append(
       "\"sensor-uptime\":{\"value\":%lu},"
       "\"sensor-wifi_signal\":{\"value\":%s},",
-      static_cast<unsigned long>(snap->uptime_s), wifi_buf);
+      static_cast<unsigned long>(snap->uptime_s), wifi_buf)) return;
 
   // --- system diagnostics: per-core CPU load + free heap + BLE scan liveness ---
   format_float_token(num_buf, sizeof(num_buf), snap->cpu0_pct, 1);
-  appendf(buf, BUF_SIZE, offset, "\"sensor-cpu_load_core0\":{\"value\":%s},", num_buf);
+  if (!append( "\"sensor-cpu_load_core0\":{\"value\":%s},", num_buf)) return;
   format_float_token(num_buf, sizeof(num_buf), snap->cpu1_pct, 1);
-  appendf(buf, BUF_SIZE, offset,
+  if (!append(
       "\"sensor-cpu_load_core1\":{\"value\":%s},"
       "\"sensor-free_internal_kb\":{\"value\":%lu},"
       "\"sensor-free_dma_kb\":{\"value\":%lu},"
@@ -1384,10 +1494,10 @@ void LV6Dashboard::handle_state_(AsyncWebServerRequest *request) {
       static_cast<unsigned long>(snap->largest_internal_kb),
       static_cast<unsigned long>(snap->min_internal_kb),
       static_cast<unsigned long>(snap->free_psram_kb),
-      static_cast<unsigned long>(snap->largest_psram_kb));
+      static_cast<unsigned long>(snap->largest_psram_kb))) return;
   char ble_ads_buf[24];
   format_float_token(ble_ads_buf, sizeof(ble_ads_buf), snap->ble_ads_per_sec, 2);
-  appendf(buf, BUF_SIZE, offset,
+  if (!append(
       "\"binary_sensor-ble_hub_enabled\":{\"state\":\"%s\"},"
       "\"binary_sensor-ble_scanning\":{\"state\":\"%s\"},"
       "\"binary_sensor-ble_demanded\":{\"state\":\"%s\"},"
@@ -1398,13 +1508,13 @@ void LV6Dashboard::handle_state_(AsyncWebServerRequest *request) {
       snap->ble_demanded ? "on" : "off",
       ble_ads_buf,
       static_cast<unsigned long>(snap->ble_last_adv_age_ms == UINT32_MAX ? 0
-                                                                        : snap->ble_last_adv_age_ms));
+                                                                        : snap->ble_last_adv_age_ms))) return;
 
   // --- manifold temps ---
   format_float_token(num_buf, sizeof(num_buf), snap->manifold_flow_c);
-  appendf(buf, BUF_SIZE, offset, "\"sensor-manifold_flow_temperature\":{\"value\":%s},", num_buf);
+  if (!append( "\"sensor-manifold_flow_temperature\":{\"value\":%s},", num_buf)) return;
   format_float_token(num_buf, sizeof(num_buf), snap->manifold_return_c);
-  appendf(buf, BUF_SIZE, offset, "\"sensor-manifold_return_temperature\":{\"value\":%s},", num_buf);
+  if (!append( "\"sensor-manifold_return_temperature\":{\"value\":%s},", num_buf)) return;
 
   // --- zone temperatures ---
   static const char *const ZONE_TEMP_KEYS[6] = {
@@ -1413,7 +1523,7 @@ void LV6Dashboard::handle_state_(AsyncWebServerRequest *request) {
   };
   for (uint8_t i = 0; i < 6; i++) {
     format_float_token(num_buf, sizeof(num_buf), snap->zone_temp_c[i]);
-    appendf(buf, BUF_SIZE, offset, "\"%s\":{\"value\":%s},", ZONE_TEMP_KEYS[i], num_buf);
+    if (!append( "\"%s\":{\"value\":%s},", ZONE_TEMP_KEYS[i], num_buf)) return;
   }
 
   // --- zone valve positions (0 decimals) ---
@@ -1423,7 +1533,7 @@ void LV6Dashboard::handle_state_(AsyncWebServerRequest *request) {
   };
   for (uint8_t i = 0; i < 6; i++) {
     format_float_token(num_buf, sizeof(num_buf), snap->zone_valve_pct[i], 0);
-    appendf(buf, BUF_SIZE, offset, "\"%s\":{\"value\":%s},", ZONE_VALVE_KEYS[i], num_buf);
+    if (!append( "\"%s\":{\"value\":%s},", ZONE_VALVE_KEYS[i], num_buf)) return;
   }
 
   // --- preheat advance ---
@@ -1433,7 +1543,7 @@ void LV6Dashboard::handle_state_(AsyncWebServerRequest *request) {
   };
   for (uint8_t i = 0; i < 6; i++) {
     format_float_token(num_buf, sizeof(num_buf), snap->zone_preheat_c[i]);
-    appendf(buf, BUF_SIZE, offset, "\"%s\":{\"value\":%s},", PREHEAT_KEYS[i], num_buf);
+    if (!append( "\"%s\":{\"value\":%s},", PREHEAT_KEYS[i], num_buf)) return;
   }
 
   // flush: cumulative ~1330 bytes; motor ripples (~840) would overflow
@@ -1450,9 +1560,9 @@ void LV6Dashboard::handle_state_(AsyncWebServerRequest *request) {
   };
   for (uint8_t i = 0; i < 6; i++) {
     format_float_token(num_buf, sizeof(num_buf), snap->motor_open_ripple[i], 0);
-    appendf(buf, BUF_SIZE, offset, "\"%s\":{\"value\":%s},", OPEN_RIPPLE_KEYS[i], num_buf);
+    if (!append( "\"%s\":{\"value\":%s},", OPEN_RIPPLE_KEYS[i], num_buf)) return;
     format_float_token(num_buf, sizeof(num_buf), snap->motor_close_ripple[i], 0);
-    appendf(buf, BUF_SIZE, offset, "\"%s\":{\"value\":%s},", CLOSE_RIPPLE_KEYS[i], num_buf);
+    if (!append( "\"%s\":{\"value\":%s},", CLOSE_RIPPLE_KEYS[i], num_buf)) return;
   }
 
   // flush: motor factors (~900) would overflow
@@ -1469,9 +1579,9 @@ void LV6Dashboard::handle_state_(AsyncWebServerRequest *request) {
   };
   for (uint8_t i = 0; i < 6; i++) {
     format_float_token(num_buf, sizeof(num_buf), snap->motor_open_factor[i], 2);
-    appendf(buf, BUF_SIZE, offset, "\"%s\":{\"value\":%s},", OPEN_FACTOR_KEYS[i], num_buf);
+    if (!append( "\"%s\":{\"value\":%s},", OPEN_FACTOR_KEYS[i], num_buf)) return;
     format_float_token(num_buf, sizeof(num_buf), snap->motor_close_factor[i], 2);
-    appendf(buf, BUF_SIZE, offset, "\"%s\":{\"value\":%s},", CLOSE_FACTOR_KEYS[i], num_buf);
+    if (!append( "\"%s\":{\"value\":%s},", CLOSE_FACTOR_KEYS[i], num_buf)) return;
   }
 
   // flush: working-range telemetry would overflow with factors
@@ -1492,13 +1602,13 @@ void LV6Dashboard::handle_state_(AsyncWebServerRequest *request) {
   };
   for (uint8_t i = 0; i < 6; i++) {
     format_float_token(num_buf, sizeof(num_buf), snap->motor_working_ripple[i], 0);
-    appendf(buf, BUF_SIZE, offset, "\"%s\":{\"value\":%s},", WORKING_RIPPLE_KEYS[i], num_buf);
+    if (!append( "\"%s\":{\"value\":%s},", WORKING_RIPPLE_KEYS[i], num_buf)) return;
     format_float_token(num_buf, sizeof(num_buf), snap->motor_pin_free_ripple[i], 0);
-    appendf(buf, BUF_SIZE, offset, "\"%s\":{\"value\":%s},", PIN_FREE_KEYS[i], num_buf);
+    if (!append( "\"%s\":{\"value\":%s},", PIN_FREE_KEYS[i], num_buf)) return;
     const char *model = snap->motor_stroke_model[i] == static_cast<uint8_t>(lv6::StrokeModel::WORKING_RANGE)
                             ? "working_range"
                             : "full_stroke";
-    appendf(buf, BUF_SIZE, offset, "\"%s\":{\"state\":\"%s\"},", STROKE_MODEL_KEYS[i], model);
+    if (!append( "\"%s\":{\"state\":\"%s\"},", STROKE_MODEL_KEYS[i], model)) return;
   }
 
   // flush: learning progress would overflow with stroke model
@@ -1525,16 +1635,16 @@ void LV6Dashboard::handle_state_(AsyncWebServerRequest *request) {
     "", "home", "open", "close", "done", "failed",
   };
   for (uint8_t i = 0; i < 6; i++) {
-    appendf(buf, BUF_SIZE, offset, "\"%s\":{\"value\":%u},", LEARN_PCT_KEYS[i],
-            static_cast<unsigned>(snap->motor_learn_pct[i]));
+    if (!append( "\"%s\":{\"value\":%u},", LEARN_PCT_KEYS[i],
+            static_cast<unsigned>(snap->motor_learn_pct[i]))) return;
     const uint8_t ph = snap->motor_learn_phase[i];
     const char *phase =
         ph < (sizeof(LEARN_PHASE_NAME) / sizeof(LEARN_PHASE_NAME[0])) ? LEARN_PHASE_NAME[ph] : "";
-    appendf(buf, BUF_SIZE, offset, "\"%s\":{\"state\":\"%s\"},", LEARN_PHASE_KEYS[i], phase);
-    appendf(buf, BUF_SIZE, offset, "\"%s\":{\"value\":%u},", LEARN_SAMPLE_KEYS[i],
-            static_cast<unsigned>(snap->motor_learn_sample[i]));
-    appendf(buf, BUF_SIZE, offset, "\"%s\":{\"value\":%u},", LEARN_NEED_KEYS[i],
-            static_cast<unsigned>(snap->motor_learn_samples_needed[i]));
+    if (!append( "\"%s\":{\"state\":\"%s\"},", LEARN_PHASE_KEYS[i], phase)) return;
+    if (!append( "\"%s\":{\"value\":%u},", LEARN_SAMPLE_KEYS[i],
+            static_cast<unsigned>(snap->motor_learn_sample[i]))) return;
+    if (!append( "\"%s\":{\"value\":%u},", LEARN_NEED_KEYS[i],
+            static_cast<unsigned>(snap->motor_learn_samples_needed[i]))) return;
   }
 
   // flush: probe temps + text sensors would overflow combined
@@ -1548,7 +1658,7 @@ void LV6Dashboard::handle_state_(AsyncWebServerRequest *request) {
   };
   for (uint8_t i = 0; i < 8; i++) {
     format_float_token(num_buf, sizeof(num_buf), snap->probe_temp_c[i]);
-    appendf(buf, BUF_SIZE, offset, "\"%s\":{\"value\":%s},", PROBE_TEMP_KEYS[i], num_buf);
+    if (!append( "\"%s\":{\"value\":%s},", PROBE_TEMP_KEYS[i], num_buf)) return;
   }
 
   // flush: text sensors (~1200) would overflow combined with probe temps (~460)
@@ -1564,22 +1674,31 @@ void LV6Dashboard::handle_state_(AsyncWebServerRequest *request) {
     "text_sensor-motor_4_last_fault", "text_sensor-motor_5_last_fault", "text_sensor-motor_6_last_fault",
   };
 
-  appendf(buf, BUF_SIZE, offset, "\"text_sensor-firmware_version\":{\"state\":\"%s\"},", snap->firmware_version);
-  appendf(buf, BUF_SIZE, offset, "\"text_sensor-ip_address\":{\"state\":\"%s\"},", snap->ip_address);
-  appendf(buf, BUF_SIZE, offset, "\"text_sensor-connected_ssid\":{\"state\":\"%s\"},", snap->connected_ssid);
-  appendf(buf, BUF_SIZE, offset, "\"text_sensor-mac_address\":{\"state\":\"%s\"},", snap->mac_address);
-  appendf(buf, BUF_SIZE, offset, "\"text_sensor-reset_reason\":{\"state\":\"%s\"},", snap->reset_reason);
-  appendf(buf, BUF_SIZE, offset, "\"text-device_variant\":{\"state\":\"%s\"},", dashboard_variant_str());
-  appendf(buf, BUF_SIZE, offset,
+  if (!append( "\"text_sensor-firmware_version\":{\"state\":\"%s\"},", snap->firmware_version)) return;
+  if (!append( "\"text_sensor-ip_address\":{\"state\":\"%s\"},", snap->ip_address)) return;
+  if (!append( "\"text_sensor-connected_ssid\":{\"state\":\"%s\"},", snap->connected_ssid)) return;
+  if (!append( "\"text_sensor-mac_address\":{\"state\":\"%s\"},", snap->mac_address)) return;
+  if (!append( "\"text_sensor-reset_reason\":{\"state\":\"%s\"},", snap->reset_reason)) return;
+  if (!append( "\"text-device_variant\":{\"state\":\"Lune V6\"},")) return;
+  if (!append( "\"text-esphome_version\":{\"state\":\"%s\"},", ESPHOME_VERSION)) return;
+  {
+    char name_esc[2 * sizeof(snap->system.display_name)];
+    char place_esc[2 * sizeof(snap->system.location)];
+    json_escape_cstr(device_display_name_cstr(snap->system), name_esc, sizeof(name_esc));
+    json_escape_cstr(snap->system.location, place_esc, sizeof(place_esc));
+    if (!append( "\"text-device_display_name\":{\"state\":\"%s\"},", name_esc)) return;
+    if (!append( "\"text-device_location\":{\"state\":\"%s\"},", place_esc)) return;
+  }
+  if (!append(
           "\"firmware_update\":{\"current\":\"%s\",\"latest\":\"%s\",\"available\":%s,\"status\":\"%s\"},",
           snap->firmware_update_current, snap->firmware_update_latest,
-          snap->firmware_update_available ? "true" : "false", snap->firmware_update_status);
+          snap->firmware_update_available ? "true" : "false", snap->firmware_update_status)) return;
 
   for (uint8_t i = 0; i < 6; i++) {
-    appendf(buf, BUF_SIZE, offset, "\"%s\":{\"state\":\"%s\"},", ZONE_STATE_KEYS[i], snap->zone_state[i]);
+    if (!append( "\"%s\":{\"state\":\"%s\"},", ZONE_STATE_KEYS[i], snap->zone_state[i])) return;
   }
   for (uint8_t i = 0; i < 6; i++) {
-    appendf(buf, BUF_SIZE, offset, "\"%s\":{\"state\":\"%s\"},", MOTOR_FAULT_KEYS[i], snap->motor_fault[i]);
+    if (!append( "\"%s\":{\"state\":\"%s\"},", MOTOR_FAULT_KEYS[i], snap->motor_fault[i])) return;
   }
 
   // flush before config section; each zone config (~550 bytes) would overflow combined
@@ -1599,52 +1718,52 @@ void LV6Dashboard::handle_state_(AsyncWebServerRequest *request) {
     const lv6::ZoneConfig &z = snap->zones[i];
     const uint8_t zn = i + 1;
 
-    appendf(buf, BUF_SIZE, offset,
+    if (!append(
         "\"switch-zone_%u_enabled\":{\"state\":\"%s\"},"
         "\"number-zone_%u_setpoint\":{\"value\":",
-        zn, z.enabled ? "on" : "off", zn);
+        zn, z.enabled ? "on" : "off", zn)) return;
     format_float_token(num_buf, sizeof(num_buf), z.setpoint_c, 1);
-    appendf(buf, BUF_SIZE, offset, "%s},", num_buf);
+    if (!append( "%s},", num_buf)) return;
     format_float_token(num_buf, sizeof(num_buf), z.setpoint_c, 1);
-    appendf(buf, BUF_SIZE, offset, "\"number-zone_%u_base_setpoint\":{\"value\":%s},", zn, num_buf);
+    if (!append( "\"number-zone_%u_base_setpoint\":{\"value\":%s},", zn, num_buf)) return;
     format_float_token(num_buf, sizeof(num_buf), z.setpoint_c, 1);
-    appendf(buf, BUF_SIZE, offset, "\"number-zone_%u_effective_setpoint\":{\"value\":%s},", zn, num_buf);
+    if (!append( "\"number-zone_%u_effective_setpoint\":{\"value\":%s},", zn, num_buf)) return;
     format_float_token(num_buf, sizeof(num_buf), this->coordinator_command_offsets_c_[i], 2);
-    appendf(buf, BUF_SIZE, offset, "\"number-zone_%u_coordinator_offset\":{\"value\":%s},", zn, num_buf);
+    if (!append( "\"number-zone_%u_coordinator_offset\":{\"value\":%s},", zn, num_buf)) return;
     const uint32_t remaining_s = this->coordinator_command_expires_at_ms_[i] > millis()
         ? (this->coordinator_command_expires_at_ms_[i] - millis()) / 1000UL : 0UL;
-    appendf(buf, BUF_SIZE, offset, "\"sensor-zone_%u_coordinator_remaining_s\":{\"value\":%lu},", zn, static_cast<unsigned long>(remaining_s));
+    if (!append( "\"sensor-zone_%u_coordinator_remaining_s\":{\"value\":%lu},", zn, static_cast<unsigned long>(remaining_s))) return;
 
     format_float_token(num_buf, sizeof(num_buf), z.area_m2, 1);
-    appendf(buf, BUF_SIZE, offset, "\"number-zone_%u_area_m2\":{\"value\":%s},", zn, num_buf);
+    if (!append( "\"number-zone_%u_area_m2\":{\"value\":%s},", zn, num_buf)) return;
 
     format_float_token(num_buf, sizeof(num_buf), z.pipe_spacing_mm, 0);
-    appendf(buf, BUF_SIZE, offset, "\"number-zone_%u_pipe_spacing_mm\":{\"value\":%s},", zn, num_buf);
+    if (!append( "\"number-zone_%u_pipe_spacing_mm\":{\"value\":%s},", zn, num_buf)) return;
 
     const int8_t probe_idx = snap->probes.zone_return_probe[i];
     if (probe_idx >= 0 && probe_idx < static_cast<int8_t>(lv6::MAX_PROBES)) {
-      appendf(buf, BUF_SIZE, offset,
+      if (!append(
           "\"select-zone_%u_probe\":{\"state\":\"Probe %d\"},",
-          zn, static_cast<int>(probe_idx) + 1);
+          zn, static_cast<int>(probe_idx) + 1)) return;
     } else {
-      appendf(buf, BUF_SIZE, offset, "\"select-zone_%u_probe\":{\"state\":\"None\"},", zn);
+      if (!append( "\"select-zone_%u_probe\":{\"state\":\"None\"},", zn)) return;
     }
 
     const char *src_str = temp_source_to_dashboard_str(snap->zone_temp_source[i]);
-    appendf(buf, BUF_SIZE, offset,
-        "\"select-zone_%u_temp_source\":{\"state\":\"%s\"},", zn, src_str);
+    if (!append(
+        "\"select-zone_%u_temp_source\":{\"state\":\"%s\"},", zn, src_str)) return;
 
     if (z.sync_to_zone >= 0 && z.sync_to_zone < static_cast<int8_t>(lv6::NUM_ZONES)) {
-      appendf(buf, BUF_SIZE, offset,
+      if (!append(
           "\"select-zone_%u_sync_to\":{\"state\":\"Zone %d\"},",
-          zn, static_cast<int>(z.sync_to_zone) + 1);
+          zn, static_cast<int>(z.sync_to_zone) + 1)) return;
     } else {
-      appendf(buf, BUF_SIZE, offset, "\"select-zone_%u_sync_to\":{\"state\":\"None\"},", zn);
+      if (!append( "\"select-zone_%u_sync_to\":{\"state\":\"None\"},", zn)) return;
     }
 
     const uint8_t pt_idx = static_cast<uint8_t>(z.pipe_type);
     const char *pt_str = (pt_idx < 8) ? PIPE_TYPE_STR[pt_idx] : "Unknown";
-    appendf(buf, BUF_SIZE, offset, "\"select-zone_%u_pipe_type\":{\"state\":\"%s\"},", zn, pt_str);
+    if (!append( "\"select-zone_%u_pipe_type\":{\"state\":\"%s\"},", zn, pt_str)) return;
 
     char age_ent[16];
     if (snap->zone_external_temp_age_ms[i] == UINT32_MAX)
@@ -1652,13 +1771,13 @@ void LV6Dashboard::handle_state_(AsyncWebServerRequest *request) {
     else
       snprintf(age_ent, sizeof(age_ent), "%lu",
                static_cast<unsigned long>(snap->zone_external_temp_age_ms[i]));
-    appendf(buf, BUF_SIZE, offset,
+    if (!append(
         "\"text-zone_%u_ble_mac\":{\"state\":\"%s\"},"
         "\"text-zone_%u_sensor_id\":{\"state\":\"%s\"},"
         "\"text-zone_%u_sensor_name\":{\"state\":\"%s\"},"
         "\"sensor-zone_%u_external_temp_age_ms\":{\"value\":%s},",
         zn, snap->zone_ble_mac[i], zn, snap->zone_sensor_id[i], zn, snap->zone_sensor_name[i],
-        zn, age_ent);
+        zn, age_ent)) return;
 
     // Friendly zone name — JSON-escape quotes/backslashes/control chars.
     char name_esc[2 * sizeof(z.name)];
@@ -1669,24 +1788,24 @@ void LV6Dashboard::handle_state_(AsyncWebServerRequest *request) {
       name_esc[nesc++] = (c >= 0x20) ? c : ' ';
     }
     name_esc[nesc] = '\0';
-    appendf(buf, BUF_SIZE, offset,
-        "\"text-zone_%u_name\":{\"state\":\"%s\"},", zn, name_esc);
+    if (!append(
+        "\"text-zone_%u_name\":{\"state\":\"%s\"},", zn, name_esc)) return;
 
     // flush after each zone to stay within buffer
     if (!flush()) return;
   }
 
   // --- global config ---
-  appendf(buf, BUF_SIZE, offset,
+  if (!append(
       "\"switch-motor_drivers_enabled\":{\"state\":\"%s\"},",
-      snap->drivers_enabled ? "on" : "off");
+      snap->drivers_enabled ? "on" : "off")) return;
 
-  appendf(buf, BUF_SIZE, offset,
+  if (!append(
       "\"switch-simple_preheat_enabled\":{\"state\":\"%s\"},",
-      snap->simple_preheat_enabled ? "on" : "off");
+      snap->simple_preheat_enabled ? "on" : "off")) return;
 
   format_float_token(num_buf, sizeof(num_buf), snap->preheat_absorb_band_c, 1);
-  appendf(buf, BUF_SIZE, offset,
+  if (!append(
       "\"switch-preheat_absorb_enabled\":{\"state\":\"%s\"},"
       "\"text-preheat_absorbing\":{\"state\":\"%s\"},"
       "\"text-preheat_absorb_reason\":{\"state\":\"%s\"},"
@@ -1696,11 +1815,11 @@ void LV6Dashboard::handle_state_(AsyncWebServerRequest *request) {
       snap->absorb_mode == 2 ? "armed" : (snap->absorb_mode == 1 ? "reactive" : "idle"),
       snap->absorb_reason,
       snap->absorb_end_reason,
-      num_buf);
+      num_buf)) return;
   format_float_token(num_buf, sizeof(num_buf), snap->preheat_detect_delta_c, 1);
-  appendf(buf, BUF_SIZE, offset, "\"number-preheat_detect_delta_c\":{\"value\":%s},", num_buf);
+  if (!append( "\"number-preheat_detect_delta_c\":{\"value\":%s},", num_buf)) return;
 
-  appendf(buf, BUF_SIZE, offset,
+  if (!append(
       "\"select-heating_mode\":{\"state\":\"%s\"},"
       "\"text-effective_heating_mode\":{\"state\":\"%s\"},"
       "\"text-heating_mode_source\":{\"state\":\"%s\"},"
@@ -1708,18 +1827,18 @@ void LV6Dashboard::handle_state_(AsyncWebServerRequest *request) {
       lv6::heating_profile_to_string(snap->heating_mode),
       lv6::heating_profile_to_string(snap->effective_heating_mode),
       snap->heating_mode_from_touch ? "touch" : "local",
-      lv6::heat_demand_recommendation_to_string(snap->heat_demand.recommendation));
+      lv6::heat_demand_recommendation_to_string(snap->heat_demand.recommendation))) return;
   format_float_token(num_buf, sizeof(num_buf), snap->hp_overheat_margin_c, 1);
-  appendf(buf, BUF_SIZE, offset, "\"number-hp_overheat_margin_c\":{\"value\":%s},", num_buf);
+  if (!append( "\"number-hp_overheat_margin_c\":{\"value\":%s},", num_buf)) return;
   format_float_token(num_buf, sizeof(num_buf), snap->hp_base_pct, 0);
-  appendf(buf, BUF_SIZE, offset, "\"number-hp_base_pct\":{\"value\":%s},", num_buf);
+  if (!append( "\"number-hp_base_pct\":{\"value\":%s},", num_buf)) return;
   format_float_token(num_buf, sizeof(num_buf), snap->hp_trim_floor_pct, 0);
-  appendf(buf, BUF_SIZE, offset, "\"number-hp_trim_floor_pct\":{\"value\":%s},", num_buf);
+  if (!append( "\"number-hp_trim_floor_pct\":{\"value\":%s},", num_buf)) return;
   if (snap->heat_demand.critical_zone >= 0)
-    appendf(buf, BUF_SIZE, offset, "\"sensor-heat_demand_critical_zone\":{\"value\":%d},",
-            snap->heat_demand.critical_zone + 1);
-  appendf(buf, BUF_SIZE, offset, "\"sensor-heat_demand_saturated_s\":{\"value\":%lu},",
-          static_cast<unsigned long>(snap->heat_demand.saturated_s));
+    if (!append( "\"sensor-heat_demand_critical_zone\":{\"value\":%d},",
+            snap->heat_demand.critical_zone + 1)) return;
+  if (!append( "\"sensor-heat_demand_saturated_s\":{\"value\":%lu},",
+          static_cast<unsigned long>(snap->heat_demand.saturated_s))) return;
 
   {
     const char *bal_mode = "static";
@@ -1728,45 +1847,45 @@ void LV6Dashboard::handle_state_(AsyncWebServerRequest *request) {
       case lv6::BalanceMode::RETURN_TEMP: bal_mode = "return_temp"; break;
       default: bal_mode = "static"; break;
     }
-    appendf(buf, BUF_SIZE, offset, "\"select-balancing_mode\":{\"state\":\"%s\"},", bal_mode);
+    if (!append( "\"select-balancing_mode\":{\"state\":\"%s\"},", bal_mode)) return;
   }
   for (uint8_t i = 0; i < lv6::NUM_ZONES; i++) {
     const uint8_t zn = i + 1;
     format_float_token(num_buf, sizeof(num_buf), snap->zone_static_factor[i], 2);
-    appendf(buf, BUF_SIZE, offset, "\"sensor-zone_%u_balance_prior\":{\"value\":%s},", zn, num_buf);
+    if (!append( "\"sensor-zone_%u_balance_prior\":{\"value\":%s},", zn, num_buf)) return;
     format_float_token(num_buf, sizeof(num_buf), snap->zone_balance_adapt[i], 2);
-    appendf(buf, BUF_SIZE, offset, "\"sensor-zone_%u_balance_learned\":{\"value\":%s},", zn, num_buf);
+    if (!append( "\"sensor-zone_%u_balance_learned\":{\"value\":%s},", zn, num_buf)) return;
     format_float_token(num_buf, sizeof(num_buf), snap->zone_hydraulic_factor[i], 2);
-    appendf(buf, BUF_SIZE, offset, "\"sensor-zone_%u_balance_effective\":{\"value\":%s},", zn, num_buf);
+    if (!append( "\"sensor-zone_%u_balance_effective\":{\"value\":%s},", zn, num_buf)) return;
   }
 
-  appendf(buf, BUF_SIZE, offset,
+  if (!append(
       "\"select-manifold_type\":{\"state\":\"%s\"},"
       "\"select-manifold_flow_probe\":{\"state\":\"Probe %d\"},"
       "\"select-manifold_return_probe\":{\"state\":\"Probe %d\"},",
       snap->manifold_type == lv6::ManifoldType::NC ? "NC (Normally Closed)" : "NO (Normally Open)",
       static_cast<int>(snap->probes.manifold_flow_probe) + 1,
-      static_cast<int>(snap->probes.manifold_return_probe) + 1);
+      static_cast<int>(snap->probes.manifold_return_probe) + 1)) return;
 
   const uint8_t mp_idx = static_cast<uint8_t>(snap->motor.default_profile);
   const char *mp_str = (mp_idx < 3) ? MOTOR_PROFILE_STR[mp_idx] : "Generic";
-  appendf(buf, BUF_SIZE, offset, "\"select-motor_profile_default\":{\"state\":\"%s\"},", mp_str);
+  if (!append( "\"select-motor_profile_default\":{\"state\":\"%s\"},", mp_str)) return;
 
   format_float_token(num_buf, sizeof(num_buf), snap->motor.close_current_factor, 2);
-  appendf(buf, BUF_SIZE, offset, "\"number-close_threshold_multiplier\":{\"value\":%s},", num_buf);
+  if (!append( "\"number-close_threshold_multiplier\":{\"value\":%s},", num_buf)) return;
   format_float_token(num_buf, sizeof(num_buf), snap->motor.close_slope_threshold_ma_per_s, 2);
-  appendf(buf, BUF_SIZE, offset, "\"number-close_slope_threshold\":{\"value\":%s},", num_buf);
+  if (!append( "\"number-close_slope_threshold\":{\"value\":%s},", num_buf)) return;
   format_float_token(num_buf, sizeof(num_buf), snap->motor.close_slope_current_factor, 2);
-  appendf(buf, BUF_SIZE, offset, "\"number-close_slope_current_factor\":{\"value\":%s},", num_buf);
+  if (!append( "\"number-close_slope_current_factor\":{\"value\":%s},", num_buf)) return;
   format_float_token(num_buf, sizeof(num_buf), snap->motor.open_current_factor, 2);
-  appendf(buf, BUF_SIZE, offset, "\"number-open_threshold_multiplier\":{\"value\":%s},", num_buf);
+  if (!append( "\"number-open_threshold_multiplier\":{\"value\":%s},", num_buf)) return;
   format_float_token(num_buf, sizeof(num_buf), snap->motor.open_slope_threshold_ma_per_s, 2);
-  appendf(buf, BUF_SIZE, offset, "\"number-open_slope_threshold\":{\"value\":%s},", num_buf);
+  if (!append( "\"number-open_slope_threshold\":{\"value\":%s},", num_buf)) return;
   format_float_token(num_buf, sizeof(num_buf), snap->motor.open_slope_current_factor, 2);
-  appendf(buf, BUF_SIZE, offset, "\"number-open_slope_current_factor\":{\"value\":%s},", num_buf);
+  if (!append( "\"number-open_slope_current_factor\":{\"value\":%s},", num_buf)) return;
   format_float_token(num_buf, sizeof(num_buf), snap->motor.open_ripple_limit_factor, 2);
-  appendf(buf, BUF_SIZE, offset, "\"number-open_ripple_limit_factor\":{\"value\":%s},", num_buf);
-  appendf(buf, BUF_SIZE, offset,
+  if (!append( "\"number-open_ripple_limit_factor\":{\"value\":%s},", num_buf)) return;
+  if (!append(
       "\"number-generic_runtime_limit_seconds\":{\"value\":%lu},"
       "\"number-hmip_runtime_limit_seconds\":{\"value\":%lu},"
       "\"number-relearn_after_movements\":{\"value\":%lu},"
@@ -1776,10 +1895,10 @@ void LV6Dashboard::handle_state_(AsyncWebServerRequest *request) {
       static_cast<unsigned long>(snap->motor.hmip_vdmot_runtime_limit_s),
       static_cast<unsigned long>(snap->motor.relearn_after_movements),
       static_cast<unsigned long>(snap->motor.relearn_after_hours),
-      static_cast<unsigned>(snap->motor.learned_factor_min_samples));
+      static_cast<unsigned>(snap->motor.learned_factor_min_samples))) return;
   format_float_token(num_buf, sizeof(num_buf), snap->motor.learned_factor_max_deviation_pct * 100.0f, 2);
-  appendf(buf, BUF_SIZE, offset,
-      "\"number-learned_factor_max_deviation_pct\":{\"value\":%s},", num_buf);
+  if (!append(
+      "\"number-learned_factor_max_deviation_pct\":{\"value\":%s},", num_buf)) return;
 
   // Rev 3.2/3.3 endstop policy: the fields detect_endstop_() and the DMA cap
   // ladder actually read on the GPIO-bridge backends.
@@ -1811,14 +1930,14 @@ void LV6Dashboard::handle_state_(AsyncWebServerRequest *request) {
   };
   for (const auto &n : rev3x_motor) {
     format_float_token(num_buf, sizeof(num_buf), n.value, n.decimals);
-    appendf(buf, BUF_SIZE, offset, "\"number-%s\":{\"value\":%s},", n.key, num_buf);
+    if (!append( "\"number-%s\":{\"value\":%s},", n.key, num_buf)) return;
   }
 
   // flush before authority/flow section
   if (!flush()) return;
 
   // --- Touch authority + local secondary-flow commissioning ---
-  appendf(buf, BUF_SIZE, offset,
+  if (!append(
       "\"text-authority_state\":{\"state\":\"%s\"},"
       "\"text-authority_reason\":{\"state\":\"%s\"},"
       "\"text-authority_installation_id\":{\"state\":\"%s\"},"
@@ -1840,14 +1959,14 @@ void LV6Dashboard::handle_state_(AsyncWebServerRequest *request) {
               static_cast<int32_t>(authority_proposal_expires_at_ms_ - millis()) > 0 ? "true" : "false",
       snap->authority.shared_key[0] != '\0' ? "on" : "off",
       snap->authority.shared_key[0] != '\0' ? "true" : "false",
-      static_cast<unsigned long>(snap->authority_lease_remaining_s));
+      static_cast<unsigned long>(snap->authority_lease_remaining_s))) return;
   format_float_token(num_buf, sizeof(num_buf), snap->min_zone_flow_pct, 1);
-  appendf(buf, BUF_SIZE, offset,
+  if (!append(
       "\"switch-minimum_flow_always\":{\"state\":\"%s\"},"
       "\"number-min_zone_flow_pct\":{\"value\":%s},",
       snap->minimum_flow_always ? "on" : "off",
-      num_buf);
-  appendf(buf, BUF_SIZE, offset,
+      num_buf)) return;
+  if (!append(
       "\"switch-ble_clock_sync_enabled\":{\"state\":\"%s\"},"
       "\"number-ble_clock_sync_interval_min\":{\"value\":%u},"
       "\"sensor-ble_clock_sync_last_ok_s\":{\"value\":%lu},"
@@ -1857,9 +1976,9 @@ void LV6Dashboard::handle_state_(AsyncWebServerRequest *request) {
       static_cast<unsigned>(snap->ble_clock_sync_interval_min),
       static_cast<unsigned long>(snap->ble_clock_sync_last_ok_s),
       snap->ble_clock_sync_last_error,
-      snap->ble_clock_sync_advertising ? "on" : "off");
+      snap->ble_clock_sync_advertising ? "on" : "off")) return;
   // Sentinel field closes the JSON object and absorbs any trailing comma.
-  appendf(buf, BUF_SIZE, offset, "\"_\":{}}");
+  if (!append( "\"_\":{}}")) return;
   flush();
   httpd_resp_send_chunk(req, nullptr, 0);
 }
@@ -2696,7 +2815,7 @@ void LV6Dashboard::handle_revision_(AsyncWebServerRequest *request) {
   snprintf(response, sizeof(response),
            "{\"ok\":true,\"version\":\"v1\",\"data\":{\"data_revision\":%lu,"
            "\"runtime_revision\":%lu,"
-           "\"uptime_s\":%lu,\"poll_after_ms\":1000,\"freshness\":\"runtime\"}}",
+           "\"uptime_s\":%lu,\"poll_after_ms\":10000,\"freshness\":\"runtime\"}}",
            static_cast<unsigned long>(data_revision_),
            static_cast<unsigned long>(runtime_revision_),
            static_cast<unsigned long>(millis() / 1000UL));
@@ -2943,7 +3062,10 @@ void LV6Dashboard::handle_v1_(AsyncWebServerRequest *request, const char *path) 
     return;
   }
 
-  const std::string body_str_early = request->arg("plain");
+  const std::string body_str_early = !this->post_body_.empty()
+                                         ? this->post_body_
+                                         : request->arg("plain");
+  this->post_body_.clear();
   if (strcmp(path, "/room-temperatures") == 0) {
     this->handle_room_temperatures_(request, body_str_early.c_str());
     return;
@@ -3779,9 +3901,20 @@ void LV6Dashboard::dispatch_set_(const DashboardAction &act) {
       this->valve_controller_->reset_learned_factors(zi);
     } else if (strcmp(str_val, "motor_reset_and_relearn") == 0 && zone_valid && this->valve_controller_) {
       this->valve_controller_->reset_and_relearn(zi);
+    } else if (strcmp(str_val, "calibrate_all_motors") == 0 && this->valve_controller_) {
+      this->valve_controller_->request_calibration_all();
     } else if (strcmp(str_val, "ble_clock_sync_now") == 0) {
       if (this->ble_time_beacon_)
         this->ble_time_beacon_->request_sync_now();
+    } else if (strcmp(str_val, "ble_scan") == 0) {
+      // User-initiated discovery: enable NimBLE and start (or keep) passive
+      // scan so GET /api/v1/ble-scan can return BTHome sensors. lv6_ble_demand
+      // keeps the hub up for idle_grace (~30 s) even without config demand.
+      if (this->nimble_hub_) {
+        if (!this->nimble_hub_->is_enabled())
+          this->nimble_hub_->enable();
+        this->nimble_hub_->start_scan(true);
+      }
     } else if (strcmp(str_val, "dump_task_stats") == 0) {
       this->dump_task_stats_();
     } else if (strcmp(str_val, "firmware_prepare") == 0) {
@@ -3830,6 +3963,28 @@ void LV6Dashboard::dispatch_set_(const DashboardAction &act) {
     lv6::PipeType pt;
     if (parse_pipe_type(str_val, &pt))
       this->zone_controller_->set_zone_pipe_type(zi, pt);
+
+  // ---- device_display_name / device_location (SystemConfig) ----
+  } else if (strcmp(key, "device_display_name") == 0 && has_str && this->config_store_) {
+    auto cfg = this->config_store_->get_config();
+    char buf[sizeof(cfg.system.display_name)];
+    strncpy(buf, str_val, sizeof(buf) - 1);
+    buf[sizeof(buf) - 1] = '\0';
+    if (strncmp(cfg.system.display_name, buf, sizeof(buf)) != 0) {
+      strncpy(cfg.system.display_name, buf, sizeof(cfg.system.display_name));
+      cfg.system.display_name[sizeof(cfg.system.display_name) - 1] = '\0';
+      this->config_store_->update_system(cfg.system);
+    }
+  } else if (strcmp(key, "device_location") == 0 && has_str && this->config_store_) {
+    auto cfg = this->config_store_->get_config();
+    char buf[sizeof(cfg.system.location)];
+    strncpy(buf, str_val, sizeof(buf) - 1);
+    buf[sizeof(buf) - 1] = '\0';
+    if (strncmp(cfg.system.location, buf, sizeof(buf)) != 0) {
+      strncpy(cfg.system.location, buf, sizeof(cfg.system.location));
+      cfg.system.location[sizeof(cfg.system.location) - 1] = '\0';
+      this->config_store_->update_system(cfg.system);
+    }
 
   // ---- zone_name (friendly name, persisted device-side in ZoneConfig) ----
   } else if (strcmp(key, "zone_name") == 0 && has_str && zone_valid && this->zone_controller_) {
@@ -3902,7 +4057,7 @@ void LV6Dashboard::dispatch_set_(const DashboardAction &act) {
   // ---- preheat_detect_delta_c ----
   } else if (strcmp(key, "preheat_detect_delta_c") == 0 && has_num && this->config_store_) {
     auto ctrl = this->config_store_->get_config().control;
-    ctrl.preheat_detect_delta_c = std::max(2.0f, std::min(25.0f, num_val));
+    ctrl.preheat_detect_delta_c = std::max(0.1f, std::min(10.0f, num_val));
     this->config_store_->update_control(ctrl);
 
   // ---- simple_preheat_enabled ----
@@ -4050,8 +4205,11 @@ void LV6Dashboard::sample_history_() {
   // Read current zone states from the live snapshot (brief lock).
   HistoryEntry entry{};
   entry.uptime_s = millis() / 1000UL;
-  for (uint8_t i = 0; i < lv6::NUM_ZONES; i++)
+  for (uint8_t i = 0; i < lv6::NUM_ZONES; i++) {
     entry.zone_state[i] = HISTORY_STATE_UNKNOWN;
+    entry.zone_temp_dc[i] = HISTORY_TEMP_NONE;
+    entry.zone_sp_dc[i] = HISTORY_TEMP_NONE;
+  }
   entry.absorbing = this->zone_controller_ != nullptr
                         ? this->zone_controller_->absorb_mode_code()
                         : 0;
@@ -4068,8 +4226,17 @@ void LV6Dashboard::sample_history_() {
 
   if (snapshot_lock_ != nullptr && snapshot_ready_ &&
       xSemaphoreTake(snapshot_lock_, pdMS_TO_TICKS(10)) == pdTRUE) {
-    for (uint8_t i = 0; i < lv6::NUM_ZONES; i++)
+    for (uint8_t i = 0; i < lv6::NUM_ZONES; i++) {
       entry.zone_state[i] = parse_zone_display_state_code(snapshot_.zone_state[i]);
+      if (std::isfinite(snapshot_.zone_temp_c[i]))
+        entry.zone_temp_dc[i] =
+            static_cast<int16_t>(lroundf(snapshot_.zone_temp_c[i] * 10.0f));
+      // sp_plan: current effective setpoint (V6 has no local schedule; Touch
+      // may later overlay planned steps client-side). No fc/fc_lo/fc_hi.
+      if (std::isfinite(snapshot_.zones[i].setpoint_c))
+        entry.zone_sp_dc[i] =
+            static_cast<int16_t>(lroundf(snapshot_.zones[i].setpoint_c * 10.0f));
+    }
     if (!std::isnan(snapshot_.manifold_flow_c))
       entry.flow_dc = static_cast<int16_t>(lroundf(snapshot_.manifold_flow_c * 10.0f));
     if (!std::isnan(snapshot_.manifold_return_c))
@@ -4161,9 +4328,8 @@ void LV6Dashboard::handle_history_(AsyncWebServerRequest *request) {
     const HistoryEntry &e = ring_copy[slot];
 
     // Flush before entries that might overflow the 2 KB buffer.
-    // Each entry is at most ~62 bytes:
-    // "[4294967295,7,7,7,7,7,7,1,72.5,68.1,100]," → ~41 chars.
-    if (offset + 72 >= BUF_SIZE) {
+    // Each entry is at most ~160 bytes with zone temp/sp_plan appended.
+    if (offset + 180 >= BUF_SIZE) {
       if (!flush()) { free(ring_copy); return; }
     }
 
@@ -4182,9 +4348,19 @@ void LV6Dashboard::handle_history_(AsyncWebServerRequest *request) {
     else { snprintf(demand_s, sizeof demand_s, "%u", static_cast<unsigned>(e.demand_pct)); }
 
     // Fields after the absorption flag (index 7) are flow, return, demand —
-    // appended so the zone-state timeline's index-based parser is unaffected.
+    // then zone_temp[6] and zone_sp_plan[6]. No fc/fc_lo/fc_hi: binder
+    // computes the damped projection from temp history (DESIGN.md §5.9).
+    char zt[lv6::NUM_ZONES][12];
+    char zs[lv6::NUM_ZONES][12];
+    for (uint8_t zi = 0; zi < lv6::NUM_ZONES; zi++) {
+      if (e.zone_temp_dc[zi] == HISTORY_TEMP_NONE) strcpy(zt[zi], "null");
+      else snprintf(zt[zi], sizeof zt[zi], "%.1f", e.zone_temp_dc[zi] / 10.0f);
+      if (e.zone_sp_dc[zi] == HISTORY_TEMP_NONE) strcpy(zs[zi], "null");
+      else snprintf(zs[zi], sizeof zs[zi], "%.1f", e.zone_sp_dc[zi] / 10.0f);
+    }
+
     offset += static_cast<size_t>(snprintf(buf + offset, BUF_SIZE - offset,
-        "[%lu,%u,%u,%u,%u,%u,%u,%u,%s,%s,%s]",
+        "[%lu,%u,%u,%u,%u,%u,%u,%u,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s]",
         static_cast<unsigned long>(e.uptime_s),
         static_cast<unsigned>(e.zone_state[0]),
         static_cast<unsigned>(e.zone_state[1]),
@@ -4193,7 +4369,9 @@ void LV6Dashboard::handle_history_(AsyncWebServerRequest *request) {
         static_cast<unsigned>(e.zone_state[4]),
         static_cast<unsigned>(e.zone_state[5]),
         static_cast<unsigned>(e.absorbing),
-        flow_s, return_s, demand_s));
+        flow_s, return_s, demand_s,
+        zt[0], zt[1], zt[2], zt[3], zt[4], zt[5],
+        zs[0], zs[1], zs[2], zs[3], zs[4], zs[5]));
   }
 
   appendf(buf, BUF_SIZE, offset, "]}");

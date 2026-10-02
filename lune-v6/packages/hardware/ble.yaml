@@ -16,10 +16,10 @@
 # Scan epoch: 640ms interval / 320ms window (~50% duty, longer quiet gaps than
 # 320/160). Override via nimble_hub interval/window if field-tuning coexistence.
 #
-# Stack: ESP-IDF NimBLE via nimble_hub (Observer + Broadcaster, no GATT/Bluedroid).
+# Stack: ESP-IDF NimBLE via nimble_hub (Observer + Broadcaster, concurrent scan+advertise).
 
 nimble_hub:
-  id: hv6_ble
+  id: lv6_ble
   enable_on_boot: false
   # Quieter 50% duty: longer quiet gaps than 320/160 for WiFi coexistence.
   interval: 640ms
@@ -27,16 +27,16 @@ nimble_hub:
   active: false
 
 lv6_ble_demand:
-  id: hv6_ble_demand
-  hub_id: hv6_ble
-  config_store_id: hv6_config
+  id: lv6_ble_demand_gate
+  hub_id: lv6_ble
+  config_store_id: lv6_config
   wifi_settle: 15s
   idle_grace: 30s
 
 lv6_bthome_bridge:
-  id: hv6_bthome
-  hub_id: hv6_ble
-  zone_controller_id: hv6_zones
+  id: lv6_bthome
+  hub_id: lv6_ble
+  zone_controller_id: lv6_zones
   zone_temp_sensors:
     - ble_temp_zone_1
     - ble_temp_zone_2
@@ -46,23 +46,23 @@ lv6_bthome_bridge:
     - ble_temp_zone_6
 
 lv6_ble_time_beacon:
-  id: hv6_ble_clock
+  id: lv6_ble_clock
   time_id: sntp_time
-  config_store_id: hv6_config
-  hub_id: hv6_ble
+  config_store_id: lv6_config
+  hub_id: lv6_ble
 
 lv6_dashboard:
-  ble_time_beacon_id: hv6_ble_clock
-  nimble_hub_id: hv6_ble
+  ble_time_beacon_id: lv6_ble_clock
+  nimble_hub_id: lv6_ble
 
 wifi:
   on_disconnect:
     # Belt-and-suspenders with lv6_ble_demand: drop the controller immediately
     # so a reconnect gets the 2.4 GHz radio alone during association.
     - nimble_hub.stop_scan:
-        id: hv6_ble
+        id: lv6_ble
     - nimble_hub.disable:
-        id: hv6_ble
+        id: lv6_ble
 
 sensor:
   - platform: template

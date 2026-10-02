@@ -16,10 +16,24 @@ static constexpr int32_t COPENHAGEN_DST_SHIFT_S = 3600;
 static constexpr uint16_t CLOCK_SYNC_INTERVAL_MIN_DEFAULT = 60;
 static constexpr uint16_t CLOCK_SYNC_INTERVAL_MIN_LO = 15;
 static constexpr uint16_t CLOCK_SYNC_INTERVAL_MIN_HI = 1440;
-// Periodic beacon: short on-air window (scan pauses while advertising).
-static constexpr uint32_t CLOCK_SYNC_BURST_MS = 30000;
-// Manual "Sync now": long enough to force-sync BLU displays (setup → 2× press).
-static constexpr uint32_t CLOCK_SYNC_NOW_BURST_MS = 90000;
+// Continuous concurrent beacon: one non-connectable packet about every 2 s.
+static constexpr uint32_t CLOCK_SYNC_ADV_INTERVAL_MS = 2000;
+// Refresh UNIX timestamp in the payload while advertising.
+static constexpr uint32_t CLOCK_SYNC_PAYLOAD_REFRESH_MS = 10000;
+
+inline uint16_t ms_to_adv_units(uint32_t ms) {
+  // BLE adv units are 0.625 ms. Clamp to non-connectable legal range 100 ms .. 10.24 s.
+  if (ms < 100)
+    ms = 100;
+  if (ms > 10240)
+    ms = 10240;
+  uint32_t units = (ms * 8u + 2u) / 5u;
+  if (units < 1)
+    units = 1;
+  if (units > 0xFFFF)
+    units = 0xFFFF;
+  return static_cast<uint16_t>(units);
+}
 
 struct DstBounds {
   uint32_t start_s;

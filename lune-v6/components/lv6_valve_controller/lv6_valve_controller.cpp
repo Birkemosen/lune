@@ -39,7 +39,7 @@ static IRAM_ATTR bool ripple_adc_conv_done_(
 
 namespace lv6 {
 
-static const char *const TAG = "hv6_valve_ctrl";
+static const char *const TAG = "lv6_valve_ctrl";
 
 // =============================================================================
 // ESPHome Lifecycle
@@ -262,7 +262,12 @@ void Lv6ValveController::setup() {
         telemetry_[i].mean_close_current_ma = saved.mean_close_current_ma;
         telemetry_[i].movement_count = saved.movement_count;
         telemetry_[i].movements_since_learn = saved.movements_since_learn;
-        telemetry_[i].last_learn_ms = saved.last_learn_ms;
+        // last_learn_ms is boot-relative (esp_timer ms). Restoring a prior boot's
+        // value makes (now - last) underflow (~1193h) and spuriously auto-relearn
+        // the moment drivers are enabled — which stack-overflowed lv6_valve.
+        // Restart the relearn clock from this boot; learned factors still load.
+        telemetry_[i].last_learn_ms =
+            static_cast<uint32_t>(esp_timer_get_time() / 1000);
         telemetry_[i].learned_open_ripples = saved.learned_open_ripples;
         telemetry_[i].learned_close_ripples = saved.learned_close_ripples;
         telemetry_[i].pin_engage_close_ripples = saved.pin_engage_close_ripples;
@@ -288,7 +293,7 @@ void Lv6ValveController::setup() {
 
   // Start motor FSM task on Core 1
   BaseType_t ok = xTaskCreatePinnedToCore(
-      task_func_, "hv6_valve", STACK_SIZE, this, PRIORITY, &task_handle_, CORE);
+      task_func_, "lv6_valve", STACK_SIZE, this, PRIORITY, &task_handle_, CORE);
   if (ok != pdPASS) {
     ESP_LOGE(TAG, "Failed to create valve task");
     this->mark_failed();
@@ -296,6 +301,15 @@ void Lv6ValveController::setup() {
   }
 
   boot_time_ms_ = static_cast<uint32_t>(esp_timer_get_time() / 1000);
+
+  // Restore user preference for drivers armed across reboot. Missing key keeps
+  // the hardware boot default (rev33: off until manual enable; I2C: on if present).
+  bool want_drivers = false;
+  if (config_store_ && config_store_->load_drivers_enabled_pref(&want_drivers)) {
+    ESP_LOGI(TAG, "Restoring drivers_enabled preference: %s", want_drivers ? "on" : "off");
+    set_drivers_enabled(want_drivers);
+  }
+
   ESP_LOGI(TAG, "Valve controller initialized (%d motors)", NUM_ZONES);
 }
 
@@ -436,6 +450,8 @@ void Lv6ValveController::set_drivers_enabled(bool enabled) {
       // it; on revisions with a latch this is a no-op.
       gpio_backend_->set_drive_permit(false);
       drivers_enabled_ = false;
+      if (config_store_)
+        config_store_->set_drivers_enabled_pref(false);
       ESP_LOGI(TAG, "%s motor path DISABLED", gpio_backend_->backend_name());
       return;
     }
@@ -454,6 +470,8 @@ void Lv6ValveController::set_drivers_enabled(bool enabled) {
     }
     gpio_backend_->coast();
     drivers_enabled_ = true;
+    if (config_store_)
+      config_store_->set_drivers_enabled_pref(true);
     ESP_LOGI(TAG, "%s motor path ENABLED (decoder remains inhibited until a move)",
              gpio_backend_->backend_name());
     return;
@@ -496,6 +514,9 @@ void Lv6ValveController::set_drivers_enabled(bool enabled) {
         drivers_[i]->coast();
     }
   }
+
+  if (config_store_)
+    config_store_->set_drivers_enabled_pref(enabled);
 
   ESP_LOGI(TAG, "Motor drivers %s", enabled ? "ENABLED" : "DISABLED");
 }
@@ -1227,8 +1248,18 @@ void Lv6ValveController::run_() {
       // software switch is off. Leaving the queue untouched here swallowed
       // those commands: the HTTP call succeeded, Motor Lab waited for motion,
       // and the bridge never started.
+      //
+      // Once an override move is running, this branch must still service
+      // motor_loop_() — otherwise the nested spin in execute_timed_move_ was
+      // the only thing advancing the FSM, and a non-blocking start would leave
+      // the bridge energised with no endstop/ceiling checks.
       process_command_queue_();
-      vTaskDelayUntil(&last_wake, pdMS_TO_TICKS(TICK_MS));
+      if (motor_turning_) {
+        motor_loop_();
+        vTaskDelayUntil(&last_wake, pdMS_TO_TICKS(FAST_TICK_MS));
+      } else {
+        vTaskDelayUntil(&last_wake, pdMS_TO_TICKS(TICK_MS));
+      }
       continue;
     }
 
@@ -1326,15 +1357,9 @@ void Lv6ValveController::execute_timed_move_(uint8_t zone, uint16_t duration_ms,
            zone + 1, dir == MotorDirection::OPEN ? "OPEN" : "CLOSE",
            duration_ms, override_drivers, profile_limit_ms);
 
-  uint32_t elapsed = 0;
-  while (motor_turning_ && elapsed < static_cast<uint32_t>(duration_ms)) {
-    motor_loop_();
-    vTaskDelay(pdMS_TO_TICKS(FAST_TICK_MS));
-    elapsed += FAST_TICK_MS;
-  }
-
-  if (motor_turning_)
-    stop_motor_(true);
+  // Non-blocking: run_() / the drivers-disabled override branch advance
+  // motor_loop_() while motor_turning_. A nested spin here starved WiFi/logging
+  // for the full jog (looked like a crash) and made stop_motor queueing racey.
 }
 
 void Lv6ValveController::execute_move_(uint8_t zone, float target_pct) {
@@ -2560,7 +2585,7 @@ bool Lv6ValveController::start_adc_stream_() {
   }
 
   BaseType_t task_ok = xTaskCreatePinnedToCore(
-      ripple_task_func_, "hv6_ripple", 4096, this, PRIORITY - 1,
+      ripple_task_func_, "lv6_ripple", 4096, this, PRIORITY - 1,
       &ripple_task_handle_, CORE);
   if (task_ok != pdPASS) {
     ESP_LOGE(TAG, "Failed to create ripple processor task");
@@ -3319,8 +3344,10 @@ void Lv6ValveController::check_relearn_triggers_() {
       reason = "movement count";
     }
 
-    // Time-based trigger (hours since last learn)
-    if (!needs_relearn && motor_cfg_.relearn_after_hours > 0 && t.last_learn_ms > 0) {
+    // Time-based trigger (hours since last learn). Require now >= last so a
+    // stale boot-relative timestamp cannot underflow into an instant relearn.
+    if (!needs_relearn && motor_cfg_.relearn_after_hours > 0 && t.last_learn_ms > 0 &&
+        now_ms >= t.last_learn_ms) {
       uint32_t elapsed_ms = now_ms - t.last_learn_ms;
       uint32_t limit_ms = motor_cfg_.relearn_after_hours * 3600000UL;
       if (elapsed_ms >= limit_ms) {
@@ -3334,7 +3361,8 @@ void Lv6ValveController::check_relearn_triggers_() {
     xSemaphoreGive(telemetry_mutex_);
 
     if (needs_relearn) {
-      uint32_t hours_since = (t.last_learn_ms > 0) ? (now_ms - last_ms) / 3600000UL : 0;
+      uint32_t hours_since =
+          (last_ms > 0 && now_ms >= last_ms) ? (now_ms - last_ms) / 3600000UL : 0;
       ESP_LOGI(TAG, "Zone %d relearn triggered (%s: %" PRIu32 " moves, %" PRIu32 "h since last)",
                z + 1, reason, moves, hours_since);
       calibration_request_ = static_cast<int8_t>(z);
@@ -3685,6 +3713,76 @@ uint32_t Lv6ValveController::calibration_pass_(uint8_t zone, MotorDirection dir)
   return elapsed;
 }
 
+void Lv6ValveController::calibration_backoff_open_(uint8_t zone, uint32_t hold_ms) {
+  // Software BLOCKED from an already-seated homing close must not stick: the
+  // next start_motor_() clears current_fault_code_, but telemetry.blocked is
+  // what the UI and relearn skip read. reset_fault() refuses while calibrating.
+  xSemaphoreTake(telemetry_mutex_, portMAX_DELAY);
+  telemetry_[zone].blocked = false;
+  xSemaphoreGive(telemetry_mutex_);
+  current_fault_code_ = FaultCode::NONE;
+
+  pin_detect_enabled_ = false;
+  if (!start_motor_(zone, MotorDirection::OPEN)) {
+    ESP_LOGW(TAG, "Learning zone %d: backoff open failed to start", zone + 1);
+    return;
+  }
+  drive_to_endstop_active_ = true;
+  ESP_LOGI(TAG, "Learning zone %d: backoff OPEN up to %" PRIu32 "ms (endstop armed)",
+           zone + 1, hold_ms);
+
+  while (motor_turning_) {
+    motor_loop_();
+    vTaskDelay(pdMS_TO_TICKS(FAST_TICK_MS));
+    if (motor_turning_ && motor_run_time_ms_ >= hold_ms)
+      stop_motor_(true);
+  }
+
+  drive_to_endstop_active_ = false;
+  // Already-open is the same BLOCKED_OR_UNKNOWN as already-closed. Swallow it;
+  // the following close is the measurement that matters.
+  xSemaphoreTake(telemetry_mutex_, portMAX_DELAY);
+  telemetry_[zone].blocked = false;
+  telemetry_[zone].last_fault_code = FaultCode::NONE;
+  xSemaphoreGive(telemetry_mutex_);
+  current_fault_code_ = FaultCode::NONE;
+  vTaskDelay(pdMS_TO_TICKS(500));
+}
+
+bool Lv6ValveController::home_to_seat_(uint8_t zone) {
+  auto close_needs_backoff = [](FaultCode code) {
+    return code == FaultCode::BLOCKED || code == FaultCode::MECHANICAL_OVERRUN;
+  };
+
+  uint32_t ms = calibration_pass_(zone, MotorDirection::CLOSE);
+  if (ms > 0 && endpoint_confirmed_)
+    return true;
+
+  FaultCode code = current_fault_code_;
+  uint32_t ran = motor_run_time_ms_;
+  if (!close_needs_backoff(code))
+    return false;
+
+  for (uint8_t n = 0; n < LEARN_CLOSE_BACKOFF_MAX; n++) {
+    const uint32_t open_ms =
+        LEARN_CLOSE_BACKOFF_OPEN_MS + static_cast<uint32_t>(n) * LEARN_CLOSE_BACKOFF_STEP_MS;
+    ESP_LOGW(TAG,
+             "Learning zone %d: homing close %s after %" PRIu32
+             "ms — backoff OPEN %" PRIu32 "ms then close again (%u/%u)",
+             zone + 1, fault_code_to_string(code), ran, open_ms, n + 1,
+             static_cast<unsigned>(LEARN_CLOSE_BACKOFF_MAX));
+    calibration_backoff_open_(zone, open_ms);
+    ms = calibration_pass_(zone, MotorDirection::CLOSE);
+    if (ms > 0 && endpoint_confirmed_)
+      return true;
+    code = current_fault_code_;
+    ran = motor_run_time_ms_;
+    if (!close_needs_backoff(code))
+      return false;
+  }
+  return false;
+}
+
 OpenLegResult Lv6ValveController::calibration_open_leg_(uint8_t zone, uint32_t target_ripples) {
   OpenLegResult r{};
   pin_detect_enabled_ = false;
@@ -3772,10 +3870,11 @@ bool Lv6ValveController::learn_working_range_(uint8_t zone, uint8_t attempt) {
   };
 
   // Home. From an unknown position the seat is the one reference that can be
-  // found safely: closing is the high-current direction, and already-at-stop
-  // catches a valve that is closed to begin with.
+  // found safely: closing is the high-current direction. GPIO backends cannot
+  // tell an already-seated valve from a jam (BLOCKED_OR_UNKNOWN), so homing
+  // backs off open and closes again instead of retrying into the seat.
   set_learning_progress_(zone, 0, /*home*/ 1, 0, need);
-  if (calibration_pass_(zone, MotorDirection::CLOSE) == 0 || !endpoint_confirmed_) {
+  if (!home_to_seat_(zone)) {
     ESP_LOGW(TAG, "Learning zone %d: homing to the seat failed", zone + 1);
     set_learning_progress_(zone, done, /*failed*/ 5, learner.samples(), need);
     return false;
@@ -3945,15 +4044,14 @@ void Lv6ValveController::run_calibration_(uint8_t zone) {
       set_learning_progress_(zone, 0, /*close1/home*/ 1, 0, 1);
       // Pass 1: close fully (reach the known closed reference). Closing is the
       // high-current direction, so its endstop is the reliable one to detect — VdMot
-      // calibrates close-first for the same reason. A valve already at the closed stop
-      // is caught fast by the already-at-stop path (zero ripples after boost + current
-      // present) so we no longer over-drive a closed valve into its stop and pop the
-      // actuator socket off the pin.
-      uint32_t close1_ms = calibration_pass_(zone, MotorDirection::CLOSE);
-      if (close1_ms == 0) {
+      // calibrates close-first for the same reason. Already-seated valves on GPIO
+      // backends fault BLOCKED instead of confirming the seat; home_to_seat_
+      // backs off open and closes again.
+      if (!home_to_seat_(zone)) {
         ESP_LOGW(TAG, "Calibration zone %d: initial close failed", zone + 1);
         break;
       }
+      uint32_t close1_ms = motor_run_time_ms_;
 
       set_learning_progress_(zone, 33, /*open*/ 2, 0, 1);
       // Pass 2: open fully (measure opening travel)

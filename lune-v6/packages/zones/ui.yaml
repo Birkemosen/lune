@@ -32,7 +32,7 @@ button:
     name: "Calibrate All Motors"
     on_press:
       - lambda: |-
-          id(hv6_valves).request_calibration_all();
+          id(lv6_valves).request_calibration_all();
 
   - platform: template
     name: "Motor 1 Open Flow (100%)"
@@ -40,11 +40,11 @@ button:
     entity_category: config
     on_press:
       - lambda: |-
-          if (!id(hv6_valves).are_drivers_enabled()) {
-            ESP_LOGW("hv6_ui", "Motor 1 OPEN FLOW ignored: drivers are disabled");
+          if (!id(lv6_valves).are_drivers_enabled()) {
+            ESP_LOGW("lv6_ui", "Motor 1 OPEN FLOW ignored: drivers are disabled");
             return;
           }
-          id(hv6_valves).request_position(0, 100.0f);
+          id(lv6_valves).request_position(0, 100.0f);
 
   - platform: template
     name: "Motor 1 Close Flow (0%)"
@@ -52,18 +52,18 @@ button:
     entity_category: config
     on_press:
       - lambda: |-
-          if (!id(hv6_valves).are_drivers_enabled()) {
-            ESP_LOGW("hv6_ui", "Motor 1 CLOSE FLOW ignored: drivers are disabled");
+          if (!id(lv6_valves).are_drivers_enabled()) {
+            ESP_LOGW("lv6_ui", "Motor 1 CLOSE FLOW ignored: drivers are disabled");
             return;
           }
-          id(hv6_valves).request_position(0, 0.0f);
+          id(lv6_valves).request_position(0, 0.0f);
 
   - platform: template
     name: "Motor 1 Stop Now"
     icon: "mdi:hand-back-right-off"
     entity_category: config
     on_press:
-      - lambda: id(hv6_valves).set_drivers_enabled(false);
+      - lambda: id(lv6_valves).set_drivers_enabled(false);
 
   - platform: template
     name: "Motor 1 Self-Learn"
@@ -71,11 +71,11 @@ button:
     entity_category: config
     on_press:
       - lambda: |-
-          if (!id(hv6_valves).are_drivers_enabled()) {
-            ESP_LOGW("hv6_ui", "Motor 1 self-learn ignored: drivers are disabled");
+          if (!id(lv6_valves).are_drivers_enabled()) {
+            ESP_LOGW("lv6_ui", "Motor 1 self-learn ignored: drivers are disabled");
             return;
           }
-          id(hv6_valves).request_calibration(0);
+          id(lv6_valves).request_calibration(0);
 
   - platform: template
     name: "Zone 2 Open 100%"
@@ -83,8 +83,8 @@ button:
     entity_category: config
     on_press:
       - lambda: |-
-          if (!id(hv6_valves).are_drivers_enabled()) return;
-          id(hv6_valves).request_position(1, 100.0f);
+          if (!id(lv6_valves).are_drivers_enabled()) return;
+          id(lv6_valves).request_position(1, 100.0f);
 
   - platform: template
     name: "Zone 2 Close 0%"
@@ -92,15 +92,15 @@ button:
     entity_category: config
     on_press:
       - lambda: |-
-          if (!id(hv6_valves).are_drivers_enabled()) return;
-          id(hv6_valves).request_position(1, 0.0f);
+          if (!id(lv6_valves).are_drivers_enabled()) return;
+          id(lv6_valves).request_position(1, 0.0f);
 
   - platform: template
     name: "Zone 2 Stop"
     icon: "mdi:hand-back-right-off"
     entity_category: config
     on_press:
-      - lambda: id(hv6_valves).set_drivers_enabled(false);
+      - lambda: id(lv6_valves).set_drivers_enabled(false);
 
   - platform: template
     name: "Zone 3 Open 100%"
@@ -108,8 +108,8 @@ button:
     entity_category: config
     on_press:
       - lambda: |-
-          if (!id(hv6_valves).are_drivers_enabled()) return;
-          id(hv6_valves).request_position(2, 100.0f);
+          if (!id(lv6_valves).are_drivers_enabled()) return;
+          id(lv6_valves).request_position(2, 100.0f);
 
   - platform: template
     name: "Zone 3 Close 0%"
@@ -117,15 +117,15 @@ button:
     entity_category: config
     on_press:
       - lambda: |-
-          if (!id(hv6_valves).are_drivers_enabled()) return;
-          id(hv6_valves).request_position(2, 0.0f);
+          if (!id(lv6_valves).are_drivers_enabled()) return;
+          id(lv6_valves).request_position(2, 0.0f);
 
   - platform: template
     name: "Zone 3 Stop"
     icon: "mdi:hand-back-right-off"
     entity_category: config
     on_press:
-      - lambda: id(hv6_valves).set_drivers_enabled(false);
+      - lambda: id(lv6_valves).set_drivers_enabled(false);
 
   - platform: template
     name: "Zone 4 Open 100%"
@@ -133,8 +133,8 @@ button:
     entity_category: config
     on_press:
       - lambda: |-
-          if (!id(hv6_valves).are_drivers_enabled()) return;
-          id(hv6_valves).request_position(3, 100.0f);
+          if (!id(lv6_valves).are_drivers_enabled()) return;
+          id(lv6_valves).request_position(3, 100.0f);
 
   - platform: template
     name: "Zone 4 Close 0%"
@@ -142,15 +142,15 @@ button:
     entity_category: config
     on_press:
       - lambda: |-
-          if (!id(hv6_valves).are_drivers_enabled()) return;
-          id(hv6_valves).request_position(3, 0.0f);
+          if (!id(lv6_valves).are_drivers_enabled()) return;
+          id(lv6_valves).request_position(3, 0.0f);
 
   - platform: template
     name: "Zone 4 Stop"
     icon: "mdi:hand-back-right-off"
     entity_category: config
     on_press:
-      - lambda: id(hv6_valves).set_drivers_enabled(false);
+      - lambda: id(lv6_valves).set_drivers_enabled(false);
 
   - platform: template
     name: "Zone 5 Open 100%"
@@ -158,8 +158,8 @@ button:
     entity_category: config
     on_press:
       - lambda: |-
-          if (!id(hv6_valves).are_drivers_enabled()) return;
-          id(hv6_valves).request_position(4, 100.0f);
+          if (!id(lv6_valves).are_drivers_enabled()) return;
+          id(lv6_valves).request_position(4, 100.0f);
 
   - platform: template
     name: "Zone 5 Close 0%"
@@ -167,15 +167,15 @@ button:
     entity_category: config
     on_press:
       - lambda: |-
-          if (!id(hv6_valves).are_drivers_enabled()) return;
-          id(hv6_valves).request_position(4, 0.0f);
+          if (!id(lv6_valves).are_drivers_enabled()) return;
+          id(lv6_valves).request_position(4, 0.0f);
 
   - platform: template
     name: "Zone 5 Stop"
     icon: "mdi:hand-back-right-off"
     entity_category: config
     on_press:
-      - lambda: id(hv6_valves).set_drivers_enabled(false);
+      - lambda: id(lv6_valves).set_drivers_enabled(false);
 
   - platform: template
     name: "Zone 6 Open 100%"
@@ -183,8 +183,8 @@ button:
     entity_category: config
     on_press:
       - lambda: |-
-          if (!id(hv6_valves).are_drivers_enabled()) return;
-          id(hv6_valves).request_position(5, 100.0f);
+          if (!id(lv6_valves).are_drivers_enabled()) return;
+          id(lv6_valves).request_position(5, 100.0f);
 
   - platform: template
     name: "Zone 6 Close 0%"
@@ -192,15 +192,15 @@ button:
     entity_category: config
     on_press:
       - lambda: |-
-          if (!id(hv6_valves).are_drivers_enabled()) return;
-          id(hv6_valves).request_position(5, 0.0f);
+          if (!id(lv6_valves).are_drivers_enabled()) return;
+          id(lv6_valves).request_position(5, 0.0f);
 
   - platform: template
     name: "Zone 6 Stop"
     icon: "mdi:hand-back-right-off"
     entity_category: config
     on_press:
-      - lambda: id(hv6_valves).set_drivers_enabled(false);
+      - lambda: id(lv6_valves).set_drivers_enabled(false);
 
   # Timed 10-second manual mode buttons
   - platform: template
@@ -208,91 +208,91 @@ button:
     icon: "mdi:valve-open"
     entity_category: config
     on_press:
-      - lambda: id(hv6_valves).request_timed_open(0, 10000, true);
+      - lambda: id(lv6_valves).request_timed_open(0, 10000, true);
 
   - platform: template
     name: "Zone 1 Close 10S"
     icon: "mdi:valve-closed"
     entity_category: config
     on_press:
-      - lambda: id(hv6_valves).request_timed_close(0, 10000, true);
+      - lambda: id(lv6_valves).request_timed_close(0, 10000, true);
 
   - platform: template
     name: "Zone 2 Open 10S"
     icon: "mdi:valve-open"
     entity_category: config
     on_press:
-      - lambda: id(hv6_valves).request_timed_open(1, 10000, true);
+      - lambda: id(lv6_valves).request_timed_open(1, 10000, true);
 
   - platform: template
     name: "Zone 2 Close 10S"
     icon: "mdi:valve-closed"
     entity_category: config
     on_press:
-      - lambda: id(hv6_valves).request_timed_close(1, 10000, true);
+      - lambda: id(lv6_valves).request_timed_close(1, 10000, true);
 
   - platform: template
     name: "Zone 3 Open 10S"
     icon: "mdi:valve-open"
     entity_category: config
     on_press:
-      - lambda: id(hv6_valves).request_timed_open(2, 10000, true);
+      - lambda: id(lv6_valves).request_timed_open(2, 10000, true);
 
   - platform: template
     name: "Zone 3 Close 10S"
     icon: "mdi:valve-closed"
     entity_category: config
     on_press:
-      - lambda: id(hv6_valves).request_timed_close(2, 10000, true);
+      - lambda: id(lv6_valves).request_timed_close(2, 10000, true);
 
   - platform: template
     name: "Zone 4 Open 10S"
     icon: "mdi:valve-open"
     entity_category: config
     on_press:
-      - lambda: id(hv6_valves).request_timed_open(3, 10000, true);
+      - lambda: id(lv6_valves).request_timed_open(3, 10000, true);
 
   - platform: template
     name: "Zone 4 Close 10S"
     icon: "mdi:valve-closed"
     entity_category: config
     on_press:
-      - lambda: id(hv6_valves).request_timed_close(3, 10000, true);
+      - lambda: id(lv6_valves).request_timed_close(3, 10000, true);
 
   - platform: template
     name: "Zone 5 Open 10S"
     icon: "mdi:valve-open"
     entity_category: config
     on_press:
-      - lambda: id(hv6_valves).request_timed_open(4, 10000, true);
+      - lambda: id(lv6_valves).request_timed_open(4, 10000, true);
 
   - platform: template
     name: "Zone 5 Close 10S"
     icon: "mdi:valve-closed"
     entity_category: config
     on_press:
-      - lambda: id(hv6_valves).request_timed_close(4, 10000, true);
+      - lambda: id(lv6_valves).request_timed_close(4, 10000, true);
 
   - platform: template
     name: "Zone 6 Open 10S"
     icon: "mdi:valve-open"
     entity_category: config
     on_press:
-      - lambda: id(hv6_valves).request_timed_open(5, 10000, true);
+      - lambda: id(lv6_valves).request_timed_open(5, 10000, true);
 
   - platform: template
     name: "Zone 6 Close 10S"
     icon: "mdi:valve-closed"
     entity_category: config
     on_press:
-      - lambda: id(hv6_valves).request_timed_close(5, 10000, true);
+      - lambda: id(lv6_valves).request_timed_close(5, 10000, true);
 
   - platform: template
     name: "I2C Scan"
     icon: "mdi:bus-alert"
     entity_category: diagnostic
     on_press:
-      - lambda: id(hv6_valves).log_i2c_scan();
+      - lambda: id(lv6_valves).log_i2c_scan();
 
   - platform: template
     name: "Dump 1Wire Probe Diagnostics"
@@ -303,16 +303,16 @@ button:
       - lambda: |-
           auto log_probe = [](const char *tag, esphome::sensor::Sensor *s) {
             if (s == nullptr) {
-              ESP_LOGW("hv6_onewire", "%s: sensor ptr=null", tag);
+              ESP_LOGW("lv6_onewire", "%s: sensor ptr=null", tag);
               return;
             }
             auto *d = static_cast<esphome::dallas_temp::DallasTemperatureSensor *>(s);
             auto addr = d->get_address_name();
             bool ok = s->has_state();
             if (ok) {
-              ESP_LOGI("hv6_onewire", "%s: addr=%s has_state=1 value=%.2f", tag, addr.c_str(), s->state);
+              ESP_LOGI("lv6_onewire", "%s: addr=%s has_state=1 value=%.2f", tag, addr.c_str(), s->state);
             } else {
-              ESP_LOGW("hv6_onewire", "%s: addr=%s has_state=0 value=NaN", tag, addr.c_str());
+              ESP_LOGW("lv6_onewire", "%s: addr=%s has_state=0 value=NaN", tag, addr.c_str());
             }
           };
 
@@ -342,7 +342,7 @@ button:
           id(probe_addr_8) = 0;
           for (int i = 0; i < 8; i++)
             id(probe_fail_cycles)[i] = 0;
-          ESP_LOGW("hv6_ui", "1-Wire probe map reset requested; rebooting for fresh probe discovery");
+          ESP_LOGW("lv6_ui", "1-Wire probe map reset requested; rebooting for fresh probe discovery");
           App.safe_reboot();
 
   - platform: template
@@ -352,9 +352,9 @@ button:
     disabled_by_default: false
     on_press:
       - lambda: |-
-          id(hv6_valves).set_drivers_enabled(false);
-          if (!id(hv6_config).erase_namespace_and_restart()) {
-            ESP_LOGE("hv6_ui", "Failed to erase LV6 NVS namespace");
+          id(lv6_valves).set_drivers_enabled(false);
+          if (!id(lv6_config).erase_namespace_and_restart()) {
+            ESP_LOGE("lv6_ui", "Failed to erase LV6 NVS namespace");
           }
 
 switch:
@@ -364,12 +364,15 @@ switch:
     icon: "mdi:engine"
     entity_category: config
     optimistic: false
+    # State comes from the valve controller (+ NVS preference). Do not force OFF
+    # on boot — that undoes drivers_enabled restore after reboot.
+    restore_mode: DISABLED
     lambda: |-
-      return id(hv6_valves).are_drivers_enabled();
+      return id(lv6_valves).are_drivers_enabled();
     turn_on_action:
-      - lambda: id(hv6_valves).set_drivers_enabled(true);
+      - lambda: id(lv6_valves).set_drivers_enabled(true);
     turn_off_action:
-      - lambda: id(hv6_valves).set_drivers_enabled(false);
+      - lambda: id(lv6_valves).set_drivers_enabled(false);
 
   - platform: template
     name: "Auto Apply Learned Factors"
@@ -378,19 +381,19 @@ switch:
     entity_category: config
     optimistic: false
     lambda: |-
-      return id(hv6_config).get_config().motor.auto_apply_learned_factors;
+      return id(lv6_config).get_config().motor.auto_apply_learned_factors;
     turn_on_action:
       - lambda: |-
-          auto cfg = id(hv6_config).get_config();
+          auto cfg = id(lv6_config).get_config();
           cfg.motor.auto_apply_learned_factors = true;
-          id(hv6_config).update_motor(cfg.motor);
-          id(hv6_valves).reload_motor_config();
+          id(lv6_config).update_motor(cfg.motor);
+          id(lv6_valves).reload_motor_config();
     turn_off_action:
       - lambda: |-
-          auto cfg = id(hv6_config).get_config();
+          auto cfg = id(lv6_config).get_config();
           cfg.motor.auto_apply_learned_factors = false;
-          id(hv6_config).update_motor(cfg.motor);
-          id(hv6_valves).reload_motor_config();
+          id(lv6_config).update_motor(cfg.motor);
+          id(lv6_valves).reload_motor_config();
 
   - platform: template
     name: "Manual Mode"
@@ -399,11 +402,11 @@ switch:
     entity_category: config
     optimistic: false
     lambda: |-
-      return id(hv6_zones).is_manual_mode();
+      return id(lv6_zones).is_manual_mode();
     turn_on_action:
-      - lambda: id(hv6_zones).set_manual_mode(true);
+      - lambda: id(lv6_zones).set_manual_mode(true);
     turn_off_action:
-      - lambda: id(hv6_zones).set_manual_mode(false);
+      - lambda: id(lv6_zones).set_manual_mode(false);
 
   - platform: template
     name: "Zone 1 Enabled"
@@ -413,11 +416,11 @@ switch:
     optimistic: false
     restore_mode: DISABLED
     lambda: |-
-      return id(hv6_zones).is_zone_enabled(0);
+      return id(lv6_zones).is_zone_enabled(0);
     turn_on_action:
-      - lambda: id(hv6_zones).set_zone_enabled(0, true);
+      - lambda: id(lv6_zones).set_zone_enabled(0, true);
     turn_off_action:
-      - lambda: id(hv6_zones).set_zone_enabled(0, false);
+      - lambda: id(lv6_zones).set_zone_enabled(0, false);
 
   - platform: template
     name: "Zone 2 Enabled"
@@ -427,11 +430,11 @@ switch:
     optimistic: false
     restore_mode: DISABLED
     lambda: |-
-      return id(hv6_zones).is_zone_enabled(1);
+      return id(lv6_zones).is_zone_enabled(1);
     turn_on_action:
-      - lambda: id(hv6_zones).set_zone_enabled(1, true);
+      - lambda: id(lv6_zones).set_zone_enabled(1, true);
     turn_off_action:
-      - lambda: id(hv6_zones).set_zone_enabled(1, false);
+      - lambda: id(lv6_zones).set_zone_enabled(1, false);
 
   - platform: template
     name: "Zone 3 Enabled"
@@ -441,11 +444,11 @@ switch:
     optimistic: false
     restore_mode: DISABLED
     lambda: |-
-      return id(hv6_zones).is_zone_enabled(2);
+      return id(lv6_zones).is_zone_enabled(2);
     turn_on_action:
-      - lambda: id(hv6_zones).set_zone_enabled(2, true);
+      - lambda: id(lv6_zones).set_zone_enabled(2, true);
     turn_off_action:
-      - lambda: id(hv6_zones).set_zone_enabled(2, false);
+      - lambda: id(lv6_zones).set_zone_enabled(2, false);
 
   - platform: template
     name: "Zone 4 Enabled"
@@ -455,11 +458,11 @@ switch:
     optimistic: false
     restore_mode: DISABLED
     lambda: |-
-      return id(hv6_zones).is_zone_enabled(3);
+      return id(lv6_zones).is_zone_enabled(3);
     turn_on_action:
-      - lambda: id(hv6_zones).set_zone_enabled(3, true);
+      - lambda: id(lv6_zones).set_zone_enabled(3, true);
     turn_off_action:
-      - lambda: id(hv6_zones).set_zone_enabled(3, false);
+      - lambda: id(lv6_zones).set_zone_enabled(3, false);
 
   - platform: template
     name: "Zone 5 Enabled"
@@ -469,11 +472,11 @@ switch:
     optimistic: false
     restore_mode: DISABLED
     lambda: |-
-      return id(hv6_zones).is_zone_enabled(4);
+      return id(lv6_zones).is_zone_enabled(4);
     turn_on_action:
-      - lambda: id(hv6_zones).set_zone_enabled(4, true);
+      - lambda: id(lv6_zones).set_zone_enabled(4, true);
     turn_off_action:
-      - lambda: id(hv6_zones).set_zone_enabled(4, false);
+      - lambda: id(lv6_zones).set_zone_enabled(4, false);
 
   - platform: template
     name: "Zone 6 Enabled"
@@ -483,11 +486,11 @@ switch:
     optimistic: false
     restore_mode: DISABLED
     lambda: |-
-      return id(hv6_zones).is_zone_enabled(5);
+      return id(lv6_zones).is_zone_enabled(5);
     turn_on_action:
-      - lambda: id(hv6_zones).set_zone_enabled(5, true);
+      - lambda: id(lv6_zones).set_zone_enabled(5, true);
     turn_off_action:
-      - lambda: id(hv6_zones).set_zone_enabled(5, false);
+      - lambda: id(lv6_zones).set_zone_enabled(5, false);
 
 number:
   - platform: template
@@ -501,14 +504,14 @@ number:
     step: 1
     optimistic: false
     lambda: |-
-      return id(hv6_valves).get_position(0);
+      return id(lv6_valves).get_position(0);
     set_action:
       - lambda: |-
-          if (!id(hv6_valves).are_drivers_enabled()) {
-            ESP_LOGW("hv6_ui", "Motor 1 target %.1f%% ignored: drivers are disabled", x);
+          if (!id(lv6_valves).are_drivers_enabled()) {
+            ESP_LOGW("lv6_ui", "Motor 1 target %.1f%% ignored: drivers are disabled", x);
             return;
           }
-          id(hv6_valves).request_position(0, x);
+          id(lv6_valves).request_position(0, x);
 
   - platform: template
     name: "Motor 2 Target Position"
@@ -521,11 +524,11 @@ number:
     step: 1
     optimistic: false
     lambda: |-
-      return id(hv6_valves).get_position(1);
+      return id(lv6_valves).get_position(1);
     set_action:
       - lambda: |-
-          if (!id(hv6_valves).are_drivers_enabled()) return;
-          id(hv6_valves).request_position(1, x);
+          if (!id(lv6_valves).are_drivers_enabled()) return;
+          id(lv6_valves).request_position(1, x);
 
   - platform: template
     name: "Motor 3 Target Position"
@@ -538,11 +541,11 @@ number:
     step: 1
     optimistic: false
     lambda: |-
-      return id(hv6_valves).get_position(2);
+      return id(lv6_valves).get_position(2);
     set_action:
       - lambda: |-
-          if (!id(hv6_valves).are_drivers_enabled()) return;
-          id(hv6_valves).request_position(2, x);
+          if (!id(lv6_valves).are_drivers_enabled()) return;
+          id(lv6_valves).request_position(2, x);
 
   - platform: template
     name: "Motor 4 Target Position"
@@ -555,11 +558,11 @@ number:
     step: 1
     optimistic: false
     lambda: |-
-      return id(hv6_valves).get_position(3);
+      return id(lv6_valves).get_position(3);
     set_action:
       - lambda: |-
-          if (!id(hv6_valves).are_drivers_enabled()) return;
-          id(hv6_valves).request_position(3, x);
+          if (!id(lv6_valves).are_drivers_enabled()) return;
+          id(lv6_valves).request_position(3, x);
 
   - platform: template
     name: "Motor 5 Target Position"
@@ -572,11 +575,11 @@ number:
     step: 1
     optimistic: false
     lambda: |-
-      return id(hv6_valves).get_position(4);
+      return id(lv6_valves).get_position(4);
     set_action:
       - lambda: |-
-          if (!id(hv6_valves).are_drivers_enabled()) return;
-          id(hv6_valves).request_position(4, x);
+          if (!id(lv6_valves).are_drivers_enabled()) return;
+          id(lv6_valves).request_position(4, x);
 
   - platform: template
     name: "Motor 6 Target Position"
@@ -589,11 +592,11 @@ number:
     step: 1
     optimistic: false
     lambda: |-
-      return id(hv6_valves).get_position(5);
+      return id(lv6_valves).get_position(5);
     set_action:
       - lambda: |-
-          if (!id(hv6_valves).are_drivers_enabled()) return;
-          id(hv6_valves).request_position(5, x);
+          if (!id(lv6_valves).are_drivers_enabled()) return;
+          id(lv6_valves).request_position(5, x);
 
   - platform: template
     name: "Settings Zone"
@@ -625,11 +628,11 @@ number:
     optimistic: false
     lambda: |-
       uint8_t zi = id(ui_selected_zone_index);
-      return id(hv6_zones).get_zone_area_m2(zi);
+      return id(lv6_zones).get_zone_area_m2(zi);
     set_action:
       - lambda: |-
           uint8_t zi = id(ui_selected_zone_index);
-          id(hv6_zones).set_zone_area_m2(zi, x);
+          id(lv6_zones).set_zone_area_m2(zi, x);
 
   - platform: template
     name: "Zone Pipe Spacing Mm"
@@ -643,11 +646,11 @@ number:
     optimistic: false
     lambda: |-
       uint8_t zi = id(ui_selected_zone_index);
-      return id(hv6_zones).get_zone_pipe_spacing_mm(zi);
+      return id(lv6_zones).get_zone_pipe_spacing_mm(zi);
     set_action:
       - lambda: |-
           uint8_t zi = id(ui_selected_zone_index);
-          id(hv6_zones).set_zone_pipe_spacing_mm(zi, x);
+          id(lv6_zones).set_zone_pipe_spacing_mm(zi, x);
 
   - platform: template
     name: "Close Endstop Threshold"
@@ -662,13 +665,13 @@ number:
     step: 0.1
     optimistic: false
     lambda: |-
-      return id(hv6_config).get_config().motor.close_current_factor;
+      return id(lv6_config).get_config().motor.close_current_factor;
     set_action:
       - lambda: |-
-          auto cfg = id(hv6_config).get_config();
+          auto cfg = id(lv6_config).get_config();
           cfg.motor.close_current_factor = x;
-          id(hv6_config).update_motor(cfg.motor);
-          id(hv6_valves).reload_motor_config();
+          id(lv6_config).update_motor(cfg.motor);
+          id(lv6_valves).reload_motor_config();
 
   - platform: template
     name: "Close Endstop Slope"
@@ -683,13 +686,13 @@ number:
     step: 0.05
     optimistic: false
     lambda: |-
-      return id(hv6_config).get_config().motor.close_slope_threshold_ma_per_s;
+      return id(lv6_config).get_config().motor.close_slope_threshold_ma_per_s;
     set_action:
       - lambda: |-
-          auto cfg = id(hv6_config).get_config();
+          auto cfg = id(lv6_config).get_config();
           cfg.motor.close_slope_threshold_ma_per_s = x;
-          id(hv6_config).update_motor(cfg.motor);
-          id(hv6_valves).reload_motor_config();
+          id(lv6_config).update_motor(cfg.motor);
+          id(lv6_valves).reload_motor_config();
 
   - platform: template
     name: "Close Endstop Slope Floor"
@@ -704,13 +707,13 @@ number:
     step: 0.1
     optimistic: false
     lambda: |-
-      return id(hv6_config).get_config().motor.close_slope_current_factor;
+      return id(lv6_config).get_config().motor.close_slope_current_factor;
     set_action:
       - lambda: |-
-          auto cfg = id(hv6_config).get_config();
+          auto cfg = id(lv6_config).get_config();
           cfg.motor.close_slope_current_factor = x;
-          id(hv6_config).update_motor(cfg.motor);
-          id(hv6_valves).reload_motor_config();
+          id(lv6_config).update_motor(cfg.motor);
+          id(lv6_valves).reload_motor_config();
 
   - platform: template
     name: "Open Endstop Threshold"
@@ -725,13 +728,13 @@ number:
     step: 0.1
     optimistic: false
     lambda: |-
-      return id(hv6_config).get_config().motor.open_current_factor;
+      return id(lv6_config).get_config().motor.open_current_factor;
     set_action:
       - lambda: |-
-          auto cfg = id(hv6_config).get_config();
+          auto cfg = id(lv6_config).get_config();
           cfg.motor.open_current_factor = x;
-          id(hv6_config).update_motor(cfg.motor);
-          id(hv6_valves).reload_motor_config();
+          id(lv6_config).update_motor(cfg.motor);
+          id(lv6_valves).reload_motor_config();
 
   - platform: template
     name: "Open Endstop Slope"
@@ -746,13 +749,13 @@ number:
     step: 0.05
     optimistic: false
     lambda: |-
-      return id(hv6_config).get_config().motor.open_slope_threshold_ma_per_s;
+      return id(lv6_config).get_config().motor.open_slope_threshold_ma_per_s;
     set_action:
       - lambda: |-
-          auto cfg = id(hv6_config).get_config();
+          auto cfg = id(lv6_config).get_config();
           cfg.motor.open_slope_threshold_ma_per_s = x;
-          id(hv6_config).update_motor(cfg.motor);
-          id(hv6_valves).reload_motor_config();
+          id(lv6_config).update_motor(cfg.motor);
+          id(lv6_valves).reload_motor_config();
 
   - platform: template
     name: "Open Endstop Slope Floor"
@@ -767,13 +770,13 @@ number:
     step: 0.1
     optimistic: false
     lambda: |-
-      return id(hv6_config).get_config().motor.open_slope_current_factor;
+      return id(lv6_config).get_config().motor.open_slope_current_factor;
     set_action:
       - lambda: |-
-          auto cfg = id(hv6_config).get_config();
+          auto cfg = id(lv6_config).get_config();
           cfg.motor.open_slope_current_factor = x;
-          id(hv6_config).update_motor(cfg.motor);
-          id(hv6_valves).reload_motor_config();
+          id(lv6_config).update_motor(cfg.motor);
+          id(lv6_valves).reload_motor_config();
 
   - platform: template
     name: "Open Endstop Ripple Limit"
@@ -788,13 +791,13 @@ number:
     step: 0.1
     optimistic: false
     lambda: |-
-      return id(hv6_config).get_config().motor.open_ripple_limit_factor;
+      return id(lv6_config).get_config().motor.open_ripple_limit_factor;
     set_action:
       - lambda: |-
-          auto cfg = id(hv6_config).get_config();
+          auto cfg = id(lv6_config).get_config();
           cfg.motor.open_ripple_limit_factor = x;
-          id(hv6_config).update_motor(cfg.motor);
-          id(hv6_valves).reload_motor_config();
+          id(lv6_config).update_motor(cfg.motor);
+          id(lv6_valves).reload_motor_config();
 
   - platform: template
     name: "Pin Engage Step"
@@ -809,13 +812,13 @@ number:
     step: 0.5
     optimistic: false
     lambda: |-
-      return id(hv6_config).get_config().motor.pin_engage_step_ma;
+      return id(lv6_config).get_config().motor.pin_engage_step_ma;
     set_action:
       - lambda: |-
-          auto cfg = id(hv6_config).get_config();
+          auto cfg = id(lv6_config).get_config();
           cfg.motor.pin_engage_step_ma = x;
-          id(hv6_config).update_motor(cfg.motor);
-          id(hv6_valves).reload_motor_config();
+          id(lv6_config).update_motor(cfg.motor);
+          id(lv6_valves).reload_motor_config();
 
   - platform: template
     name: "Pin Engage Margin"
@@ -830,13 +833,13 @@ number:
     step: 10
     optimistic: false
     lambda: |-
-      return id(hv6_config).get_config().motor.pin_engage_margin_ripples;
+      return id(lv6_config).get_config().motor.pin_engage_margin_ripples;
     set_action:
       - lambda: |-
-          auto cfg = id(hv6_config).get_config();
+          auto cfg = id(lv6_config).get_config();
           cfg.motor.pin_engage_margin_ripples = static_cast<uint16_t>(x);
-          id(hv6_config).update_motor(cfg.motor);
-          id(hv6_valves).reload_motor_config();
+          id(lv6_config).update_motor(cfg.motor);
+          id(lv6_valves).reload_motor_config();
 
   - platform: template
     name: "Generic Runtime Limit"
@@ -852,13 +855,13 @@ number:
     step: 1
     optimistic: false
     lambda: |-
-      return id(hv6_config).get_config().motor.generic_profile_runtime_limit_s;
+      return id(lv6_config).get_config().motor.generic_profile_runtime_limit_s;
     set_action:
       - lambda: |-
-          auto cfg = id(hv6_config).get_config();
+          auto cfg = id(lv6_config).get_config();
           cfg.motor.generic_profile_runtime_limit_s = static_cast<uint32_t>(x);
-          id(hv6_config).update_motor(cfg.motor);
-          id(hv6_valves).reload_motor_config();
+          id(lv6_config).update_motor(cfg.motor);
+          id(lv6_valves).reload_motor_config();
 
   - platform: template
     name: "HmIP Close Runtime Limit"
@@ -874,13 +877,13 @@ number:
     step: 1
     optimistic: false
     lambda: |-
-      return id(hv6_config).get_config().motor.hmip_vdmot_runtime_limit_s;
+      return id(lv6_config).get_config().motor.hmip_vdmot_runtime_limit_s;
     set_action:
       - lambda: |-
-          auto cfg = id(hv6_config).get_config();
+          auto cfg = id(lv6_config).get_config();
           cfg.motor.hmip_vdmot_runtime_limit_s = static_cast<uint32_t>(x);
-          id(hv6_config).update_motor(cfg.motor);
-          id(hv6_valves).reload_motor_config();
+          id(lv6_config).update_motor(cfg.motor);
+          id(lv6_valves).reload_motor_config();
 
   # --- Rev 3.3 mechanical ceilings ------------------------------------------
   # Counts are the ceiling that actually fires first (plunger extension follows
@@ -900,13 +903,13 @@ number:
     step: 1
     optimistic: false
     lambda: |-
-      return id(hv6_config).get_config().motor.hmip_vdmot_open_runtime_limit_s;
+      return id(lv6_config).get_config().motor.hmip_vdmot_open_runtime_limit_s;
     set_action:
       - lambda: |-
-          auto cfg = id(hv6_config).get_config();
+          auto cfg = id(lv6_config).get_config();
           cfg.motor.hmip_vdmot_open_runtime_limit_s = static_cast<uint32_t>(x);
-          id(hv6_config).update_motor(cfg.motor);
-          id(hv6_valves).reload_motor_config();
+          id(lv6_config).update_motor(cfg.motor);
+          id(lv6_valves).reload_motor_config();
 
   - platform: template
     name: "Close Runtime Limit (commutations)"
@@ -921,13 +924,13 @@ number:
     step: 10
     optimistic: false
     lambda: |-
-      return id(hv6_config).get_config().motor.close_runtime_limit_counts;
+      return id(lv6_config).get_config().motor.close_runtime_limit_counts;
     set_action:
       - lambda: |-
-          auto cfg = id(hv6_config).get_config();
+          auto cfg = id(lv6_config).get_config();
           cfg.motor.close_runtime_limit_counts = static_cast<uint32_t>(x);
-          id(hv6_config).update_motor(cfg.motor);
-          id(hv6_valves).reload_motor_config();
+          id(lv6_config).update_motor(cfg.motor);
+          id(lv6_valves).reload_motor_config();
 
   - platform: template
     name: "Open Runtime Limit (commutations)"
@@ -941,13 +944,13 @@ number:
     step: 10
     optimistic: false
     lambda: |-
-      return id(hv6_config).get_config().motor.open_runtime_limit_counts;
+      return id(lv6_config).get_config().motor.open_runtime_limit_counts;
     set_action:
       - lambda: |-
-          auto cfg = id(hv6_config).get_config();
+          auto cfg = id(lv6_config).get_config();
           cfg.motor.open_runtime_limit_counts = static_cast<uint32_t>(x);
-          id(hv6_config).update_motor(cfg.motor);
-          id(hv6_valves).reload_motor_config();
+          id(lv6_config).update_motor(cfg.motor);
+          id(lv6_valves).reload_motor_config();
 
   - platform: template
     name: "Learned Factor Min Samples"
@@ -961,13 +964,13 @@ number:
     step: 1
     optimistic: false
     lambda: |-
-      return id(hv6_config).get_config().motor.learned_factor_min_samples;
+      return id(lv6_config).get_config().motor.learned_factor_min_samples;
     set_action:
       - lambda: |-
-          auto cfg = id(hv6_config).get_config();
+          auto cfg = id(lv6_config).get_config();
           cfg.motor.learned_factor_min_samples = static_cast<uint8_t>(x);
-          id(hv6_config).update_motor(cfg.motor);
-          id(hv6_valves).reload_motor_config();
+          id(lv6_config).update_motor(cfg.motor);
+          id(lv6_valves).reload_motor_config();
 
   - platform: template
     name: "Learned Factor Max Deviation"
@@ -982,13 +985,13 @@ number:
     step: 1
     optimistic: false
     lambda: |-
-      return id(hv6_config).get_config().motor.learned_factor_max_deviation_pct * 100.0f;
+      return id(lv6_config).get_config().motor.learned_factor_max_deviation_pct * 100.0f;
     set_action:
       - lambda: |-
-          auto cfg = id(hv6_config).get_config();
+          auto cfg = id(lv6_config).get_config();
           cfg.motor.learned_factor_max_deviation_pct = x / 100.0f;
-          id(hv6_config).update_motor(cfg.motor);
-          id(hv6_valves).reload_motor_config();
+          id(lv6_config).update_motor(cfg.motor);
+          id(lv6_valves).reload_motor_config();
 
 select:
   - platform: template
@@ -1000,7 +1003,7 @@ select:
       - Generic
       - "HmIP VdMot"
     lambda: |-
-      switch (id(hv6_config).get_config().motor.default_profile) {
+      switch (id(lv6_config).get_config().motor.default_profile) {
         case lv6::MotorProfile::GENERIC:
           return std::string("Generic");
         case lv6::MotorProfile::HMIP_VDMOT:
@@ -1009,10 +1012,10 @@ select:
       }
     set_action:
       - lambda: |-
-          auto cfg = id(hv6_config).get_config();
+          auto cfg = id(lv6_config).get_config();
           cfg.motor.default_profile = (x == "Generic") ? lv6::MotorProfile::GENERIC : lv6::MotorProfile::HMIP_VDMOT;
-          id(hv6_config).update_motor(cfg.motor);
-          id(hv6_valves).reload_motor_config();
+          id(lv6_config).update_motor(cfg.motor);
+          id(lv6_valves).reload_motor_config();
 
   # Re-homing drives to the close endstop before every intermediate target so
   # position cannot drift. EVERY_MOVE therefore also means the maximum number of
@@ -1029,7 +1032,7 @@ select:
       - "Opportunistic"
       - "Never"
     lambda: |-
-      switch (id(hv6_config).get_config().motor.rehome_policy) {
+      switch (id(lv6_config).get_config().motor.rehome_policy) {
         case lv6::RehomePolicy::PERIODIC:
           return std::string("Periodic");
         case lv6::RehomePolicy::OPPORTUNISTIC:
@@ -1042,13 +1045,13 @@ select:
       }
     set_action:
       - lambda: |-
-          auto cfg = id(hv6_config).get_config();
+          auto cfg = id(lv6_config).get_config();
           if (x == "Periodic") cfg.motor.rehome_policy = lv6::RehomePolicy::PERIODIC;
           else if (x == "Opportunistic") cfg.motor.rehome_policy = lv6::RehomePolicy::OPPORTUNISTIC;
           else if (x == "Never") cfg.motor.rehome_policy = lv6::RehomePolicy::NEVER;
           else cfg.motor.rehome_policy = lv6::RehomePolicy::EVERY_MOVE;
-          id(hv6_config).update_motor(cfg.motor);
-          id(hv6_valves).reload_motor_config();
+          id(lv6_config).update_motor(cfg.motor);
+          id(lv6_valves).reload_motor_config();
 
   - platform: template
     name: "Control Algorithm"
@@ -1061,7 +1064,7 @@ select:
       - PID
       - Adaptive
     lambda: |-
-      switch (id(hv6_zones).get_control_algorithm()) {
+      switch (id(lv6_zones).get_control_algorithm()) {
         case lv6::ControlAlgorithm::LINEAR: return std::string("Linear");
         case lv6::ControlAlgorithm::PID: return std::string("PID");
         case lv6::ControlAlgorithm::ADAPTIVE: return std::string("Adaptive");
@@ -1074,7 +1077,7 @@ select:
           if (x == "Linear") algo = lv6::ControlAlgorithm::LINEAR;
           else if (x == "PID") algo = lv6::ControlAlgorithm::PID;
           else if (x == "Adaptive") algo = lv6::ControlAlgorithm::ADAPTIVE;
-          id(hv6_zones).set_control_algorithm(algo);
+          id(lv6_zones).set_control_algorithm(algo);
 
 
 
@@ -1086,7 +1089,7 @@ select:
     options: [Inherit, Generic, "HmIP VdMot"]
     lambda: |-
       uint8_t zi = id(ui_selected_zone_index);
-      switch (id(hv6_config).get_config().zones[zi].motor_profile_override) {
+      switch (id(lv6_config).get_config().zones[zi].motor_profile_override) {
         case lv6::MotorProfile::GENERIC: return std::string("Generic");
         case lv6::MotorProfile::HMIP_VDMOT: return std::string("HmIP VdMot");
         default: return std::string("Inherit");
@@ -1094,10 +1097,10 @@ select:
     set_action:
       - lambda: |-
           uint8_t zi = id(ui_selected_zone_index);
-          auto cfg = id(hv6_config).get_config();
+          auto cfg = id(lv6_config).get_config();
           cfg.zones[zi].motor_profile_override = (x == "Generic") ? lv6::MotorProfile::GENERIC : (x == "HmIP VdMot") ? lv6::MotorProfile::HMIP_VDMOT : lv6::MotorProfile::INHERIT;
-          id(hv6_config).update_zone(zi, cfg.zones[zi]);
-          id(hv6_valves).reload_motor_config();
+          id(lv6_config).update_zone(zi, cfg.zones[zi]);
+          id(lv6_valves).reload_motor_config();
 
   - platform: template
     name: "Manifold Type"
@@ -1108,13 +1111,13 @@ select:
       - "NO (Normally Open)"
       - "NC (Normally Closed)"
     lambda: |-
-      return id(hv6_valves).get_manifold_type() == lv6::ManifoldType::NC
+      return id(lv6_valves).get_manifold_type() == lv6::ManifoldType::NC
         ? std::string("NC (Normally Closed)")
         : std::string("NO (Normally Open)");
     set_action:
       - lambda: |-
           bool nc = x.find("NC") != std::string::npos;
-          id(hv6_valves).set_manifold_type(nc ? lv6::ManifoldType::NC : lv6::ManifoldType::NO);
+          id(lv6_valves).set_manifold_type(nc ? lv6::ManifoldType::NC : lv6::ManifoldType::NO);
 
   - platform: template
     name: "Manifold Flow Probe"
@@ -1131,12 +1134,12 @@ select:
       - Probe 7
       - Probe 8
     lambda: |-
-      int probe = id(hv6_zones).get_manifold_flow_probe();
+      int probe = id(lv6_zones).get_manifold_flow_probe();
       return std::string("Probe ") + std::to_string(probe + 1);
     set_action:
       - lambda: |-
           int probe = static_cast<int>(x[x.size() - 1] - '1');
-          id(hv6_zones).set_manifold_flow_probe(probe);
+          id(lv6_zones).set_manifold_flow_probe(probe);
 
   - platform: template
     name: "Manifold Return Probe"
@@ -1153,12 +1156,12 @@ select:
       - Probe 7
       - Probe 8
     lambda: |-
-      int probe = id(hv6_zones).get_manifold_return_probe();
+      int probe = id(lv6_zones).get_manifold_return_probe();
       return std::string("Probe ") + std::to_string(probe + 1);
     set_action:
       - lambda: |-
           int probe = static_cast<int>(x[x.size() - 1] - '1');
-          id(hv6_zones).set_manifold_return_probe(probe);
+          id(lv6_zones).set_manifold_return_probe(probe);
 
   - platform: template
     name: "Zone Probe"
@@ -1168,7 +1171,7 @@ select:
     options: [None, Probe 1, Probe 2, Probe 3, Probe 4, Probe 5, Probe 6, Probe 7, Probe 8]
     lambda: |-
       uint8_t zi = id(ui_selected_zone_index);
-      int probe = id(hv6_zones).get_zone_probe(zi);
+      int probe = id(lv6_zones).get_zone_probe(zi);
       if (probe < 0 || probe >= lv6::MAX_PROBES) {
         return std::string("None");
       }
@@ -1183,7 +1186,7 @@ select:
               probe = parsed - 1;
             }
           }
-          id(hv6_zones).set_zone_probe(zi, probe);
+          id(lv6_zones).set_zone_probe(zi, probe);
 
   - platform: template
     name: "Zone Pipe Type"
@@ -1193,7 +1196,7 @@ select:
     options: ["PEX 16mm", "PEX 12mm", "PEX 14mm", "PEX 17mm", "PEX 18mm", "PEX 20mm", "ALUPEX 16mm", "ALUPEX 20mm", "Unknown"]
     lambda: |-
       uint8_t zi = id(ui_selected_zone_index);
-      auto t = id(hv6_zones).get_zone_pipe_type(zi);
+      auto t = id(lv6_zones).get_zone_pipe_type(zi);
       if (t == lv6::PipeType::PEX_12X2) return std::string("PEX 12mm");
       if (t == lv6::PipeType::PEX_14X2) return std::string("PEX 14mm");
       if (t == lv6::PipeType::PEX_16X2) return std::string("PEX 16mm");
@@ -1214,7 +1217,7 @@ select:
           else if (x == "PEX 20mm") t = lv6::PipeType::PEX_20X2;
           else if (x == "ALUPEX 16mm") t = lv6::PipeType::ALUPEX_16X2;
           else if (x == "ALUPEX 20mm") t = lv6::PipeType::ALUPEX_20X2;
-          id(hv6_zones).set_zone_pipe_type(zi, t);
+          id(lv6_zones).set_zone_pipe_type(zi, t);
 
   - platform: template
     name: "Zone Temp Source"
@@ -1224,7 +1227,7 @@ select:
     options: ["Local Probe", "BLE Sensor", "External"]
     lambda: |-
       uint8_t zi = id(ui_selected_zone_index);
-      auto src = id(hv6_zones).get_zone_temp_source(zi);
+      auto src = id(lv6_zones).get_zone_temp_source(zi);
       if (src == lv6::TempSource::BLE_SENSOR) return std::string("BLE Sensor");
       if (src == lv6::TempSource::EXTERNAL) return std::string("External");
       return std::string("Local Probe");
@@ -1234,7 +1237,7 @@ select:
           lv6::TempSource src = lv6::TempSource::LOCAL_PROBE;
           if (x == "BLE Sensor") src = lv6::TempSource::BLE_SENSOR;
           else if (x == "External") src = lv6::TempSource::EXTERNAL;
-          id(hv6_zones).set_zone_temp_source(zi, src);
+          id(lv6_zones).set_zone_temp_source(zi, src);
 
   - platform: template
     name: "Zone Sync To"
@@ -1245,7 +1248,7 @@ select:
     options: ["None", "Zone 1", "Zone 2", "Zone 3", "Zone 4", "Zone 5", "Zone 6"]
     lambda: |-
       uint8_t zi = id(ui_selected_zone_index);
-      int8_t s = id(hv6_zones).get_zone_sync(zi);
+      int8_t s = id(lv6_zones).get_zone_sync(zi);
       if (s < 0) return std::string("None");
       return std::string("Zone ") + std::to_string(s + 1);
     set_action:
@@ -1254,7 +1257,7 @@ select:
           int8_t z = -1;
           if (x.size() >= 6 && x[0] == 'Z') z = static_cast<int8_t>(x[5] - '1');
           if (z == static_cast<int8_t>(zi)) z = -1;
-          id(hv6_zones).set_zone_sync(zi, z);
+          id(lv6_zones).set_zone_sync(zi, z);
 
 text:
   - platform: template
@@ -1267,11 +1270,11 @@ text:
     optimistic: false
     lambda: |-
       uint8_t zi = id(ui_selected_zone_index);
-      return id(hv6_zones).get_zone_ble_mac(zi);
+      return id(lv6_zones).get_zone_ble_mac(zi);
     set_action:
       - lambda: |-
           uint8_t zi = id(ui_selected_zone_index);
-          id(hv6_zones).set_zone_ble_mac(zi, x);
+          id(lv6_zones).set_zone_ble_mac(zi, x);
 
   - platform: template
     name: "Zone Sensor ID"
@@ -1283,11 +1286,11 @@ text:
     optimistic: false
     lambda: |-
       uint8_t zi = id(ui_selected_zone_index);
-      return id(hv6_zones).get_zone_sensor_id(zi);
+      return id(lv6_zones).get_zone_sensor_id(zi);
     set_action:
       - lambda: |-
           uint8_t zi = id(ui_selected_zone_index);
-          id(hv6_zones).set_zone_sensor_id(zi, x);
+          id(lv6_zones).set_zone_sensor_id(zi, x);
 
   - platform: template
     name: "Zone Sensor Name"
@@ -1299,8 +1302,8 @@ text:
     optimistic: false
     lambda: |-
       uint8_t zi = id(ui_selected_zone_index);
-      return id(hv6_zones).get_zone_sensor_name(zi);
+      return id(lv6_zones).get_zone_sensor_name(zi);
     set_action:
       - lambda: |-
           uint8_t zi = id(ui_selected_zone_index);
-          id(hv6_zones).set_zone_sensor_name(zi, x);
+          id(lv6_zones).set_zone_sensor_name(zi, x);

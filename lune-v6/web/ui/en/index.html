@@ -37,7 +37,7 @@
     <div class="wrap">
       <header class="header">
         <details class="device">
-          <summary><svg class="logo" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="15" fill="var(--fg)"/><path d="M10 22V12M14 22V10M18 22V13M22 22V11" stroke="var(--accent)" stroke-width="2.4" stroke-linecap="round"/></svg><span class="name"><b>Lune V6</b><small data-bind="device.about.place">Ground floor manifold</small></span><span class="caret" aria-hidden="true"></span></summary>
+          <summary><svg class="logo" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="15" fill="var(--fg)"/><path d="M10 22V12M14 22V10M18 22V13M22 22V11" stroke="var(--accent)" stroke-width="2.4" stroke-linecap="round"/></svg><span class="name"><b data-bind="device.header.name">Lune V6</b><small data-bind="device.about.place">Ground floor manifold</small></span><span class="caret" aria-hidden="true"></span></summary>
           <div class="device-menu">
             <section class="device-about" aria-labelledby="device-about-h">
               <h3 id="device-about-h">About device</h3>
@@ -48,7 +48,7 @@
                 <div><dt>MAC</dt><dd data-bind="device.about.mac">—</dd></div>
                 <div><dt>Firmware</dt><dd data-bind="device.about.firmware">—</dd></div>
                 <div><dt>ESPHome</dt><dd data-bind="device.about.esphome">—</dd></div>
-                <div><dt>Uptime</dt><dd data-bind="device.about.uptime">—</dd></div>
+                <div><dt>Uptime</dt><dd data-bind="device.about.uptime">6 <small>days</small> 4 <small>hours</small> 12 <small>min</small></dd></div>
               </dl>
               <button type="button" class="btn" data-action="copy-diag">Copy diagnostics</button>
             </section>
@@ -149,6 +149,7 @@
           <div class="bar" style="--v:0%" role="meter" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100" aria-label="Total valve opening"><i></i></div>
           <div class="sub trend-wrap">
             <h4>Last 24 hours <span class="legend"><i class="lf"></i>Supply<i class="lr"></i>Return</span></h4>
+            <p class="empty">No readings yet</p>
             <svg class="trend" viewBox="0 0 240 80" preserveAspectRatio="none" role="img" aria-label="Supply and return, last 24 hours" data-bind-trend="manifold"></svg>
             <div class="axis" aria-hidden="true"><span>−24 h</span><span>−12 h</span><span>now</span></div>
           </div>
@@ -209,7 +210,7 @@
           <header class="panel-head"><h3>Device</h3><span class="badge" data-bind="dev.badge">Online</span></header>
           <dl class="metrics">
             <div class="metric"><dt>Wi-Fi</dt><dd data-bind="wifi.rssi">−58 <small>dBm</small></dd></div>
-            <div class="metric"><dt>Uptime</dt><dd data-bind="sys.uptime">6 <small>days</small></dd></div>
+            <div class="metric"><dt>Uptime</dt><dd data-bind="sys.uptime">6 <small>days</small> 4 <small>hours</small> 12 <small>min</small></dd></div>
           </dl>
           <pre class="log" data-bind="log" aria-live="polite" lang="en"></pre>
         </section>
@@ -219,7 +220,7 @@
         <form class="panel alert" data-save="zone/1/recovery" data-bind-show="z1.fault" hidden>
           <div class="panel-head"><h3>Motor fault: end-stop timeout</h3></div>
           <p class="note">The motor did not reach the end stop within 38 s. The valve is held closed. Check the actuator, then reset the fault.</p>
-          <div class="panel-foot" style="justify-content:flex-start"><button class="btn" type="submit" name="action" value="reset_fault">Reset fault</button></div>
+          <div class="panel-foot" style="justify-content:flex-start"><button class="btn primary" type="submit" name="action" value="reset_fault">Reset fault</button></div>
         </form>
 
         <form class="panel c7" data-save="zone/1/target">
@@ -251,13 +252,39 @@
             <div><dt>Temperature from</dt><dd data-bind="z1.tempFrom">—</dd></div>
           </dl>
         </section>
+
+        <section class="panel c12">
+          <header class="panel-head"><h3>Temperature</h3><p>Last 24 hours and 6-hour projection</p></header>
+          <dl class="metrics">
+            <div data-bind-show="z1.expected" hidden>
+              <dt data-bind="z1.expectedLabel">Expected at —</dt>
+              <dd><span data-bind="z1.expected">—</span><small>°C</small></dd>
+            </div>
+          </dl>
+          <div class="zchart" style="--now:80%">
+            <div class="zchart-y" data-bind="z1.zchartY"><span>—</span><span>—</span><span>—</span></div>
+            <div class="zchart-plot">
+              <svg viewBox="0 0 300 100" preserveAspectRatio="none" role="img" aria-label="Zone temperature, last 24 hours and 6-hour projection" data-bind-zchart="z1"></svg>
+              <span class="zchart-now">Now</span>
+              <span class="zchart-scrub" hidden aria-hidden="true"></span>
+            </div>
+            <div class="zchart-x" data-bind="z1.zchartX"><span>−24h</span><span>−12h</span><span>Now</span><span>+6h</span></div>
+          </div>
+          <p class="zchart-legend" aria-hidden="true">
+            <span><i class="lt"></i>Temperature</span>
+            <span><i class="lg"></i>Target</span>
+            <span><i class="lp"></i>Projection</span>
+          </p>
+          <p class="note" data-bind="z1.zchartNote">No projection yet</p>
+          <p class="hint">The projection extends the last 4 hours of movement and does not know upcoming schedule changes or preload.</p>
+        </section>
       </section>
       <section class="view" id="v-dash-z2" aria-labelledby="h-dash-z2">
         <header class="view-head"><h2 id="h-dash-z2"><span data-bind="z2.title">Z2 Laura</span></h2><p data-bind="z2.sub">Idle</p></header>
         <form class="panel alert" data-save="zone/2/recovery" data-bind-show="z2.fault" hidden>
           <div class="panel-head"><h3>Motor fault: end-stop timeout</h3></div>
           <p class="note">The motor did not reach the end stop within 38 s. The valve is held closed. Check the actuator, then reset the fault.</p>
-          <div class="panel-foot" style="justify-content:flex-start"><button class="btn" type="submit" name="action" value="reset_fault">Reset fault</button></div>
+          <div class="panel-foot" style="justify-content:flex-start"><button class="btn primary" type="submit" name="action" value="reset_fault">Reset fault</button></div>
         </form>
 
         <form class="panel c7" data-save="zone/2/target">
@@ -289,13 +316,39 @@
             <div><dt>Temperature from</dt><dd data-bind="z2.tempFrom">—</dd></div>
           </dl>
         </section>
+
+        <section class="panel c12">
+          <header class="panel-head"><h3>Temperature</h3><p>Last 24 hours and 6-hour projection</p></header>
+          <dl class="metrics">
+            <div data-bind-show="z2.expected" hidden>
+              <dt data-bind="z2.expectedLabel">Expected at —</dt>
+              <dd><span data-bind="z2.expected">—</span><small>°C</small></dd>
+            </div>
+          </dl>
+          <div class="zchart" style="--now:80%">
+            <div class="zchart-y" data-bind="z2.zchartY"><span>—</span><span>—</span><span>—</span></div>
+            <div class="zchart-plot">
+              <svg viewBox="0 0 300 100" preserveAspectRatio="none" role="img" aria-label="Zone temperature, last 24 hours and 6-hour projection" data-bind-zchart="z2"></svg>
+              <span class="zchart-now">Now</span>
+              <span class="zchart-scrub" hidden aria-hidden="true"></span>
+            </div>
+            <div class="zchart-x" data-bind="z2.zchartX"><span>−24h</span><span>−12h</span><span>Now</span><span>+6h</span></div>
+          </div>
+          <p class="zchart-legend" aria-hidden="true">
+            <span><i class="lt"></i>Temperature</span>
+            <span><i class="lg"></i>Target</span>
+            <span><i class="lp"></i>Projection</span>
+          </p>
+          <p class="note" data-bind="z2.zchartNote">No projection yet</p>
+          <p class="hint">The projection extends the last 4 hours of movement and does not know upcoming schedule changes or preload.</p>
+        </section>
       </section>
       <section class="view" id="v-dash-z3" aria-labelledby="h-dash-z3">
         <header class="view-head"><h2 id="h-dash-z3"><span data-bind="z3.title">Z3 Toilet</span></h2><p data-bind="z3.sub">Idle</p></header>
         <form class="panel alert" data-save="zone/3/recovery" data-bind-show="z3.fault" hidden>
           <div class="panel-head"><h3>Motor fault: end-stop timeout</h3></div>
           <p class="note">The motor did not reach the end stop within 38 s. The valve is held closed. Check the actuator, then reset the fault.</p>
-          <div class="panel-foot" style="justify-content:flex-start"><button class="btn" type="submit" name="action" value="reset_fault">Reset fault</button></div>
+          <div class="panel-foot" style="justify-content:flex-start"><button class="btn primary" type="submit" name="action" value="reset_fault">Reset fault</button></div>
         </form>
 
         <form class="panel c7" data-save="zone/3/target">
@@ -327,13 +380,39 @@
             <div><dt>Temperature from</dt><dd data-bind="z3.tempFrom">—</dd></div>
           </dl>
         </section>
+
+        <section class="panel c12">
+          <header class="panel-head"><h3>Temperature</h3><p>Last 24 hours and 6-hour projection</p></header>
+          <dl class="metrics">
+            <div data-bind-show="z3.expected" hidden>
+              <dt data-bind="z3.expectedLabel">Expected at —</dt>
+              <dd><span data-bind="z3.expected">—</span><small>°C</small></dd>
+            </div>
+          </dl>
+          <div class="zchart" style="--now:80%">
+            <div class="zchart-y" data-bind="z3.zchartY"><span>—</span><span>—</span><span>—</span></div>
+            <div class="zchart-plot">
+              <svg viewBox="0 0 300 100" preserveAspectRatio="none" role="img" aria-label="Zone temperature, last 24 hours and 6-hour projection" data-bind-zchart="z3"></svg>
+              <span class="zchart-now">Now</span>
+              <span class="zchart-scrub" hidden aria-hidden="true"></span>
+            </div>
+            <div class="zchart-x" data-bind="z3.zchartX"><span>−24h</span><span>−12h</span><span>Now</span><span>+6h</span></div>
+          </div>
+          <p class="zchart-legend" aria-hidden="true">
+            <span><i class="lt"></i>Temperature</span>
+            <span><i class="lg"></i>Target</span>
+            <span><i class="lp"></i>Projection</span>
+          </p>
+          <p class="note" data-bind="z3.zchartNote">No projection yet</p>
+          <p class="hint">The projection extends the last 4 hours of movement and does not know upcoming schedule changes or preload.</p>
+        </section>
       </section>
       <section class="view" id="v-dash-z4" aria-labelledby="h-dash-z4">
         <header class="view-head"><h2 id="h-dash-z4"><span data-bind="z4.title">Z4–5 Stue rum 1</span></h2><p data-bind="z4.sub">Calling for heat · primary in group Z4–5</p></header>
         <form class="panel alert" data-save="zone/4/recovery" data-bind-show="z4.fault" hidden>
           <div class="panel-head"><h3>Motor fault: end-stop timeout</h3></div>
           <p class="note">The motor did not reach the end stop within 38 s. The valve is held closed. Check the actuator, then reset the fault.</p>
-          <div class="panel-foot" style="justify-content:flex-start"><button class="btn" type="submit" name="action" value="reset_fault">Reset fault</button></div>
+          <div class="panel-foot" style="justify-content:flex-start"><button class="btn primary" type="submit" name="action" value="reset_fault">Reset fault</button></div>
         </form>
 
         <form class="panel c7" data-save="zone/4/target">
@@ -365,13 +444,39 @@
             <div><dt>Temperature from</dt><dd data-bind="z4.tempFrom">—</dd></div>
           </dl>
         </section>
+
+        <section class="panel c12">
+          <header class="panel-head"><h3>Temperature</h3><p>Last 24 hours and 6-hour projection</p></header>
+          <dl class="metrics">
+            <div data-bind-show="z4.expected" hidden>
+              <dt data-bind="z4.expectedLabel">Expected at —</dt>
+              <dd><span data-bind="z4.expected">—</span><small>°C</small></dd>
+            </div>
+          </dl>
+          <div class="zchart" style="--now:80%">
+            <div class="zchart-y" data-bind="z4.zchartY"><span>—</span><span>—</span><span>—</span></div>
+            <div class="zchart-plot">
+              <svg viewBox="0 0 300 100" preserveAspectRatio="none" role="img" aria-label="Zone temperature, last 24 hours and 6-hour projection" data-bind-zchart="z4"></svg>
+              <span class="zchart-now">Now</span>
+              <span class="zchart-scrub" hidden aria-hidden="true"></span>
+            </div>
+            <div class="zchart-x" data-bind="z4.zchartX"><span>−24h</span><span>−12h</span><span>Now</span><span>+6h</span></div>
+          </div>
+          <p class="zchart-legend" aria-hidden="true">
+            <span><i class="lt"></i>Temperature</span>
+            <span><i class="lg"></i>Target</span>
+            <span><i class="lp"></i>Projection</span>
+          </p>
+          <p class="note" data-bind="z4.zchartNote">No projection yet</p>
+          <p class="hint">The projection extends the last 4 hours of movement and does not know upcoming schedule changes or preload.</p>
+        </section>
       </section>
       <section class="view" id="v-dash-z5" aria-labelledby="h-dash-z5">
         <header class="view-head"><h2 id="h-dash-z5"><span data-bind="z5.title">Z5 Stue rum 2</span></h2><p data-bind="z5.sub">Calling for heat · follows Z4</p></header>
         <form class="panel alert" data-save="zone/5/recovery" data-bind-show="z5.fault" hidden>
           <div class="panel-head"><h3>Motor fault: end-stop timeout</h3></div>
           <p class="note">The motor did not reach the end stop within 38 s. The valve is held closed. Check the actuator, then reset the fault.</p>
-          <div class="panel-foot" style="justify-content:flex-start"><button class="btn" type="submit" name="action" value="reset_fault">Reset fault</button></div>
+          <div class="panel-foot" style="justify-content:flex-start"><button class="btn primary" type="submit" name="action" value="reset_fault">Reset fault</button></div>
         </form>
 
         <form class="panel c7" data-save="zone/5/target">
@@ -403,13 +508,39 @@
             <div><dt>Temperature from</dt><dd data-bind="z5.tempFrom">—</dd></div>
           </dl>
         </section>
+
+        <section class="panel c12">
+          <header class="panel-head"><h3>Temperature</h3><p>Last 24 hours and 6-hour projection</p></header>
+          <dl class="metrics">
+            <div data-bind-show="z5.expected" hidden>
+              <dt data-bind="z5.expectedLabel">Expected at —</dt>
+              <dd><span data-bind="z5.expected">—</span><small>°C</small></dd>
+            </div>
+          </dl>
+          <div class="zchart" style="--now:80%">
+            <div class="zchart-y" data-bind="z5.zchartY"><span>—</span><span>—</span><span>—</span></div>
+            <div class="zchart-plot">
+              <svg viewBox="0 0 300 100" preserveAspectRatio="none" role="img" aria-label="Zone temperature, last 24 hours and 6-hour projection" data-bind-zchart="z5"></svg>
+              <span class="zchart-now">Now</span>
+              <span class="zchart-scrub" hidden aria-hidden="true"></span>
+            </div>
+            <div class="zchart-x" data-bind="z5.zchartX"><span>−24h</span><span>−12h</span><span>Now</span><span>+6h</span></div>
+          </div>
+          <p class="zchart-legend" aria-hidden="true">
+            <span><i class="lt"></i>Temperature</span>
+            <span><i class="lg"></i>Target</span>
+            <span><i class="lp"></i>Projection</span>
+          </p>
+          <p class="note" data-bind="z5.zchartNote">No projection yet</p>
+          <p class="hint">The projection extends the last 4 hours of movement and does not know upcoming schedule changes or preload.</p>
+        </section>
       </section>
       <section class="view" id="v-dash-z6" aria-labelledby="h-dash-z6">
         <header class="view-head"><h2 id="h-dash-z6"><span data-bind="z6.title">Z6 Soveværelse</span></h2><p data-bind="z6.sub">Motor fault</p></header>
         <form class="panel alert" data-save="zone/6/recovery" data-bind-show="z6.fault" hidden>
           <div class="panel-head"><h3>Motor fault: end-stop timeout</h3></div>
           <p class="note">The motor did not reach the end stop within 38 s. The valve is held closed. Check the actuator, then reset the fault.</p>
-          <div class="panel-foot" style="justify-content:flex-start"><button class="btn" type="submit" name="action" value="reset_fault">Reset fault</button></div>
+          <div class="panel-foot" style="justify-content:flex-start"><button class="btn primary" type="submit" name="action" value="reset_fault">Reset fault</button></div>
         </form>
 
         <form class="panel c7" data-save="zone/6/target">
@@ -441,12 +572,40 @@
             <div><dt>Temperature from</dt><dd data-bind="z6.tempFrom">—</dd></div>
           </dl>
         </section>
+
+        <section class="panel c12">
+          <header class="panel-head"><h3>Temperature</h3><p>Last 24 hours and 6-hour projection</p></header>
+          <dl class="metrics">
+            <div data-bind-show="z6.expected" hidden>
+              <dt data-bind="z6.expectedLabel">Expected at —</dt>
+              <dd><span data-bind="z6.expected">—</span><small>°C</small></dd>
+            </div>
+          </dl>
+          <div class="zchart" style="--now:80%">
+            <div class="zchart-y" data-bind="z6.zchartY"><span>—</span><span>—</span><span>—</span></div>
+            <div class="zchart-plot">
+              <svg viewBox="0 0 300 100" preserveAspectRatio="none" role="img" aria-label="Zone temperature, last 24 hours and 6-hour projection" data-bind-zchart="z6"></svg>
+              <span class="zchart-now">Now</span>
+              <span class="zchart-scrub" hidden aria-hidden="true"></span>
+            </div>
+            <div class="zchart-x" data-bind="z6.zchartX"><span>−24h</span><span>−12h</span><span>Now</span><span>+6h</span></div>
+          </div>
+          <p class="zchart-legend" aria-hidden="true">
+            <span><i class="lt"></i>Temperature</span>
+            <span><i class="lg"></i>Target</span>
+            <span><i class="lp"></i>Projection</span>
+          </p>
+          <p class="note" data-bind="z6.zchartNote">No projection yet</p>
+          <p class="hint">The projection extends the last 4 hours of movement and does not know upcoming schedule changes or preload.</p>
+        </section>
       </section>
       <section class="view" id="v-conf-sys" aria-labelledby="h-conf-sys">
         <header class="view-head"><h2 id="h-conf-sys">Manifold</h2><p>Applies to all zones on this V6</p></header>
+        <nav class="section-nav" aria-label="Sections"><a href="#sec-manifold">Manifold and motors</a><a href="#sec-regulation">Regulation</a><a href="#sec-connect">Connections</a><a href="#sec-service">Service</a></nav>
 
-        <header class="section-head"><span>Setup</span></header>
-
+        <section class="section" id="sec-manifold" aria-labelledby="sec-manifold-h">
+          <h2 class="section-h" id="sec-manifold-h">Manifold and motors<i class="section-h-dot" aria-hidden="true"></i><i class="section-h-line" aria-hidden="true"></i></h2>
+          <div class="section-grid">
         <form class="panel c6" data-save="manifold">
           <header class="panel-head"><h3>Manifold and motors</h3><button class="help-btn" type="button" popovertarget="help-manifold" style="anchor-name:--a-help-manifold" aria-label="Help: Manifold and motors">?</button></header>
           <div id="help-manifold" popover class="help-pop" style="position-anchor:--a-help-manifold"><p>Valve type (normally open/closed) and which probes measure supply and return. Used for ΔT and to know which way the motors should run.</p><a href="https://github.com/Birkemosen/lune/blob/main/lune-v6/docs/Manual.md#manifold" target="_blank" rel="noopener noreferrer">Read more</a></div>
@@ -461,6 +620,7 @@
             <label class="switch"><span class="switch-text"><b>Motor drivers</b><small>Turn off to disconnect all 6</small></span><input type="checkbox" role="switch" name="motor_drivers" checked></label>
             <div class="field row"><label for="motor_type">Motor type</label><select class="select" id="motor_type" name="motor_type"><option>Generic</option><option selected>HmIP VdMot</option></select></div>
             <div class="field row"><label for="m_runtime">Max. run time</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease max. run time">−</button><span class="value"><input type="number" inputmode="decimal" id="m_runtime" name="m_runtime" value="38" min="5" max="40" step="1"><span class="unit">s</span></span><button type="button" data-step="1" aria-label="Increase max. run time">+</button></div></div>
+            <button class="btn danger" type="button" popovertarget="confirm-relearn-all">Relearn all…</button><div id="confirm-relearn-all" popover class="confirm-pop" role="alertdialog" aria-labelledby="confirm-relearn-all-t" aria-describedby="confirm-relearn-all-d"><p class="confirm-title" id="confirm-relearn-all-t">Relearn all motors?</p><p id="confirm-relearn-all-d">Replaces the learned end stops on every enabled zone. Valves move through their full working range.</p><div class="confirm-actions"><button class="btn" type="button" popovertarget="confirm-relearn-all" popovertargetaction="hide" autofocus>Cancel</button><button class="btn danger-solid" type="submit" name="action" value="relearn_all" popovertarget="confirm-relearn-all" popovertargetaction="hide">Relearn</button></div></div>
           </div>
           <details class="more">
             <summary>End-stop and learning limits</summary>
@@ -490,7 +650,25 @@
           </details>
           <footer class="panel-foot"><span class="save-status" id="ss-manifold" aria-live="polite"></span><button type="reset" class="btn">Undo</button><button class="btn primary" type="submit">Save manifold</button></footer>
         </form>
+        <form class="panel c6" data-save="return_probes">
+          <header class="panel-head"><h3>Return probes</h3><button class="help-btn" type="button" popovertarget="help-return-probes" style="anchor-name:--a-help-return-probes" aria-label="Help: Return probes">?</button></header>
+          <div id="help-return-probes" popover class="help-pop" style="position-anchor:--a-help-return-probes"><p>Two probes are supply/return on the manifold. Eight probes give zones 1–6 return sensors 3–8 (the manifold keeps 1 and 2). Live readings show each probe so you can check wiring.</p><a href="https://github.com/Birkemosen/lune/blob/main/lune-v6/docs/Manual.md#return-probes" target="_blank" rel="noopener noreferrer">Read more</a></div>
+          <div class="field"><span class="label">Probe layout</span><div class="seg" role="radiogroup" aria-label="Probe layout"><label><input type="radio" name="return_probe_mode" value="2" checked><span>2 probes (flow/return)</span></label><label><input type="radio" name="return_probe_mode" value="8"><span>8 probes</span></label></div></div>
+          <p class="note">2 probes: supply/return on the manifold only. 8 probes: zones 1–6 default to probes 3–8; the manifold keeps 1 (supply) and 2 (return).</p>
+          <div class="sub">
+            <h4>Live readings</h4>
+            <dl class="metrics">
+              <div class="metric" data-probe="1"><dt>Probe 1</dt><dd data-bind="probe.1">— <small>°C</small></dd></div><div class="metric" data-probe="2"><dt>Probe 2</dt><dd data-bind="probe.2">— <small>°C</small></dd></div><div class="metric" data-probe="3"><dt>Probe 3</dt><dd data-bind="probe.3">— <small>°C</small></dd></div><div class="metric" data-probe="4"><dt>Probe 4</dt><dd data-bind="probe.4">— <small>°C</small></dd></div><div class="metric" data-probe="5"><dt>Probe 5</dt><dd data-bind="probe.5">— <small>°C</small></dd></div><div class="metric" data-probe="6"><dt>Probe 6</dt><dd data-bind="probe.6">— <small>°C</small></dd></div><div class="metric" data-probe="7"><dt>Probe 7</dt><dd data-bind="probe.7">— <small>°C</small></dd></div><div class="metric" data-probe="8"><dt>Probe 8</dt><dd data-bind="probe.8">— <small>°C</small></dd></div>
+            </dl>
+          </div>
+          <footer class="panel-foot"><span class="save-status" id="ss-return_probes" aria-live="polite"></span><button type="reset" class="btn">Undo</button><button class="btn primary" type="submit">Save return probes</button></footer>
+        </form>
+          </div>
+        </section>
 
+        <section class="section" id="sec-regulation" aria-labelledby="sec-regulation-h">
+          <h2 class="section-h" id="sec-regulation-h">Regulation<i class="section-h-dot" aria-hidden="true"></i><i class="section-h-line" aria-hidden="true"></i></h2>
+          <div class="section-grid">
         <form class="panel c6" data-save="regulation">
           <header class="panel-head"><h3>Regulation</h3><button class="help-btn" type="button" popovertarget="help-regulation" style="anchor-name:--a-help-regulation" aria-label="Help: Regulation">?</button></header>
           <div id="help-regulation" popover class="help-pop" style="position-anchor:--a-help-regulation"><p>Balancing factors and optional preheat absorption. Adaptive mode learns over time; resetting balancing forgets learned factors for all zones.</p><a href="https://github.com/Birkemosen/lune/blob/main/lune-v6/docs/Manual.md#regulation" target="_blank" rel="noopener noreferrer">Read more</a></div>
@@ -506,13 +684,12 @@
             <h4>Preheat absorption</h4>
             <label class="switch"><span class="switch-text"><b>Absorb surplus heat</b><small>Uses the floor as a buffer</small></span><input type="checkbox" role="switch" name="preheat_enabled"></label>
             <div class="gated-body sub">
-              <div class="field row"><label for="ph_band">Absorb band</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease absorb band">−</button><span class="value"><input type="number" inputmode="decimal" id="ph_band" name="ph_band" value="0.5" min="0.1" max="3" step="0.1"><span class="unit">°C</span></span><button type="button" data-step="1" aria-label="Increase absorb band">+</button></div></div>
-              <div class="field row"><label for="ph_delta">Detect delta</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease detect delta">−</button><span class="value"><input type="number" inputmode="decimal" id="ph_delta" name="ph_delta" value="0.3" min="0.1" max="2" step="0.1"><span class="unit">°C</span></span><button type="button" data-step="1" aria-label="Increase detect delta">+</button></div></div>
+              <div class="field row"><label for="ph_band">Absorb band</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease absorb band">−</button><span class="value"><input type="number" inputmode="decimal" id="ph_band" name="ph_band" value="0.5" min="0.1" max="5" step="0.1"><span class="unit">°C</span></span><button type="button" data-step="1" aria-label="Increase absorb band">+</button></div></div>
+              <div class="field row"><label for="ph_delta">Detect delta</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease detect delta">−</button><span class="value"><input type="number" inputmode="decimal" id="ph_delta" name="ph_delta" value="0.3" min="0.1" max="10" step="0.1"><span class="unit">°C</span></span><button type="button" data-step="1" aria-label="Increase detect delta">+</button></div></div>
             </div>
           </div>
-          <footer class="panel-foot"><div class="foot-start"><details class="confirm"><summary class="btn danger">Reset balancing…</summary><p class="note">Clears all learned factors. Prior values are used again.</p><button class="btn danger" type="submit" name="action" value="reset_balancing">Reset balancing</button></details><span class="save-status" id="ss-regulation" aria-live="polite"></span></div><button type="reset" class="btn">Undo</button><button class="btn primary" type="submit">Save regulation</button></footer>
+          <footer class="panel-foot"><div class="foot-start"><button class="btn danger" type="button" popovertarget="confirm-reset-bal">Reset balancing…</button><div id="confirm-reset-bal" popover class="confirm-pop" role="alertdialog" aria-labelledby="confirm-reset-bal-t" aria-describedby="confirm-reset-bal-d"><p class="confirm-title" id="confirm-reset-bal-t">Reset balancing?</p><p id="confirm-reset-bal-d">Clears all learned factors. Prior values are used again.</p><div class="confirm-actions"><button class="btn" type="button" popovertarget="confirm-reset-bal" popovertargetaction="hide" autofocus>Cancel</button><button class="btn danger-solid" type="submit" name="action" value="reset_balancing" popovertarget="confirm-reset-bal" popovertargetaction="hide">Reset</button></div></div><span class="save-status" id="ss-regulation" aria-live="polite"></span></div><button type="reset" class="btn">Undo</button><button class="btn primary" type="submit">Save regulation</button></footer>
         </form>
-
         <form class="panel c6" data-save="heating">
           <header class="panel-head"><h3>Heating mode</h3><button class="help-btn" type="button" popovertarget="help-heating" style="anchor-name:--a-help-heating" aria-label="Help: Heating mode">?</button></header>
           <div id="help-heating" popover class="help-pop" style="position-anchor:--a-help-heating"><p>Heating mode, optional min. total opening, and heat-pump limits. Base opening is the satisfied valve position in heat-pump mode (default 60 %).</p><a href="https://github.com/Birkemosen/lune/blob/main/lune-v6/docs/Manual.md#heating" target="_blank" rel="noopener noreferrer">Read more</a></div>
@@ -526,62 +703,60 @@
           </div>
           <footer class="panel-foot"><span class="save-status" id="ss-heating" aria-live="polite"></span><button type="reset" class="btn">Undo</button><button class="btn primary" type="submit">Save heating mode</button></footer>
         </form>
-
-        <form class="panel c6" data-save="return_probes">
-          <header class="panel-head"><h3>Return probes</h3><button class="help-btn" type="button" popovertarget="help-return-probes" style="anchor-name:--a-help-return-probes" aria-label="Help: Return probes">?</button></header>
-          <div id="help-return-probes" popover class="help-pop" style="position-anchor:--a-help-return-probes"><p>Two probes are supply/return on the manifold. Eight probes give zones 1–6 return sensors 3–8 (the manifold keeps 1 and 2). Live readings show each probe so you can check wiring.</p><a href="https://github.com/Birkemosen/lune/blob/main/lune-v6/docs/Manual.md#return-probes" target="_blank" rel="noopener noreferrer">Read more</a></div>
-          <div class="field"><span class="label">Probe layout</span><div class="seg" role="radiogroup" aria-label="Probe layout"><label><input type="radio" name="return_probe_mode" value="2" checked><span>2 probes (flow/return)</span></label><label><input type="radio" name="return_probe_mode" value="8"><span>8 probes</span></label></div></div>
-          <p class="note">2 probes: supply/return on the manifold only. 8 probes: zones 1–6 default to probes 3–8; the manifold keeps 1 (supply) and 2 (return).</p>
-          <div class="sub">
-            <h4>Live readings</h4>
-            <dl class="metrics">
-              <div class="metric"><dt>Probe 1</dt><dd data-bind="probe.1">— <small>°C</small></dd></div><div class="metric"><dt>Probe 2</dt><dd data-bind="probe.2">— <small>°C</small></dd></div><div class="metric"><dt>Probe 3</dt><dd data-bind="probe.3">— <small>°C</small></dd></div><div class="metric"><dt>Probe 4</dt><dd data-bind="probe.4">— <small>°C</small></dd></div><div class="metric"><dt>Probe 5</dt><dd data-bind="probe.5">— <small>°C</small></dd></div><div class="metric"><dt>Probe 6</dt><dd data-bind="probe.6">— <small>°C</small></dd></div><div class="metric"><dt>Probe 7</dt><dd data-bind="probe.7">— <small>°C</small></dd></div><div class="metric"><dt>Probe 8</dt><dd data-bind="probe.8">— <small>°C</small></dd></div>
-            </dl>
           </div>
-          <footer class="panel-foot"><span class="save-status" id="ss-return_probes" aria-live="polite"></span><button type="reset" class="btn">Undo</button><button class="btn primary" type="submit">Save return probes</button></footer>
-        </form>
-
-        <header class="section-head"><span>Connect</span></header>
-
-        <form class="panel c6" data-save="touch">
-          <header class="panel-head"><h3>Lune Touch</h3><button class="help-btn" type="button" popovertarget="help-touch" style="anchor-name:--a-help-touch" aria-label="Help: Lune Touch">?</button><span class="badge" data-bind="touch.badge">Waiting</span></header>
-          <div id="help-touch" popover class="help-pop" style="position-anchor:--a-help-touch"><p>Approve or revoke Lune Touch control of this manifold. Without approval the V6 stays fully local and conservative.</p><a href="https://github.com/Birkemosen/lune/blob/main/lune-v6/docs/Manual.md#touch" target="_blank" rel="noopener noreferrer">Read more</a></div>
-          <p class="note" data-bind="touch.status">Add this manifold in Lune Touch. Its identity will appear here automatically.</p>
-          <dl class="kv" data-bind-show="touch.identity">
-            <div><dt>Touch</dt><dd data-bind="touch.name">—</dd></div>
-            <div><dt>Site</dt><dd data-bind="touch.site">—</dd></div>
-            <div><dt>Installation</dt><dd data-bind="touch.install">—</dd></div>
-            <div><dt>Coordinator</dt><dd data-bind="touch.coord">—</dd></div>
-          </dl>
-          <footer class="panel-foot">
-            <details class="confirm" style="margin-right:auto">
-              <summary class="btn danger">Disconnect Touch…</summary>
-              <p class="note">Removes approved control. Discovery alone never grants control.</p>
-              <button class="btn danger" type="submit" name="action" value="revoke">Disconnect now</button>
-            </details>
-            <button class="btn primary" type="submit" name="action" value="approve">Approve Lune Touch</button>
-          </footer>
-        </form>
-
-        <form class="panel c6" data-save="ble_clock">
-          <header class="panel-head"><h3>BLE clock</h3><button class="help-btn" type="button" popovertarget="help-ble-clock" style="anchor-name:--a-help-ble-clock" aria-label="Help: BLE clock">?</button></header>
-          <div id="help-ble-clock" popover class="help-pop" style="position-anchor:--a-help-ble-clock"><p>V6 emits Shelly Date/Time Broadcast so BLU displays can set their clock. Automatic sync is typically once per day. “Sync now” advertises for ~90 s — on the display: press once (SEt), then twice quickly to force sync while V6 is transmitting.</p><a href="https://github.com/Birkemosen/lune/blob/main/lune-v6/docs/Manual.md#ble-clock" target="_blank" rel="noopener noreferrer">Read more</a></div>
-          <label class="switch"><span class="switch-text"><b>Broadcast time</b><small>Shelly BLU display sync</small></span><input type="checkbox" role="switch" name="ble_clock_enabled"></label>
-          <div class="field row"><label for="ble_clock_interval">Interval</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease interval">−</button><span class="value"><input type="number" inputmode="decimal" id="ble_clock_interval" name="ble_clock_interval" value="60" min="15" max="1440" step="15"><span class="unit">min</span></span><button type="button" data-step="1" aria-label="Increase interval">+</button></div></div>
-          <footer class="panel-foot">
-            <button class="btn" type="submit" name="action" value="sync">Sync now</button>
-            <button class="btn primary" type="submit">Save BLE clock</button>
-          </footer>
-        </form>
-
-        <section class="panel c6">
-          <header class="panel-head"><h3>Weather preload</h3><span class="badge info">On Touch</span></header>
-          <p class="msg info"><span>Weather forecast and wind preload are owned by Lune Touch. This V6 applies preload offsets it receives and stores per-zone weather exposure.</span></p>
-          <p class="note">Set exterior walls, wind and solar on each zone under Floor and weather.</p>
         </section>
 
-        <header class="section-head"><span>Maintain</span></header>
+        <section class="section" id="sec-connect" aria-labelledby="sec-connect-h">
+          <h2 class="section-h" id="sec-connect-h">Connections<i class="section-h-dot" aria-hidden="true"></i><i class="section-h-line" aria-hidden="true"></i></h2>
+          <div class="section-grid">
+        <form class="panel c6" data-save="connections" data-state="unpaired">
+          <header class="panel-head"><h3>Lune Touch</h3><button class="help-btn" type="button" popovertarget="help-connections" style="anchor-name:--a-help-connections" aria-label="Help: Lune Touch">?</button><span class="badge" data-bind="touch.badge">Waiting</span></header>
+          <div id="help-connections" popover class="help-pop" style="position-anchor:--a-help-connections"><p>Approve Lune Touch to let it send weather preload, setpoints, absorb arming and heating mode. Broadcast time syncs Shelly BLU displays over BLE.</p><a href="https://github.com/Birkemosen/lune/blob/main/lune-v6/docs/Manual.md#touch" target="_blank" rel="noopener noreferrer">Read more</a></div>
+          <p class="msg bad" data-show-when="error"><span>Could not reach Lune Touch. Check the network, then try again or disconnect.</span></p>
+          <p class="note" data-show-when="unpaired pending approved" data-bind="touch.status">Add this manifold in Lune Touch. Its identity will appear here automatically.</p>
+          <dl class="kv" data-show-when="approved pending error" data-bind-show="touch.identity">
+            <div><dt>Name</dt><dd data-bind="touch.name">—</dd></div>
+            <div><dt>Delivers</dt><dd>Weather preload · Setpoints · Absorb · Heating mode</dd></div>
+          </dl>
+          <p class="hint" data-show-when="approved pending error">Zone exposure is set under each zone’s Floor and weather.</p>
+          <details class="more" data-show-when="approved pending error" data-bind-show="touch.identity">
+            <summary>Technical IDs</summary>
+            <dl class="kv">
+              <div><dt>Installation</dt><dd class="id-row"><code class="mono" id="touch-install" data-bind="touch.install">—</code><button type="button" class="btn copy" data-copy="#touch-install">Copy</button></dd></div>
+              <div><dt>Coordinator</dt><dd class="id-row"><code class="mono" id="touch-coord" data-bind="touch.coord">—</code><button type="button" class="btn copy" data-copy="#touch-coord">Copy</button></dd></div>
+            </dl>
+          </details>
+          <div class="actions">
+            <button class="btn danger" type="button" popovertarget="confirm-touch" style="margin-right:auto" data-show-when="approved error">Disconnect Touch…</button><div id="confirm-touch" popover class="confirm-pop" role="alertdialog" aria-labelledby="confirm-touch-t" aria-describedby="confirm-touch-d"><p class="confirm-title" id="confirm-touch-t">Disconnect Touch?</p><p id="confirm-touch-d">Removes approved control. Discovery alone never grants control.</p><div class="confirm-actions"><button class="btn" type="button" popovertarget="confirm-touch" popovertargetaction="hide" autofocus>Cancel</button><button class="btn danger-solid" type="submit" name="action" value="revoke" popovertarget="confirm-touch" popovertargetaction="hide">Disconnect</button></div></div>
+            <button class="btn" type="submit" name="action" value="retry" data-show-when="error">Try again</button>
+            <button class="btn" type="submit" name="action" value="cancel" data-show-when="pending">Cancel</button>
+            <button class="btn primary" type="submit" name="action" value="approve" data-show-when="unpaired">Approve Lune Touch</button>
+          </div>
+        </form>
+          <form class="panel c6" data-save="ble_clock">
+            <header class="panel-head"><h3>BLE clock</h3><button class="help-btn" type="button" popovertarget="help-ble-clock" style="anchor-name:--a-help-ble-clock" aria-label="Help: BLE clock">?</button></header>
+            <div id="help-ble-clock" popover class="help-pop" style="position-anchor:--a-help-ble-clock"><p>When enabled, V6 emits Shelly Date/Time Broadcast about every 2 seconds concurrently with BLE scan. BLU displays typically sync once per day; “Sync now” refreshes the beacon time immediately. On the display: press once (SEt), then twice quickly to force sync.</p><a href="https://github.com/Birkemosen/lune/blob/main/lune-v6/docs/Manual.md#ble-clock" target="_blank" rel="noopener noreferrer">Read more</a></div>
+            <label class="switch"><span class="switch-text"><b>Broadcast time</b><small>To Shelly BLU displays</small></span><input type="checkbox" role="switch" name="ble_clock_enabled"></label>
+            <dl class="kv">
+              <div><dt>Last sync</dt><dd data-bind="ble.lastSync">—</dd></div>
+            </dl>
+            <div class="actions">
+              <button class="btn" type="submit" name="action" value="sync">Sync now</button>
+            </div>
+          </form>
+          <form class="panel c6" data-save="device">
+            <header class="panel-head"><h3>Device identity</h3><button class="help-btn" type="button" popovertarget="help-device-identity" style="anchor-name:--a-help-device-identity" aria-label="Help: Device identity">?</button></header>
+            <div id="help-device-identity" popover class="help-pop" style="position-anchor:--a-help-device-identity"><p>Choose a name and location so you can tell this manifold apart from other Lune devices on the network.</p><a href="https://github.com/Birkemosen/lune/blob/main/lune-v6/docs/Manual.md#device-identity" target="_blank" rel="noopener noreferrer">Read more</a></div>
+            <div class="field row"><label for="device_display_name">Name</label><input class="input" id="device_display_name" name="device_display_name" value="Lune V6" maxlength="32" autocomplete="off"></div>
+            <div class="field row"><label for="device_location">Location</label><input class="input" id="device_location" name="device_location" value="Ground floor manifold" maxlength="64" autocomplete="off"></div>
+            <footer class="panel-foot"><span class="save-status" id="ss-device" aria-live="polite"></span><button type="reset" class="btn">Undo</button><button class="btn primary" type="submit">Save device identity</button></footer>
+          </form>
+          </div>
+        </section>
 
+        <details class="section" id="sec-service">
+          <summary class="section-h">Service <span class="badge">6 panels</span><i class="section-h-dot" aria-hidden="true"></i><i class="section-h-line" aria-hidden="true"></i></summary>
+          <div class="section-grid">
         <form class="panel c6" data-save="firmware">
           <header class="panel-head"><h3>Firmware</h3><button class="help-btn" type="button" popovertarget="help-firmware" style="anchor-name:--a-help-firmware" aria-label="Help: Firmware">?</button></header>
           <div id="help-firmware" popover class="help-pop" style="position-anchor:--a-help-firmware"><p>Check for updates, install from the network, or upload a .bin. Valves hold position during reboot.</p><a href="https://github.com/Birkemosen/lune/blob/main/lune-v6/docs/Manual.md#firmware" target="_blank" rel="noopener noreferrer">Read more</a></div>
@@ -596,7 +771,6 @@
           <div class="field"><label for="ota_file">Manual .bin upload</label><label class="input file" for="ota_file"><input class="sr-only" id="ota_file" name="ota_file" type="file" accept=".bin,.ota.bin"><span class="file-pick">Choose file</span><span class="file-name" data-empty="No file chosen">No file chosen</span></label></div>
           <footer class="panel-foot"><button class="btn primary" type="submit" name="action" value="upload">Upload firmware</button></footer>
         </form>
-
         <form class="panel c6" data-save="backup">
           <header class="panel-head"><h3>Backup</h3><button class="help-btn" type="button" popovertarget="help-backup" style="anchor-name:--a-help-backup" aria-label="Help: Backup">?</button></header>
           <div id="help-backup" popover class="help-pop" style="position-anchor:--a-help-backup"><p>Export or import settings as JSON. Learned motor factors are optional and can be left out of a backup.</p><a href="https://github.com/Birkemosen/lune/blob/main/lune-v6/docs/Manual.md#backup" target="_blank" rel="noopener noreferrer">Read more</a></div>
@@ -608,23 +782,28 @@
             <button class="btn primary" type="submit" name="action" value="import">Import backup</button>
           </footer>
         </form>
-
-        <header class="section-head"><span>Service</span></header>
-
-        <form class="panel" data-save="service">
+        <form class="panel c6" data-save="service">
           <header class="panel-head"><h3>Manual motor control</h3><button class="help-btn" type="button" popovertarget="help-manual" style="anchor-name:--a-help-manual" aria-label="Help: Manual motor control">?</button></header>
-          <div id="help-manual" popover class="help-pop" style="position-anchor:--a-help-manual"><p>Manual mode suspends automatic control of all zones until turned off. Use stop or drive-to-target for service work.</p><a href="https://github.com/Birkemosen/lune/blob/main/lune-v6/docs/Manual.md#manual" target="_blank" rel="noopener noreferrer">Read more</a></div>
+          <div id="help-manual" popover class="help-pop" style="position-anchor:--a-help-manual"><p>Manual mode suspends automatic control of all zones until turned off. Drive to a valve position, or run a timed open/close (1–45 s) with endstop detection still armed.</p><a href="https://github.com/Birkemosen/lune/blob/main/lune-v6/docs/Manual.md#manual" target="_blank" rel="noopener noreferrer">Read more</a></div>
           <div class="sub gated">
             <p class="msg warn"><span>Manual mode suspends automatic control of all zones until it is turned off.</span></p>
             <label class="switch"><span class="switch-text"><b>Manual mode</b></span><input type="checkbox" role="switch" name="manual_mode"></label>
             <div class="gated-body sub">
               <div class="field row"><label for="man_zone">Motor</label><select class="select" id="man_zone" name="man_zone"><option value="1">Z1 Josephine</option><option value="2">Z2 Laura</option><option value="3">Z3 Toilet</option><option value="4">Z4 Stue rum 1</option><option value="5">Z5 Stue rum 2</option><option value="6">Z6 Soveværelse</option></select></div>
-              <div class="field row"><label for="man_target">Motor target</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease motor target">−</button><span class="value"><input type="number" inputmode="decimal" id="man_target" name="man_target" value="50" min="0" max="100" step="5"><span class="unit">%</span></span><button type="button" data-step="1" aria-label="Increase motor target">+</button></div></div>
-              <div class="actions"><button class="btn" type="submit" name="action" value="stop">Stop</button><button class="btn" type="submit" name="action" value="move">Move to target</button></div>
+              <div class="sub">
+                <h4>Drive to target</h4>
+                <div class="field row"><label for="man_target">Motor target</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease motor target">−</button><span class="value"><input type="number" inputmode="decimal" id="man_target" name="man_target" value="50" min="0" max="100" step="5"><span class="unit">%</span></span><button type="button" data-step="1" aria-label="Increase motor target">+</button></div></div>
+                <div class="actions"><button class="btn" type="submit" name="action" value="stop">Stop</button><button class="btn" type="submit" name="action" value="move">Move to target</button></div>
+              </div>
+              <div class="sub">
+                <h4>Timed run</h4>
+                <div class="field row"><span class="label">Direction</span><div class="seg" role="radiogroup" aria-label="Direction"><label><input type="radio" name="man_dir" value="open" checked><span>Open</span></label><label><input type="radio" name="man_dir" value="close"><span>Close</span></label></div></div>
+                <div class="field row"><label for="man_seconds">Run time</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease run time">−</button><span class="value"><input type="number" inputmode="decimal" id="man_seconds" name="man_seconds" value="10" min="1" max="45" step="1"><span class="unit">s</span></span><button type="button" data-step="1" aria-label="Increase run time">+</button></div></div>
+                <div class="actions"><button class="btn" type="submit" name="action" value="stop">Stop</button><button class="btn primary" type="submit" name="action" value="timed">Run timed</button></div>
+              </div>
             </div>
           </div>
         </form>
-
         <form class="panel c6" data-save="service">
           <header class="panel-head"><h3>Runtime health</h3><button class="help-btn" type="button" popovertarget="help-health" style="anchor-name:--a-help-health" aria-label="Help: Runtime health">?</button></header>
           <div id="help-health" popover class="help-pop" style="position-anchor:--a-help-health"><p>Live CPU, heap and PSRAM. Task dump and bus scans write into the log below for installers.</p><a href="https://github.com/Birkemosen/lune/blob/main/lune-v6/docs/Manual.md#health" target="_blank" rel="noopener noreferrer">Read more</a></div>
@@ -641,7 +820,6 @@
           </div>
           <pre class="log" data-bind="diag.i2c" aria-live="polite" lang="en"></pre>
         </form>
-
         <form class="panel c6" data-save="service">
           <header class="panel-head"><h3>Device logs</h3><button class="help-btn" type="button" popovertarget="help-logs" style="anchor-name:--a-help-logs" aria-label="Help: Device logs">?</button></header>
           <div id="help-logs" popover class="help-pop" style="position-anchor:--a-help-logs"><p>Streaming device log. Pause, clear or download when diagnosing faults.</p><a href="https://github.com/Birkemosen/lune/blob/main/lune-v6/docs/Manual.md#logs" target="_blank" rel="noopener noreferrer">Read more</a></div>
@@ -652,33 +830,16 @@
           </div>
           <pre class="log" data-bind="log" aria-live="polite" lang="en"></pre>
         </form>
-
         <form class="panel c6" data-save="service">
           <header class="panel-head"><h3>Device</h3><button class="help-btn" type="button" popovertarget="help-device-actions" style="anchor-name:--a-help-device-actions" aria-label="Help: Device">?</button></header>
           <div id="help-device-actions" popover class="help-pop" style="position-anchor:--a-help-device-actions"><p>Destructive service actions for this manifold. Identity lives under the device menu; restart and probe-map reset stay here.</p><a href="https://github.com/Birkemosen/lune/blob/main/lune-v6/docs/Manual.md#device-actions" target="_blank" rel="noopener noreferrer">Read more</a></div>
           <div class="actions">
-            <details class="confirm">
-              <summary class="btn danger">Reset probe map…</summary>
-              <p class="note">Probes must be reassigned on the manifold and on each zone.</p>
-              <button class="btn danger" type="submit" name="action" value="reset_probe_map">Reset probe map</button>
-            </details>
-            <details class="confirm">
-              <summary class="btn danger">Restart…</summary>
-              <p class="note">Valves hold their position during restart (about 10 s).</p>
-              <button class="btn danger" type="submit" name="action" value="restart">Restart now</button>
-            </details>
+            <button class="btn danger" type="button" popovertarget="confirm-probes">Reset probe map…</button><div id="confirm-probes" popover class="confirm-pop" role="alertdialog" aria-labelledby="confirm-probes-t" aria-describedby="confirm-probes-d"><p class="confirm-title" id="confirm-probes-t">Reset the probe map?</p><p id="confirm-probes-d">Deletes the saved probe assignment. Probes must be assigned again on the manifold and on each zone.</p><div class="confirm-actions"><button class="btn" type="button" popovertarget="confirm-probes" popovertargetaction="hide" autofocus>Cancel</button><button class="btn danger-solid" type="submit" name="action" value="reset_probe_map" popovertarget="confirm-probes" popovertargetaction="hide">Reset</button></div></div>
+            <button class="btn danger" type="button" popovertarget="confirm-restart">Restart…</button><div id="confirm-restart" popover class="confirm-pop" role="alertdialog" aria-labelledby="confirm-restart-t" aria-describedby="confirm-restart-d"><p class="confirm-title" id="confirm-restart-t">Restart the device?</p><p id="confirm-restart-d">No settings are lost. The device is away for about 10 s, and the valves hold position.</p><div class="confirm-actions"><button class="btn" type="button" popovertarget="confirm-restart" popovertargetaction="hide" autofocus>Cancel</button><button class="btn danger-solid" type="submit" name="action" value="restart" popovertarget="confirm-restart" popovertargetaction="hide">Restart</button></div></div>
           </div>
         </form>
-
-        <section class="panel" data-dev-only hidden>
-          <header class="panel-head"><h3>Motor lab (dev)</h3></header>
-          <p class="msg warn"><span>Suspends automatic control while capturing stroke traces. Dev builds only.</span></p>
-          <div class="actions">
-            <button class="btn" type="button" data-action="motorlab-start">Start capture</button>
-            <button class="btn danger" type="button" data-action="motorlab-estop">E-stop all motors</button>
           </div>
-          <div class="field"><canvas data-motorlab-chart width="480" height="160" style="width:100%;height:auto;background:var(--field)"></canvas></div>
-        </section>
+        </details>
       </section>
       <section class="view" id="v-conf-z1" aria-labelledby="h-conf-z1">
         <header class="view-head"><h2 id="h-conf-z1"><span data-bind="z1.title">Z1 Josephine</span></h2><p>Zone setup</p></header>
@@ -692,21 +853,37 @@
               <h4>Room</h4>
               
               <label class="switch"><span class="switch-text"><b>Zone enabled</b></span><input type="checkbox" role="switch" name="z1_enabled" checked></label>
-              <div class="field"><label for="z1_name">Name</label><input class="input" id="z1_name" name="z1_name" value="Josephine" maxlength="24"></div>
-              <div class="field"><label for="z1_area">Area</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease area">−</button><span class="value"><input type="number" inputmode="decimal" id="z1_area" name="z1_area" value="12.0" min="0" max="200" step="0.5"><span class="unit">m²</span></span><button type="button" data-step="1" aria-label="Increase area">+</button></div></div>
-              <div class="field"><label for="z1_merge">Group with<span class="hint">One room: shared target, valves open equally</span></label><select class="select" id="z1_merge" name="z1_merge"><option value="">None</option><option value="2">Z2 Laura</option><option value="3">Z3 Toilet</option><option value="4">Z4 Stue rum 1</option><option value="5">Z5 Stue rum 2</option><option value="6">Z6 Soveværelse</option></select></div>
+              <div class="field row"><label for="z1_name">Name</label><input class="input" id="z1_name" name="z1_name" value="Josephine" maxlength="24"></div>
+              <div class="field row"><label for="z1_area">Area</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease area">−</button><span class="value"><input type="number" inputmode="decimal" id="z1_area" name="z1_area" value="12.0" min="0" max="200" step="0.5"><span class="unit">m²</span></span><button type="button" data-step="1" aria-label="Increase area">+</button></div></div>
+              <div class="field row"><label for="z1_merge">Group with<span class="hint">One room: shared target, valves open equally</span></label><select class="select" id="z1_merge" name="z1_merge"><option value="">None</option><option value="2">Z2 Laura</option><option value="3">Z3 Toilet</option><option value="4">Z4 Stue rum 1</option><option value="5">Z5 Stue rum 2</option><option value="6">Z6 Soveværelse</option></select></div>
             </div>
             <div class="sub">
               <h4>Sensors</h4>
-              <div class="field"><span class="label">Room temperature from</span><div class="seg" role="radiogroup" aria-label="Room temperature from"><label><input type="radio" name="z1_src" value="probe"><span>Probe</span></label><label><input type="radio" name="z1_src" value="ble" checked><span>BLE</span></label></div></div>
-              <div class="field">
+              <div class="field row"><span class="label">Room temperature from</span><div class="seg" role="radiogroup" aria-label="Room temperature from"><label><input type="radio" name="z1_src" value="probe"><span>Probe</span></label><label><input type="radio" name="z1_src" value="ble" checked><span>BLE</span></label></div></div>
+              <div class="field row">
                 <label for="z1_ble">BLE sensor (MAC)<span class="hint">BTHome, e.g. Shelly BLU H&amp;T</span></label>
                 <div class="pair wide-first">
                   <input class="input" id="z1_ble" name="z1_ble" placeholder="AA:BB:CC:DD:EE:FF" pattern="^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$" autocomplete="off" spellcheck="false">
                   <button type="button" class="btn" data-action="ble-scan" data-zone="1">Scan</button>
                 </div>
               </div>
-              <div class="field zone-ret"><label for="z1_ret">Return sensor</label><select class="select" id="z1_ret" name="z1_ret"><option value="1">Probe 1</option><option value="2">Probe 2</option><option value="3" selected>Probe 3</option><option value="4">Probe 4</option><option value="5">Probe 5</option><option value="6">Probe 6</option><option value="7">Probe 7</option><option value="8">Probe 8</option></select></div>
+              <div hidden data-ble-seen-row="1">
+                <p class="note" data-ble-seen-status="1" aria-live="polite"></p>
+                <div class="table-wrap">
+                  <table class="table" aria-label="Nearby sensors">
+                    <thead>
+                      <tr>
+                        <th>Sensor</th>
+                        <th class="num">Temp</th>
+                        <th class="num">RSSI</th>
+                        <th></th>
+                      </tr>
+                    </thead>
+                    <tbody data-ble-seen="1"></tbody>
+                  </table>
+                </div>
+              </div>
+              <div class="field row zone-ret"><label for="z1_ret">Return sensor</label><select class="select" id="z1_ret" name="z1_ret"><option value="" selected>None</option><option value="1">Probe 1</option><option value="2">Probe 2</option><option value="3">Probe 3</option><option value="4">Probe 4</option><option value="5">Probe 5</option><option value="6">Probe 6</option><option value="7">Probe 7</option><option value="8">Probe 8</option></select></div>
             </div>
           </div>
           <footer class="panel-foot"><span class="save-status" id="ss-zone-1-room" aria-live="polite"></span><button type="reset" class="btn">Undo</button><button class="btn primary" type="submit">Save room and sensors</button></footer>
@@ -717,18 +894,18 @@
           <div class="subs cols-2">
             <div class="sub">
               <h4>Floor and pipes</h4>
-              <div class="field"><label for="z1_spacing">Pipe spacing C-C</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease pipe spacing c-c">−</button><span class="value"><input type="number" inputmode="decimal" id="z1_spacing" name="z1_spacing" value="150" min="50" max="300" step="25"><span class="unit">mm</span></span><button type="button" data-step="1" aria-label="Increase pipe spacing c-c">+</button></div></div>
-              <div class="field"><label for="z1_pipe">Pipe type</label><select class="select" id="z1_pipe" name="z1_pipe"><option>PEX 12mm</option><option>PEX 14mm</option><option selected>PEX 16mm</option><option>PEX 17mm</option><option>PEX 18mm</option><option>PEX 20mm</option><option>ALUPEX 16mm</option><option>ALUPEX 20mm</option><option>Unknown</option></select></div>
-              <div class="field"><label for="z1_slab">Slab</label><select class="select" id="z1_slab" name="z1_slab"><option value="unset">Unset</option><option value="cast_concrete">Cast concrete</option><option value="screed">Screed</option><option value="dry_plates">Dry plates</option><option value="timber_joists">Timber joists</option></select></div>
-              <div class="field"><label for="z1_covering">Covering</label><select class="select" id="z1_covering" name="z1_covering"><option value="unset">Unset</option><option value="tile_stone">Tile / stone</option><option value="vinyl_linoleum">Vinyl / linoleum</option><option value="parquet_laminate">Parquet / laminate</option><option value="carpet">Carpet</option></select></div>
-              <div class="field"><label for="z1_thick">Active thickness</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease active thickness">−</button><span class="value"><input type="number" inputmode="decimal" id="z1_thick" name="z1_thick" value="0.0" min="0" max="15" step="0.5"><span class="unit">cm</span></span><button type="button" data-step="1" aria-label="Increase active thickness">+</button></div></div>
-              <div class="field"><label for="z1_lead">Thermal lead</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease thermal lead">−</button><span class="value"><input type="number" inputmode="decimal" id="z1_lead" name="z1_lead" value="3.0" min="0" max="12" step="0.5"><span class="unit">h</span></span><button type="button" data-step="1" aria-label="Increase thermal lead">+</button></div></div>
+              <div class="field row"><label for="z1_spacing">Pipe spacing C-C</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease pipe spacing c-c">−</button><span class="value"><input type="number" inputmode="decimal" id="z1_spacing" name="z1_spacing" value="150" min="50" max="300" step="25"><span class="unit">mm</span></span><button type="button" data-step="1" aria-label="Increase pipe spacing c-c">+</button></div></div>
+              <div class="field row"><label for="z1_pipe">Pipe type</label><select class="select" id="z1_pipe" name="z1_pipe"><option>PEX 12mm</option><option>PEX 14mm</option><option selected>PEX 16mm</option><option>PEX 17mm</option><option>PEX 18mm</option><option>PEX 20mm</option><option>ALUPEX 16mm</option><option>ALUPEX 20mm</option><option>Unknown</option></select></div>
+              <div class="field row"><label for="z1_slab">Slab</label><select class="select" id="z1_slab" name="z1_slab"><option value="unset">Unset</option><option value="cast_concrete">Cast concrete</option><option value="screed">Screed</option><option value="dry_plates">Dry plates</option><option value="timber_joists">Timber joists</option></select></div>
+              <div class="field row"><label for="z1_covering">Covering</label><select class="select" id="z1_covering" name="z1_covering"><option value="unset">Unset</option><option value="tile_stone">Tile / stone</option><option value="vinyl_linoleum">Vinyl / linoleum</option><option value="parquet_laminate">Parquet / laminate</option><option value="carpet">Carpet</option></select></div>
+              <div class="field row"><label for="z1_thick">Active thickness</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease active thickness">−</button><span class="value"><input type="number" inputmode="decimal" id="z1_thick" name="z1_thick" value="0.0" min="0" max="15" step="0.5"><span class="unit">cm</span></span><button type="button" data-step="1" aria-label="Increase active thickness">+</button></div></div>
+              <div class="field row"><label for="z1_lead">Thermal lead</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease thermal lead">−</button><span class="value"><input type="number" inputmode="decimal" id="z1_lead" name="z1_lead" value="3.0" min="0" max="12" step="0.5"><span class="unit">h</span></span><button type="button" data-step="1" aria-label="Increase thermal lead">+</button></div></div>
             </div>
             <div class="sub">
               <h4>Weather preload</h4>
-              <div class="field"><span class="label">Exterior walls</span><div class="compass" role="group" aria-label="Exterior walls"><i class="c"></i><label data-wall="n"><input type="checkbox" name="z1_wall" value="n" aria-label="North"><span>N</span></label><label data-wall="e"><input type="checkbox" name="z1_wall" value="e" aria-label="East"><span>E</span></label><label data-wall="s"><input type="checkbox" name="z1_wall" value="s" checked aria-label="South"><span>S</span></label><label data-wall="w"><input type="checkbox" name="z1_wall" value="w" checked aria-label="West"><span>W</span></label></div></div>
-              <div class="field"><label for="z1_wind">Wind exposure</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease wind exposure">−</button><span class="value"><input type="number" inputmode="decimal" id="z1_wind" name="z1_wind" value="1.0" min="0" max="2" step="0.1"><span class="unit">×</span></span><button type="button" data-step="1" aria-label="Increase wind exposure">+</button></div></div>
-              <div class="field"><label for="z1_solar">Solar gain</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease solar gain">−</button><span class="value"><input type="number" inputmode="decimal" id="z1_solar" name="z1_solar" value="0.6" min="0" max="2" step="0.1"><span class="unit">×</span></span><button type="button" data-step="1" aria-label="Increase solar gain">+</button></div></div>
+              <div class="field row"><span class="label">Exterior walls</span><div class="compass" role="group" aria-label="Exterior walls"><i class="c"></i><label data-wall="n"><input type="checkbox" name="z1_wall" value="n" aria-label="North"><span>N</span></label><label data-wall="e"><input type="checkbox" name="z1_wall" value="e" aria-label="East"><span>E</span></label><label data-wall="s"><input type="checkbox" name="z1_wall" value="s" checked aria-label="South"><span>S</span></label><label data-wall="w"><input type="checkbox" name="z1_wall" value="w" checked aria-label="West"><span>W</span></label></div></div>
+              <div class="field row"><label for="z1_wind">Wind exposure</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease wind exposure">−</button><span class="value"><input type="number" inputmode="decimal" id="z1_wind" name="z1_wind" value="1.0" min="0" max="2" step="0.1"><span class="unit">×</span></span><button type="button" data-step="1" aria-label="Increase wind exposure">+</button></div></div>
+              <div class="field row"><label for="z1_solar">Solar gain</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease solar gain">−</button><span class="value"><input type="number" inputmode="decimal" id="z1_solar" name="z1_solar" value="0.6" min="0" max="2" step="0.1"><span class="unit">×</span></span><button type="button" data-step="1" aria-label="Increase solar gain">+</button></div></div>
             </div>
           </div>
           <footer class="panel-foot"><span class="save-status" id="ss-zone-1-floor" aria-live="polite"></span><button type="reset" class="btn">Undo</button><button class="btn primary" type="submit">Save floor and weather</button></footer>
@@ -740,13 +917,13 @@
             <dl class="kv"><div><dt>Open / close ripples</dt><dd data-bind="z1.ripples">—</dd></div><div><dt>Open / close factor</dt><dd data-bind="z1.factors">—</dd></div></dl>
             <dl class="kv"><div><dt>Preheat adv.</dt><dd data-bind="z1.preheat">—</dd></div><div><dt>Last fault</dt><dd data-bind="z1.lastFault">—</dd></div></dl>
           </div>
+          <div data-bind-show="z1.learnBar" hidden>
+            <p class="hint" data-bind="z1.learnPhase"></p>
+            <div class="bar violet" style="--v:0%" data-bind-bar="z1.learn" role="meter" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="Learning progress"><i></i></div>
+          </div>
           <footer class="panel-foot">
-            <button class="btn" type="submit" name="action" value="reset_fault" data-bind-disable="z1.faultOk">Reset fault</button>
-            <details class="confirm">
-              <summary class="btn danger">Reset and relearn…</summary>
-              <p class="note">Deletes the learned factors for Z1. The motor relearns on its next movement.</p>
-              <button class="btn danger" type="submit" name="action" value="reset_relearn">Reset and relearn Z1</button>
-            </details>
+            <button class="btn primary" type="submit" name="action" value="reset_fault" data-bind-show="z1.fault" hidden>Reset fault</button>
+            <button class="btn danger" type="button" popovertarget="confirm-relearn-z1">Reset and relearn…</button><div id="confirm-relearn-z1" popover class="confirm-pop" role="alertdialog" aria-labelledby="confirm-relearn-z1-t" aria-describedby="confirm-relearn-z1-d"><p class="confirm-title" id="confirm-relearn-z1-t">Reset and relearn Z1?</p><p id="confirm-relearn-z1-d">Deletes the learned factors for Z1. The motor relearns on its next movement.</p><div class="confirm-actions"><button class="btn" type="button" popovertarget="confirm-relearn-z1" popovertargetaction="hide" autofocus>Cancel</button><button class="btn danger-solid" type="submit" name="action" value="reset_relearn" popovertarget="confirm-relearn-z1" popovertargetaction="hide">Reset</button></div></div>
           </footer>
         </form>
       </section>
@@ -762,21 +939,37 @@
               <h4>Room</h4>
               
               <label class="switch"><span class="switch-text"><b>Zone enabled</b></span><input type="checkbox" role="switch" name="z2_enabled" checked></label>
-              <div class="field"><label for="z2_name">Name</label><input class="input" id="z2_name" name="z2_name" value="Laura" maxlength="24"></div>
-              <div class="field"><label for="z2_area">Area</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease area">−</button><span class="value"><input type="number" inputmode="decimal" id="z2_area" name="z2_area" value="11.0" min="0" max="200" step="0.5"><span class="unit">m²</span></span><button type="button" data-step="1" aria-label="Increase area">+</button></div></div>
-              <div class="field"><label for="z2_merge">Group with<span class="hint">One room: shared target, valves open equally</span></label><select class="select" id="z2_merge" name="z2_merge"><option value="">None</option><option value="1">Z1 Josephine</option><option value="3">Z3 Toilet</option><option value="4">Z4 Stue rum 1</option><option value="5">Z5 Stue rum 2</option><option value="6">Z6 Soveværelse</option></select></div>
+              <div class="field row"><label for="z2_name">Name</label><input class="input" id="z2_name" name="z2_name" value="Laura" maxlength="24"></div>
+              <div class="field row"><label for="z2_area">Area</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease area">−</button><span class="value"><input type="number" inputmode="decimal" id="z2_area" name="z2_area" value="11.0" min="0" max="200" step="0.5"><span class="unit">m²</span></span><button type="button" data-step="1" aria-label="Increase area">+</button></div></div>
+              <div class="field row"><label for="z2_merge">Group with<span class="hint">One room: shared target, valves open equally</span></label><select class="select" id="z2_merge" name="z2_merge"><option value="">None</option><option value="1">Z1 Josephine</option><option value="3">Z3 Toilet</option><option value="4">Z4 Stue rum 1</option><option value="5">Z5 Stue rum 2</option><option value="6">Z6 Soveværelse</option></select></div>
             </div>
             <div class="sub">
               <h4>Sensors</h4>
-              <div class="field"><span class="label">Room temperature from</span><div class="seg" role="radiogroup" aria-label="Room temperature from"><label><input type="radio" name="z2_src" value="probe"><span>Probe</span></label><label><input type="radio" name="z2_src" value="ble" checked><span>BLE</span></label></div></div>
-              <div class="field">
+              <div class="field row"><span class="label">Room temperature from</span><div class="seg" role="radiogroup" aria-label="Room temperature from"><label><input type="radio" name="z2_src" value="probe"><span>Probe</span></label><label><input type="radio" name="z2_src" value="ble" checked><span>BLE</span></label></div></div>
+              <div class="field row">
                 <label for="z2_ble">BLE sensor (MAC)<span class="hint">BTHome, e.g. Shelly BLU H&amp;T</span></label>
                 <div class="pair wide-first">
                   <input class="input" id="z2_ble" name="z2_ble" placeholder="AA:BB:CC:DD:EE:FF" pattern="^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$" autocomplete="off" spellcheck="false">
                   <button type="button" class="btn" data-action="ble-scan" data-zone="2">Scan</button>
                 </div>
               </div>
-              <div class="field zone-ret"><label for="z2_ret">Return sensor</label><select class="select" id="z2_ret" name="z2_ret"><option value="1">Probe 1</option><option value="2">Probe 2</option><option value="3">Probe 3</option><option value="4" selected>Probe 4</option><option value="5">Probe 5</option><option value="6">Probe 6</option><option value="7">Probe 7</option><option value="8">Probe 8</option></select></div>
+              <div hidden data-ble-seen-row="2">
+                <p class="note" data-ble-seen-status="2" aria-live="polite"></p>
+                <div class="table-wrap">
+                  <table class="table" aria-label="Nearby sensors">
+                    <thead>
+                      <tr>
+                        <th>Sensor</th>
+                        <th class="num">Temp</th>
+                        <th class="num">RSSI</th>
+                        <th></th>
+                      </tr>
+                    </thead>
+                    <tbody data-ble-seen="2"></tbody>
+                  </table>
+                </div>
+              </div>
+              <div class="field row zone-ret"><label for="z2_ret">Return sensor</label><select class="select" id="z2_ret" name="z2_ret"><option value="" selected>None</option><option value="1">Probe 1</option><option value="2">Probe 2</option><option value="3">Probe 3</option><option value="4">Probe 4</option><option value="5">Probe 5</option><option value="6">Probe 6</option><option value="7">Probe 7</option><option value="8">Probe 8</option></select></div>
             </div>
           </div>
           <footer class="panel-foot"><span class="save-status" id="ss-zone-2-room" aria-live="polite"></span><button type="reset" class="btn">Undo</button><button class="btn primary" type="submit">Save room and sensors</button></footer>
@@ -787,18 +980,18 @@
           <div class="subs cols-2">
             <div class="sub">
               <h4>Floor and pipes</h4>
-              <div class="field"><label for="z2_spacing">Pipe spacing C-C</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease pipe spacing c-c">−</button><span class="value"><input type="number" inputmode="decimal" id="z2_spacing" name="z2_spacing" value="150" min="50" max="300" step="25"><span class="unit">mm</span></span><button type="button" data-step="1" aria-label="Increase pipe spacing c-c">+</button></div></div>
-              <div class="field"><label for="z2_pipe">Pipe type</label><select class="select" id="z2_pipe" name="z2_pipe"><option>PEX 12mm</option><option>PEX 14mm</option><option selected>PEX 16mm</option><option>PEX 17mm</option><option>PEX 18mm</option><option>PEX 20mm</option><option>ALUPEX 16mm</option><option>ALUPEX 20mm</option><option>Unknown</option></select></div>
-              <div class="field"><label for="z2_slab">Slab</label><select class="select" id="z2_slab" name="z2_slab"><option value="unset">Unset</option><option value="cast_concrete">Cast concrete</option><option value="screed">Screed</option><option value="dry_plates">Dry plates</option><option value="timber_joists">Timber joists</option></select></div>
-              <div class="field"><label for="z2_covering">Covering</label><select class="select" id="z2_covering" name="z2_covering"><option value="unset">Unset</option><option value="tile_stone">Tile / stone</option><option value="vinyl_linoleum">Vinyl / linoleum</option><option value="parquet_laminate">Parquet / laminate</option><option value="carpet">Carpet</option></select></div>
-              <div class="field"><label for="z2_thick">Active thickness</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease active thickness">−</button><span class="value"><input type="number" inputmode="decimal" id="z2_thick" name="z2_thick" value="0.0" min="0" max="15" step="0.5"><span class="unit">cm</span></span><button type="button" data-step="1" aria-label="Increase active thickness">+</button></div></div>
-              <div class="field"><label for="z2_lead">Thermal lead</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease thermal lead">−</button><span class="value"><input type="number" inputmode="decimal" id="z2_lead" name="z2_lead" value="3.0" min="0" max="12" step="0.5"><span class="unit">h</span></span><button type="button" data-step="1" aria-label="Increase thermal lead">+</button></div></div>
+              <div class="field row"><label for="z2_spacing">Pipe spacing C-C</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease pipe spacing c-c">−</button><span class="value"><input type="number" inputmode="decimal" id="z2_spacing" name="z2_spacing" value="150" min="50" max="300" step="25"><span class="unit">mm</span></span><button type="button" data-step="1" aria-label="Increase pipe spacing c-c">+</button></div></div>
+              <div class="field row"><label for="z2_pipe">Pipe type</label><select class="select" id="z2_pipe" name="z2_pipe"><option>PEX 12mm</option><option>PEX 14mm</option><option selected>PEX 16mm</option><option>PEX 17mm</option><option>PEX 18mm</option><option>PEX 20mm</option><option>ALUPEX 16mm</option><option>ALUPEX 20mm</option><option>Unknown</option></select></div>
+              <div class="field row"><label for="z2_slab">Slab</label><select class="select" id="z2_slab" name="z2_slab"><option value="unset">Unset</option><option value="cast_concrete">Cast concrete</option><option value="screed">Screed</option><option value="dry_plates">Dry plates</option><option value="timber_joists">Timber joists</option></select></div>
+              <div class="field row"><label for="z2_covering">Covering</label><select class="select" id="z2_covering" name="z2_covering"><option value="unset">Unset</option><option value="tile_stone">Tile / stone</option><option value="vinyl_linoleum">Vinyl / linoleum</option><option value="parquet_laminate">Parquet / laminate</option><option value="carpet">Carpet</option></select></div>
+              <div class="field row"><label for="z2_thick">Active thickness</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease active thickness">−</button><span class="value"><input type="number" inputmode="decimal" id="z2_thick" name="z2_thick" value="0.0" min="0" max="15" step="0.5"><span class="unit">cm</span></span><button type="button" data-step="1" aria-label="Increase active thickness">+</button></div></div>
+              <div class="field row"><label for="z2_lead">Thermal lead</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease thermal lead">−</button><span class="value"><input type="number" inputmode="decimal" id="z2_lead" name="z2_lead" value="3.0" min="0" max="12" step="0.5"><span class="unit">h</span></span><button type="button" data-step="1" aria-label="Increase thermal lead">+</button></div></div>
             </div>
             <div class="sub">
               <h4>Weather preload</h4>
-              <div class="field"><span class="label">Exterior walls</span><div class="compass" role="group" aria-label="Exterior walls"><i class="c"></i><label data-wall="n"><input type="checkbox" name="z2_wall" value="n" checked aria-label="North"><span>N</span></label><label data-wall="e"><input type="checkbox" name="z2_wall" value="e" checked aria-label="East"><span>E</span></label><label data-wall="s"><input type="checkbox" name="z2_wall" value="s" aria-label="South"><span>S</span></label><label data-wall="w"><input type="checkbox" name="z2_wall" value="w" aria-label="West"><span>W</span></label></div></div>
-              <div class="field"><label for="z2_wind">Wind exposure</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease wind exposure">−</button><span class="value"><input type="number" inputmode="decimal" id="z2_wind" name="z2_wind" value="1.0" min="0" max="2" step="0.1"><span class="unit">×</span></span><button type="button" data-step="1" aria-label="Increase wind exposure">+</button></div></div>
-              <div class="field"><label for="z2_solar">Solar gain</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease solar gain">−</button><span class="value"><input type="number" inputmode="decimal" id="z2_solar" name="z2_solar" value="0.2" min="0" max="2" step="0.1"><span class="unit">×</span></span><button type="button" data-step="1" aria-label="Increase solar gain">+</button></div></div>
+              <div class="field row"><span class="label">Exterior walls</span><div class="compass" role="group" aria-label="Exterior walls"><i class="c"></i><label data-wall="n"><input type="checkbox" name="z2_wall" value="n" checked aria-label="North"><span>N</span></label><label data-wall="e"><input type="checkbox" name="z2_wall" value="e" checked aria-label="East"><span>E</span></label><label data-wall="s"><input type="checkbox" name="z2_wall" value="s" aria-label="South"><span>S</span></label><label data-wall="w"><input type="checkbox" name="z2_wall" value="w" aria-label="West"><span>W</span></label></div></div>
+              <div class="field row"><label for="z2_wind">Wind exposure</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease wind exposure">−</button><span class="value"><input type="number" inputmode="decimal" id="z2_wind" name="z2_wind" value="1.0" min="0" max="2" step="0.1"><span class="unit">×</span></span><button type="button" data-step="1" aria-label="Increase wind exposure">+</button></div></div>
+              <div class="field row"><label for="z2_solar">Solar gain</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease solar gain">−</button><span class="value"><input type="number" inputmode="decimal" id="z2_solar" name="z2_solar" value="0.2" min="0" max="2" step="0.1"><span class="unit">×</span></span><button type="button" data-step="1" aria-label="Increase solar gain">+</button></div></div>
             </div>
           </div>
           <footer class="panel-foot"><span class="save-status" id="ss-zone-2-floor" aria-live="polite"></span><button type="reset" class="btn">Undo</button><button class="btn primary" type="submit">Save floor and weather</button></footer>
@@ -810,13 +1003,13 @@
             <dl class="kv"><div><dt>Open / close ripples</dt><dd data-bind="z2.ripples">—</dd></div><div><dt>Open / close factor</dt><dd data-bind="z2.factors">—</dd></div></dl>
             <dl class="kv"><div><dt>Preheat adv.</dt><dd data-bind="z2.preheat">—</dd></div><div><dt>Last fault</dt><dd data-bind="z2.lastFault">—</dd></div></dl>
           </div>
+          <div data-bind-show="z2.learnBar" hidden>
+            <p class="hint" data-bind="z2.learnPhase"></p>
+            <div class="bar violet" style="--v:0%" data-bind-bar="z2.learn" role="meter" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="Learning progress"><i></i></div>
+          </div>
           <footer class="panel-foot">
-            <button class="btn" type="submit" name="action" value="reset_fault" data-bind-disable="z2.faultOk">Reset fault</button>
-            <details class="confirm">
-              <summary class="btn danger">Reset and relearn…</summary>
-              <p class="note">Deletes the learned factors for Z2. The motor relearns on its next movement.</p>
-              <button class="btn danger" type="submit" name="action" value="reset_relearn">Reset and relearn Z2</button>
-            </details>
+            <button class="btn primary" type="submit" name="action" value="reset_fault" data-bind-show="z2.fault" hidden>Reset fault</button>
+            <button class="btn danger" type="button" popovertarget="confirm-relearn-z2">Reset and relearn…</button><div id="confirm-relearn-z2" popover class="confirm-pop" role="alertdialog" aria-labelledby="confirm-relearn-z2-t" aria-describedby="confirm-relearn-z2-d"><p class="confirm-title" id="confirm-relearn-z2-t">Reset and relearn Z2?</p><p id="confirm-relearn-z2-d">Deletes the learned factors for Z2. The motor relearns on its next movement.</p><div class="confirm-actions"><button class="btn" type="button" popovertarget="confirm-relearn-z2" popovertargetaction="hide" autofocus>Cancel</button><button class="btn danger-solid" type="submit" name="action" value="reset_relearn" popovertarget="confirm-relearn-z2" popovertargetaction="hide">Reset</button></div></div>
           </footer>
         </form>
       </section>
@@ -832,21 +1025,37 @@
               <h4>Room</h4>
               
               <label class="switch"><span class="switch-text"><b>Zone enabled</b></span><input type="checkbox" role="switch" name="z3_enabled" checked></label>
-              <div class="field"><label for="z3_name">Name</label><input class="input" id="z3_name" name="z3_name" value="Toilet" maxlength="24"></div>
-              <div class="field"><label for="z3_area">Area</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease area">−</button><span class="value"><input type="number" inputmode="decimal" id="z3_area" name="z3_area" value="4.5" min="0" max="200" step="0.5"><span class="unit">m²</span></span><button type="button" data-step="1" aria-label="Increase area">+</button></div></div>
-              <div class="field"><label for="z3_merge">Group with<span class="hint">One room: shared target, valves open equally</span></label><select class="select" id="z3_merge" name="z3_merge"><option value="">None</option><option value="1">Z1 Josephine</option><option value="2">Z2 Laura</option><option value="4">Z4 Stue rum 1</option><option value="5">Z5 Stue rum 2</option><option value="6">Z6 Soveværelse</option></select></div>
+              <div class="field row"><label for="z3_name">Name</label><input class="input" id="z3_name" name="z3_name" value="Toilet" maxlength="24"></div>
+              <div class="field row"><label for="z3_area">Area</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease area">−</button><span class="value"><input type="number" inputmode="decimal" id="z3_area" name="z3_area" value="4.5" min="0" max="200" step="0.5"><span class="unit">m²</span></span><button type="button" data-step="1" aria-label="Increase area">+</button></div></div>
+              <div class="field row"><label for="z3_merge">Group with<span class="hint">One room: shared target, valves open equally</span></label><select class="select" id="z3_merge" name="z3_merge"><option value="">None</option><option value="1">Z1 Josephine</option><option value="2">Z2 Laura</option><option value="4">Z4 Stue rum 1</option><option value="5">Z5 Stue rum 2</option><option value="6">Z6 Soveværelse</option></select></div>
             </div>
             <div class="sub">
               <h4>Sensors</h4>
-              <div class="field"><span class="label">Room temperature from</span><div class="seg" role="radiogroup" aria-label="Room temperature from"><label><input type="radio" name="z3_src" value="probe" checked><span>Probe</span></label><label><input type="radio" name="z3_src" value="ble"><span>BLE</span></label></div></div>
-              <div class="field">
+              <div class="field row"><span class="label">Room temperature from</span><div class="seg" role="radiogroup" aria-label="Room temperature from"><label><input type="radio" name="z3_src" value="probe" checked><span>Probe</span></label><label><input type="radio" name="z3_src" value="ble"><span>BLE</span></label></div></div>
+              <div class="field row">
                 <label for="z3_ble">BLE sensor (MAC)<span class="hint">BTHome, e.g. Shelly BLU H&amp;T</span></label>
                 <div class="pair wide-first">
                   <input class="input" id="z3_ble" name="z3_ble" placeholder="AA:BB:CC:DD:EE:FF" pattern="^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$" autocomplete="off" spellcheck="false">
                   <button type="button" class="btn" data-action="ble-scan" data-zone="3">Scan</button>
                 </div>
               </div>
-              <div class="field zone-ret"><label for="z3_ret">Return sensor</label><select class="select" id="z3_ret" name="z3_ret"><option value="1">Probe 1</option><option value="2">Probe 2</option><option value="3">Probe 3</option><option value="4">Probe 4</option><option value="5" selected>Probe 5</option><option value="6">Probe 6</option><option value="7">Probe 7</option><option value="8">Probe 8</option></select></div>
+              <div hidden data-ble-seen-row="3">
+                <p class="note" data-ble-seen-status="3" aria-live="polite"></p>
+                <div class="table-wrap">
+                  <table class="table" aria-label="Nearby sensors">
+                    <thead>
+                      <tr>
+                        <th>Sensor</th>
+                        <th class="num">Temp</th>
+                        <th class="num">RSSI</th>
+                        <th></th>
+                      </tr>
+                    </thead>
+                    <tbody data-ble-seen="3"></tbody>
+                  </table>
+                </div>
+              </div>
+              <div class="field row zone-ret"><label for="z3_ret">Return sensor</label><select class="select" id="z3_ret" name="z3_ret"><option value="" selected>None</option><option value="1">Probe 1</option><option value="2">Probe 2</option><option value="3">Probe 3</option><option value="4">Probe 4</option><option value="5">Probe 5</option><option value="6">Probe 6</option><option value="7">Probe 7</option><option value="8">Probe 8</option></select></div>
             </div>
           </div>
           <footer class="panel-foot"><span class="save-status" id="ss-zone-3-room" aria-live="polite"></span><button type="reset" class="btn">Undo</button><button class="btn primary" type="submit">Save room and sensors</button></footer>
@@ -857,18 +1066,18 @@
           <div class="subs cols-2">
             <div class="sub">
               <h4>Floor and pipes</h4>
-              <div class="field"><label for="z3_spacing">Pipe spacing C-C</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease pipe spacing c-c">−</button><span class="value"><input type="number" inputmode="decimal" id="z3_spacing" name="z3_spacing" value="100" min="50" max="300" step="25"><span class="unit">mm</span></span><button type="button" data-step="1" aria-label="Increase pipe spacing c-c">+</button></div></div>
-              <div class="field"><label for="z3_pipe">Pipe type</label><select class="select" id="z3_pipe" name="z3_pipe"><option>PEX 12mm</option><option>PEX 14mm</option><option selected>PEX 16mm</option><option>PEX 17mm</option><option>PEX 18mm</option><option>PEX 20mm</option><option>ALUPEX 16mm</option><option>ALUPEX 20mm</option><option>Unknown</option></select></div>
-              <div class="field"><label for="z3_slab">Slab</label><select class="select" id="z3_slab" name="z3_slab"><option value="unset">Unset</option><option value="cast_concrete">Cast concrete</option><option value="screed">Screed</option><option value="dry_plates">Dry plates</option><option value="timber_joists">Timber joists</option></select></div>
-              <div class="field"><label for="z3_covering">Covering</label><select class="select" id="z3_covering" name="z3_covering"><option value="unset">Unset</option><option value="tile_stone">Tile / stone</option><option value="vinyl_linoleum">Vinyl / linoleum</option><option value="parquet_laminate">Parquet / laminate</option><option value="carpet">Carpet</option></select></div>
-              <div class="field"><label for="z3_thick">Active thickness</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease active thickness">−</button><span class="value"><input type="number" inputmode="decimal" id="z3_thick" name="z3_thick" value="0.0" min="0" max="15" step="0.5"><span class="unit">cm</span></span><button type="button" data-step="1" aria-label="Increase active thickness">+</button></div></div>
-              <div class="field"><label for="z3_lead">Thermal lead</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease thermal lead">−</button><span class="value"><input type="number" inputmode="decimal" id="z3_lead" name="z3_lead" value="3.0" min="0" max="12" step="0.5"><span class="unit">h</span></span><button type="button" data-step="1" aria-label="Increase thermal lead">+</button></div></div>
+              <div class="field row"><label for="z3_spacing">Pipe spacing C-C</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease pipe spacing c-c">−</button><span class="value"><input type="number" inputmode="decimal" id="z3_spacing" name="z3_spacing" value="100" min="50" max="300" step="25"><span class="unit">mm</span></span><button type="button" data-step="1" aria-label="Increase pipe spacing c-c">+</button></div></div>
+              <div class="field row"><label for="z3_pipe">Pipe type</label><select class="select" id="z3_pipe" name="z3_pipe"><option>PEX 12mm</option><option>PEX 14mm</option><option selected>PEX 16mm</option><option>PEX 17mm</option><option>PEX 18mm</option><option>PEX 20mm</option><option>ALUPEX 16mm</option><option>ALUPEX 20mm</option><option>Unknown</option></select></div>
+              <div class="field row"><label for="z3_slab">Slab</label><select class="select" id="z3_slab" name="z3_slab"><option value="unset">Unset</option><option value="cast_concrete">Cast concrete</option><option value="screed">Screed</option><option value="dry_plates">Dry plates</option><option value="timber_joists">Timber joists</option></select></div>
+              <div class="field row"><label for="z3_covering">Covering</label><select class="select" id="z3_covering" name="z3_covering"><option value="unset">Unset</option><option value="tile_stone">Tile / stone</option><option value="vinyl_linoleum">Vinyl / linoleum</option><option value="parquet_laminate">Parquet / laminate</option><option value="carpet">Carpet</option></select></div>
+              <div class="field row"><label for="z3_thick">Active thickness</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease active thickness">−</button><span class="value"><input type="number" inputmode="decimal" id="z3_thick" name="z3_thick" value="0.0" min="0" max="15" step="0.5"><span class="unit">cm</span></span><button type="button" data-step="1" aria-label="Increase active thickness">+</button></div></div>
+              <div class="field row"><label for="z3_lead">Thermal lead</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease thermal lead">−</button><span class="value"><input type="number" inputmode="decimal" id="z3_lead" name="z3_lead" value="3.0" min="0" max="12" step="0.5"><span class="unit">h</span></span><button type="button" data-step="1" aria-label="Increase thermal lead">+</button></div></div>
             </div>
             <div class="sub">
               <h4>Weather preload</h4>
-              <div class="field"><span class="label">Exterior walls</span><div class="compass" role="group" aria-label="Exterior walls"><i class="c"></i><label data-wall="n"><input type="checkbox" name="z3_wall" value="n" aria-label="North"><span>N</span></label><label data-wall="e"><input type="checkbox" name="z3_wall" value="e" aria-label="East"><span>E</span></label><label data-wall="s"><input type="checkbox" name="z3_wall" value="s" aria-label="South"><span>S</span></label><label data-wall="w"><input type="checkbox" name="z3_wall" value="w" aria-label="West"><span>W</span></label></div></div>
-              <div class="field"><label for="z3_wind">Wind exposure</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease wind exposure">−</button><span class="value"><input type="number" inputmode="decimal" id="z3_wind" name="z3_wind" value="0.0" min="0" max="2" step="0.1"><span class="unit">×</span></span><button type="button" data-step="1" aria-label="Increase wind exposure">+</button></div></div>
-              <div class="field"><label for="z3_solar">Solar gain</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease solar gain">−</button><span class="value"><input type="number" inputmode="decimal" id="z3_solar" name="z3_solar" value="0.2" min="0" max="2" step="0.1"><span class="unit">×</span></span><button type="button" data-step="1" aria-label="Increase solar gain">+</button></div></div>
+              <div class="field row"><span class="label">Exterior walls</span><div class="compass" role="group" aria-label="Exterior walls"><i class="c"></i><label data-wall="n"><input type="checkbox" name="z3_wall" value="n" aria-label="North"><span>N</span></label><label data-wall="e"><input type="checkbox" name="z3_wall" value="e" aria-label="East"><span>E</span></label><label data-wall="s"><input type="checkbox" name="z3_wall" value="s" aria-label="South"><span>S</span></label><label data-wall="w"><input type="checkbox" name="z3_wall" value="w" aria-label="West"><span>W</span></label></div></div>
+              <div class="field row"><label for="z3_wind">Wind exposure</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease wind exposure">−</button><span class="value"><input type="number" inputmode="decimal" id="z3_wind" name="z3_wind" value="0.0" min="0" max="2" step="0.1"><span class="unit">×</span></span><button type="button" data-step="1" aria-label="Increase wind exposure">+</button></div></div>
+              <div class="field row"><label for="z3_solar">Solar gain</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease solar gain">−</button><span class="value"><input type="number" inputmode="decimal" id="z3_solar" name="z3_solar" value="0.2" min="0" max="2" step="0.1"><span class="unit">×</span></span><button type="button" data-step="1" aria-label="Increase solar gain">+</button></div></div>
             </div>
           </div>
           <footer class="panel-foot"><span class="save-status" id="ss-zone-3-floor" aria-live="polite"></span><button type="reset" class="btn">Undo</button><button class="btn primary" type="submit">Save floor and weather</button></footer>
@@ -880,13 +1089,13 @@
             <dl class="kv"><div><dt>Open / close ripples</dt><dd data-bind="z3.ripples">—</dd></div><div><dt>Open / close factor</dt><dd data-bind="z3.factors">—</dd></div></dl>
             <dl class="kv"><div><dt>Preheat adv.</dt><dd data-bind="z3.preheat">—</dd></div><div><dt>Last fault</dt><dd data-bind="z3.lastFault">—</dd></div></dl>
           </div>
+          <div data-bind-show="z3.learnBar" hidden>
+            <p class="hint" data-bind="z3.learnPhase"></p>
+            <div class="bar violet" style="--v:0%" data-bind-bar="z3.learn" role="meter" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="Learning progress"><i></i></div>
+          </div>
           <footer class="panel-foot">
-            <button class="btn" type="submit" name="action" value="reset_fault" data-bind-disable="z3.faultOk">Reset fault</button>
-            <details class="confirm">
-              <summary class="btn danger">Reset and relearn…</summary>
-              <p class="note">Deletes the learned factors for Z3. The motor relearns on its next movement.</p>
-              <button class="btn danger" type="submit" name="action" value="reset_relearn">Reset and relearn Z3</button>
-            </details>
+            <button class="btn primary" type="submit" name="action" value="reset_fault" data-bind-show="z3.fault" hidden>Reset fault</button>
+            <button class="btn danger" type="button" popovertarget="confirm-relearn-z3">Reset and relearn…</button><div id="confirm-relearn-z3" popover class="confirm-pop" role="alertdialog" aria-labelledby="confirm-relearn-z3-t" aria-describedby="confirm-relearn-z3-d"><p class="confirm-title" id="confirm-relearn-z3-t">Reset and relearn Z3?</p><p id="confirm-relearn-z3-d">Deletes the learned factors for Z3. The motor relearns on its next movement.</p><div class="confirm-actions"><button class="btn" type="button" popovertarget="confirm-relearn-z3" popovertargetaction="hide" autofocus>Cancel</button><button class="btn danger-solid" type="submit" name="action" value="reset_relearn" popovertarget="confirm-relearn-z3" popovertargetaction="hide">Reset</button></div></div>
           </footer>
         </form>
       </section>
@@ -902,21 +1111,37 @@
               <h4>Room</h4>
               
               <label class="switch"><span class="switch-text"><b>Zone enabled</b></span><input type="checkbox" role="switch" name="z4_enabled" checked></label>
-              <div class="field"><label for="z4_name">Name</label><input class="input" id="z4_name" name="z4_name" value="Stue rum 1" maxlength="24"></div>
-              <div class="field"><label for="z4_area">Area</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease area">−</button><span class="value"><input type="number" inputmode="decimal" id="z4_area" name="z4_area" value="22.0" min="0" max="200" step="0.5"><span class="unit">m²</span></span><button type="button" data-step="1" aria-label="Increase area">+</button></div></div>
-              <div class="field"><label for="z4_merge">Group with<span class="hint">One room: shared target, valves open equally</span></label><select class="select" id="z4_merge" name="z4_merge"><option value="">None</option><option value="1">Z1 Josephine</option><option value="2">Z2 Laura</option><option value="3">Z3 Toilet</option><option value="5">Z5 Stue rum 2</option><option value="6">Z6 Soveværelse</option></select></div>
+              <div class="field row"><label for="z4_name">Name</label><input class="input" id="z4_name" name="z4_name" value="Stue rum 1" maxlength="24"></div>
+              <div class="field row"><label for="z4_area">Area</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease area">−</button><span class="value"><input type="number" inputmode="decimal" id="z4_area" name="z4_area" value="22.0" min="0" max="200" step="0.5"><span class="unit">m²</span></span><button type="button" data-step="1" aria-label="Increase area">+</button></div></div>
+              <div class="field row"><label for="z4_merge">Group with<span class="hint">One room: shared target, valves open equally</span></label><select class="select" id="z4_merge" name="z4_merge"><option value="">None</option><option value="1">Z1 Josephine</option><option value="2">Z2 Laura</option><option value="3">Z3 Toilet</option><option value="5">Z5 Stue rum 2</option><option value="6">Z6 Soveværelse</option></select></div>
             </div>
             <div class="sub">
               <h4>Sensors</h4>
-              <div class="field"><span class="label">Room temperature from</span><div class="seg" role="radiogroup" aria-label="Room temperature from"><label><input type="radio" name="z4_src" value="probe" checked><span>Probe</span></label><label><input type="radio" name="z4_src" value="ble"><span>BLE</span></label></div></div>
-              <div class="field">
+              <div class="field row"><span class="label">Room temperature from</span><div class="seg" role="radiogroup" aria-label="Room temperature from"><label><input type="radio" name="z4_src" value="probe" checked><span>Probe</span></label><label><input type="radio" name="z4_src" value="ble"><span>BLE</span></label></div></div>
+              <div class="field row">
                 <label for="z4_ble">BLE sensor (MAC)<span class="hint">BTHome, e.g. Shelly BLU H&amp;T</span></label>
                 <div class="pair wide-first">
                   <input class="input" id="z4_ble" name="z4_ble" placeholder="AA:BB:CC:DD:EE:FF" pattern="^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$" autocomplete="off" spellcheck="false">
                   <button type="button" class="btn" data-action="ble-scan" data-zone="4">Scan</button>
                 </div>
               </div>
-              <div class="field zone-ret"><label for="z4_ret">Return sensor</label><select class="select" id="z4_ret" name="z4_ret"><option value="1">Probe 1</option><option value="2">Probe 2</option><option value="3">Probe 3</option><option value="4">Probe 4</option><option value="5">Probe 5</option><option value="6" selected>Probe 6</option><option value="7">Probe 7</option><option value="8">Probe 8</option></select></div>
+              <div hidden data-ble-seen-row="4">
+                <p class="note" data-ble-seen-status="4" aria-live="polite"></p>
+                <div class="table-wrap">
+                  <table class="table" aria-label="Nearby sensors">
+                    <thead>
+                      <tr>
+                        <th>Sensor</th>
+                        <th class="num">Temp</th>
+                        <th class="num">RSSI</th>
+                        <th></th>
+                      </tr>
+                    </thead>
+                    <tbody data-ble-seen="4"></tbody>
+                  </table>
+                </div>
+              </div>
+              <div class="field row zone-ret"><label for="z4_ret">Return sensor</label><select class="select" id="z4_ret" name="z4_ret"><option value="" selected>None</option><option value="1">Probe 1</option><option value="2">Probe 2</option><option value="3">Probe 3</option><option value="4">Probe 4</option><option value="5">Probe 5</option><option value="6">Probe 6</option><option value="7">Probe 7</option><option value="8">Probe 8</option></select></div>
             </div>
           </div>
           <footer class="panel-foot"><span class="save-status" id="ss-zone-4-room" aria-live="polite"></span><button type="reset" class="btn">Undo</button><button class="btn primary" type="submit">Save room and sensors</button></footer>
@@ -927,18 +1152,18 @@
           <div class="subs cols-2">
             <div class="sub">
               <h4>Floor and pipes</h4>
-              <div class="field"><label for="z4_spacing">Pipe spacing C-C</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease pipe spacing c-c">−</button><span class="value"><input type="number" inputmode="decimal" id="z4_spacing" name="z4_spacing" value="150" min="50" max="300" step="25"><span class="unit">mm</span></span><button type="button" data-step="1" aria-label="Increase pipe spacing c-c">+</button></div></div>
-              <div class="field"><label for="z4_pipe">Pipe type</label><select class="select" id="z4_pipe" name="z4_pipe"><option>PEX 12mm</option><option>PEX 14mm</option><option selected>PEX 16mm</option><option>PEX 17mm</option><option>PEX 18mm</option><option>PEX 20mm</option><option>ALUPEX 16mm</option><option>ALUPEX 20mm</option><option>Unknown</option></select></div>
-              <div class="field"><label for="z4_slab">Slab</label><select class="select" id="z4_slab" name="z4_slab"><option value="unset">Unset</option><option value="cast_concrete">Cast concrete</option><option value="screed">Screed</option><option value="dry_plates">Dry plates</option><option value="timber_joists">Timber joists</option></select></div>
-              <div class="field"><label for="z4_covering">Covering</label><select class="select" id="z4_covering" name="z4_covering"><option value="unset">Unset</option><option value="tile_stone">Tile / stone</option><option value="vinyl_linoleum">Vinyl / linoleum</option><option value="parquet_laminate">Parquet / laminate</option><option value="carpet">Carpet</option></select></div>
-              <div class="field"><label for="z4_thick">Active thickness</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease active thickness">−</button><span class="value"><input type="number" inputmode="decimal" id="z4_thick" name="z4_thick" value="0.0" min="0" max="15" step="0.5"><span class="unit">cm</span></span><button type="button" data-step="1" aria-label="Increase active thickness">+</button></div></div>
-              <div class="field"><label for="z4_lead">Thermal lead</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease thermal lead">−</button><span class="value"><input type="number" inputmode="decimal" id="z4_lead" name="z4_lead" value="3.0" min="0" max="12" step="0.5"><span class="unit">h</span></span><button type="button" data-step="1" aria-label="Increase thermal lead">+</button></div></div>
+              <div class="field row"><label for="z4_spacing">Pipe spacing C-C</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease pipe spacing c-c">−</button><span class="value"><input type="number" inputmode="decimal" id="z4_spacing" name="z4_spacing" value="150" min="50" max="300" step="25"><span class="unit">mm</span></span><button type="button" data-step="1" aria-label="Increase pipe spacing c-c">+</button></div></div>
+              <div class="field row"><label for="z4_pipe">Pipe type</label><select class="select" id="z4_pipe" name="z4_pipe"><option>PEX 12mm</option><option>PEX 14mm</option><option selected>PEX 16mm</option><option>PEX 17mm</option><option>PEX 18mm</option><option>PEX 20mm</option><option>ALUPEX 16mm</option><option>ALUPEX 20mm</option><option>Unknown</option></select></div>
+              <div class="field row"><label for="z4_slab">Slab</label><select class="select" id="z4_slab" name="z4_slab"><option value="unset">Unset</option><option value="cast_concrete">Cast concrete</option><option value="screed">Screed</option><option value="dry_plates">Dry plates</option><option value="timber_joists">Timber joists</option></select></div>
+              <div class="field row"><label for="z4_covering">Covering</label><select class="select" id="z4_covering" name="z4_covering"><option value="unset">Unset</option><option value="tile_stone">Tile / stone</option><option value="vinyl_linoleum">Vinyl / linoleum</option><option value="parquet_laminate">Parquet / laminate</option><option value="carpet">Carpet</option></select></div>
+              <div class="field row"><label for="z4_thick">Active thickness</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease active thickness">−</button><span class="value"><input type="number" inputmode="decimal" id="z4_thick" name="z4_thick" value="0.0" min="0" max="15" step="0.5"><span class="unit">cm</span></span><button type="button" data-step="1" aria-label="Increase active thickness">+</button></div></div>
+              <div class="field row"><label for="z4_lead">Thermal lead</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease thermal lead">−</button><span class="value"><input type="number" inputmode="decimal" id="z4_lead" name="z4_lead" value="3.0" min="0" max="12" step="0.5"><span class="unit">h</span></span><button type="button" data-step="1" aria-label="Increase thermal lead">+</button></div></div>
             </div>
             <div class="sub">
               <h4>Weather preload</h4>
-              <div class="field"><span class="label">Exterior walls</span><div class="compass" role="group" aria-label="Exterior walls"><i class="c"></i><label data-wall="n"><input type="checkbox" name="z4_wall" value="n" aria-label="North"><span>N</span></label><label data-wall="e"><input type="checkbox" name="z4_wall" value="e" aria-label="East"><span>E</span></label><label data-wall="s"><input type="checkbox" name="z4_wall" value="s" checked aria-label="South"><span>S</span></label><label data-wall="w"><input type="checkbox" name="z4_wall" value="w" aria-label="West"><span>W</span></label></div></div>
-              <div class="field"><label for="z4_wind">Wind exposure</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease wind exposure">−</button><span class="value"><input type="number" inputmode="decimal" id="z4_wind" name="z4_wind" value="1.0" min="0" max="2" step="0.1"><span class="unit">×</span></span><button type="button" data-step="1" aria-label="Increase wind exposure">+</button></div></div>
-              <div class="field"><label for="z4_solar">Solar gain</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease solar gain">−</button><span class="value"><input type="number" inputmode="decimal" id="z4_solar" name="z4_solar" value="0.6" min="0" max="2" step="0.1"><span class="unit">×</span></span><button type="button" data-step="1" aria-label="Increase solar gain">+</button></div></div>
+              <div class="field row"><span class="label">Exterior walls</span><div class="compass" role="group" aria-label="Exterior walls"><i class="c"></i><label data-wall="n"><input type="checkbox" name="z4_wall" value="n" aria-label="North"><span>N</span></label><label data-wall="e"><input type="checkbox" name="z4_wall" value="e" aria-label="East"><span>E</span></label><label data-wall="s"><input type="checkbox" name="z4_wall" value="s" checked aria-label="South"><span>S</span></label><label data-wall="w"><input type="checkbox" name="z4_wall" value="w" aria-label="West"><span>W</span></label></div></div>
+              <div class="field row"><label for="z4_wind">Wind exposure</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease wind exposure">−</button><span class="value"><input type="number" inputmode="decimal" id="z4_wind" name="z4_wind" value="1.0" min="0" max="2" step="0.1"><span class="unit">×</span></span><button type="button" data-step="1" aria-label="Increase wind exposure">+</button></div></div>
+              <div class="field row"><label for="z4_solar">Solar gain</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease solar gain">−</button><span class="value"><input type="number" inputmode="decimal" id="z4_solar" name="z4_solar" value="0.6" min="0" max="2" step="0.1"><span class="unit">×</span></span><button type="button" data-step="1" aria-label="Increase solar gain">+</button></div></div>
             </div>
           </div>
           <footer class="panel-foot"><span class="save-status" id="ss-zone-4-floor" aria-live="polite"></span><button type="reset" class="btn">Undo</button><button class="btn primary" type="submit">Save floor and weather</button></footer>
@@ -950,13 +1175,13 @@
             <dl class="kv"><div><dt>Open / close ripples</dt><dd data-bind="z4.ripples">—</dd></div><div><dt>Open / close factor</dt><dd data-bind="z4.factors">—</dd></div></dl>
             <dl class="kv"><div><dt>Preheat adv.</dt><dd data-bind="z4.preheat">—</dd></div><div><dt>Last fault</dt><dd data-bind="z4.lastFault">—</dd></div></dl>
           </div>
+          <div data-bind-show="z4.learnBar" hidden>
+            <p class="hint" data-bind="z4.learnPhase"></p>
+            <div class="bar violet" style="--v:0%" data-bind-bar="z4.learn" role="meter" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="Learning progress"><i></i></div>
+          </div>
           <footer class="panel-foot">
-            <button class="btn" type="submit" name="action" value="reset_fault" data-bind-disable="z4.faultOk">Reset fault</button>
-            <details class="confirm">
-              <summary class="btn danger">Reset and relearn…</summary>
-              <p class="note">Deletes the learned factors for Z4. The motor relearns on its next movement.</p>
-              <button class="btn danger" type="submit" name="action" value="reset_relearn">Reset and relearn Z4</button>
-            </details>
+            <button class="btn primary" type="submit" name="action" value="reset_fault" data-bind-show="z4.fault" hidden>Reset fault</button>
+            <button class="btn danger" type="button" popovertarget="confirm-relearn-z4">Reset and relearn…</button><div id="confirm-relearn-z4" popover class="confirm-pop" role="alertdialog" aria-labelledby="confirm-relearn-z4-t" aria-describedby="confirm-relearn-z4-d"><p class="confirm-title" id="confirm-relearn-z4-t">Reset and relearn Z4?</p><p id="confirm-relearn-z4-d">Deletes the learned factors for Z4. The motor relearns on its next movement.</p><div class="confirm-actions"><button class="btn" type="button" popovertarget="confirm-relearn-z4" popovertargetaction="hide" autofocus>Cancel</button><button class="btn danger-solid" type="submit" name="action" value="reset_relearn" popovertarget="confirm-relearn-z4" popovertargetaction="hide">Reset</button></div></div>
           </footer>
         </form>
       </section>
@@ -972,21 +1197,37 @@
               <h4>Room</h4>
               <p class="msg violet"><span><b>Grouped with Z4.</b> Target and schedule are set on Z4; sensors and floor are set here.</span></p>
               <label class="switch"><span class="switch-text"><b>Zone enabled</b></span><input type="checkbox" role="switch" name="z5_enabled" checked></label>
-              <div class="field"><label for="z5_name">Name</label><input class="input" id="z5_name" name="z5_name" value="Stue rum 2" maxlength="24"></div>
-              <div class="field"><label for="z5_area">Area</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease area">−</button><span class="value"><input type="number" inputmode="decimal" id="z5_area" name="z5_area" value="18.0" min="0" max="200" step="0.5"><span class="unit">m²</span></span><button type="button" data-step="1" aria-label="Increase area">+</button></div></div>
-              <div class="field"><label for="z5_merge">Group with<span class="hint">One room: shared target, valves open equally</span></label><select class="select" id="z5_merge" name="z5_merge"><option value="">None</option><option value="1">Z1 Josephine</option><option value="2">Z2 Laura</option><option value="3">Z3 Toilet</option><option value="4" selected>Z4 Stue rum 1</option><option value="6">Z6 Soveværelse</option></select></div>
+              <div class="field row"><label for="z5_name">Name</label><input class="input" id="z5_name" name="z5_name" value="Stue rum 2" maxlength="24"></div>
+              <div class="field row"><label for="z5_area">Area</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease area">−</button><span class="value"><input type="number" inputmode="decimal" id="z5_area" name="z5_area" value="18.0" min="0" max="200" step="0.5"><span class="unit">m²</span></span><button type="button" data-step="1" aria-label="Increase area">+</button></div></div>
+              <div class="field row"><label for="z5_merge">Group with<span class="hint">One room: shared target, valves open equally</span></label><select class="select" id="z5_merge" name="z5_merge"><option value="">None</option><option value="1">Z1 Josephine</option><option value="2">Z2 Laura</option><option value="3">Z3 Toilet</option><option value="4" selected>Z4 Stue rum 1</option><option value="6">Z6 Soveværelse</option></select></div>
             </div>
             <div class="sub">
               <h4>Sensors</h4>
-              <div class="field"><span class="label">Room temperature from</span><div class="seg" role="radiogroup" aria-label="Room temperature from"><label><input type="radio" name="z5_src" value="probe" checked><span>Probe</span></label><label><input type="radio" name="z5_src" value="ble"><span>BLE</span></label></div></div>
-              <div class="field">
+              <div class="field row"><span class="label">Room temperature from</span><div class="seg" role="radiogroup" aria-label="Room temperature from"><label><input type="radio" name="z5_src" value="probe" checked><span>Probe</span></label><label><input type="radio" name="z5_src" value="ble"><span>BLE</span></label></div></div>
+              <div class="field row">
                 <label for="z5_ble">BLE sensor (MAC)<span class="hint">BTHome, e.g. Shelly BLU H&amp;T</span></label>
                 <div class="pair wide-first">
                   <input class="input" id="z5_ble" name="z5_ble" placeholder="AA:BB:CC:DD:EE:FF" pattern="^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$" autocomplete="off" spellcheck="false">
                   <button type="button" class="btn" data-action="ble-scan" data-zone="5">Scan</button>
                 </div>
               </div>
-              <div class="field zone-ret"><label for="z5_ret">Return sensor</label><select class="select" id="z5_ret" name="z5_ret"><option value="1">Probe 1</option><option value="2">Probe 2</option><option value="3">Probe 3</option><option value="4">Probe 4</option><option value="5">Probe 5</option><option value="6">Probe 6</option><option value="7" selected>Probe 7</option><option value="8">Probe 8</option></select></div>
+              <div hidden data-ble-seen-row="5">
+                <p class="note" data-ble-seen-status="5" aria-live="polite"></p>
+                <div class="table-wrap">
+                  <table class="table" aria-label="Nearby sensors">
+                    <thead>
+                      <tr>
+                        <th>Sensor</th>
+                        <th class="num">Temp</th>
+                        <th class="num">RSSI</th>
+                        <th></th>
+                      </tr>
+                    </thead>
+                    <tbody data-ble-seen="5"></tbody>
+                  </table>
+                </div>
+              </div>
+              <div class="field row zone-ret"><label for="z5_ret">Return sensor</label><select class="select" id="z5_ret" name="z5_ret"><option value="" selected>None</option><option value="1">Probe 1</option><option value="2">Probe 2</option><option value="3">Probe 3</option><option value="4">Probe 4</option><option value="5">Probe 5</option><option value="6">Probe 6</option><option value="7">Probe 7</option><option value="8">Probe 8</option></select></div>
             </div>
           </div>
           <footer class="panel-foot"><span class="save-status" id="ss-zone-5-room" aria-live="polite"></span><button type="reset" class="btn">Undo</button><button class="btn primary" type="submit">Save room and sensors</button></footer>
@@ -997,18 +1238,18 @@
           <div class="subs cols-2">
             <div class="sub">
               <h4>Floor and pipes</h4>
-              <div class="field"><label for="z5_spacing">Pipe spacing C-C</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease pipe spacing c-c">−</button><span class="value"><input type="number" inputmode="decimal" id="z5_spacing" name="z5_spacing" value="150" min="50" max="300" step="25"><span class="unit">mm</span></span><button type="button" data-step="1" aria-label="Increase pipe spacing c-c">+</button></div></div>
-              <div class="field"><label for="z5_pipe">Pipe type</label><select class="select" id="z5_pipe" name="z5_pipe"><option>PEX 12mm</option><option>PEX 14mm</option><option selected>PEX 16mm</option><option>PEX 17mm</option><option>PEX 18mm</option><option>PEX 20mm</option><option>ALUPEX 16mm</option><option>ALUPEX 20mm</option><option>Unknown</option></select></div>
-              <div class="field"><label for="z5_slab">Slab</label><select class="select" id="z5_slab" name="z5_slab"><option value="unset">Unset</option><option value="cast_concrete">Cast concrete</option><option value="screed">Screed</option><option value="dry_plates">Dry plates</option><option value="timber_joists">Timber joists</option></select></div>
-              <div class="field"><label for="z5_covering">Covering</label><select class="select" id="z5_covering" name="z5_covering"><option value="unset">Unset</option><option value="tile_stone">Tile / stone</option><option value="vinyl_linoleum">Vinyl / linoleum</option><option value="parquet_laminate">Parquet / laminate</option><option value="carpet">Carpet</option></select></div>
-              <div class="field"><label for="z5_thick">Active thickness</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease active thickness">−</button><span class="value"><input type="number" inputmode="decimal" id="z5_thick" name="z5_thick" value="0.0" min="0" max="15" step="0.5"><span class="unit">cm</span></span><button type="button" data-step="1" aria-label="Increase active thickness">+</button></div></div>
-              <div class="field"><label for="z5_lead">Thermal lead</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease thermal lead">−</button><span class="value"><input type="number" inputmode="decimal" id="z5_lead" name="z5_lead" value="3.0" min="0" max="12" step="0.5"><span class="unit">h</span></span><button type="button" data-step="1" aria-label="Increase thermal lead">+</button></div></div>
+              <div class="field row"><label for="z5_spacing">Pipe spacing C-C</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease pipe spacing c-c">−</button><span class="value"><input type="number" inputmode="decimal" id="z5_spacing" name="z5_spacing" value="150" min="50" max="300" step="25"><span class="unit">mm</span></span><button type="button" data-step="1" aria-label="Increase pipe spacing c-c">+</button></div></div>
+              <div class="field row"><label for="z5_pipe">Pipe type</label><select class="select" id="z5_pipe" name="z5_pipe"><option>PEX 12mm</option><option>PEX 14mm</option><option selected>PEX 16mm</option><option>PEX 17mm</option><option>PEX 18mm</option><option>PEX 20mm</option><option>ALUPEX 16mm</option><option>ALUPEX 20mm</option><option>Unknown</option></select></div>
+              <div class="field row"><label for="z5_slab">Slab</label><select class="select" id="z5_slab" name="z5_slab"><option value="unset">Unset</option><option value="cast_concrete">Cast concrete</option><option value="screed">Screed</option><option value="dry_plates">Dry plates</option><option value="timber_joists">Timber joists</option></select></div>
+              <div class="field row"><label for="z5_covering">Covering</label><select class="select" id="z5_covering" name="z5_covering"><option value="unset">Unset</option><option value="tile_stone">Tile / stone</option><option value="vinyl_linoleum">Vinyl / linoleum</option><option value="parquet_laminate">Parquet / laminate</option><option value="carpet">Carpet</option></select></div>
+              <div class="field row"><label for="z5_thick">Active thickness</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease active thickness">−</button><span class="value"><input type="number" inputmode="decimal" id="z5_thick" name="z5_thick" value="0.0" min="0" max="15" step="0.5"><span class="unit">cm</span></span><button type="button" data-step="1" aria-label="Increase active thickness">+</button></div></div>
+              <div class="field row"><label for="z5_lead">Thermal lead</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease thermal lead">−</button><span class="value"><input type="number" inputmode="decimal" id="z5_lead" name="z5_lead" value="3.0" min="0" max="12" step="0.5"><span class="unit">h</span></span><button type="button" data-step="1" aria-label="Increase thermal lead">+</button></div></div>
             </div>
             <div class="sub">
               <h4>Weather preload</h4>
-              <div class="field"><span class="label">Exterior walls</span><div class="compass" role="group" aria-label="Exterior walls"><i class="c"></i><label data-wall="n"><input type="checkbox" name="z5_wall" value="n" aria-label="North"><span>N</span></label><label data-wall="e"><input type="checkbox" name="z5_wall" value="e" aria-label="East"><span>E</span></label><label data-wall="s"><input type="checkbox" name="z5_wall" value="s" checked aria-label="South"><span>S</span></label><label data-wall="w"><input type="checkbox" name="z5_wall" value="w" checked aria-label="West"><span>W</span></label></div></div>
-              <div class="field"><label for="z5_wind">Wind exposure</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease wind exposure">−</button><span class="value"><input type="number" inputmode="decimal" id="z5_wind" name="z5_wind" value="1.0" min="0" max="2" step="0.1"><span class="unit">×</span></span><button type="button" data-step="1" aria-label="Increase wind exposure">+</button></div></div>
-              <div class="field"><label for="z5_solar">Solar gain</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease solar gain">−</button><span class="value"><input type="number" inputmode="decimal" id="z5_solar" name="z5_solar" value="0.6" min="0" max="2" step="0.1"><span class="unit">×</span></span><button type="button" data-step="1" aria-label="Increase solar gain">+</button></div></div>
+              <div class="field row"><span class="label">Exterior walls</span><div class="compass" role="group" aria-label="Exterior walls"><i class="c"></i><label data-wall="n"><input type="checkbox" name="z5_wall" value="n" aria-label="North"><span>N</span></label><label data-wall="e"><input type="checkbox" name="z5_wall" value="e" aria-label="East"><span>E</span></label><label data-wall="s"><input type="checkbox" name="z5_wall" value="s" checked aria-label="South"><span>S</span></label><label data-wall="w"><input type="checkbox" name="z5_wall" value="w" checked aria-label="West"><span>W</span></label></div></div>
+              <div class="field row"><label for="z5_wind">Wind exposure</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease wind exposure">−</button><span class="value"><input type="number" inputmode="decimal" id="z5_wind" name="z5_wind" value="1.0" min="0" max="2" step="0.1"><span class="unit">×</span></span><button type="button" data-step="1" aria-label="Increase wind exposure">+</button></div></div>
+              <div class="field row"><label for="z5_solar">Solar gain</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease solar gain">−</button><span class="value"><input type="number" inputmode="decimal" id="z5_solar" name="z5_solar" value="0.6" min="0" max="2" step="0.1"><span class="unit">×</span></span><button type="button" data-step="1" aria-label="Increase solar gain">+</button></div></div>
             </div>
           </div>
           <footer class="panel-foot"><span class="save-status" id="ss-zone-5-floor" aria-live="polite"></span><button type="reset" class="btn">Undo</button><button class="btn primary" type="submit">Save floor and weather</button></footer>
@@ -1020,13 +1261,13 @@
             <dl class="kv"><div><dt>Open / close ripples</dt><dd data-bind="z5.ripples">—</dd></div><div><dt>Open / close factor</dt><dd data-bind="z5.factors">—</dd></div></dl>
             <dl class="kv"><div><dt>Preheat adv.</dt><dd data-bind="z5.preheat">—</dd></div><div><dt>Last fault</dt><dd data-bind="z5.lastFault">—</dd></div></dl>
           </div>
+          <div data-bind-show="z5.learnBar" hidden>
+            <p class="hint" data-bind="z5.learnPhase"></p>
+            <div class="bar violet" style="--v:0%" data-bind-bar="z5.learn" role="meter" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="Learning progress"><i></i></div>
+          </div>
           <footer class="panel-foot">
-            <button class="btn" type="submit" name="action" value="reset_fault" data-bind-disable="z5.faultOk">Reset fault</button>
-            <details class="confirm">
-              <summary class="btn danger">Reset and relearn…</summary>
-              <p class="note">Deletes the learned factors for Z5. The motor relearns on its next movement.</p>
-              <button class="btn danger" type="submit" name="action" value="reset_relearn">Reset and relearn Z5</button>
-            </details>
+            <button class="btn primary" type="submit" name="action" value="reset_fault" data-bind-show="z5.fault" hidden>Reset fault</button>
+            <button class="btn danger" type="button" popovertarget="confirm-relearn-z5">Reset and relearn…</button><div id="confirm-relearn-z5" popover class="confirm-pop" role="alertdialog" aria-labelledby="confirm-relearn-z5-t" aria-describedby="confirm-relearn-z5-d"><p class="confirm-title" id="confirm-relearn-z5-t">Reset and relearn Z5?</p><p id="confirm-relearn-z5-d">Deletes the learned factors for Z5. The motor relearns on its next movement.</p><div class="confirm-actions"><button class="btn" type="button" popovertarget="confirm-relearn-z5" popovertargetaction="hide" autofocus>Cancel</button><button class="btn danger-solid" type="submit" name="action" value="reset_relearn" popovertarget="confirm-relearn-z5" popovertargetaction="hide">Reset</button></div></div>
           </footer>
         </form>
       </section>
@@ -1042,21 +1283,37 @@
               <h4>Room</h4>
               
               <label class="switch"><span class="switch-text"><b>Zone enabled</b></span><input type="checkbox" role="switch" name="z6_enabled" checked></label>
-              <div class="field"><label for="z6_name">Name</label><input class="input" id="z6_name" name="z6_name" value="Soveværelse" maxlength="24"></div>
-              <div class="field"><label for="z6_area">Area</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease area">−</button><span class="value"><input type="number" inputmode="decimal" id="z6_area" name="z6_area" value="14.0" min="0" max="200" step="0.5"><span class="unit">m²</span></span><button type="button" data-step="1" aria-label="Increase area">+</button></div></div>
-              <div class="field"><label for="z6_merge">Group with<span class="hint">One room: shared target, valves open equally</span></label><select class="select" id="z6_merge" name="z6_merge"><option value="">None</option><option value="1">Z1 Josephine</option><option value="2">Z2 Laura</option><option value="3">Z3 Toilet</option><option value="4">Z4 Stue rum 1</option><option value="5">Z5 Stue rum 2</option></select></div>
+              <div class="field row"><label for="z6_name">Name</label><input class="input" id="z6_name" name="z6_name" value="Soveværelse" maxlength="24"></div>
+              <div class="field row"><label for="z6_area">Area</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease area">−</button><span class="value"><input type="number" inputmode="decimal" id="z6_area" name="z6_area" value="14.0" min="0" max="200" step="0.5"><span class="unit">m²</span></span><button type="button" data-step="1" aria-label="Increase area">+</button></div></div>
+              <div class="field row"><label for="z6_merge">Group with<span class="hint">One room: shared target, valves open equally</span></label><select class="select" id="z6_merge" name="z6_merge"><option value="">None</option><option value="1">Z1 Josephine</option><option value="2">Z2 Laura</option><option value="3">Z3 Toilet</option><option value="4">Z4 Stue rum 1</option><option value="5">Z5 Stue rum 2</option></select></div>
             </div>
             <div class="sub">
               <h4>Sensors</h4>
-              <div class="field"><span class="label">Room temperature from</span><div class="seg" role="radiogroup" aria-label="Room temperature from"><label><input type="radio" name="z6_src" value="probe"><span>Probe</span></label><label><input type="radio" name="z6_src" value="ble" checked><span>BLE</span></label></div></div>
-              <div class="field">
+              <div class="field row"><span class="label">Room temperature from</span><div class="seg" role="radiogroup" aria-label="Room temperature from"><label><input type="radio" name="z6_src" value="probe"><span>Probe</span></label><label><input type="radio" name="z6_src" value="ble" checked><span>BLE</span></label></div></div>
+              <div class="field row">
                 <label for="z6_ble">BLE sensor (MAC)<span class="hint">BTHome, e.g. Shelly BLU H&amp;T</span></label>
                 <div class="pair wide-first">
                   <input class="input" id="z6_ble" name="z6_ble" placeholder="AA:BB:CC:DD:EE:FF" pattern="^([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$" autocomplete="off" spellcheck="false">
                   <button type="button" class="btn" data-action="ble-scan" data-zone="6">Scan</button>
                 </div>
               </div>
-              <div class="field zone-ret"><label for="z6_ret">Return sensor</label><select class="select" id="z6_ret" name="z6_ret"><option value="1">Probe 1</option><option value="2">Probe 2</option><option value="3">Probe 3</option><option value="4">Probe 4</option><option value="5">Probe 5</option><option value="6">Probe 6</option><option value="7">Probe 7</option><option value="8" selected>Probe 8</option></select></div>
+              <div hidden data-ble-seen-row="6">
+                <p class="note" data-ble-seen-status="6" aria-live="polite"></p>
+                <div class="table-wrap">
+                  <table class="table" aria-label="Nearby sensors">
+                    <thead>
+                      <tr>
+                        <th>Sensor</th>
+                        <th class="num">Temp</th>
+                        <th class="num">RSSI</th>
+                        <th></th>
+                      </tr>
+                    </thead>
+                    <tbody data-ble-seen="6"></tbody>
+                  </table>
+                </div>
+              </div>
+              <div class="field row zone-ret"><label for="z6_ret">Return sensor</label><select class="select" id="z6_ret" name="z6_ret"><option value="" selected>None</option><option value="1">Probe 1</option><option value="2">Probe 2</option><option value="3">Probe 3</option><option value="4">Probe 4</option><option value="5">Probe 5</option><option value="6">Probe 6</option><option value="7">Probe 7</option><option value="8">Probe 8</option></select></div>
             </div>
           </div>
           <footer class="panel-foot"><span class="save-status" id="ss-zone-6-room" aria-live="polite"></span><button type="reset" class="btn">Undo</button><button class="btn primary" type="submit">Save room and sensors</button></footer>
@@ -1067,18 +1324,18 @@
           <div class="subs cols-2">
             <div class="sub">
               <h4>Floor and pipes</h4>
-              <div class="field"><label for="z6_spacing">Pipe spacing C-C</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease pipe spacing c-c">−</button><span class="value"><input type="number" inputmode="decimal" id="z6_spacing" name="z6_spacing" value="200" min="50" max="300" step="25"><span class="unit">mm</span></span><button type="button" data-step="1" aria-label="Increase pipe spacing c-c">+</button></div></div>
-              <div class="field"><label for="z6_pipe">Pipe type</label><select class="select" id="z6_pipe" name="z6_pipe"><option>PEX 12mm</option><option>PEX 14mm</option><option>PEX 16mm</option><option>PEX 17mm</option><option>PEX 18mm</option><option>PEX 20mm</option><option selected>ALUPEX 16mm</option><option>ALUPEX 20mm</option><option>Unknown</option></select></div>
-              <div class="field"><label for="z6_slab">Slab</label><select class="select" id="z6_slab" name="z6_slab"><option value="unset">Unset</option><option value="cast_concrete">Cast concrete</option><option value="screed">Screed</option><option value="dry_plates">Dry plates</option><option value="timber_joists">Timber joists</option></select></div>
-              <div class="field"><label for="z6_covering">Covering</label><select class="select" id="z6_covering" name="z6_covering"><option value="unset">Unset</option><option value="tile_stone">Tile / stone</option><option value="vinyl_linoleum">Vinyl / linoleum</option><option value="parquet_laminate">Parquet / laminate</option><option value="carpet">Carpet</option></select></div>
-              <div class="field"><label for="z6_thick">Active thickness</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease active thickness">−</button><span class="value"><input type="number" inputmode="decimal" id="z6_thick" name="z6_thick" value="0.0" min="0" max="15" step="0.5"><span class="unit">cm</span></span><button type="button" data-step="1" aria-label="Increase active thickness">+</button></div></div>
-              <div class="field"><label for="z6_lead">Thermal lead</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease thermal lead">−</button><span class="value"><input type="number" inputmode="decimal" id="z6_lead" name="z6_lead" value="3.0" min="0" max="12" step="0.5"><span class="unit">h</span></span><button type="button" data-step="1" aria-label="Increase thermal lead">+</button></div></div>
+              <div class="field row"><label for="z6_spacing">Pipe spacing C-C</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease pipe spacing c-c">−</button><span class="value"><input type="number" inputmode="decimal" id="z6_spacing" name="z6_spacing" value="200" min="50" max="300" step="25"><span class="unit">mm</span></span><button type="button" data-step="1" aria-label="Increase pipe spacing c-c">+</button></div></div>
+              <div class="field row"><label for="z6_pipe">Pipe type</label><select class="select" id="z6_pipe" name="z6_pipe"><option>PEX 12mm</option><option>PEX 14mm</option><option>PEX 16mm</option><option>PEX 17mm</option><option>PEX 18mm</option><option>PEX 20mm</option><option selected>ALUPEX 16mm</option><option>ALUPEX 20mm</option><option>Unknown</option></select></div>
+              <div class="field row"><label for="z6_slab">Slab</label><select class="select" id="z6_slab" name="z6_slab"><option value="unset">Unset</option><option value="cast_concrete">Cast concrete</option><option value="screed">Screed</option><option value="dry_plates">Dry plates</option><option value="timber_joists">Timber joists</option></select></div>
+              <div class="field row"><label for="z6_covering">Covering</label><select class="select" id="z6_covering" name="z6_covering"><option value="unset">Unset</option><option value="tile_stone">Tile / stone</option><option value="vinyl_linoleum">Vinyl / linoleum</option><option value="parquet_laminate">Parquet / laminate</option><option value="carpet">Carpet</option></select></div>
+              <div class="field row"><label for="z6_thick">Active thickness</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease active thickness">−</button><span class="value"><input type="number" inputmode="decimal" id="z6_thick" name="z6_thick" value="0.0" min="0" max="15" step="0.5"><span class="unit">cm</span></span><button type="button" data-step="1" aria-label="Increase active thickness">+</button></div></div>
+              <div class="field row"><label for="z6_lead">Thermal lead</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease thermal lead">−</button><span class="value"><input type="number" inputmode="decimal" id="z6_lead" name="z6_lead" value="3.0" min="0" max="12" step="0.5"><span class="unit">h</span></span><button type="button" data-step="1" aria-label="Increase thermal lead">+</button></div></div>
             </div>
             <div class="sub">
               <h4>Weather preload</h4>
-              <div class="field"><span class="label">Exterior walls</span><div class="compass" role="group" aria-label="Exterior walls"><i class="c"></i><label data-wall="n"><input type="checkbox" name="z6_wall" value="n" checked aria-label="North"><span>N</span></label><label data-wall="e"><input type="checkbox" name="z6_wall" value="e" aria-label="East"><span>E</span></label><label data-wall="s"><input type="checkbox" name="z6_wall" value="s" aria-label="South"><span>S</span></label><label data-wall="w"><input type="checkbox" name="z6_wall" value="w" aria-label="West"><span>W</span></label></div></div>
-              <div class="field"><label for="z6_wind">Wind exposure</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease wind exposure">−</button><span class="value"><input type="number" inputmode="decimal" id="z6_wind" name="z6_wind" value="1.0" min="0" max="2" step="0.1"><span class="unit">×</span></span><button type="button" data-step="1" aria-label="Increase wind exposure">+</button></div></div>
-              <div class="field"><label for="z6_solar">Solar gain</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease solar gain">−</button><span class="value"><input type="number" inputmode="decimal" id="z6_solar" name="z6_solar" value="0.2" min="0" max="2" step="0.1"><span class="unit">×</span></span><button type="button" data-step="1" aria-label="Increase solar gain">+</button></div></div>
+              <div class="field row"><span class="label">Exterior walls</span><div class="compass" role="group" aria-label="Exterior walls"><i class="c"></i><label data-wall="n"><input type="checkbox" name="z6_wall" value="n" checked aria-label="North"><span>N</span></label><label data-wall="e"><input type="checkbox" name="z6_wall" value="e" aria-label="East"><span>E</span></label><label data-wall="s"><input type="checkbox" name="z6_wall" value="s" aria-label="South"><span>S</span></label><label data-wall="w"><input type="checkbox" name="z6_wall" value="w" aria-label="West"><span>W</span></label></div></div>
+              <div class="field row"><label for="z6_wind">Wind exposure</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease wind exposure">−</button><span class="value"><input type="number" inputmode="decimal" id="z6_wind" name="z6_wind" value="1.0" min="0" max="2" step="0.1"><span class="unit">×</span></span><button type="button" data-step="1" aria-label="Increase wind exposure">+</button></div></div>
+              <div class="field row"><label for="z6_solar">Solar gain</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease solar gain">−</button><span class="value"><input type="number" inputmode="decimal" id="z6_solar" name="z6_solar" value="0.2" min="0" max="2" step="0.1"><span class="unit">×</span></span><button type="button" data-step="1" aria-label="Increase solar gain">+</button></div></div>
             </div>
           </div>
           <footer class="panel-foot"><span class="save-status" id="ss-zone-6-floor" aria-live="polite"></span><button type="reset" class="btn">Undo</button><button class="btn primary" type="submit">Save floor and weather</button></footer>
@@ -1090,13 +1347,13 @@
             <dl class="kv"><div><dt>Open / close ripples</dt><dd data-bind="z6.ripples">—</dd></div><div><dt>Open / close factor</dt><dd data-bind="z6.factors">—</dd></div></dl>
             <dl class="kv"><div><dt>Preheat adv.</dt><dd data-bind="z6.preheat">—</dd></div><div><dt>Last fault</dt><dd data-bind="z6.lastFault">—</dd></div></dl>
           </div>
+          <div data-bind-show="z6.learnBar" hidden>
+            <p class="hint" data-bind="z6.learnPhase"></p>
+            <div class="bar violet" style="--v:0%" data-bind-bar="z6.learn" role="meter" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="Learning progress"><i></i></div>
+          </div>
           <footer class="panel-foot">
-            <button class="btn" type="submit" name="action" value="reset_fault" data-bind-disable="z6.faultOk">Reset fault</button>
-            <details class="confirm">
-              <summary class="btn danger">Reset and relearn…</summary>
-              <p class="note">Deletes the learned factors for Z6. The motor relearns on its next movement.</p>
-              <button class="btn danger" type="submit" name="action" value="reset_relearn">Reset and relearn Z6</button>
-            </details>
+            <button class="btn primary" type="submit" name="action" value="reset_fault" data-bind-show="z6.fault">Reset fault</button>
+            <button class="btn danger" type="button" popovertarget="confirm-relearn-z6">Reset and relearn…</button><div id="confirm-relearn-z6" popover class="confirm-pop" role="alertdialog" aria-labelledby="confirm-relearn-z6-t" aria-describedby="confirm-relearn-z6-d"><p class="confirm-title" id="confirm-relearn-z6-t">Reset and relearn Z6?</p><p id="confirm-relearn-z6-d">Deletes the learned factors for Z6. The motor relearns on its next movement.</p><div class="confirm-actions"><button class="btn" type="button" popovertarget="confirm-relearn-z6" popovertargetaction="hide" autofocus>Cancel</button><button class="btn danger-solid" type="submit" name="action" value="reset_relearn" popovertarget="confirm-relearn-z6" popovertargetaction="hide">Reset</button></div></div>
           </footer>
         </form>
       </section><div id="help-zone-room" popover class="help-pop" style="position-anchor:--a-help-zone-room"><p>Room name, area, grouping and temperature source. Grouped zones share a target; valves open together.</p><a href="https://github.com/Birkemosen/lune/blob/main/lune-v6/docs/Manual.md#zone-room" target="_blank" rel="noopener noreferrer">Read more</a></div><div id="help-zone-floor" popover class="help-pop" style="position-anchor:--a-help-zone-floor"><p>Pipe layout, slab/covering and weather exposure. Walls and wind/solar factors steer preload from Touch.</p><a href="https://github.com/Birkemosen/lune/blob/main/lune-v6/docs/Manual.md#zone-floor" target="_blank" rel="noopener noreferrer">Read more</a></div><div id="help-zone-motor" popover class="help-pop" style="position-anchor:--a-help-zone-motor"><p>Learned stroke and last fault. Relearn clears calibration and runs end-stop learning again.</p><a href="https://github.com/Birkemosen/lune/blob/main/lune-v6/docs/Manual.md#zone-motor" target="_blank" rel="noopener noreferrer">Read more</a></div>
@@ -1104,7 +1361,7 @@
 </div>
 
 <!-- Strenge til binderen: statusser og beskeder der skrives ved runtime -->
-<script type="application/json" id="i18n">{"state.calling":"Calling for heat","state.idle":"Idle","state.fault":"Motor fault","state.off":"Not in use","tile.fault":"Fault","badge.calling":"Calling","sys.dt":"ΔT {dt}°","sys.dtstate":"ΔT {dt}° · calling","dash.sys.sub":"{zones} zones · {calling} calling for heat · {faults} fault","common.days":"days","common.open":"Open {x}","common.none":"None","common.learned":"Learned","common.needsLearning":"Needs learning","common.undo":"Undo","rt.savedOk":"Saved","rt.saveFailed":"Could not save. Check the connection to the device.","rt.saving":"Saving…","rt.unsaved.one":"{n} unsaved change","rt.unsaved.other":"{n} unsaved changes","rt.nothingToSave":"No changes to save","rt.leaveUnsaved":"You have unsaved changes.","rt.autoSaving":"Saving…","rt.autoSaved":"Saved","rt.autoFailed":"Not saved — try again","rt.retry":"Try again","rt.secondsAgo":"{v} s ago","rt.minutesAgo":"{v} min ago","rt.offline":"Offline","device.copyDiag":"Copy diagnostics","device.copied":"Copied","device.sample":"Ground floor manifold","alert.zoneFault":"{zone} has a motor fault","bal.adaptive":"Adaptive","bal.static":"Static","dev.online":"Online","dev.offline":"Offline","zdash.preload":"target raised {offset} °C.","zdash.preloadUntil":"target raised {offset} °C · {remaining} left.","src.ble":"BLE sensor","src.probe":"Local probe","csys.touchWaiting":"Waiting","csys.touchWaitingBody":"Add this manifold in Lune Touch. Its identity will appear here automatically.","csys.touchApprove":"Approve Lune Touch","_dec":".","_lang":"en"}</script>
+<script type="application/json" id="i18n">{"state.calling":"Calling for heat","state.idle":"Idle","state.fault":"Motor fault","state.off":"Not in use","state.learning":"Learning","state.blocked":"Blocked","tile.fault":"Fault","tile.learning":"Learning","tile.learningPct":"Learning {pct} %","tile.blocked":"Blocked","badge.calling":"Calling","sys.dt":"ΔT {dt}°","sys.dtstate":"ΔT {dt}° · calling","dash.sys.sub":"{zones} zones · {calling} calling for heat · {faults} fault","cz.learnPhase.home":"Homing to seat","cz.learnPhase.open":"Opening","cz.learnPhase.close":"Closing","cz.learnPhase.pass":"{phase} · sample {sample}/{need}","cz.bleAssign":"Assign","cz.bleAssigned":"Zone {z}","cz.bleSeen":"Nearby sensors","cz.bleSeenEmpty":"No BTHome sensors found nearby","cz.bleScanning":"Scanning…","common.days":"days","common.hours":"hours","common.minutes":"min","common.open":"Open {x}","common.none":"None","common.learned":"Learned","common.needsLearning":"Needs learning","common.notLearned":"Not learned","common.undo":"Undo","common.on":"On","rt.savedOk":"Saved","rt.saveFailed":"Could not save. Check the connection to the device.","rt.saving":"Saving…","rt.unsaved.one":"{n} unsaved change","rt.unsaved.other":"{n} unsaved changes","rt.nothingToSave":"No changes to save","rt.leaveUnsaved":"You have unsaved changes.","rt.autoSaving":"Saving…","rt.autoSaved":"Saved","rt.autoFailed":"Not saved — try again","rt.retry":"Try again","rt.secondsAgo":"{v} s ago","rt.minutesAgo":"{v} min ago","rt.offline":"Offline","device.copyDiag":"Copy diagnostics","device.copied":"Copied","device.sample":"Ground floor manifold","alert.zoneFault":"{zone} has a motor fault","bal.adaptive":"Adaptive","bal.static":"Static","dev.online":"Online","dev.offline":"Offline","zdash.preload":"target raised {offset} °C.","zdash.preloadUntil":"target raised {offset} °C · {remaining} left.","src.ble":"BLE sensor","src.probe":"Local probe","csys.touchWaiting":"Waiting","csys.touchWaitingBody":"Add this manifold in Lune Touch. Its identity will appear here automatically.","csys.touchApprove":"Approve Lune Touch","csys.touchApproved":"Approved","csys.touchPending":"Connecting","csys.touchError":"No connection","csys.touchErrorBody":"Could not reach Lune Touch. Check the network, then try again or disconnect.","csys.touchCancel":"Cancel","csys.touchRetry":"Try again","csys.touchControls":"Controls this V6","common.copy":"Copy","zchart.expected":"Expected at {time}","zchart.at":"At {time}","zchart.noForecast":"No projection yet","zchart.faultStrong":"The projection assumes the motor fault continues.","_dec":".","_lang":"en"}</script>
 
 <!-- Progressive enhancement: +/−, luk enhedsmenu, hjælp-popover nær ?, filnavn, submit-hook -->
 <script>
@@ -1184,9 +1441,9 @@ function btn(f){return f.querySelector('.panel-foot .btn.primary[type="submit"]'
 function st(f){return f.querySelector(".save-status")}
 function auto(f){return!!f.querySelector(".climate")}
 function track(f){return!!st(f)}
-function cross(){document.querySelectorAll('.tile[data-dirty],.mode label[data-dirty]').forEach(function(el){el.removeAttribute("data-dirty")});var conf=false;document.querySelectorAll("form.panel[data-save][data-dirty]").forEach(function(f){var v=f.closest(".view");if(!v||!v.id)return;var m=/^v-(dash|conf)-(.+)$/.exec(v.id);if(!m)return;if(m[1]==="conf")conf=true;var tile=document.querySelector('label.tile[for="s-'+m[2]+'"]');if(tile)tile.setAttribute("data-dirty","")});if(conf){var lab=document.querySelector('.mode label[for="m-conf"]');if(lab)lab.setAttribute("data-dirty","")}}
-function paint(f){if(auto(f)||!track(f)||f.dataset.state==="saving"||f.dataset.state==="saved")return;var s=f._snap||{},c=snap(f),n=0,seen={},sid=(st(f)||{}).id;f.querySelectorAll("[data-dirty]").forEach(function(w){w.removeAttribute("data-dirty");if(w.getAttribute("aria-describedby")===sid)w.removeAttribute("aria-describedby")});Object.keys(Object.assign({},s,c)).forEach(function(k){if(s[k]===c[k])return;var name=k.split(":")[0];if(seen[name])return;seen[name]=1;n++;var el=f.querySelector('[name="'+name+'"]'),w=el&&wrap(el);if(w){w.setAttribute("data-dirty","");if(sid)w.setAttribute("aria-describedby",sid)}});f.dataset.changes=String(n);var b=btn(f),sEl=st(f);if(n){f.dataset.dirty="";if(b){b.removeAttribute("aria-disabled");b.removeAttribute("title")}if(sEl&&f.dataset.state!=="error")sEl.textContent=n===1?t("rt.unsaved.one",{n:1}):t("rt.unsaved.other",{n:n})}else{delete f.dataset.dirty;if(b){b.setAttribute("aria-disabled","true");b.title=t("rt.nothingToSave")}if(sEl&&f.dataset.state!=="saved"&&f.dataset.state!=="error")sEl.textContent=""}cross()}
-function bind(f){f.dataset.js="1";f._snap=snap(f);f._label=(btn(f)||{}).textContent||"";f.luneResnap=function(){f._snap=snap(f);if(track(f)&&!auto(f))paint(f)};f.luneSaved=function(ok,msg){var b=btn(f),sEl=st(f),a=f.querySelector(".autosave"),sid=(sEl||{}).id;delete f.dataset.state;if(b)b.removeAttribute("aria-busy");if(ok){f._snap=snap(f);if(auto(f)){if(a){a.textContent=t("rt.autoSaved");setTimeout(function(){if(a.textContent===t("rt.autoSaved"))a.textContent=""},2000)}return}f.querySelectorAll("[data-dirty]").forEach(function(w){w.removeAttribute("data-dirty");if(sid&&w.getAttribute("aria-describedby")===sid)w.removeAttribute("aria-describedby")});f.dataset.state="saved";if(b)b.textContent=t("rt.savedOk")+" ✓";if(sEl)sEl.textContent="";delete f.dataset.dirty;cross();setTimeout(function(){delete f.dataset.state;if(b)b.textContent=f._label;paint(f)},3000)}else if(auto(f)){if(a)a.innerHTML=t("rt.autoFailed")+'<button type="button" class="btn" data-autosave-retry>'+t("rt.retry")+"</button>"}else{f.dataset.state="error";if(sEl)sEl.textContent=msg||t("rt.saveFailed");if(b)b.textContent=f._label;paint(f)}};if(track(f)&&!auto(f))paint(f)}document.querySelectorAll("form.panel[data-save]").forEach(bind);function onEdit(e){var f=e.target&&e.target.closest&&e.target.closest("form.panel[data-save]");if(!f||!f.dataset.js)return;if(auto(f)){if(e.target.disabled)return;var a=f.querySelector(".autosave");if(a)a.textContent=t("rt.autoSaving");clearTimeout(f._autoT);f._autoT=setTimeout(function(){f._autoT=null;f.dataset.state="saving";document.dispatchEvent(new CustomEvent("lune:save",{detail:{key:f.dataset.save,data:new FormData(f),auto:true,form:f}}))},1500)}else if(track(f)){delete f.dataset.state;paint(f)}}document.addEventListener("input",onEdit,true);document.addEventListener("change",onEdit,true);document.addEventListener("reset",function(e){var f=e.target;if(f&&f.matches&&f.matches("form.panel[data-save]"))setTimeout(function(){delete f.dataset.state;paint(f)},0)});document.addEventListener("click",function(e){var retry=e.target.closest&&e.target.closest("[data-autosave-retry]");if(retry){var f=retry.closest("form.panel[data-save]");if(f){var a=f.querySelector(".autosave");if(a)a.textContent=t("rt.autoSaving");f.dataset.state="saving";document.dispatchEvent(new CustomEvent("lune:save",{detail:{key:f.dataset.save,data:new FormData(f),auto:true,form:f}}))}return}var b=e.target.closest&&e.target.closest('.btn.primary[type="submit"]');if(b&&b.getAttribute("aria-disabled")==="true"){e.preventDefault();e.stopPropagation()}},true);document.addEventListener("submit",function(e){var f=e.target;if(!f||!f.matches||!f.matches("form.panel[data-save]"))return;e.preventDefault();var sub=e.submitter,b=btn(f),primary=!sub||sub===b||(sub.classList&&sub.classList.contains("primary"));if(primary&&b&&b.getAttribute("aria-disabled")==="true")return;if(primary&&f.dataset.state==="saving")return;if(primary&&track(f)&&!auto(f)){f.dataset.state="saving";if(b){b.setAttribute("aria-busy","true");b.textContent=t("rt.saving")}}document.dispatchEvent(new CustomEvent("lune:save",{detail:{key:f.dataset.save,data:new FormData(f,sub),auto:false,form:f}}))});window.addEventListener("beforeunload",function(e){if(document.querySelector("form.panel[data-save][data-dirty]")){e.preventDefault();e.returnValue=t("rt.leaveUnsaved")}});})();
+function cross(){document.querySelectorAll('.tile[data-dirty],.mode label[data-dirty],.section-nav a[data-dirty],.section[data-dirty],details.section[data-dirty]').forEach(function(el){el.removeAttribute("data-dirty")});var conf=false;document.querySelectorAll("form.panel[data-save][data-dirty]").forEach(function(f){var v=f.closest(".view");if(!v||!v.id)return;var m=/^v-(dash|conf)-(.+)$/.exec(v.id);if(!m)return;if(m[1]==="conf")conf=true;var tile=document.querySelector('label.tile[for="s-'+m[2]+'"]');if(tile)tile.setAttribute("data-dirty","");var sec=f.closest("section.section,details.section");if(sec){sec.setAttribute("data-dirty","");if(sec.id){var link=document.querySelector('.section-nav a[href="#'+sec.id+'"]');if(link)link.setAttribute("data-dirty","")}}});if(conf){var lab=document.querySelector('.mode label[for="m-conf"]');if(lab)lab.setAttribute("data-dirty","")}}
+function openSectionFromHash(){var id=(location.hash||"").replace(/^#/,"");if(!id)return;var el=document.getElementById(id);if(el&&el.matches&&el.matches("details.section"))el.open=true}window.addEventListener("hashchange",openSectionFromHash);if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",openSectionFromHash);else openSectionFromHash();function paint(f){if(auto(f)||!track(f)||f.dataset.state==="saving"||f.dataset.state==="saved")return;var s=f._snap||{},c=snap(f),n=0,seen={},sid=(st(f)||{}).id;f.querySelectorAll("[data-dirty]").forEach(function(w){w.removeAttribute("data-dirty");if(w.getAttribute("aria-describedby")===sid)w.removeAttribute("aria-describedby")});Object.keys(Object.assign({},s,c)).forEach(function(k){if(s[k]===c[k])return;var name=k.split(":")[0];if(seen[name])return;seen[name]=1;n++;var el=f.querySelector('[name="'+name+'"]'),w=el&&wrap(el);if(w){w.setAttribute("data-dirty","");if(sid)w.setAttribute("aria-describedby",sid)}});f.dataset.changes=String(n);var b=btn(f),sEl=st(f);if(n){f.dataset.dirty="";if(b){b.removeAttribute("aria-disabled");b.removeAttribute("title")}if(sEl&&f.dataset.state!=="error")sEl.textContent=n===1?t("rt.unsaved.one",{n:1}):t("rt.unsaved.other",{n:n})}else{delete f.dataset.dirty;if(b){b.setAttribute("aria-disabled","true");b.title=t("rt.nothingToSave")}if(sEl&&f.dataset.state!=="saved"&&f.dataset.state!=="error")sEl.textContent=""}cross()}
+function bind(f){f.dataset.js="1";f._snap=snap(f);f._label=(btn(f)||{}).textContent||"";f.luneResnap=function(){f._snap=snap(f);if(track(f)&&!auto(f))paint(f)};f.luneSaved=function(ok,msg){var b=btn(f),sEl=st(f),a=f.querySelector(".autosave"),sid=(sEl||{}).id;delete f.dataset.state;if(b)b.removeAttribute("aria-busy");if(ok){f._snap=snap(f);if(auto(f)){if(a){a.textContent=t("rt.autoSaved");setTimeout(function(){if(a.textContent===t("rt.autoSaved"))a.textContent=""},2000)}return}f.querySelectorAll("[data-dirty]").forEach(function(w){w.removeAttribute("data-dirty");if(sid&&w.getAttribute("aria-describedby")===sid)w.removeAttribute("aria-describedby")});f.dataset.state="saved";if(b)b.textContent=t("rt.savedOk")+" ✓";if(sEl)sEl.textContent="";delete f.dataset.dirty;cross();setTimeout(function(){delete f.dataset.state;if(b)b.textContent=f._label;paint(f)},3000)}else if(auto(f)){if(a)a.innerHTML=t("rt.autoFailed")+'<button type="button" class="btn" data-autosave-retry>'+t("rt.retry")+"</button>"}else{f.dataset.state="error";if(sEl)sEl.textContent=msg||t("rt.saveFailed");if(b)b.textContent=f._label;paint(f)}};if(track(f)&&!auto(f))paint(f)}document.querySelectorAll("form.panel[data-save]").forEach(bind);function onEdit(e){var f=e.target&&e.target.closest&&e.target.closest("form.panel[data-save]");if(!f||!f.dataset.js)return;if(auto(f)){if(e.target.disabled)return;var a=f.querySelector(".autosave");if(a)a.textContent=t("rt.autoSaving");clearTimeout(f._autoT);f._autoT=setTimeout(function(){f._autoT=null;f.dataset.state="saving";document.dispatchEvent(new CustomEvent("lune:save",{detail:{key:f.dataset.save,data:new FormData(f),auto:true,form:f}}))},1500)}else if(track(f)){delete f.dataset.state;paint(f)}}document.addEventListener("input",onEdit,true);document.addEventListener("change",onEdit,true);document.addEventListener("reset",function(e){var f=e.target;if(f&&f.matches&&f.matches("form.panel[data-save]"))setTimeout(function(){delete f.dataset.state;paint(f)},0)});document.addEventListener("click",function(e){var retry=e.target.closest&&e.target.closest("[data-autosave-retry]");if(retry){var f=retry.closest("form.panel[data-save]");if(f){var a=f.querySelector(".autosave");if(a)a.textContent=t("rt.autoSaving");f.dataset.state="saving";document.dispatchEvent(new CustomEvent("lune:save",{detail:{key:f.dataset.save,data:new FormData(f),auto:true,form:f}}))}return}var copy=e.target.closest&&e.target.closest("[data-copy]");if(copy){e.preventDefault();var sel=copy.getAttribute("data-copy"),src=sel?document.querySelector(sel):null;var text=(src&&(src.textContent||src.value)||"").trim();if(!text||text==="—")return;var done=function(){var prev=copy.textContent;copy.textContent=t("device.copied")||t("rt.copied")||"Copied";setTimeout(function(){copy.textContent=prev},1600)};if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(text).then(done).catch(function(){var ta=document.createElement("textarea");ta.value=text;document.body.appendChild(ta);ta.select();try{document.execCommand("copy");done()}catch(err){}ta.remove()});return}var b=e.target.closest&&e.target.closest('.btn.primary[type="submit"]');if(b&&b.getAttribute("aria-disabled")==="true"&&b===btn(b.closest("form.panel[data-save]"))){e.preventDefault();e.stopPropagation()}},true);document.addEventListener("submit",function(e){var f=e.target;if(!f||!f.matches||!f.matches("form.panel[data-save]"))return;e.preventDefault();var sub=e.submitter,b=btn(f),isSave=!sub||sub===b;if(isSave&&b&&b.getAttribute("aria-disabled")==="true")return;if(isSave&&f.dataset.state==="saving")return;var pop=sub&&sub.closest&&sub.closest(".confirm-pop");if(pop&&pop.matches(":popover-open"))pop.hidePopover();if(isSave&&track(f)&&!auto(f)){f.dataset.state="saving";if(b){b.setAttribute("aria-busy","true");b.textContent=t("rt.saving")}}document.dispatchEvent(new CustomEvent("lune:save",{detail:{key:f.dataset.save,data:new FormData(f,sub),auto:false,form:f}}))});window.addEventListener("beforeunload",function(e){if(document.querySelector("form.panel[data-save][data-dirty]")){e.preventDefault();e.returnValue=t("rt.leaveUnsaved")}});function placeConfirm(pop){if(!pop)return;if(window.matchMedia("(max-width:599.98px)").matches){pop.style.position="";pop.style.inset="";pop.style.top="";pop.style.left="";pop.style.right="";pop.style.bottom="";pop.style.margin="";pop.style.maxHeight="";return}var btn=document.querySelector('button.btn.danger[popovertarget="'+pop.id+'"]');if(!btn)return;var margin=8,gap=8,r=btn.getBoundingClientRect();pop.style.position="fixed";pop.style.inset="unset";pop.style.right="auto";pop.style.bottom="auto";pop.style.margin="0";pop.style.maxHeight="none";pop.style.top="0px";pop.style.left="0px";var w=pop.offsetWidth||288,h=pop.offsetHeight||180;var vw=window.innerWidth,vh=window.innerHeight,maxH=vh-margin*2;if(h>maxH)h=maxH;var left=r.left+(r.width-w)/2;if(left<margin)left=margin;if(left+w>vw-margin)left=Math.max(margin,vw-w-margin);var below=r.bottom+gap,above=r.top-gap-h;var top=(below+h<=vh-margin)?below:above;if(top<margin)top=margin;if(top+h>vh-margin)top=Math.max(margin,vh-h-margin);pop.style.maxHeight=maxH+"px";pop.style.top=top+"px";pop.style.left=left+"px";}document.addEventListener("toggle",function(e){if(e.newState!=="open"||!e.target.classList||!e.target.classList.contains("confirm-pop"))return;placeConfirm(e.target);requestAnimationFrame(function(){if(e.target.matches(":popover-open"))placeConfirm(e.target)});},true);window.addEventListener("resize",function(){document.querySelectorAll(".confirm-pop:popover-open").forEach(placeConfirm);});})();
 </script>
 <script src="/binder.js" defer></script>
 </body>

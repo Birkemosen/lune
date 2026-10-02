@@ -72,7 +72,7 @@ temperature so you can verify wiring before saving the layout.
 
 ---
 
-## Configuration › Connect
+## Configuration › Connections
 
 <a id="touch"></a>
 ### Lune Touch
@@ -80,23 +80,20 @@ temperature so you can verify wiring before saving the layout.
 Approve or revoke Touch control of this manifold. Discovery alone never grants
 authority. Without approval, V6 stays fully local and conservative.
 
+Touch may deliver **weather preload**, **setpoints**, **absorb arming**, and a
+**heating mode** override while its lease is active. Zone exposure (walls, wind,
+solar) is set under each zone’s Floor and weather panel — not here.
+
 <a id="ble-clock"></a>
 ### BLE clock
 
-Optional Shelly Date/Time Broadcast so nearby BLU displays can set their clock
-without NTP. Interval is how often V6 advertises a short burst.
+When enabled, V6 continuously emits Shelly Date/Time Broadcast (~one packet every
+2 s) **concurrently with BLE scan**, so BLU displays can set their clock without
+NTP. Automatic display sync is typically once per day.
 
-BLU displays typically sync only once per day. **Sync now** opens a ~90 s
-advertise window so you can force a sync on each display: press once to enter
-setup (`SEt`), then press twice rapidly. Bluetooth must be on (hold ~5 s to
-toggle if needed).
-
-<a id="weather"></a>
-### Weather preload
-
-Forecast and wind/solar preload are owned by **Lune Touch**. V6 applies offsets
-it receives and stores per-zone exposure (walls, wind, solar) under each zone’s
-Floor and weather panel.
+**Sync now** refreshes the beacon timestamp immediately. To force a display:
+press once to enter setup (`SEt`), then press twice rapidly. Bluetooth must be
+on (hold ~5 s to toggle if needed).
 
 ---
 
@@ -122,9 +119,9 @@ moving config to a replacement board that should relearn.
 <a id="manual"></a>
 ### Manual motor control
 
-Turns off automatic control of **all** zones until disabled. Use stop or
-drive-to-target for service work only. Leaving manual mode on leaves the house
-without closed-loop heating.
+Turns off automatic control of **all** zones until disabled. Drive to a valve
+position, or run a timed open/close (1–45 s) with endstop detection still armed.
+Leaving manual mode on leaves the house without closed-loop heating.
 
 <a id="health"></a>
 ### Runtime health

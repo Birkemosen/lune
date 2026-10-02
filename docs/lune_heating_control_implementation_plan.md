@@ -229,7 +229,7 @@ Current upstream endpoint:
 
 Likely files:
 
-- `devices/lune-v6/components/hv6_asgard_bridge/`
+- `devices/lune-v6/components/lv6_asgard_bridge/`
 - `devices/lune-touch/components/lune_touch_coordinator/`
 - Touch and V6 dashboard configuration views
 - `devices/lune-v6/docs/ecodan_integration.md`
@@ -1134,7 +1134,7 @@ YYYY-MM-DD — TASK-ID — STATUS
 
 - 2026-07-29 — P9.1 — COMPLETE
   - Summary: Completed the cross-device contract/failure suite. Existing focused tests cover encoded Asgard write/readback, forecast time/cache validation, multi-loop logical rooms, stable physical-loop identities after removal, reboot-safe command expiry, atomic room updates, partial sensor/manifold coverage, and V6-A-only authority recovery. Added an explicit ODIN operation-mode boundary: only the documented raw values are labelled, and DHW/heat/cool/unavailable or unknown values can never create Touch room control or infer defrost. Extracted V6 Touch-command authentication into a pure policy covered for an empty or incorrect key, invalid clock, stale/future/non-finite timestamp, missing nonce, valid request, and the existing replay guard.
-  - Files: `devices/lune-touch/components/lune_touch_coordinator/odin_plan.h`, `devices/lune-touch/components/lune_touch_coordinator/lune_touch_coordinator.cpp`, `devices/lune-touch/tests/odin_plan/test_odin_plan.cpp`, `devices/lune-v6/components/hv6_dashboard/touch_auth.h`, `devices/lune-v6/components/hv6_dashboard/hv6_dashboard.h`, `devices/lune-v6/components/hv6_dashboard/hv6_dashboard.cpp`, `devices/lune-v6/test/request_guard/test_request_guard.cpp`, `docs/lune_heating_control_implementation_plan.md`.
+  - Files: `devices/lune-touch/components/lune_touch_coordinator/odin_plan.h`, `devices/lune-touch/components/lune_touch_coordinator/lune_touch_coordinator.cpp`, `devices/lune-touch/tests/odin_plan/test_odin_plan.cpp`, `devices/lune-v6/components/lv6_dashboard/touch_auth.h`, `devices/lune-v6/components/lv6_dashboard/lv6_dashboard.h`, `devices/lune-v6/components/lv6_dashboard/lv6_dashboard.cpp`, `devices/lune-v6/test/request_guard/test_request_guard.cpp`, `docs/lune_heating_control_implementation_plan.md`.
   - Checks: `make -C devices/lune-touch test-asgard-url test-asgard-adapter test-forecast test-coordinator test-odin-plan` → PASS; `make -C devices/lune-v6 test-request-guard test-authority-lease` → PASS; `make -C devices/lune-touch test` → PASS; `make -C devices/lune-v6 test` → PASS; `make -C devices/lune-touch config` → PASS; `make -C devices/lune-v6 config` → PASS; `git diff --check` → PASS. No device was deployed.
   - Notes/follow-up: The new operation-mode and authentication assertions fail against the prior absence of an explicit ODIN control boundary and testable Touch-auth policy; the existing named failure assertions remain regression tests for the other P9.1 cases. Proceed to P9.2 end-to-end simulation.
 
@@ -1174,8 +1174,8 @@ YYYY-MM-DD — TASK-ID — STATUS
     writes at 30 per minute. The dashboard keeps its key only in session storage and prompts on
     first write; V6 remains read-only when no local key is provisioned. Existing advanced actions
     continue to require their deliberate UI confirmations.
-  - Files: `devices/lune-v6/components/hv6_dashboard/hv6_dashboard.h`,
-    `devices/lune-v6/components/hv6_dashboard/hv6_dashboard.cpp`,
+  - Files: `devices/lune-v6/components/lv6_dashboard/lv6_dashboard.h`,
+    `devices/lune-v6/components/lv6_dashboard/lv6_dashboard.cpp`,
     `devices/lune-v6/web/dashboard-src/core/api.js`, `devices/lune-v6/web/dashboard.js`,
     `docs/lune_heating_control_implementation_plan.md`.
   - Checks: `make -C devices/lune-v6 dashboard-build` → PASS;
@@ -1193,9 +1193,9 @@ YYYY-MM-DD — TASK-ID — STATUS
     before it can apply a temporary command. Auth failure is read-only and does not affect local
     V6 heating safety.
   - Files: `devices/lune-touch/components/lune_touch_coordinator/lune_touch_coordinator.cpp`,
-    `devices/lune-v6/components/hv6_dashboard/hv6_dashboard.cpp`,
-    `devices/lune-v6/components/hv6_dashboard/request_guard.h`,
-    `devices/lune-v6/docs/hv6_api_v1.md`, `docs/lune_heating_control_implementation_plan.md`.
+    `devices/lune-v6/components/lv6_dashboard/lv6_dashboard.cpp`,
+    `devices/lune-v6/components/lv6_dashboard/request_guard.h`,
+    `devices/lune-v6/docs/lv6_api_v1.md`, `docs/lune_heating_control_implementation_plan.md`.
   - Checks: `make -C devices/lune-v6 test-request-guard` → PASS (duplicate nonce is rejected);
     `make -C devices/lune-touch test-coordinator` → PASS; `git diff --check` → PASS.
   - Notes/follow-up: Key rotation is an authenticated physical commissioning operation on Touch
@@ -1205,10 +1205,10 @@ YYYY-MM-DD — TASK-ID — STATUS
   - Summary: Replaced the one-shot pseudo-SSE reconnect loop with documented revision-based
     polling. The browser performs one initial state read, then polls a small `/revision` resource
     every three seconds and reads the full state only after a revision change.
-  - Files: `devices/lune-v6/components/hv6_dashboard/hv6_dashboard.h`,
-    `devices/lune-v6/components/hv6_dashboard/hv6_dashboard.cpp`,
+  - Files: `devices/lune-v6/components/lv6_dashboard/lv6_dashboard.h`,
+    `devices/lune-v6/components/lv6_dashboard/lv6_dashboard.cpp`,
     `devices/lune-v6/web/dashboard-src/core/sse.js`, `devices/lune-v6/web/dashboard.js`,
-    `devices/lune-v6/docs/hv6_api_v1.md`, `docs/lune_heating_control_implementation_plan.md`.
+    `devices/lune-v6/docs/lv6_api_v1.md`, `docs/lune_heating_control_implementation_plan.md`.
   - Checks: `make -C devices/lune-v6 dashboard-build` → PASS; source inspection confirms full
     `/state` reads occur only in the initial/change path; `git diff --check` → PASS.
   - Notes/follow-up: Real SSE remains deliberately deferred until it can offer bounded lifetime,
@@ -1219,9 +1219,9 @@ YYYY-MM-DD — TASK-ID — STATUS
     a monotonic runtime data revision. Replayed keys return the accepted result without adding a
     second physical action; an explicitly stale `expected_revision` returns structured HTTP 409
     with the current revision.
-  - Files: `devices/lune-v6/components/hv6_dashboard/request_guard.h`,
-    `devices/lune-v6/components/hv6_dashboard/hv6_dashboard.h`,
-    `devices/lune-v6/components/hv6_dashboard/hv6_dashboard.cpp`,
+  - Files: `devices/lune-v6/components/lv6_dashboard/request_guard.h`,
+    `devices/lune-v6/components/lv6_dashboard/lv6_dashboard.h`,
+    `devices/lune-v6/components/lv6_dashboard/lv6_dashboard.cpp`,
     `devices/lune-v6/test/request_guard/test_request_guard.cpp`, `devices/lune-v6/Makefile`,
     `docs/lune_heating_control_implementation_plan.md`.
   - Checks: `make -C devices/lune-v6 test-request-guard` → PASS; `git diff --check` → PASS.
@@ -1236,7 +1236,7 @@ YYYY-MM-DD — TASK-ID — STATUS
   - Files: `shared/contracts/lune_api_v1.md`,
     `shared/contracts/fixtures/lune_api_v1_compatible.json`,
     `shared/contracts/fixtures/lune_api_v2_incompatible.json`,
-    `shared/contracts/test_api_fixtures.sh`, `devices/lune-v6/docs/hv6_api_v1.md`,
+    `shared/contracts/test_api_fixtures.sh`, `devices/lune-v6/docs/lv6_api_v1.md`,
     `devices/lune-touch/docs/api_v1.md`, `docs/lune_heating_control_implementation_plan.md`.
   - Checks: `sh shared/contracts/test_api_fixtures.sh` → PASS; `git diff --check` → PASS.
   - Notes/follow-up: P7.2 applies the conditional-write and idempotency behavior to V6 writes.
@@ -1250,19 +1250,19 @@ YYYY-MM-DD — TASK-ID — STATUS
     diagnostics. The diagnostics explicitly report missing documented pump, peer-manifold,
     and Ecodan-primary telemetry as unavailable rather than inferring it from valve position.
   - Files: `devices/lune-v6/Makefile`,
-    `devices/lune-v6/components/hv6_config_store/hv6_types.h`,
-    `devices/lune-v6/components/hv6_config_store/hv6_config_store.h`,
-    `devices/lune-v6/components/hv6_config_store/hv6_config_store.cpp`,
-    `devices/lune-v6/components/hv6_zone_controller/hv6_zone_controller.h`,
-    `devices/lune-v6/components/hv6_zone_controller/hv6_zone_controller.cpp`,
-    `devices/lune-v6/components/hv6_zone_controller/hydraulic_policy.h`,
-    `devices/lune-v6/components/hv6_zone_controller/hydraulic_diagnostics.h`,
-    `devices/lune-v6/components/hv6_dashboard/hv6_dashboard.h`,
-    `devices/lune-v6/components/hv6_dashboard/hv6_dashboard.cpp`,
+    `devices/lune-v6/components/lv6_config_store/lv6_types.h`,
+    `devices/lune-v6/components/lv6_config_store/lv6_config_store.h`,
+    `devices/lune-v6/components/lv6_config_store/lv6_config_store.cpp`,
+    `devices/lune-v6/components/lv6_zone_controller/lv6_zone_controller.h`,
+    `devices/lune-v6/components/lv6_zone_controller/lv6_zone_controller.cpp`,
+    `devices/lune-v6/components/lv6_zone_controller/hydraulic_policy.h`,
+    `devices/lune-v6/components/lv6_zone_controller/hydraulic_diagnostics.h`,
+    `devices/lune-v6/components/lv6_dashboard/lv6_dashboard.h`,
+    `devices/lune-v6/components/lv6_dashboard/lv6_dashboard.cpp`,
     `devices/lune-v6/test/hydraulic_policy/test_hydraulic_policy.cpp`,
     `devices/lune-v6/test/hydraulic_diagnostics/test_hydraulic_diagnostics.cpp`,
     `devices/lune-v6/test/commissioning/test_persistence_schema.sh`,
-    `devices/lune-v6/docs/hydraulic_commissioning.md`, `devices/lune-v6/docs/hv6_api_v1.md`,
+    `devices/lune-v6/docs/hydraulic_commissioning.md`, `devices/lune-v6/docs/lv6_api_v1.md`,
     `devices/lune-v6/web/dashboard-src/app/app-root.js`,
     `devices/lune-v6/web/dashboard-src/main.js`,
     `devices/lune-v6/web/dashboard-src/core/api.js`,
@@ -1421,7 +1421,7 @@ YYYY-MM-DD — TASK-ID — STATUS
     fallback behavior; it does not obtain any ODIN heat-pump timing, price, compressor, or
     DHW control. Touch diagnostics and help now name the ODIN/Touch/V6 ownership boundary,
     and describe weather preload as room distribution rather than heat-pump scheduling.
-  - Files: `devices/lune-v6/components/hv6_zone_controller/preheat_policy.h`, `devices/lune-v6/components/hv6_zone_controller/hv6_zone_controller.h`, `devices/lune-v6/components/hv6_zone_controller/hv6_zone_controller.cpp`, `devices/lune-v6/components/hv6_asgard_bridge/hv6_asgard_bridge.cpp`, `devices/lune-v6/test/preheat_policy/test_preheat_policy.cpp`, `devices/lune-v6/Makefile`, `devices/lune-v6/docs/ecodan_integration.md`, `devices/lune-touch/components/lune_touch_coordinator/lune_touch_coordinator.cpp`, `devices/lune-touch/web/dashboard-src/components/views.js`, `devices/lune-touch/web/dashboard.js`, `devices/lune-touch/docs/api_v1.md`, `docs/lune_heating_control_implementation_plan.md`.
+  - Files: `devices/lune-v6/components/lv6_zone_controller/preheat_policy.h`, `devices/lune-v6/components/lv6_zone_controller/lv6_zone_controller.h`, `devices/lune-v6/components/lv6_zone_controller/lv6_zone_controller.cpp`, `devices/lune-v6/components/lv6_asgard_bridge/lv6_asgard_bridge.cpp`, `devices/lune-v6/test/preheat_policy/test_preheat_policy.cpp`, `devices/lune-v6/Makefile`, `devices/lune-v6/docs/ecodan_integration.md`, `devices/lune-touch/components/lune_touch_coordinator/lune_touch_coordinator.cpp`, `devices/lune-touch/web/dashboard-src/components/views.js`, `devices/lune-touch/web/dashboard.js`, `devices/lune-touch/docs/api_v1.md`, `docs/lune_heating_control_implementation_plan.md`.
   - Checks: `make -C devices/lune-v6 test-preheat-policy` → PASS; `make -C devices/lune-v6 test-authority-lease` → PASS; `make -C devices/lune-touch dashboard-build` → PASS; `make test` → PASS; `make -C devices/lune-v6 build` → PASS (ESP32-S3, flash 91.1%); `make -C devices/lune-touch build` → PASS (ESP32-S3, OTA 22.5%); `make -C devices/lune-touch ota-size-check` → PASS; `git diff --check` → PASS. No device was deployed.
   - Notes/follow-up: Electricity prices remain read-only in Touch. P5.2 and P5.3 remain blocked by absent documented endpoints; proceed with optional P5.5 documentation.
 
@@ -1463,31 +1463,31 @@ YYYY-MM-DD — TASK-ID — STATUS
 
 - 2026-07-28 — P3.5 — COMPLETE
   - Summary: Added the required human-readable authority labels (Touch normal/degraded, V6-A fallback pending/active, Recovery pending, No publisher, Conflict) to the Touch web overview and settings, Touch local display summary, V6 dashboard card, state API, and diagnostics. Touch now sends its independently derived coverage-health state in each authenticated renewal so V6 and Touch expose the same normal/degraded authority state without changing the physical temperature aggregation.
-  - Files: `devices/lune-v6/components/hv6_asgard_bridge/authority_lease.h`, `devices/lune-v6/components/hv6_dashboard/hv6_dashboard.cpp`, `devices/lune-v6/web/dashboard-src/components/diagnostics/asgard-bridge-status-card.js`, `devices/lune-v6/web/dashboard.js`, `devices/lune-touch/components/lune_touch_coordinator/lune_touch_coordinator.cpp`, `devices/lune-touch/web/dashboard-src/components/views.js`, `devices/lune-touch/web/dashboard.js`, `devices/lune-v6/test/authority_lease/test_authority_lease.cpp`, `docs/lune_heating_control_implementation_plan.md`.
+  - Files: `devices/lune-v6/components/lv6_asgard_bridge/authority_lease.h`, `devices/lune-v6/components/lv6_dashboard/lv6_dashboard.cpp`, `devices/lune-v6/web/dashboard-src/components/diagnostics/asgard-bridge-status-card.js`, `devices/lune-v6/web/dashboard.js`, `devices/lune-touch/components/lune_touch_coordinator/lune_touch_coordinator.cpp`, `devices/lune-touch/web/dashboard-src/components/views.js`, `devices/lune-touch/web/dashboard.js`, `devices/lune-v6/test/authority_lease/test_authority_lease.cpp`, `docs/lune_heating_control_implementation_plan.md`.
   - Checks: `make -C devices/lune-v6 test-authority-lease` → PASS; `make -C devices/lune-touch dashboard-build` → PASS; `make test` → PASS; `git diff --check` → PASS.
   - Notes/follow-up: The API retains machine-readable state names; all user-facing surfaces map them to the required labels. No device was deployed.
 
 - 2026-07-28 — P3.4 — COMPLETE
   - Summary: Implemented deterministic recovery handover. V6 returns authority state, current and last fallback Asgard values, local/peer coverage, and peer freshness with lease responses. Touch keeps a reachable `recovery_pending` response visible during the 120-second stable-health period, acquires a new lease before publishing, and clamps its first confirmed physical signal to within 0.5 C of V6-A's last fallback value. V6-A transitions out of fallback on grant before Touch can issue that write.
-  - Files: `devices/lune-v6/components/hv6_asgard_bridge/authority_lease.h`, `devices/lune-v6/components/hv6_dashboard/hv6_dashboard.cpp`, `devices/lune-v6/test/authority_lease/test_authority_lease.cpp`, `devices/lune-v6/docs/hv6_api_v1.md`, `devices/lune-touch/components/lune_touch_coordinator/lune_touch_coordinator.h`, `devices/lune-touch/components/lune_touch_coordinator/lune_touch_coordinator.cpp`, `devices/lune-touch/web/dashboard-src/components/views.js`, `devices/lune-touch/web/dashboard.js`, `docs/lune_heating_control_implementation_plan.md`.
+  - Files: `devices/lune-v6/components/lv6_asgard_bridge/authority_lease.h`, `devices/lune-v6/components/lv6_dashboard/lv6_dashboard.cpp`, `devices/lune-v6/test/authority_lease/test_authority_lease.cpp`, `devices/lune-v6/docs/lv6_api_v1.md`, `devices/lune-touch/components/lune_touch_coordinator/lune_touch_coordinator.h`, `devices/lune-touch/components/lune_touch_coordinator/lune_touch_coordinator.cpp`, `devices/lune-touch/web/dashboard-src/components/views.js`, `devices/lune-touch/web/dashboard.js`, `docs/lune_heating_control_implementation_plan.md`.
   - Checks: `make -C devices/lune-v6 test-authority-lease` → PASS (recovery pending has no writer; stable recovery grants); `make -C devices/lune-v6 build` → PASS (ESP32-S3, flash 91.1%); `make -C devices/lune-touch build` → PASS (ESP32-S3, OTA 22.4%); `make test` → PASS.
   - Notes/follow-up: A 409 recovery-pending lease response is deliberately parsed as reachable state, not misreported as a V6 outage. No device was deployed.
 
 - 2026-07-28 — P3.3 — COMPLETE
   - Summary: Added the conservative V6-A fallback transition: active Touch lease expiry enters a pending state, then only the configured V6-A may publish after the 30-second guard. Existing V6 peer polling and real area-weighted local/peer measurements remain the fallback signal; stale/unreachable peer state is exposed, so local-only operation is not labelled healthy whole-house data. Temporary external commands are cleared on fallback entry while V6 local base targets remain active.
-  - Files: `devices/lune-v6/components/hv6_asgard_bridge/authority_lease.h`, `devices/lune-v6/components/hv6_asgard_bridge/hv6_asgard_bridge.cpp`, `devices/lune-v6/components/hv6_asgard_bridge/hv6_asgard_bridge.h`, `devices/lune-v6/test/authority_lease/test_authority_lease.cpp`, `docs/lune_heating_control_implementation_plan.md`.
+  - Files: `devices/lune-v6/components/lv6_asgard_bridge/authority_lease.h`, `devices/lune-v6/components/lv6_asgard_bridge/lv6_asgard_bridge.cpp`, `devices/lune-v6/components/lv6_asgard_bridge/lv6_asgard_bridge.h`, `devices/lune-v6/test/authority_lease/test_authority_lease.cpp`, `docs/lune_heating_control_implementation_plan.md`.
   - Checks: `make -C devices/lune-v6 test-authority-lease` → PASS (expiry, pending state, V6-B denial, V6-A guard); `make test` → PASS; `make -C devices/lune-v6 build` → PASS.
   - Notes/follow-up: Updated the timing text to the authoritative 90-second acknowledged lease plus 30-second V6-A guard; this is the explicit 120-second no-writer fence and replaces the plan's ambiguous separate failed-check counter. No device was deployed.
 
 - 2026-07-28 — P3.2 — COMPLETE
   - Summary: Fenced every V6 Asgard write immediately before the HTTP request. Only configured V6-A may enter fallback; V6-B cannot publish in any authority state. Touch normal publishing is conditional on a live authenticated lease, and V6 exposes state, reason, remaining lease time, generation, and write permission in diagnostics.
-  - Files: `devices/lune-v6/components/hv6_asgard_bridge/authority_lease.h`, `devices/lune-v6/components/hv6_asgard_bridge/hv6_asgard_bridge.h`, `devices/lune-v6/components/hv6_asgard_bridge/hv6_asgard_bridge.cpp`, `devices/lune-v6/components/hv6_dashboard/hv6_dashboard.h`, `devices/lune-v6/components/hv6_dashboard/hv6_dashboard.cpp`, `devices/lune-v6/test/authority_lease/test_authority_lease.cpp`, `devices/lune-touch/components/lune_touch_coordinator/lune_touch_coordinator.cpp`, `docs/lune_heating_control_implementation_plan.md`.
+  - Files: `devices/lune-v6/components/lv6_asgard_bridge/authority_lease.h`, `devices/lune-v6/components/lv6_asgard_bridge/lv6_asgard_bridge.h`, `devices/lune-v6/components/lv6_asgard_bridge/lv6_asgard_bridge.cpp`, `devices/lune-v6/components/lv6_dashboard/lv6_dashboard.h`, `devices/lune-v6/components/lv6_dashboard/lv6_dashboard.cpp`, `devices/lune-v6/test/authority_lease/test_authority_lease.cpp`, `devices/lune-touch/components/lune_touch_coordinator/lune_touch_coordinator.cpp`, `docs/lune_heating_control_implementation_plan.md`.
   - Checks: `make -C devices/lune-v6 test-authority-lease` → PASS (valid lease blocks V6-A; renewal, expiry, reboot, and V6-B cases); `make test` → PASS; `make -C devices/lune-v6 build` → PASS; `make -C devices/lune-touch build` → PASS.
   - Notes/follow-up: The tested state machine has no state in which Touch has a live lease and V6 can write. No device was deployed.
 
 - 2026-07-28 — P3.1 — COMPLETE
   - Summary: Added a V6-A runtime-only authenticated authority lease with stable installation/coordinator IDs, lease ID, issued time, expiry, monotonic sequence, replay rejection, conflict fencing, and diagnostics. V6 stores only the provisioned identities/key in the versioned Asgard configuration; active leases are deliberately invalidated on reboot. Touch renews the lease every 30 seconds and does not publish its normal Asgard signal without a live grant.
-  - Files: `devices/lune-v6/components/hv6_asgard_bridge/authority_lease.h`, `devices/lune-v6/test/authority_lease/test_authority_lease.cpp`, `devices/lune-v6/components/hv6_asgard_bridge/hv6_asgard_bridge.h`, `devices/lune-v6/components/hv6_asgard_bridge/hv6_asgard_bridge.cpp`, `devices/lune-v6/components/hv6_config_store/hv6_types.h`, `devices/lune-v6/components/hv6_config_store/hv6_config_store.cpp`, `devices/lune-v6/components/hv6_dashboard/hv6_dashboard.h`, `devices/lune-v6/components/hv6_dashboard/hv6_dashboard.cpp`, `devices/lune-v6/Makefile`, `devices/lune-touch/components/lune_touch_coordinator/lune_touch_coordinator.h`, `devices/lune-touch/components/lune_touch_coordinator/lune_touch_coordinator.cpp`, `devices/lune-touch/components/lune_touch_dashboard/lune_touch_dashboard.cpp`, `devices/lune-v6/docs/hv6_api_v1.md`, `docs/lune_heating_control_implementation_plan.md`.
+  - Files: `devices/lune-v6/components/lv6_asgard_bridge/authority_lease.h`, `devices/lune-v6/test/authority_lease/test_authority_lease.cpp`, `devices/lune-v6/components/lv6_asgard_bridge/lv6_asgard_bridge.h`, `devices/lune-v6/components/lv6_asgard_bridge/lv6_asgard_bridge.cpp`, `devices/lune-v6/components/lv6_config_store/lv6_types.h`, `devices/lune-v6/components/lv6_config_store/lv6_config_store.cpp`, `devices/lune-v6/components/lv6_dashboard/lv6_dashboard.h`, `devices/lune-v6/components/lv6_dashboard/lv6_dashboard.cpp`, `devices/lune-v6/Makefile`, `devices/lune-touch/components/lune_touch_coordinator/lune_touch_coordinator.h`, `devices/lune-touch/components/lune_touch_coordinator/lune_touch_coordinator.cpp`, `devices/lune-touch/components/lune_touch_dashboard/lune_touch_dashboard.cpp`, `devices/lune-v6/docs/lv6_api_v1.md`, `docs/lune_heating_control_implementation_plan.md`.
   - Checks: `make -C devices/lune-v6 test-authority-lease` → PASS; `make -C devices/lune-touch test-coordinator` → PASS; `make -C devices/lune-v6 build` → PASS (ESP32-S3); `make -C devices/lune-touch build` → PASS (ESP32-S3, OTA 22.4%). No device was deployed.
   - Notes/follow-up: The Asgard configuration schema was safely invalidated from v1 to v2 for the new persisted identity/key fields; no active lease is persisted. Continue with P3.2 write gating.
 
@@ -1535,13 +1535,13 @@ YYYY-MM-DD — TASK-ID — STATUS
 
 - 2026-07-27 — P1.2 — COMPLETE
   - Summary: Added product-local bounded Asgard readback after every accepted virtual-thermostat write. Touch and V6 now record the requested value, HTTP result, confirmed value, confirmation age, and `sent`/`confirmed`/`mismatch`/`unreachable` status; a POST alone is never treated as confirmation. Both use three read attempts with 250 ms then 500 ms backoff on their existing background tasks, and cumulative failure history no longer resets on a single success.
-  - Files: `devices/lune-v6/components/hv6_asgard_bridge/asgard_url.h`, `devices/lune-v6/components/hv6_asgard_bridge/asgard_confirmation.h`, `devices/lune-v6/components/hv6_asgard_bridge/hv6_asgard_bridge.h`, `devices/lune-v6/components/hv6_asgard_bridge/hv6_asgard_bridge.cpp`, `devices/lune-v6/components/hv6_dashboard/hv6_dashboard.h`, `devices/lune-v6/components/hv6_dashboard/hv6_dashboard.cpp`, `devices/lune-v6/test/asgard_url/test_asgard_url.cpp`, `devices/lune-v6/web/dashboard-src/utils/keys.js`, `devices/lune-v6/web/dashboard-src/components/diagnostics/asgard-bridge-status-card.js`, `devices/lune-v6/web/dashboard.js`, `devices/lune-v6/docs/ecodan_integration.md`, `devices/lune-v6/docs/hv6_api_v1.md`, `devices/lune-touch/components/lune_touch_coordinator/asgard_url.h`, `devices/lune-touch/components/lune_touch_coordinator/asgard_confirmation.h`, `devices/lune-touch/components/lune_touch_coordinator/lune_touch_coordinator.h`, `devices/lune-touch/components/lune_touch_coordinator/lune_touch_coordinator.cpp`, `devices/lune-touch/tests/asgard_url/test_asgard_url.cpp`, `devices/lune-touch/web/dashboard-src/components/views.js`, `devices/lune-touch/web/dashboard-src/core/api.js`, `devices/lune-touch/web/dashboard.js`, `devices/lune-touch/docs/api_v1.md`, `docs/lune_heating_control_implementation_plan.md`.
+  - Files: `devices/lune-v6/components/lv6_asgard_bridge/asgard_url.h`, `devices/lune-v6/components/lv6_asgard_bridge/asgard_confirmation.h`, `devices/lune-v6/components/lv6_asgard_bridge/lv6_asgard_bridge.h`, `devices/lune-v6/components/lv6_asgard_bridge/lv6_asgard_bridge.cpp`, `devices/lune-v6/components/lv6_dashboard/lv6_dashboard.h`, `devices/lune-v6/components/lv6_dashboard/lv6_dashboard.cpp`, `devices/lune-v6/test/asgard_url/test_asgard_url.cpp`, `devices/lune-v6/web/dashboard-src/utils/keys.js`, `devices/lune-v6/web/dashboard-src/components/diagnostics/asgard-bridge-status-card.js`, `devices/lune-v6/web/dashboard.js`, `devices/lune-v6/docs/ecodan_integration.md`, `devices/lune-v6/docs/lv6_api_v1.md`, `devices/lune-touch/components/lune_touch_coordinator/asgard_url.h`, `devices/lune-touch/components/lune_touch_coordinator/asgard_confirmation.h`, `devices/lune-touch/components/lune_touch_coordinator/lune_touch_coordinator.h`, `devices/lune-touch/components/lune_touch_coordinator/lune_touch_coordinator.cpp`, `devices/lune-touch/tests/asgard_url/test_asgard_url.cpp`, `devices/lune-touch/web/dashboard-src/components/views.js`, `devices/lune-touch/web/dashboard-src/core/api.js`, `devices/lune-touch/web/dashboard.js`, `devices/lune-touch/docs/api_v1.md`, `docs/lune_heating_control_implementation_plan.md`.
   - Checks: `make -C devices/lune-v6 test-asgard-url` → PASS; `make -C devices/lune-touch test-asgard-url` → PASS; `make -C devices/lune-v6 dashboard-build` → PASS; `make -C devices/lune-touch dashboard-build` → PASS; `make config-touch` → PASS; `make config-v6` → PASS; `make -C devices/lune-v6 build` → PASS (V6 flash 90.8%); `make -C devices/lune-touch build` → PASS (Touch OTA slot 21.7%); `make -B test` → PASS; `git diff --check` → PASS. Host tests cover exact encoded read/write paths, confirmation-state labels, the ±0.05 °C match tolerance, and the bounded retry/backoff policy.
   - Notes/follow-up: Runtime confirmation accepts either `value` or `state` from the Asgard number response. Continue with P1.3 timestamp alignment; no persisted structures changed in this task.
 
 - 2026-07-27 — P1.1 — COMPLETE
   - Summary: Replaced the deprecated object-ID endpoint with the current Asgard display-entity path in both product-specific writers. Each product now URL-encodes entity names exactly once, retains `Content-Length: 0`, validates display/encoded names, and defaults UI/configuration to `Virtual Thermostat Input z1`.
-  - Files: `devices/lune-v6/components/hv6_asgard_bridge/asgard_url.h`, `devices/lune-v6/components/hv6_asgard_bridge/hv6_asgard_bridge.cpp`, `devices/lune-v6/components/hv6_config_store/hv6_types.h`, `devices/lune-v6/components/hv6_config_store/hv6_config_store.cpp`, `devices/lune-v6/test/asgard_url/test_asgard_url.cpp`, `devices/lune-v6/Makefile`, `devices/lune-v6/web/dashboard-src/components/settings/settings-asgard-card.js`, `devices/lune-v6/web/dashboard.js`, `devices/lune-v6/docs/ecodan_integration.md`, `devices/lune-v6/docs/hv6_api_v1.md`, `devices/lune-touch/components/lune_touch_coordinator/asgard_url.h`, `devices/lune-touch/components/lune_touch_coordinator/lune_touch_coordinator.cpp`, `devices/lune-touch/components/lune_touch_coordinator/lune_touch_coordinator.h`, `devices/lune-touch/tests/asgard_url/test_asgard_url.cpp`, `devices/lune-touch/Makefile`, `devices/lune-touch/web/dashboard-src/components/views.js`, `devices/lune-touch/web/dashboard-src/core/api.js`, `devices/lune-touch/web/dashboard.js`, `devices/lune-touch/docs/api_v1.md`, `docs/lune_heating_control_implementation_plan.md`.
+  - Files: `devices/lune-v6/components/lv6_asgard_bridge/asgard_url.h`, `devices/lune-v6/components/lv6_asgard_bridge/lv6_asgard_bridge.cpp`, `devices/lune-v6/components/lv6_config_store/lv6_types.h`, `devices/lune-v6/components/lv6_config_store/lv6_config_store.cpp`, `devices/lune-v6/test/asgard_url/test_asgard_url.cpp`, `devices/lune-v6/Makefile`, `devices/lune-v6/web/dashboard-src/components/settings/settings-asgard-card.js`, `devices/lune-v6/web/dashboard.js`, `devices/lune-v6/docs/ecodan_integration.md`, `devices/lune-v6/docs/lv6_api_v1.md`, `devices/lune-touch/components/lune_touch_coordinator/asgard_url.h`, `devices/lune-touch/components/lune_touch_coordinator/lune_touch_coordinator.cpp`, `devices/lune-touch/components/lune_touch_coordinator/lune_touch_coordinator.h`, `devices/lune-touch/tests/asgard_url/test_asgard_url.cpp`, `devices/lune-touch/Makefile`, `devices/lune-touch/web/dashboard-src/components/views.js`, `devices/lune-touch/web/dashboard-src/core/api.js`, `devices/lune-touch/web/dashboard.js`, `devices/lune-touch/docs/api_v1.md`, `docs/lune_heating_control_implementation_plan.md`.
   - Checks: `make -C devices/lune-v6 test-asgard-url` → PASS; `make -C devices/lune-touch test-asgard-url` → PASS; `make -C devices/lune-v6 dashboard-build` → PASS; `make -C devices/lune-touch dashboard-build` → PASS; `make test` → PASS. URL tests cover spaces, already-encoded input, invalid host/port, timeout transport failure, 404, non-2xx, and exact path.
   - Notes/follow-up: Continue with P1.2 readback confirmation. Existing saved legacy entity names remain accepted; operators can update them through the dashboard without double encoding.
 
@@ -1554,13 +1554,13 @@ YYYY-MM-DD — TASK-ID — STATUS
 - 2026-07-27 — P0.3 — COMPLETE
   - Summary: Defined immutable installation, node, room, loop, command, and boot identities, canonical API/persistence records, and a fail-safe migration policy for the existing index-based Touch and V6 records.
   - Files: `docs/lune_domain_identity_contract.md`, `docs/lune_heating_control_implementation_plan.md`
-  - Checks: Reviewed current persisted structs and index usage in `devices/lune-v6/components/hv6_config_store/hv6_types.h`, `devices/lune-touch/components/lune_touch_coordinator/`, `devices/lune-touch/docs/api_v1.md`, and `devices/lune-v6/docs/hv6_api_v1.md`; `git diff --check` → PASS.
+  - Checks: Reviewed current persisted structs and index usage in `devices/lune-v6/components/lv6_config_store/lv6_types.h`, `devices/lune-touch/components/lune_touch_coordinator/`, `devices/lune-touch/docs/api_v1.md`, and `devices/lune-v6/docs/lv6_api_v1.md`; `git diff --check` → PASS.
   - Notes/follow-up: P1.4 and P1.5 implement the version bumps, migration/invalidation code, and tests. P2.1 implements multi-loop room mappings.
 
 - 2026-07-27 — P0.2 — COMPLETE
   - Summary: Added the Asgard single-writer authority state machine. It establishes V6-A as lease arbiter and sole initial fallback writer, preserves Touch as the normal writer, and fail-closes on partitions or conflicts; V6-B is explicitly never a writer.
   - Files: `docs/lune_asgard_authority_state_machine.md`, `docs/lune_heating_control_implementation_plan.md`
-  - Checks: Reviewed the existing V6 bridge and integration contract (`devices/lune-v6/components/hv6_asgard_bridge/`, `devices/lune-v6/docs/ecodan_integration.md`) and Touch coordinator sources; `git diff --check` → PASS.
+  - Checks: Reviewed the existing V6 bridge and integration contract (`devices/lune-v6/components/lv6_asgard_bridge/`, `devices/lune-v6/docs/ecodan_integration.md`) and Touch coordinator sources; `git diff --check` → PASS.
   - Notes/follow-up: The current direct V6 coordinator toggle does not implement this protocol. Implement stable identities next (P0.3), then apply the runtime authority contract in the later authority tasks.
 
 - 2026-07-27 — P0.1 — COMPLETE

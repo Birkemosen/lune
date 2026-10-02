@@ -17,6 +17,10 @@ Lune Touch / Lune Mini coordinator code lives in the private repository
 `Birkemosen/lune-coordinator`. Product brand architecture is owned there
 (`docs/lune_brand_architecture.md`).
 
+Lune Design System code lives in the private repository
+`Birkemosen/lune-design-system`. The shared design system and components is owned there.
+Every change to UI etc. must conform into Lune Design System.
+
 Keep hardware code separate unless a deliberate shared package is introduced. In
 particular, Lune V6 must remain a safe local manifold node and must not depend on Lune
 Touch / Mini for baseline heating safety.
