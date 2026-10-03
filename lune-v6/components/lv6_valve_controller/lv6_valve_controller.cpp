@@ -3393,6 +3393,11 @@ void Lv6ValveController::check_relearn_triggers_() {
 void Lv6ValveController::motor_loop_() {
   if (!motor_turning_)
     return;
+  // Manual mode turned on mid-learn: take the drive off now.
+  if (calibrating_ && calibration_aborted_()) {
+    stop_motor_(true);
+    return;
+  }
 
   // 1 ms: the absolute current cap. The ripple task raises this from a DMA
   // frame's peak, so the drive comes off within a millisecond instead of
@@ -3671,6 +3676,8 @@ void Lv6ValveController::save_telemetry_(uint8_t zone) {
 // =============================================================================
 
 uint32_t Lv6ValveController::calibration_pass_(uint8_t zone, MotorDirection dir) {
+  if (calibration_aborted_())
+    return 0;
   // Enable pin engagement detection during close passes
   pin_detect_enabled_ = (dir == MotorDirection::CLOSE);
 
@@ -3690,6 +3697,8 @@ uint32_t Lv6ValveController::calibration_pass_(uint8_t zone, MotorDirection dir)
   }
 
   pin_detect_enabled_ = false;
+  if (calibration_aborted_())
+    return 0;
 
   uint32_t elapsed = motor_run_time_ms_;
 
@@ -3729,6 +3738,8 @@ uint32_t Lv6ValveController::calibration_pass_(uint8_t zone, MotorDirection dir)
 }
 
 void Lv6ValveController::calibration_backoff_open_(uint8_t zone, uint32_t hold_ms) {
+  if (calibration_aborted_())
+    return;
   // Software BLOCKED from an already-seated homing close must not stick: the
   // next start_motor_() clears current_fault_code_, but telemetry.blocked is
   // what the UI and relearn skip read. reset_fault() refuses while calibrating.
@@ -3781,7 +3792,7 @@ bool Lv6ValveController::home_to_seat_(uint8_t zone) {
   if (!close_needs_backoff(code))
     return false;
 
-  for (uint8_t n = 0; n < LEARN_CLOSE_BACKOFF_MAX; n++) {
+  for (uint8_t n = 0; n < LEARN_CLOSE_BACKOFF_MAX && !calibration_aborted_(); n++) {
     const uint32_t open_ms =
         LEARN_CLOSE_BACKOFF_OPEN_MS + static_cast<uint32_t>(n) * LEARN_CLOSE_BACKOFF_STEP_MS;
     ESP_LOGW(TAG,
@@ -3803,6 +3814,8 @@ bool Lv6ValveController::home_to_seat_(uint8_t zone) {
 
 OpenLegResult Lv6ValveController::calibration_open_leg_(uint8_t zone, uint32_t target_ripples) {
   OpenLegResult r{};
+  if (calibration_aborted_())
+    return r;
   pin_detect_enabled_ = false;
   if (!start_motor_(zone, MotorDirection::OPEN))
     return r;
@@ -3905,6 +3918,8 @@ bool Lv6ValveController::learn_working_range_(uint8_t zone, uint8_t attempt) {
                                                                  std::max(1, static_cast<int>(expected)))),
                            /*open*/ 2, learner.samples(), need);
     learner.on_open_leg(calibration_open_leg_(zone, learner.next_open_ripples()));
+    if (calibration_aborted_())
+      return false;
     bump(/*close*/ 3);
     if (learner.step() != LearnStep::CLOSE_PASS)
       break;
@@ -3915,6 +3930,8 @@ bool Lv6ValveController::learn_working_range_(uint8_t zone, uint8_t attempt) {
                            /*close*/ 3, learner.samples(), need);
     ClosePassResult pass{};
     pass.ms = calibration_pass_(zone, MotorDirection::CLOSE);
+    if (calibration_aborted_())
+      return false;
     pass.seat_confirmed = pass.ms > 0 && endpoint_confirmed_;
     pass.total_count = get_motion_count_();
     pass.pin_seen = pin_onset_.detected();
@@ -4029,6 +4046,7 @@ void Lv6ValveController::run_calibration_(uint8_t zone) {
   if (boosted_prio != original_prio)
     vTaskPrioritySet(nullptr, boosted_prio);
 
+  calibration_abort_.store(false, std::memory_order_release);
   calibrating_ = true;
   clear_learning_progress_();
   set_learning_progress_(zone, 0, /*home*/ 1, 0,
@@ -4054,7 +4072,7 @@ void Lv6ValveController::run_calibration_(uint8_t zone) {
           vTaskPrioritySet(nullptr, original_prio);
         return;
       }
-      if (!drivers_enabled_)
+      if (!drivers_enabled_ || calibration_aborted_())
         break;
     }
   } else {
@@ -4066,7 +4084,8 @@ void Lv6ValveController::run_calibration_(uint8_t zone) {
       // backends fault BLOCKED instead of confirming the seat; home_to_seat_
       // backs off open and closes again.
       if (!home_to_seat_(zone)) {
-        ESP_LOGW(TAG, "Calibration zone %d: initial close failed", zone + 1);
+        if (!calibration_aborted_())
+          ESP_LOGW(TAG, "Calibration zone %d: initial close failed", zone + 1);
         break;
       }
       uint32_t close1_ms = motor_run_time_ms_;
@@ -4184,6 +4203,24 @@ void Lv6ValveController::run_calibration_(uint8_t zone) {
                zone + 1, attempt + 1, open_ms, close2_ms, min_travel);
     }
 
+  }
+
+  if (calibration_aborted_()) {
+    // Stopped by manual mode: not a failure. Keep the previous profile and do
+    // not block the zone; the position is unknown until the next move homes.
+    if (motor_turning_)
+      stop_motor_(true);
+    position_confident_[zone] = false;
+    xSemaphoreTake(telemetry_mutex_, portMAX_DELAY);
+    telemetry_[zone].last_learning_sample_valid = false;
+    xSemaphoreGive(telemetry_mutex_);
+    clear_learning_progress_();
+    calibration_abort_.store(false, std::memory_order_release);
+    calibrating_ = false;
+    if (boosted_prio != original_prio)
+      vTaskPrioritySet(nullptr, original_prio);
+    ESP_LOGW(TAG, "Learning zone %d stopped: manual mode turned on", zone + 1);
+    return;
   }
 
   bool has_previous_learning = false;

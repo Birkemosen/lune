@@ -1192,6 +1192,23 @@
   .fc-icons .sun    { stroke: var(--warn); }
   .fc-icons .partly { stroke: var(--warn); }
   .fc-icons .rain   { stroke: var(--info); }
+  .fc-icons .snow   { stroke: var(--info); }
+  .fc-icons .moon   { stroke: var(--muted); }
+  /* Ét ikon pr. time (data-hourly): antal kolonner = antal timer (--fc-cols). */
+  .fc-icons[data-hourly] { grid-template-columns: repeat(var(--fc-cols, 72), minmax(0, 1fr)); }
+  .fc-icons[data-hourly] .ic { width: 100%; max-width: 18px; height: 16px; }
+
+  /* .fc--dual: højre akse til en anden enhed (fx solindstråling W/m²). */
+  .fc.fc--dual { grid-template-columns: 32px minmax(0, 1fr) 44px; }
+  .fc--dual > :is(.fc-icons, .fc-x, .fc-plot, .fc-dirs) { grid-column: 2; }
+  .fc--dual > .fc-y { grid-column: 1; }
+  .fc--dual > .fc-y2 { grid-column: 3; }
+  .fc-y2 { display: flex; flex-direction: column; justify-content: space-between; align-items: flex-start; font-size: var(--fs-xs); color: var(--faint); line-height: 1; }
+  .fc .sa { fill: var(--warn); opacity: .14; }
+  .fc .sl { fill: none; stroke: var(--warn); stroke-width: 1.2; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+  /* Vindretning under vindgrafen: pile hver 3. time (--fc-dirs kolonner). */
+  .fc-dirs { display: grid; grid-template-columns: repeat(var(--fc-dirs, 24), minmax(0, 1fr)); justify-items: center; color: var(--info); }
+  .fc-dirs .dir { margin: 0; width: 14px; height: 14px; }
 
   .fc-y { display: flex; flex-direction: column; justify-content: space-between; align-items: flex-end; font-size: var(--fs-xs); color: var(--faint); line-height: 1; }
   .fc-plot { position: relative; min-width: 0; }
@@ -1219,6 +1236,9 @@
   .fc-x span { width: 0; display: flex; justify-content: center; white-space: nowrap; }
   .fc-x span:first-child { justify-content: flex-start; }
   .fc-x .d { color: var(--fg); font-weight: 600; }
+  /* Mærker på faste klokkeslæt (00/06/12/18): placeret med left i % af tidsaksen. */
+  .fc-x.fc-x--abs { position: relative; display: block; height: 1.4em; }
+  .fc-x.fc-x--abs span { position: absolute; top: 0; width: auto; transform: translateX(-50%); }
 
   .fc-legend { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-5); font-size: var(--fs-xs); color: var(--muted); }
   .fc-legend span { display: inline-flex; align-items: center; gap: 6px; }
@@ -1227,6 +1247,39 @@
   .fc-legend .lw   { height: 8px; background: color-mix(in srgb, var(--info) 30%, transparent); border-top: 2px solid var(--info); }
   .fc-legend .lthr { border-top: 1px dashed var(--accent); }
   .fc-legend .lpre { height: 10px; border-radius: 2px; background: color-mix(in srgb, var(--accent) 22%, transparent); }
+  .fc-legend .lsun { height: 8px; background: color-mix(in srgb, var(--warn) 22%, transparent); border-top: 1.2px solid var(--warn); }
+  .fc-legend .dir { margin: 0; color: var(--info); }
+
+  /* Slider: stiplet linje gennem begge grafer + aflæsning, følger mus/finger.
+     HTML (ikke SVG), så den ikke forvrænges. Binderen sætter left i px. */
+  .fc { position: relative; }
+  .fc-plot { cursor: crosshair; touch-action: pan-y; }
+  .fc-scrub {
+    position: absolute; top: 0; bottom: 0; width: 0;
+    border-left: 1px dashed var(--fg);
+    pointer-events: none; z-index: 1;
+  }
+  .fc-readout {
+    position: absolute; top: 0; z-index: 2;
+    display: grid; gap: 2px;
+    padding: var(--space-1) var(--space-2);
+    border-radius: var(--r-field);
+    background: var(--raised);
+    font-size: var(--fs-xs); line-height: 1.3; white-space: nowrap;
+    pointer-events: none;
+    transform: translateX(var(--space-2));
+  }
+  .fc-readout.flip { transform: translateX(calc(-100% - var(--space-2))); }
+  .fc-readout b { font-weight: 600; }
+  .fc-readout .c-temp { color: var(--fg); }
+  .fc-readout .c-sun { color: var(--warn); }
+  .fc-readout .c-wind { color: var(--info); }
+  .fc[data-scrubbing] .fc-now { opacity: .45; }
+
+  /* Timeikoner på smalle skærme: hvert 3. (ikonerne beholder deres plads). */
+  @media (max-width: 899.98px) {
+    .fc-icons[data-hourly] > :not(:nth-child(3n+1)) { visibility: hidden; }
+  }
 
   /* Vindpil: roteres efter retningen via --deg */
   .dir { width: 16px; height: 16px; vertical-align: -2px; margin-left: 4px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; transform: rotate(var(--deg, 0deg)); }
@@ -1236,7 +1289,9 @@
     .fc-temp { height: 120px; }
     .fc-wind { height: 56px; }
     .fc-icons { grid-template-columns: repeat(12, 1fr); }
-    .fc-icons .ic:nth-child(even) { display: none; }   /* ikon hver 6. time */
+    .fc-icons:not([data-hourly]) .ic:nth-child(even) { display: none; }   /* ikon hver 6. time */
+    .fc.fc--dual { grid-template-columns: 26px minmax(0, 1fr) 34px; }
+    .fc-dirs > :nth-child(even) { visibility: hidden; }
     .fc-x span:not(.d):not(:first-child) { visibility: hidden; }  /* kun ugedage */
     .fc-x span:nth-child(3), .fc-x span:nth-child(7), .fc-x span:nth-child(11) { visibility: visible; }
   }

@@ -292,7 +292,12 @@ class Lv6ValveController : public esphome::Component {
   bool are_drivers_enabled() const { return drivers_enabled_.load(std::memory_order_acquire); }
   /// Manual mode (zone controller): automatic learning and relearn wait.
   /// Explicit requests (Reset and relearn, Relearn all) still run.
-  void set_auto_learn_hold(bool hold) { auto_learn_hold_.store(hold, std::memory_order_release); }
+  void set_auto_learn_hold(bool hold) {
+    auto_learn_hold_.store(hold, std::memory_order_release);
+    // Turning manual mode on stops a learn that is already running.
+    if (hold && calibrating_.load(std::memory_order_acquire))
+      calibration_abort_.store(true, std::memory_order_release);
+  }
   // Drive LATCH_ARM high on the HTTP thread so pad 10 is high before loop()
   // drains the queued enable. Bring-up only, and a no-op on Rev 3.3: GPIO17
   // is DRIVER_N_SLEEP there.
@@ -627,6 +632,10 @@ class Lv6ValveController : public esphome::Component {
   std::atomic<bool> motor_turning_{false};
   std::atomic<bool> drivers_enabled_{false};
   std::atomic<bool> auto_learn_hold_{false};
+  /// Set by manual mode during a learn; every calibration loop checks it, the
+  /// motor stops at once and nothing from the aborted run is stored.
+  std::atomic<bool> calibration_abort_{false};
+  bool calibration_aborted_() const { return calibration_abort_.load(std::memory_order_acquire); }
   uint8_t current_zone_ = 0;
   MotorDirection current_dir_ = MotorDirection::OPEN;
   MotorFsmState fsm_state_ = MotorFsmState::IDLE;

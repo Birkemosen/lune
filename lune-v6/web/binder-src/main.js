@@ -452,6 +452,11 @@ function paintStrip() {
     }
     const name = es(key.name(z)) || `Zone ${z}`;
     setBind(`z${z}.name`, name);
+    // Zone pickers (Manual motor control, Group with) show the live name.
+    document.querySelectorAll(`option[data-zone-opt="${z}"]`).forEach((o) => {
+      const label = `Z${z} ${name}`;
+      if (o.textContent !== label) o.textContent = label;
+    });
     setBind(`z${z}.title`, `${z} ${name}`);
     setBind(`z${z}.temp`, st === 'fault' ? t('tile.fault')
       : st === 'blocked' ? t('tile.blocked')
@@ -476,7 +481,8 @@ function paintStrip() {
     const groupSub = groups.root[z] !== z ? ` · ${t('zdash.follows', { z: `Z${groups.root[z]}` })}`
       : (groups.members[z] ? ` · ${t('zdash.primary', { g: groups.label[z] })}` : '');
     setBind(`z${z}.sub`, (st === 'learning' ? zoneLearnLong(z) : t(badgeKey)) + groupSub);
-    setShow(`z${z}.fault`, st === 'fault');
+    // Blocked (incl. a failed learn) is a fault too: offer "Reset fault" without relearn.
+    setShow(`z${z}.fault`, st === 'fault' || st === 'blocked');
     const offset = toNum(ev(key.coordinatorOffset(z)));
     const rem = toNum(ev(key.coordinatorRemaining(z)));
     const preloadOn = Number.isFinite(offset) && Math.abs(offset) >= 0.05;

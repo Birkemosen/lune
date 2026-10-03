@@ -747,7 +747,7 @@
             <p class="msg warn"><span>Manual mode suspends automatic control of all zones until it is turned off.</span></p>
             <label class="switch"><span class="switch-text"><b>Manual mode</b></span><input type="checkbox" role="switch" name="manual_mode"></label>
             <div class="gated-body sub">
-              <div class="field row"><label for="man_zone">Motor</label><select class="select" id="man_zone" name="man_zone"><option value="1">Z1 Josephine</option><option value="2">Z2 Laura</option><option value="3">Z3 Toilet</option><option value="4">Z4 Stue rum 1</option><option value="5">Z5 Stue rum 2</option><option value="6">Z6 Soveværelse</option></select></div>
+              <div class="field row"><label for="man_zone">Motor</label><select class="select" id="man_zone" name="man_zone"><option value="1" data-zone-opt="1">Z1</option><option value="2" data-zone-opt="2">Z2</option><option value="3" data-zone-opt="3">Z3</option><option value="4" data-zone-opt="4">Z4</option><option value="5" data-zone-opt="5">Z5</option><option value="6" data-zone-opt="6">Z6</option></select></div>
               <div class="sub">
                 <h4>Drive to target</h4>
                 <div class="field row"><label for="man_target">Motor target</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease motor target">−</button><span class="value"><input type="number" inputmode="decimal" id="man_target" name="man_target" value="50" min="0" max="100" step="5"><span class="unit">%</span></span><button type="button" data-step="1" aria-label="Increase motor target">+</button></div></div>
@@ -811,7 +811,7 @@
               <label class="switch"><span class="switch-text"><b>Zone enabled</b></span><input type="checkbox" role="switch" name="z1_enabled" checked></label>
               <div class="field row"><label for="z1_name">Name</label><input class="input" id="z1_name" name="z1_name" value="Josephine" maxlength="24"></div>
               <div class="field row"><label for="z1_area">Area</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease area">−</button><span class="value"><input type="number" inputmode="decimal" id="z1_area" name="z1_area" value="12.0" min="0" max="200" step="0.5"><span class="unit">m²</span></span><button type="button" data-step="1" aria-label="Increase area">+</button></div></div>
-              <div class="field row"><label for="z1_merge">Group with<span class="hint">One room: shared target, valves open equally</span></label><select class="select" id="z1_merge" name="z1_merge"><option value="">None</option><option value="2">Z2 Laura</option><option value="3">Z3 Toilet</option><option value="4">Z4 Stue rum 1</option><option value="5">Z5 Stue rum 2</option><option value="6">Z6 Soveværelse</option></select></div>
+              <div class="field row"><label for="z1_merge">Group with<span class="hint">One room: shared target, valves open equally</span></label><select class="select" id="z1_merge" name="z1_merge"><option value="">None</option><option value="2" data-zone-opt="2">Z2</option><option value="3" data-zone-opt="3">Z3</option><option value="4" data-zone-opt="4">Z4</option><option value="5" data-zone-opt="5">Z5</option><option value="6" data-zone-opt="6">Z6</option></select></div>
             </div>
             <div class="sub">
               <h4>Sensors</h4>
@@ -895,7 +895,7 @@
               <label class="switch"><span class="switch-text"><b>Zone enabled</b></span><input type="checkbox" role="switch" name="z2_enabled" checked></label>
               <div class="field row"><label for="z2_name">Name</label><input class="input" id="z2_name" name="z2_name" value="Laura" maxlength="24"></div>
               <div class="field row"><label for="z2_area">Area</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease area">−</button><span class="value"><input type="number" inputmode="decimal" id="z2_area" name="z2_area" value="11.0" min="0" max="200" step="0.5"><span class="unit">m²</span></span><button type="button" data-step="1" aria-label="Increase area">+</button></div></div>
-              <div class="field row"><label for="z2_merge">Group with<span class="hint">One room: shared target, valves open equally</span></label><select class="select" id="z2_merge" name="z2_merge"><option value="">None</option><option value="1">Z1 Josephine</option><option value="3">Z3 Toilet</option><option value="4">Z4 Stue rum 1</option><option value="5">Z5 Stue rum 2</option><option value="6">Z6 Soveværelse</option></select></div>
+              <div class="field row"><label for="z2_merge">Group with<span class="hint">One room: shared target, valves open equally</span></label><select class="select" id="z2_merge" name="z2_merge"><option value="">None</option><option value="1" data-zone-opt="1">Z1</option><option value="3" data-zone-opt="3">Z3</option><option value="4" data-zone-opt="4">Z4</option><option value="5" data-zone-opt="5">Z5</option><option value="6" data-zone-opt="6">Z6</option></select></div>
             </div>
             <div class="sub">
               <h4>Sensors</h4>
@@ -979,7 +979,7 @@
               <label class="switch"><span class="switch-text"><b>Zone enabled</b></span><input type="checkbox" role="switch" name="z3_enabled" checked></label>
               <div class="field row"><label for="z3_name">Name</label><input class="input" id="z3_name" name="z3_name" value="Toilet" maxlength="24"></div>
               <div class="field row"><label for="z3_area">Area</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease area">−</button><span class="value"><input type="number" inputmode="decimal" id="z3_area" name="z3_area" value="4.5" min="0" max="200" step="0.5"><span class="unit">m²</span></span><button type="button" data-step="1" aria-label="Increase area">+</button></div></div>
-              <div class="field row"><label for="z3_merge">Group with<span class="hint">One room: shared target, valves open equally</span></label><select class="select" id="z3_merge" name="z3_merge"><option value="">None</option><option value="1">Z1 Josephine</option><option value="2">Z2 Laura</option><option value="4">Z4 Stue rum 1</option><option value="5">Z5 Stue rum 2</option><option value="6">Z6 Soveværelse</option></select></div>
+              <div class="field row"><label for="z3_merge">Group with<span class="hint">One room: shared target, valves open equally</span></label><select class="select" id="z3_merge" name="z3_merge"><option value="">None</option><option value="1" data-zone-opt="1">Z1</option><option value="2" data-zone-opt="2">Z2</option><option value="4" data-zone-opt="4">Z4</option><option value="5" data-zone-opt="5">Z5</option><option value="6" data-zone-opt="6">Z6</option></select></div>
             </div>
             <div class="sub">
               <h4>Sensors</h4>
@@ -1063,7 +1063,7 @@
               <label class="switch"><span class="switch-text"><b>Zone enabled</b></span><input type="checkbox" role="switch" name="z4_enabled" checked></label>
               <div class="field row"><label for="z4_name">Name</label><input class="input" id="z4_name" name="z4_name" value="Stue rum 1" maxlength="24"></div>
               <div class="field row"><label for="z4_area">Area</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease area">−</button><span class="value"><input type="number" inputmode="decimal" id="z4_area" name="z4_area" value="22.0" min="0" max="200" step="0.5"><span class="unit">m²</span></span><button type="button" data-step="1" aria-label="Increase area">+</button></div></div>
-              <div class="field row"><label for="z4_merge">Group with<span class="hint">One room: shared target, valves open equally</span></label><select class="select" id="z4_merge" name="z4_merge"><option value="">None</option><option value="1">Z1 Josephine</option><option value="2">Z2 Laura</option><option value="3">Z3 Toilet</option><option value="5">Z5 Stue rum 2</option><option value="6">Z6 Soveværelse</option></select></div>
+              <div class="field row"><label for="z4_merge">Group with<span class="hint">One room: shared target, valves open equally</span></label><select class="select" id="z4_merge" name="z4_merge"><option value="">None</option><option value="1" data-zone-opt="1">Z1</option><option value="2" data-zone-opt="2">Z2</option><option value="3" data-zone-opt="3">Z3</option><option value="5" data-zone-opt="5">Z5</option><option value="6" data-zone-opt="6">Z6</option></select></div>
             </div>
             <div class="sub">
               <h4>Sensors</h4>
@@ -1147,7 +1147,7 @@
               <label class="switch"><span class="switch-text"><b>Zone enabled</b></span><input type="checkbox" role="switch" name="z5_enabled" checked></label>
               <div class="field row"><label for="z5_name">Name</label><input class="input" id="z5_name" name="z5_name" value="Stue rum 2" maxlength="24"></div>
               <div class="field row"><label for="z5_area">Area</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease area">−</button><span class="value"><input type="number" inputmode="decimal" id="z5_area" name="z5_area" value="18.0" min="0" max="200" step="0.5"><span class="unit">m²</span></span><button type="button" data-step="1" aria-label="Increase area">+</button></div></div>
-              <div class="field row"><label for="z5_merge">Group with<span class="hint">One room: shared target, valves open equally</span></label><select class="select" id="z5_merge" name="z5_merge"><option value="">None</option><option value="1">Z1 Josephine</option><option value="2">Z2 Laura</option><option value="3">Z3 Toilet</option><option value="4">Z4 Stue rum 1</option><option value="6">Z6 Soveværelse</option></select></div>
+              <div class="field row"><label for="z5_merge">Group with<span class="hint">One room: shared target, valves open equally</span></label><select class="select" id="z5_merge" name="z5_merge"><option value="">None</option><option value="1" data-zone-opt="1">Z1</option><option value="2" data-zone-opt="2">Z2</option><option value="3" data-zone-opt="3">Z3</option><option value="4" data-zone-opt="4">Z4</option><option value="6" data-zone-opt="6">Z6</option></select></div>
             </div>
             <div class="sub">
               <h4>Sensors</h4>
@@ -1231,7 +1231,7 @@
               <label class="switch"><span class="switch-text"><b>Zone enabled</b></span><input type="checkbox" role="switch" name="z6_enabled" checked></label>
               <div class="field row"><label for="z6_name">Name</label><input class="input" id="z6_name" name="z6_name" value="Soveværelse" maxlength="24"></div>
               <div class="field row"><label for="z6_area">Area</label><div class="stepper"><button type="button" data-step="-1" aria-label="Decrease area">−</button><span class="value"><input type="number" inputmode="decimal" id="z6_area" name="z6_area" value="14.0" min="0" max="200" step="0.5"><span class="unit">m²</span></span><button type="button" data-step="1" aria-label="Increase area">+</button></div></div>
-              <div class="field row"><label for="z6_merge">Group with<span class="hint">One room: shared target, valves open equally</span></label><select class="select" id="z6_merge" name="z6_merge"><option value="">None</option><option value="1">Z1 Josephine</option><option value="2">Z2 Laura</option><option value="3">Z3 Toilet</option><option value="4">Z4 Stue rum 1</option><option value="5">Z5 Stue rum 2</option></select></div>
+              <div class="field row"><label for="z6_merge">Group with<span class="hint">One room: shared target, valves open equally</span></label><select class="select" id="z6_merge" name="z6_merge"><option value="">None</option><option value="1" data-zone-opt="1">Z1</option><option value="2" data-zone-opt="2">Z2</option><option value="3" data-zone-opt="3">Z3</option><option value="4" data-zone-opt="4">Z4</option><option value="5" data-zone-opt="5">Z5</option></select></div>
             </div>
             <div class="sub">
               <h4>Sensors</h4>

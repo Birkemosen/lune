@@ -369,7 +369,8 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
       </section>'''
 
     # ---- konfiguration: manifold
-    zone_opts="".join(f'<option value="{z[0]}">Z{z[0]} {z[1]}</option>' for z in Z)
+    # Zone names are user data: the binder fills them in (data-zone-opt).
+    zone_opts="".join(f'<option value="{z[0]}" data-zone-opt="{z[0]}">Z{z[0]}</option>' for z in Z)
     def sect_h(sid, key, badge=""):
         b=f' <span class="badge">{badge}</span>' if badge else ''
         return (f'<h2 class="section-h" id="sec-{sid}-h">{T(key)}{b}'
@@ -637,7 +638,7 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
         return f'<div class="compass" role="group" aria-label="{T("cz.walls")}"><i class="c"></i>'+"".join(f'<label data-wall="{k}"><input type="checkbox" name="z{i}_wall" value="{k}"{" checked" if k in walls else ""} aria-label="{WF[k]}"><span>{WL[k]}</span></label>' for k in "nesw")+'</div>'
     def conf_zone(z):
         i,n,t,tg,st,fl,ret,grp,walls,src,area,sp,pipe=z
-        merge=f'<option value="">{T("common.none")}</option>'+"".join(f'<option value="{y[0]}">Z{y[0]} {y[1]}</option>' for y in Z if y[0]!=i)
+        merge=f'<option value="">{T("common.none")}</option>'+"".join(f'<option value="{y[0]}" data-zone-opt="{y[0]}">Z{y[0]}</option>' for y in Z if y[0]!=i)
         pipes="".join(f'<option{" selected" if p==pipe else ""}>{p}</option>' for p in PIPES)
         fault=st=="fault"
         member=f'<p class="msg violet" data-bind-show="z{i}.member" hidden><span><b data-bind="z{i}.memberStrong"></b> <span data-bind="z{i}.memberBody"></span></span></p>'

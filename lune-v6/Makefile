@@ -54,7 +54,7 @@ help:
 	@echo "  make release-firmware  Build the public release bundle in dist/ (no WiFi secrets baked in)"
 	@echo "  make deploy        Bump build + compile + upload (USB, OTA, or auto-discover)"
 	@echo "  make release-deploy  Release compile + upload"
-	@echo "  make ota           Bump build + compile + upload over network"
+	@echo "  make ota           Upload the latest build over network (no build; run 'make build' first)"
 	@echo "  make logs          Stream logs (auto-discover if HOST unset)"
 	@echo "  make discover      Scan network and list found devices"
 	@echo "  make monitor       Open serial monitor on PORT"
@@ -332,8 +332,13 @@ test-dashboard:
 
 test: design-verify test-dashboard test-ripple test-rev31-logic test-rev32-logic test-safety-limits test-stall-model test-stroke-learning test-balance test-authority-lease test-preheat-policy test-preheat-absorb test-absorb-command test-probe-mapping test-thermal-model test-group-model test-flow-allocator test-hydraulic-policy test-hydraulic-diagnostics test-commissioning-schema test-request-guard test-ble-time-beacon test-settings-backup test-control-mode
 
+# Installs the LATEST build only — no bump, no compile — so one build can be
+# rolled out to several devices. Build first with `make build` (or `make compile`).
 ota: check
-	$(MAKE) build
+	@if [ ! -f "$(FIRMWARE_BIN)" ]; then \
+		echo "No firmware build found at $(FIRMWARE_BIN). Run 'make build' first."; exit 1; \
+	fi
+	@echo "Installing $$(grep -E '^[[:space:]]*firmware_version:' version.yaml | sed -E 's/.*"(.*)".*/\1/')$$(grep -E '^[[:space:]]*firmware_suffix:' version.yaml | sed -E 's/.*"(.*)".*/\1/') (built $$(date -r "$(FIRMWARE_BIN)" '+%Y-%m-%d %H:%M'))"
 	@if [ -z "$(HOST)" ]; then \
 		echo "Scanning for Lune V6 devices (3s)..."; \
 		hosts=$$($(PYTHON) discover_devices.py 2>/dev/null); \
