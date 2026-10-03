@@ -290,6 +290,9 @@ class Lv6ValveController : public esphome::Component {
   /// When disabled, all motors are put to sleep and commands are rejected.
   void set_drivers_enabled(bool enabled);
   bool are_drivers_enabled() const { return drivers_enabled_.load(std::memory_order_acquire); }
+  /// Manual mode (zone controller): automatic learning and relearn wait.
+  /// Explicit requests (Reset and relearn, Relearn all) still run.
+  void set_auto_learn_hold(bool hold) { auto_learn_hold_.store(hold, std::memory_order_release); }
   // Drive LATCH_ARM high on the HTTP thread so pad 10 is high before loop()
   // drains the queued enable. Bring-up only, and a no-op on Rev 3.3: GPIO17
   // is DRIVER_N_SLEEP there.
@@ -396,6 +399,10 @@ class Lv6ValveController : public esphome::Component {
   static constexpr uint32_t LEARN_CLOSE_BACKOFF_OPEN_MS = 10000;
   static constexpr uint32_t LEARN_CLOSE_BACKOFF_STEP_MS = 5000;
   static constexpr uint8_t LEARN_CLOSE_BACKOFF_MAX = 3;
+  /// Coast time between a homing stop and the reversing backoff open. Reversing
+  /// a motor that is still loaded trips the bridge over-current latch (nFAULT),
+  /// which aborted learning ~14 ms into the second backoff.
+  static constexpr uint32_t LEARN_REVERSE_SETTLE_MS = 600;
   static constexpr UBaseType_t CALIBRATION_BOOST_PRIORITY = PRIORITY + 3;  ///< Modest boost during calibration; stays below ESP-IDF system tasks
   static constexpr bool DEVELOPMENT_KEEP_NSLEEP_AWAKE = false;  ///< Set true only when debugging brownout/resets
   static constexpr uint16_t TRACE_MAX_SAMPLES = 2000;
@@ -619,6 +626,7 @@ class Lv6ValveController : public esphome::Component {
   // Motor FSM state (atomic for cross-thread access)
   std::atomic<bool> motor_turning_{false};
   std::atomic<bool> drivers_enabled_{false};
+  std::atomic<bool> auto_learn_hold_{false};
   uint8_t current_zone_ = 0;
   MotorDirection current_dir_ = MotorDirection::OPEN;
   MotorFsmState fsm_state_ = MotorFsmState::IDLE;

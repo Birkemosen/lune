@@ -53,8 +53,8 @@ Z = [
  (1,"Josephine",21.4,22.0,"calling",62,29.1,None,"sw","ble",12.0,150,"PEX 16mm"),
  (2,"Laura",20.8,21.0,"idle",18,28.2,None,"ne","ble",11.0,150,"PEX 16mm"),
  (3,"Toilet",22.6,22.0,"idle",6,28.9,None,"","probe",4.5,100,"PEX 16mm"),
- (4,"Stue rum 1",21.1,21.5,"calling",54,28.4,"primary","s","probe",22.0,150,"PEX 16mm"),
- (5,"Stue rum 2",21.0,21.5,"calling",54,28.5,"member","sw","probe",18.0,150,"PEX 16mm"),
+ (4,"Stue rum 1",21.1,21.5,"calling",54,28.4,None,"s","probe",22.0,150,"PEX 16mm"),
+ (5,"Stue rum 2",21.0,21.5,"calling",54,28.5,None,"sw","probe",18.0,150,"PEX 16mm"),
  (6,"Soveværelse",17.8,19.0,"fault",0,22.1,None,"n","ble",14.0,200,"ALUPEX 16mm"),
 ]
 PIPES=["PEX 12mm","PEX 14mm","PEX 16mm","PEX 17mm","PEX 18mm","PEX 20mm","ALUPEX 16mm","ALUPEX 20mm","Unknown"]
@@ -310,18 +310,19 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
         badge_cls={"calling":"badge hot","idle":"badge","fault":"badge bad","blocked":"badge warn","learning":"badge violet","off":"badge"}.get(st,"badge")
         badge=f'<span class="{badge_cls}" data-bind="z{i}.badge">{ST.get(st,ST["idle"])}</span>'
         pre=f'<p class="msg info" data-bind-show="z{i}.preload" hidden><span><b>{T("zdash.preloadStrong")}</b> <span data-bind="z{i}.preload">{T("zdash.preload",offset="+0,0")}</span></span></p>'
-        foot=(f'<footer class="panel-foot"><span class="note">{T("zdash.memberNote",m="Z5",p="Z4")}</span><label class="btn" for="s-z4">{T("common.open",x="Z4–5")}</label></footer>'
-              if member else '')
+        # Group membership is painted by the binder from select-zone_N_sync_to.
+        foot=(f'<footer class="panel-foot" data-bind-show="z{i}.member" hidden><span class="note" data-bind="z{i}.memberNote"></span>'
+              f'<label class="btn" for="s-z{i}" data-bind="z{i}.openPrimary"></label></footer>')
         ta=T("zdash.targetAria")
         return f'''
       <section class="view" id="v-dash-z{i}" aria-labelledby="h-dash-z{i}">
         <header class="view-head"><h2 id="h-dash-z{i}"><span data-bind="z{i}.title">{title(z)}</span></h2><p data-bind="z{i}.sub">{sub}</p></header>{alert}
 
-        <form class="panel c7" data-save="zone/{i}/target">
+        <form class="panel c5" data-save="zone/{i}/target">
           <header class="panel-head"><h3>{T("zdash.comfort")}</h3>{badge}</header>
           {pre}
+          <!-- Current temperature is in the zone tile; the panel holds the target and the live details. -->
           <div class="climate">
-            <div class="now" data-bind="z{i}.temp">{T.num(t)}<small>°C</small></div>
             <div class="target">
               <button type="button" data-step="-1" aria-label="{T("common.decrease",x=ta)}"{dis}>−</button>
               <label class="value"><small>{T("zdash.target")}</small><input type="number" inputmode="decimal" name="z{i}_target" value="{tg:.1f}" min="16" max="28" step="0.5"{dis}></label>
@@ -329,25 +330,18 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
             </div>
           </div>
           <p class="autosave" aria-live="polite"></p>
-          {foot}
-        </form>
-
-        <section class="panel c5">
-          <header class="panel-head"><h3>{T("zdash.valve")}</h3></header>
-          <dl class="metrics">
-            {metric(T("zdash.opening"),fl,"%",f"z{i}.flow")}
-            {metric(T("m.return"),T.num(ret),"°C",f"z{i}.return",cls="zone-ret")}
-          </dl>
-          <div class="bar" style="--v:{fl}%" aria-hidden="true"><i></i></div>
           <dl class="kv">
+            <div><dt>{T("zdash.opening")}</dt><dd data-bind="z{i}.flow">—</dd></div>
+            <div class="zone-ret"><dt>{T("m.return")}</dt><dd data-bind="z{i}.return">—</dd></div>
             <div><dt>{T("zdash.motor")}</dt><dd data-bind="z{i}.motor">—</dd></div>
             <div><dt>{T("zdash.preheatAdv")}</dt><dd data-bind="z{i}.preheat">—</dd></div>
             <div><dt>{T("zdash.offsetNow")}</dt><dd data-bind="z{i}.offset">—</dd></div>
             <div><dt>{T("zdash.tempFrom")}</dt><dd data-bind="z{i}.tempFrom">—</dd></div>
           </dl>
-        </section>
+          {foot}
+        </form>
 
-        <section class="panel c12">
+        <section class="panel c7">
           <header class="panel-head"><h3>{T("zchart.title")}</h3><p>{T("zchart.sub")}</p></header>
           <dl class="metrics">
             <div data-bind-show="z{i}.expected" hidden>
@@ -643,16 +637,14 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
         return f'<div class="compass" role="group" aria-label="{T("cz.walls")}"><i class="c"></i>'+"".join(f'<label data-wall="{k}"><input type="checkbox" name="z{i}_wall" value="{k}"{" checked" if k in walls else ""} aria-label="{WF[k]}"><span>{WL[k]}</span></label>' for k in "nesw")+'</div>'
     def conf_zone(z):
         i,n,t,tg,st,fl,ret,grp,walls,src,area,sp,pipe=z
-        merge=f'<option value="">{T("common.none")}</option>'+"".join(f'<option value="{y[0]}"{" selected" if (i==5 and y[0]==4) else ""}>Z{y[0]} {y[1]}</option>' for y in Z if y[0]!=i)
+        merge=f'<option value="">{T("common.none")}</option>'+"".join(f'<option value="{y[0]}">Z{y[0]} {y[1]}</option>' for y in Z if y[0]!=i)
         pipes="".join(f'<option{" selected" if p==pipe else ""}>{p}</option>' for p in PIPES)
         fault=st=="fault"
-        member=f'<p class="msg violet"><span><b>{T("cz.memberStrong",p="Z4")}</b> {T("cz.member",p="Z4")}</span></p>' if grp=="member" else ""
+        member=f'<p class="msg violet" data-bind-show="z{i}.member" hidden><span><b data-bind="z{i}.memberStrong"></b> <span data-bind="z{i}.memberBody"></span></span></p>'
         zid=f"Z{i}"
         return f'''
       <section class="view" id="v-conf-z{i}" aria-labelledby="h-conf-z{i}">
         <header class="view-head"><h2 id="h-conf-z{i}"><span data-bind="z{i}.title">{title(z)}</span></h2><p>{T("cz.sub")}</p></header>
-
-        {sect("sect.zone")}
 
         <form class="panel c6" data-save="zone/{i}/room">
           <header class="panel-head"><h3>{T("cz.roomSensors")}</h3>{help_btn("help-zone-room",T("cz.roomSensors"))}</header>
@@ -750,7 +742,7 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
         langnav=""
 
     # Dynamiske strenge til binderen (statusser, relative tider, gem-beskeder)
-    rt_keys=("state.calling","state.idle","state.fault","state.off","state.learning","state.blocked","tile.fault","tile.learning","tile.learningPct","tile.blocked","badge.calling","sys.dt","sys.dtstate","dash.sys.sub",
+    rt_keys=("zdash.follows","zdash.primary","zdash.memberNote","common.open","cz.memberStrong","cz.member","state.calling","state.idle","state.fault","state.off","state.learning","state.blocked","tile.fault","tile.learning","tile.learningPct","tile.blocked","badge.calling","sys.dt","sys.dtstate","dash.sys.sub",
              "cz.learnPhase.home","cz.learnPhase.open","cz.learnPhase.close","cz.learnPhase.pass",
              "cz.bleAssign","cz.bleAssigned","cz.bleSeen","cz.bleSeenEmpty","cz.bleScanning",
              "common.days","common.hours","common.minutes","common.open","common.none","common.learned","common.needsLearning","common.notLearned","common.undo","common.on",

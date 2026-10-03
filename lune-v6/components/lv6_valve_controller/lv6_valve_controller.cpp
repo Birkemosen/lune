@@ -3318,6 +3318,9 @@ void Lv6ValveController::check_relearn_triggers_() {
   // Don't queue relearn if a calibration is already pending or running
   if (calibration_request_ >= 0 || calibrating_)
     return;
+  // Manual mode: no automatic learning or relearn until it is turned off.
+  if (auto_learn_hold_.load(std::memory_order_acquire))
+    return;
 
   const auto cfg = config_store_->get_config();
 
@@ -3328,14 +3331,26 @@ void Lv6ValveController::check_relearn_triggers_() {
     xSemaphoreTake(telemetry_mutex_, portMAX_DELAY);
     const auto &t = telemetry_[z];
 
-    // Skip zones that haven't been learned, are blocked, or not present
-    if (t.learned_open_ms == 0 || t.blocked || !t.present) {
+    // Skip zones that are blocked or not present
+    if (t.blocked || !t.present) {
       xSemaphoreGive(telemetry_mutex_);
       continue;
     }
 
     bool needs_relearn = false;
     const char *reason = "";
+
+    // Never learned: learn it now (one zone per check). A failed first learn
+    // sets `blocked`, so a zone that cannot be learned is not retried until its
+    // fault is reset. Only with drivers enabled — never energise a disarmed board.
+    if (t.learned_open_ms == 0) {
+      xSemaphoreGive(telemetry_mutex_);
+      if (!are_drivers_enabled())
+        continue;
+      ESP_LOGI(TAG, "Zone %d not learned - starting automatic learning", z + 1);
+      calibration_request_ = static_cast<int8_t>(z);
+      return;  // one at a time
+    }
 
     // Movement count trigger
     if (motor_cfg_.relearn_after_movements > 0 &&
@@ -3721,6 +3736,9 @@ void Lv6ValveController::calibration_backoff_open_(uint8_t zone, uint32_t hold_m
   telemetry_[zone].blocked = false;
   xSemaphoreGive(telemetry_mutex_);
   current_fault_code_ = FaultCode::NONE;
+
+  // Let the motor and bridge settle before reversing (see LEARN_REVERSE_SETTLE_MS).
+  vTaskDelay(pdMS_TO_TICKS(LEARN_REVERSE_SETTLE_MS));
 
   pin_detect_enabled_ = false;
   if (!start_motor_(zone, MotorDirection::OPEN)) {

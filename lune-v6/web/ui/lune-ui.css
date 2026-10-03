@@ -234,7 +234,7 @@
     flex: 1 1 0; min-width: 0; border-radius: 2px;
     background: var(--accent); align-self: flex-end; min-height: 2px;
   }
-  .tile.tile-manifold .mini i[data-level="0"] { height: 2px; }
+  .tile.tile-manifold .mini i[data-level="0"] { height: 2px; background: var(--seg-off); }
   .tile.tile-manifold .mini i[data-level="1"] { height: 20%; }
   .tile.tile-manifold .mini i[data-level="2"] { height: 40%; }
   .tile.tile-manifold .mini i[data-level="3"] { height: 60%; }
@@ -267,6 +267,12 @@
     }
     .substrip { gap: 6px; }
   }
+
+  /* Touch: én V6-række pr. board (System + zoner) øverst på hus-dashboardet.
+     Samme felter som V6' strimmel; felterne er links til V6'ens egen side. */
+  .boards { grid-column: 1 / -1; display: grid; gap: var(--space-2); }
+  .boards .strip { padding-block: 0; }
+  a.tile { text-decoration: none; }
 
   /* ---- 3.3 Indhold ---------------------------------------------------- */
   .content { padding-block: var(--space-5) var(--space-7); }
@@ -434,8 +440,13 @@
   @media (min-width: 1280px) {
     .view[id^="v-conf-"],
     .view[id^="v-conf-"] .section-grid { --conf-cols: 3; }
-    /* Kun to paneler i sektionen: to spalter, ingen tom tredje. */
-    .view[id^="v-conf-"] .section-grid:not(:has(> :nth-child(3))) { --conf-cols: 2; }
+    /* Færre end tre én-spalte-paneler (cN uden .wide): to spalter, ingen tom tredje. */
+    .view[id^="v-conf-"]:not(:has(
+      > :is(.c4, .c5, .c6, .c7, .c8):not(.wide) ~ :is(.c4, .c5, .c6, .c7, .c8):not(.wide) ~ :is(.c4, .c5, .c6, .c7, .c8):not(.wide)
+    )),
+    .view[id^="v-conf-"] .section-grid:not(:has(
+      > :is(.c4, .c5, .c6, .c7, .c8):not(.wide) ~ :is(.c4, .c5, .c6, .c7, .c8):not(.wide) ~ :is(.c4, .c5, .c6, .c7, .c8):not(.wide)
+    )) { --conf-cols: 2; }
   }
 
   details.section > summary.section-h {
@@ -1240,6 +1251,8 @@
   /* ---- 4.6 Klima-kontrol (Tesla-inspireret) ---------------------------
      Kæmpe aktuel temperatur og målet mellem to store runde knapper. */
   .climate { display: grid; gap: var(--space-5); }
+  /* På dashboardet strækkes panelet til naboen; klima-kontrollen fylder højden. */
+  .panel > .climate:has(> .now) { flex: 1 1 auto; align-content: space-evenly; }
   .climate .now { font-size: var(--fs-hero); font-weight: 600; letter-spacing: -.05em; line-height: .9; }
   .climate .now small { margin-left: .12em; font-size: var(--fs-xl); color: var(--muted); letter-spacing: 0; }
   .climate .target {
@@ -1446,6 +1459,8 @@
   .table th { text-align: left; font-weight: 500; color: var(--muted); padding: 8px; border-bottom: 1px solid var(--border); }
   .table td { padding: max(0px, (var(--row-h) - 20px) / 2) var(--space-2); border-bottom: 1px solid var(--border); white-space: nowrap; }
   .table .num { text-align: right; }
+  /* Redigerbare tal i en tabel (fx Rum): smalle, højrestillede felter. */
+  .table td.num .input { width: calc(3 * var(--hit)); text-align: right; }
   .table tr:last-child td { border-bottom: 0; }
 
   /* ---- 4.8 Knapper — Apex-piller --------------------------------------- */
@@ -1756,23 +1771,28 @@
     & .seg label { flex: 1 1 auto; }
     & .seg span { padding-inline: var(--space-4); }
 
-    /* .field.row: label ⟷ kontrol med naturlig bredde. Stepper 136 px.
-       Inputs: .w-xs 8ch (port, tal) · .w-sm 14ch · .w-md 22ch (host, entity;
-       standard for tekst) · .w-lg 32ch (URL) — lange felter står under labelen. */
+    /* .field.row: label ⟷ kontrol. Alle kontroller i en række har samme
+       bredde (--ctl-w = 5 × --hit = 160 px), så kolonnen flugter: input,
+       select, stepper; .seg har den som minimum. .w-lg (URL) står under
+       labelen i fuld bredde. .w-xs/.w-sm/.w-md er aliaser for --ctl-w. */
+    --ctl-w: calc(5 * var(--hit));
     & .field.row { grid-template-columns: minmax(0, 1fr) auto; }
-    & .field.row > :is(.input, .select, .stepper, .pair, .seg, .compass) { width: auto; justify-self: end; }
-    & .field.row > .stepper { width: 136px; }
-    & .field.row > .select { min-width: 14ch; max-width: 32ch; }
-    & .field.row > .pair { width: min(100%, 36ch); }
-    & :is(.field, .field.row) > .input { --w: 22ch; width: min(100%, calc(var(--w) + 2 * var(--space-3) + 2px)); justify-self: start; }
-    & .field.row > .input { justify-self: end; }
-    & .field > .input[type="number"] { --w: 8ch; }
-    & .field > .input.w-xs { --w: 8ch; }
-    & .field > .input.w-sm { --w: 14ch; }
-    & .field > .input.w-md { --w: 22ch; }
-    & .field > .input.w-lg { --w: 32ch; }
+    & .field.row > :is(.input, .select, .stepper, .pair, .seg, .compass) { justify-self: end; }
+    & .field.row > :is(.input, .select, .stepper) { width: var(--ctl-w); max-width: 100%; }
+    & .field.row > .seg { width: auto; min-width: var(--ctl-w); }
+    & .field.row > .input.w-lg { width: 100%; justify-self: stretch; }
     & .field.row:has(> .input.w-lg) { grid-template-columns: minmax(0, 1fr); }
-    & .field.row > .input.w-lg { justify-self: start; }
+    & .field:not(.row) > .input:not(.w-lg) { width: var(--ctl-w); max-width: 100%; }
+    /* Segment med label over (Ventiltype, Tilstand …): på én række i kompakt. */
+    & .field:not(.row):has(> .seg) { grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: var(--space-4); }
+    & .field:not(.row) > .seg { justify-self: end; min-width: var(--ctl-w); }
+    /* En løs knap i et panel (fx «Genlær alle…») strækkes ikke. */
+    & :is(.panel, .sub) > .btn { align-self: flex-start; justify-self: start; }
+    /* Live-aflæsninger i Konfiguration: mindre tal end på Dashboard. */
+    & .view[id^="v-conf-"] .metric dd { font-size: var(--fs-lg); }
+    /* .field.row med en .pair (fx MAC + Scan): label over, parret i fuld bredde. */
+    & .field.row:has(> .pair) { grid-template-columns: minmax(0, 1fr); }
+    & .field.row > .pair { justify-self: stretch; width: 100%; }
     /* To felter i en .pair: label over feltet, ellers klemmes labelen. */
     & .pair > .field.row { grid-template-columns: minmax(0, 1fr); }
     & .pair > .field.row > .input { justify-self: stretch; width: 100%; }
@@ -1835,23 +1855,28 @@
     & .seg label { flex: 1 1 auto; }
     & .seg span { padding-inline: var(--space-4); }
 
-    /* .field.row: label ⟷ kontrol med naturlig bredde. Stepper 136 px.
-       Inputs: .w-xs 8ch (port, tal) · .w-sm 14ch · .w-md 22ch (host, entity;
-       standard for tekst) · .w-lg 32ch (URL) — lange felter står under labelen. */
+    /* .field.row: label ⟷ kontrol. Alle kontroller i en række har samme
+       bredde (--ctl-w = 5 × --hit = 160 px), så kolonnen flugter: input,
+       select, stepper; .seg har den som minimum. .w-lg (URL) står under
+       labelen i fuld bredde. .w-xs/.w-sm/.w-md er aliaser for --ctl-w. */
+    --ctl-w: calc(5 * var(--hit));
     & .field.row { grid-template-columns: minmax(0, 1fr) auto; }
-    & .field.row > :is(.input, .select, .stepper, .pair, .seg, .compass) { width: auto; justify-self: end; }
-    & .field.row > .stepper { width: 136px; }
-    & .field.row > .select { min-width: 14ch; max-width: 32ch; }
-    & .field.row > .pair { width: min(100%, 36ch); }
-    & :is(.field, .field.row) > .input { --w: 22ch; width: min(100%, calc(var(--w) + 2 * var(--space-3) + 2px)); justify-self: start; }
-    & .field.row > .input { justify-self: end; }
-    & .field > .input[type="number"] { --w: 8ch; }
-    & .field > .input.w-xs { --w: 8ch; }
-    & .field > .input.w-sm { --w: 14ch; }
-    & .field > .input.w-md { --w: 22ch; }
-    & .field > .input.w-lg { --w: 32ch; }
+    & .field.row > :is(.input, .select, .stepper, .pair, .seg, .compass) { justify-self: end; }
+    & .field.row > :is(.input, .select, .stepper) { width: var(--ctl-w); max-width: 100%; }
+    & .field.row > .seg { width: auto; min-width: var(--ctl-w); }
+    & .field.row > .input.w-lg { width: 100%; justify-self: stretch; }
     & .field.row:has(> .input.w-lg) { grid-template-columns: minmax(0, 1fr); }
-    & .field.row > .input.w-lg { justify-self: start; }
+    & .field:not(.row) > .input:not(.w-lg) { width: var(--ctl-w); max-width: 100%; }
+    /* Segment med label over (Ventiltype, Tilstand …): på én række i kompakt. */
+    & .field:not(.row):has(> .seg) { grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: var(--space-4); }
+    & .field:not(.row) > .seg { justify-self: end; min-width: var(--ctl-w); }
+    /* En løs knap i et panel (fx «Genlær alle…») strækkes ikke. */
+    & :is(.panel, .sub) > .btn { align-self: flex-start; justify-self: start; }
+    /* Live-aflæsninger i Konfiguration: mindre tal end på Dashboard. */
+    & .view[id^="v-conf-"] .metric dd { font-size: var(--fs-lg); }
+    /* .field.row med en .pair (fx MAC + Scan): label over, parret i fuld bredde. */
+    & .field.row:has(> .pair) { grid-template-columns: minmax(0, 1fr); }
+    & .field.row > .pair { justify-self: stretch; width: 100%; }
     /* To felter i en .pair: label over feltet, ellers klemmes labelen. */
     & .pair > .field.row { grid-template-columns: minmax(0, 1fr); }
     & .pair > .field.row > .input { justify-self: stretch; width: 100%; }

@@ -2139,9 +2139,17 @@ void LV6Dashboard::handle_zones_(AsyncWebServerRequest *request) {
     sync_roots[i] = root;
   }
 
+  // Board identity for Touch: raw display_name ("Lune V6" is the default) and
+  // location, so the coordinator can label the manifold without a local name.
+  char name_esc[2 * sizeof(snap->system.display_name)];
+  char place_esc[2 * sizeof(snap->system.location)];
+  json_escape_cstr(snap->system.display_name, name_esc, sizeof(name_esc));
+  json_escape_cstr(snap->system.location, place_esc, sizeof(place_esc));
+
   appendf(buf, JSON_BUF_SIZE, off,
-          "{\"ok\":true,\"version\":\"v1\",\"data\":{\"node_id\":\"%s\",\"count\":%u,\"zones\":[",
-          node_id, static_cast<unsigned>(lv6::NUM_ZONES));
+          "{\"ok\":true,\"version\":\"v1\",\"data\":{\"node_id\":\"%s\","
+          "\"device_name\":\"%s\",\"device_location\":\"%s\",\"count\":%u,\"zones\":[",
+          node_id, name_esc, place_esc, static_cast<unsigned>(lv6::NUM_ZONES));
   for (uint8_t i = 0; i < lv6::NUM_ZONES && off + 1200 < JSON_BUF_SIZE; i++) {
     char temp[24], setpoint[24], valve[24], preload[24];
     format_float_token(temp, sizeof(temp), snap->zone_temp_c[i], 1);

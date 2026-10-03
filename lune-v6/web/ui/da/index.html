@@ -15,7 +15,7 @@
 <!-- TILSTAND — før .app. Rækkefølge: tilstand → omfang → tema -->
 <input class="state" type="radio" name="mode" id="m-dash" checked aria-label="Dashboard">
 <input class="state" type="radio" name="mode" id="m-conf" aria-label="Konfiguration">
-<input class="state" type="radio" name="scope" id="s-sys" checked aria-label="Manifold">
+<input class="state" type="radio" name="scope" id="s-sys" checked aria-label="System">
 <input class="state" type="radio" name="scope" id="s-z1" aria-label="Zone 1">
 <input class="state" type="radio" name="scope" id="s-z2" aria-label="Zone 2">
 <input class="state" type="radio" name="scope" id="s-z3" aria-label="Zone 3">
@@ -74,9 +74,9 @@
         </div>
       </header>
 
-      <nav class="strip" aria-label="Vælg zone eller manifold">
-          <label class="tile tile-sys" for="s-sys" title="Manifold">
-            <span class="tile-id">Manifold</span>
+      <nav class="strip" aria-label="Vælg zone eller system">
+          <label class="tile tile-sys" for="s-sys" title="System">
+            <span class="tile-id">System</span>
             <span class="temps">
               <span class="temp flow">
                 <span class="temp-lab" title="Fremløb">F</span>
@@ -106,13 +106,13 @@
             <span class="tile-name" data-bind="z3.name">Toilet</span>
             <span class="tile-val" data-bind="z3.temp">22,6°</span>
           </label>
-          <label class="tile" for="s-z4" data-state="calling" data-level="3" data-group="primary">
+          <label class="tile" for="s-z4" data-state="calling" data-level="3">
             <span class="lvl" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>
-            <span class="tile-id">Z4–5</span>
+            <span class="tile-id">Z4</span>
             <span class="tile-name" data-bind="z4.name">Stue rum 1</span>
             <span class="tile-val" data-bind="z4.temp">21,1°</span>
           </label>
-          <label class="tile" for="s-z5" data-state="calling" data-level="3" data-group="member">
+          <label class="tile" for="s-z5" data-state="calling" data-level="3">
             <span class="lvl" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>
             <span class="tile-id">Z5</span>
             <span class="tile-name" data-bind="z5.name">Stue rum 2</span>
@@ -130,7 +130,7 @@
 
   <main class="content wrap">
       <section class="view" id="v-dash-sys" aria-labelledby="h-dash-sys">
-        <header class="view-head"><h2 id="h-dash-sys">Manifold</h2><p data-bind="dash.sys.sub">6 zoner · 0 kalder varme · 0 fejl</p></header>
+        <header class="view-head"><h2 id="h-dash-sys">System</h2><p data-bind="dash.sys.sub">6 zoner · 0 kalder varme · 0 fejl</p></header>
 
         <div class="panel alert" data-bind-show="dash.alert" hidden>
           <div class="panel-head"><h3 data-bind="dash.alertTitle">— har motorfejl</h3></div>
@@ -177,7 +177,7 @@
               <svg class="spark" viewBox="0 0 240 40" preserveAspectRatio="none" aria-hidden="true" data-bind-spark="z3"></svg>
             </label>
             <label for="s-z4" data-state="calling">
-              <span class="id">Z4–5</span>
+              <span class="id">Z4</span>
               <span class="name" data-bind="z4.name">Stue rum 1</span>
               <span class="val" data-bind="z4.comfort">—</span>
               <svg class="spark" viewBox="0 0 240 40" preserveAspectRatio="none" aria-hidden="true" data-bind-spark="z4"></svg>
@@ -202,7 +202,7 @@
           <header class="panel-head"><h3>Balancering</h3><span class="badge violet" data-bind="bal.mode">Adaptiv</span></header>
           <div class="table-wrap"><table class="table">
             <thead><tr><th>Zone</th><th class="num">Prior</th><th class="num">Lært</th><th class="num">Effektiv</th></tr></thead>
-            <tbody><tr data-bind-row="bal.z1"><td data-bind="bal.z1.id">Z1</td><td class="num" data-bind="bal.z1.prior">—</td><td class="num c-violet" data-bind="bal.z1.learned">—</td><td class="num" data-bind="bal.z1.effective">—</td></tr><tr data-bind-row="bal.z2"><td data-bind="bal.z2.id">Z2</td><td class="num" data-bind="bal.z2.prior">—</td><td class="num c-violet" data-bind="bal.z2.learned">—</td><td class="num" data-bind="bal.z2.effective">—</td></tr><tr data-bind-row="bal.z3"><td data-bind="bal.z3.id">Z3</td><td class="num" data-bind="bal.z3.prior">—</td><td class="num c-violet" data-bind="bal.z3.learned">—</td><td class="num" data-bind="bal.z3.effective">—</td></tr><tr data-bind-row="bal.z4"><td data-bind="bal.z4.id">Z4–5</td><td class="num" data-bind="bal.z4.prior">—</td><td class="num c-violet" data-bind="bal.z4.learned">—</td><td class="num" data-bind="bal.z4.effective">—</td></tr><tr data-bind-row="bal.z5"><td data-bind="bal.z5.id">Z5</td><td class="num" data-bind="bal.z5.prior">—</td><td class="num c-violet" data-bind="bal.z5.learned">—</td><td class="num" data-bind="bal.z5.effective">—</td></tr><tr data-bind-row="bal.z6"><td data-bind="bal.z6.id">Z6</td><td class="num" data-bind="bal.z6.prior">—</td><td class="num c-violet" data-bind="bal.z6.learned">—</td><td class="num" data-bind="bal.z6.effective">—</td></tr></tbody>
+            <tbody><tr data-bind-row="bal.z1"><td data-bind="bal.z1.id">Z1</td><td class="num" data-bind="bal.z1.prior">—</td><td class="num c-violet" data-bind="bal.z1.learned">—</td><td class="num" data-bind="bal.z1.effective">—</td></tr><tr data-bind-row="bal.z2"><td data-bind="bal.z2.id">Z2</td><td class="num" data-bind="bal.z2.prior">—</td><td class="num c-violet" data-bind="bal.z2.learned">—</td><td class="num" data-bind="bal.z2.effective">—</td></tr><tr data-bind-row="bal.z3"><td data-bind="bal.z3.id">Z3</td><td class="num" data-bind="bal.z3.prior">—</td><td class="num c-violet" data-bind="bal.z3.learned">—</td><td class="num" data-bind="bal.z3.effective">—</td></tr><tr data-bind-row="bal.z4"><td data-bind="bal.z4.id">Z4</td><td class="num" data-bind="bal.z4.prior">—</td><td class="num c-violet" data-bind="bal.z4.learned">—</td><td class="num" data-bind="bal.z4.effective">—</td></tr><tr data-bind-row="bal.z5"><td data-bind="bal.z5.id">Z5</td><td class="num" data-bind="bal.z5.prior">—</td><td class="num c-violet" data-bind="bal.z5.learned">—</td><td class="num" data-bind="bal.z5.effective">—</td></tr><tr data-bind-row="bal.z6"><td data-bind="bal.z6.id">Z6</td><td class="num" data-bind="bal.z6.prior">—</td><td class="num c-violet" data-bind="bal.z6.learned">—</td><td class="num" data-bind="bal.z6.effective">—</td></tr></tbody>
           </table></div>
         </section>
 
@@ -223,11 +223,11 @@
           <div class="panel-foot" style="justify-content:flex-start"><button class="btn primary" type="submit" name="action" value="reset_fault">Nulstil fejl</button></div>
         </form>
 
-        <form class="panel c7" data-save="zone/1/target">
+        <form class="panel c5" data-save="zone/1/target">
           <header class="panel-head"><h3>Komfort</h3><span class="badge hot" data-bind="z1.badge">Kalder varme</span></header>
           <p class="msg info" data-bind-show="z1.preload" hidden><span><b>Vejr-preload aktiv:</b> <span data-bind="z1.preload">målet hæves +0,0 °C.</span></span></p>
+          <!-- Current temperature is in the zone tile; the panel holds the target and the live details. -->
           <div class="climate">
-            <div class="now" data-bind="z1.temp">21,4<small>°C</small></div>
             <div class="target">
               <button type="button" data-step="-1" aria-label="Sænk måltemperatur">−</button>
               <label class="value"><small>Mål °C</small><input type="number" inputmode="decimal" name="z1_target" value="22.0" min="16" max="28" step="0.5"></label>
@@ -235,25 +235,18 @@
             </div>
           </div>
           <p class="autosave" aria-live="polite"></p>
-          
-        </form>
-
-        <section class="panel c5">
-          <header class="panel-head"><h3>Ventil og motor</h3></header>
-          <dl class="metrics">
-            <div class="metric"><dt>Åbning</dt><dd data-bind="z1.flow">62 <small>%</small></dd></div>
-            <div class="metric zone-ret"><dt>Retur</dt><dd data-bind="z1.return">29,1 <small>°C</small></dd></div>
-          </dl>
-          <div class="bar" style="--v:62%" aria-hidden="true"><i></i></div>
           <dl class="kv">
+            <div><dt>Åbning</dt><dd data-bind="z1.flow">—</dd></div>
+            <div class="zone-ret"><dt>Retur</dt><dd data-bind="z1.return">—</dd></div>
             <div><dt>Motor</dt><dd data-bind="z1.motor">—</dd></div>
             <div><dt>Preheat adv.</dt><dd data-bind="z1.preheat">—</dd></div>
             <div><dt>Vejr-offset nu</dt><dd data-bind="z1.offset">—</dd></div>
             <div><dt>Temperatur fra</dt><dd data-bind="z1.tempFrom">—</dd></div>
           </dl>
-        </section>
+          <footer class="panel-foot" data-bind-show="z1.member" hidden><span class="note" data-bind="z1.memberNote"></span><label class="btn" for="s-z1" data-bind="z1.openPrimary"></label></footer>
+        </form>
 
-        <section class="panel c12">
+        <section class="panel c7">
           <header class="panel-head"><h3>Temperatur</h3><p>Sidste 24 timer og fremskrivning 6 timer</p></header>
           <dl class="metrics">
             <div data-bind-show="z1.expected" hidden>
@@ -287,11 +280,11 @@
           <div class="panel-foot" style="justify-content:flex-start"><button class="btn primary" type="submit" name="action" value="reset_fault">Nulstil fejl</button></div>
         </form>
 
-        <form class="panel c7" data-save="zone/2/target">
+        <form class="panel c5" data-save="zone/2/target">
           <header class="panel-head"><h3>Komfort</h3><span class="badge" data-bind="z2.badge">Hviler</span></header>
           <p class="msg info" data-bind-show="z2.preload" hidden><span><b>Vejr-preload aktiv:</b> <span data-bind="z2.preload">målet hæves +0,0 °C.</span></span></p>
+          <!-- Current temperature is in the zone tile; the panel holds the target and the live details. -->
           <div class="climate">
-            <div class="now" data-bind="z2.temp">20,8<small>°C</small></div>
             <div class="target">
               <button type="button" data-step="-1" aria-label="Sænk måltemperatur">−</button>
               <label class="value"><small>Mål °C</small><input type="number" inputmode="decimal" name="z2_target" value="21.0" min="16" max="28" step="0.5"></label>
@@ -299,25 +292,18 @@
             </div>
           </div>
           <p class="autosave" aria-live="polite"></p>
-          
-        </form>
-
-        <section class="panel c5">
-          <header class="panel-head"><h3>Ventil og motor</h3></header>
-          <dl class="metrics">
-            <div class="metric"><dt>Åbning</dt><dd data-bind="z2.flow">18 <small>%</small></dd></div>
-            <div class="metric zone-ret"><dt>Retur</dt><dd data-bind="z2.return">28,2 <small>°C</small></dd></div>
-          </dl>
-          <div class="bar" style="--v:18%" aria-hidden="true"><i></i></div>
           <dl class="kv">
+            <div><dt>Åbning</dt><dd data-bind="z2.flow">—</dd></div>
+            <div class="zone-ret"><dt>Retur</dt><dd data-bind="z2.return">—</dd></div>
             <div><dt>Motor</dt><dd data-bind="z2.motor">—</dd></div>
             <div><dt>Preheat adv.</dt><dd data-bind="z2.preheat">—</dd></div>
             <div><dt>Vejr-offset nu</dt><dd data-bind="z2.offset">—</dd></div>
             <div><dt>Temperatur fra</dt><dd data-bind="z2.tempFrom">—</dd></div>
           </dl>
-        </section>
+          <footer class="panel-foot" data-bind-show="z2.member" hidden><span class="note" data-bind="z2.memberNote"></span><label class="btn" for="s-z2" data-bind="z2.openPrimary"></label></footer>
+        </form>
 
-        <section class="panel c12">
+        <section class="panel c7">
           <header class="panel-head"><h3>Temperatur</h3><p>Sidste 24 timer og fremskrivning 6 timer</p></header>
           <dl class="metrics">
             <div data-bind-show="z2.expected" hidden>
@@ -351,11 +337,11 @@
           <div class="panel-foot" style="justify-content:flex-start"><button class="btn primary" type="submit" name="action" value="reset_fault">Nulstil fejl</button></div>
         </form>
 
-        <form class="panel c7" data-save="zone/3/target">
+        <form class="panel c5" data-save="zone/3/target">
           <header class="panel-head"><h3>Komfort</h3><span class="badge" data-bind="z3.badge">Hviler</span></header>
           <p class="msg info" data-bind-show="z3.preload" hidden><span><b>Vejr-preload aktiv:</b> <span data-bind="z3.preload">målet hæves +0,0 °C.</span></span></p>
+          <!-- Current temperature is in the zone tile; the panel holds the target and the live details. -->
           <div class="climate">
-            <div class="now" data-bind="z3.temp">22,6<small>°C</small></div>
             <div class="target">
               <button type="button" data-step="-1" aria-label="Sænk måltemperatur">−</button>
               <label class="value"><small>Mål °C</small><input type="number" inputmode="decimal" name="z3_target" value="22.0" min="16" max="28" step="0.5"></label>
@@ -363,25 +349,18 @@
             </div>
           </div>
           <p class="autosave" aria-live="polite"></p>
-          
-        </form>
-
-        <section class="panel c5">
-          <header class="panel-head"><h3>Ventil og motor</h3></header>
-          <dl class="metrics">
-            <div class="metric"><dt>Åbning</dt><dd data-bind="z3.flow">6 <small>%</small></dd></div>
-            <div class="metric zone-ret"><dt>Retur</dt><dd data-bind="z3.return">28,9 <small>°C</small></dd></div>
-          </dl>
-          <div class="bar" style="--v:6%" aria-hidden="true"><i></i></div>
           <dl class="kv">
+            <div><dt>Åbning</dt><dd data-bind="z3.flow">—</dd></div>
+            <div class="zone-ret"><dt>Retur</dt><dd data-bind="z3.return">—</dd></div>
             <div><dt>Motor</dt><dd data-bind="z3.motor">—</dd></div>
             <div><dt>Preheat adv.</dt><dd data-bind="z3.preheat">—</dd></div>
             <div><dt>Vejr-offset nu</dt><dd data-bind="z3.offset">—</dd></div>
             <div><dt>Temperatur fra</dt><dd data-bind="z3.tempFrom">—</dd></div>
           </dl>
-        </section>
+          <footer class="panel-foot" data-bind-show="z3.member" hidden><span class="note" data-bind="z3.memberNote"></span><label class="btn" for="s-z3" data-bind="z3.openPrimary"></label></footer>
+        </form>
 
-        <section class="panel c12">
+        <section class="panel c7">
           <header class="panel-head"><h3>Temperatur</h3><p>Sidste 24 timer og fremskrivning 6 timer</p></header>
           <dl class="metrics">
             <div data-bind-show="z3.expected" hidden>
@@ -408,18 +387,18 @@
         </section>
       </section>
       <section class="view" id="v-dash-z4" aria-labelledby="h-dash-z4">
-        <header class="view-head"><h2 id="h-dash-z4"><span data-bind="z4.title">Z4–5 Stue rum 1</span></h2><p data-bind="z4.sub">Kalder varme · primær i gruppe Z4–5</p></header>
+        <header class="view-head"><h2 id="h-dash-z4"><span data-bind="z4.title">Z4 Stue rum 1</span></h2><p data-bind="z4.sub">Kalder varme</p></header>
         <form class="panel alert" data-save="zone/4/recovery" data-bind-show="z4.fault" hidden>
           <div class="panel-head"><h3>Motorfejl: endestop timeout</h3></div>
           <p class="note">Motoren nåede ikke endestop på 38 s. Ventilen holdes lukket. Tjek aktuatoren, og nulstil så fejlen.</p>
           <div class="panel-foot" style="justify-content:flex-start"><button class="btn primary" type="submit" name="action" value="reset_fault">Nulstil fejl</button></div>
         </form>
 
-        <form class="panel c7" data-save="zone/4/target">
+        <form class="panel c5" data-save="zone/4/target">
           <header class="panel-head"><h3>Komfort</h3><span class="badge hot" data-bind="z4.badge">Kalder varme</span></header>
           <p class="msg info" data-bind-show="z4.preload" hidden><span><b>Vejr-preload aktiv:</b> <span data-bind="z4.preload">målet hæves +0,0 °C.</span></span></p>
+          <!-- Current temperature is in the zone tile; the panel holds the target and the live details. -->
           <div class="climate">
-            <div class="now" data-bind="z4.temp">21,1<small>°C</small></div>
             <div class="target">
               <button type="button" data-step="-1" aria-label="Sænk måltemperatur">−</button>
               <label class="value"><small>Mål °C</small><input type="number" inputmode="decimal" name="z4_target" value="21.5" min="16" max="28" step="0.5"></label>
@@ -427,25 +406,18 @@
             </div>
           </div>
           <p class="autosave" aria-live="polite"></p>
-          
-        </form>
-
-        <section class="panel c5">
-          <header class="panel-head"><h3>Ventil og motor</h3></header>
-          <dl class="metrics">
-            <div class="metric"><dt>Åbning</dt><dd data-bind="z4.flow">54 <small>%</small></dd></div>
-            <div class="metric zone-ret"><dt>Retur</dt><dd data-bind="z4.return">28,4 <small>°C</small></dd></div>
-          </dl>
-          <div class="bar" style="--v:54%" aria-hidden="true"><i></i></div>
           <dl class="kv">
+            <div><dt>Åbning</dt><dd data-bind="z4.flow">—</dd></div>
+            <div class="zone-ret"><dt>Retur</dt><dd data-bind="z4.return">—</dd></div>
             <div><dt>Motor</dt><dd data-bind="z4.motor">—</dd></div>
             <div><dt>Preheat adv.</dt><dd data-bind="z4.preheat">—</dd></div>
             <div><dt>Vejr-offset nu</dt><dd data-bind="z4.offset">—</dd></div>
             <div><dt>Temperatur fra</dt><dd data-bind="z4.tempFrom">—</dd></div>
           </dl>
-        </section>
+          <footer class="panel-foot" data-bind-show="z4.member" hidden><span class="note" data-bind="z4.memberNote"></span><label class="btn" for="s-z4" data-bind="z4.openPrimary"></label></footer>
+        </form>
 
-        <section class="panel c12">
+        <section class="panel c7">
           <header class="panel-head"><h3>Temperatur</h3><p>Sidste 24 timer og fremskrivning 6 timer</p></header>
           <dl class="metrics">
             <div data-bind-show="z4.expected" hidden>
@@ -472,44 +444,37 @@
         </section>
       </section>
       <section class="view" id="v-dash-z5" aria-labelledby="h-dash-z5">
-        <header class="view-head"><h2 id="h-dash-z5"><span data-bind="z5.title">Z5 Stue rum 2</span></h2><p data-bind="z5.sub">Kalder varme · følger Z4</p></header>
+        <header class="view-head"><h2 id="h-dash-z5"><span data-bind="z5.title">Z5 Stue rum 2</span></h2><p data-bind="z5.sub">Kalder varme</p></header>
         <form class="panel alert" data-save="zone/5/recovery" data-bind-show="z5.fault" hidden>
           <div class="panel-head"><h3>Motorfejl: endestop timeout</h3></div>
           <p class="note">Motoren nåede ikke endestop på 38 s. Ventilen holdes lukket. Tjek aktuatoren, og nulstil så fejlen.</p>
           <div class="panel-foot" style="justify-content:flex-start"><button class="btn primary" type="submit" name="action" value="reset_fault">Nulstil fejl</button></div>
         </form>
 
-        <form class="panel c7" data-save="zone/5/target">
+        <form class="panel c5" data-save="zone/5/target">
           <header class="panel-head"><h3>Komfort</h3><span class="badge hot" data-bind="z5.badge">Kalder varme</span></header>
           <p class="msg info" data-bind-show="z5.preload" hidden><span><b>Vejr-preload aktiv:</b> <span data-bind="z5.preload">målet hæves +0,0 °C.</span></span></p>
+          <!-- Current temperature is in the zone tile; the panel holds the target and the live details. -->
           <div class="climate">
-            <div class="now" data-bind="z5.temp">21,0<small>°C</small></div>
             <div class="target">
-              <button type="button" data-step="-1" aria-label="Sænk måltemperatur" disabled>−</button>
-              <label class="value"><small>Mål °C</small><input type="number" inputmode="decimal" name="z5_target" value="21.5" min="16" max="28" step="0.5" disabled></label>
-              <button type="button" data-step="1" aria-label="Hæv måltemperatur" disabled>+</button>
+              <button type="button" data-step="-1" aria-label="Sænk måltemperatur">−</button>
+              <label class="value"><small>Mål °C</small><input type="number" inputmode="decimal" name="z5_target" value="21.5" min="16" max="28" step="0.5"></label>
+              <button type="button" data-step="1" aria-label="Hæv måltemperatur">+</button>
             </div>
           </div>
           <p class="autosave" aria-live="polite"></p>
-          <footer class="panel-foot"><span class="note">Z5 følger Z4. Ret målet dér.</span><label class="btn" for="s-z4">Åbn Z4–5</label></footer>
-        </form>
-
-        <section class="panel c5">
-          <header class="panel-head"><h3>Ventil og motor</h3></header>
-          <dl class="metrics">
-            <div class="metric"><dt>Åbning</dt><dd data-bind="z5.flow">54 <small>%</small></dd></div>
-            <div class="metric zone-ret"><dt>Retur</dt><dd data-bind="z5.return">28,5 <small>°C</small></dd></div>
-          </dl>
-          <div class="bar" style="--v:54%" aria-hidden="true"><i></i></div>
           <dl class="kv">
+            <div><dt>Åbning</dt><dd data-bind="z5.flow">—</dd></div>
+            <div class="zone-ret"><dt>Retur</dt><dd data-bind="z5.return">—</dd></div>
             <div><dt>Motor</dt><dd data-bind="z5.motor">—</dd></div>
             <div><dt>Preheat adv.</dt><dd data-bind="z5.preheat">—</dd></div>
             <div><dt>Vejr-offset nu</dt><dd data-bind="z5.offset">—</dd></div>
             <div><dt>Temperatur fra</dt><dd data-bind="z5.tempFrom">—</dd></div>
           </dl>
-        </section>
+          <footer class="panel-foot" data-bind-show="z5.member" hidden><span class="note" data-bind="z5.memberNote"></span><label class="btn" for="s-z5" data-bind="z5.openPrimary"></label></footer>
+        </form>
 
-        <section class="panel c12">
+        <section class="panel c7">
           <header class="panel-head"><h3>Temperatur</h3><p>Sidste 24 timer og fremskrivning 6 timer</p></header>
           <dl class="metrics">
             <div data-bind-show="z5.expected" hidden>
@@ -543,11 +508,11 @@
           <div class="panel-foot" style="justify-content:flex-start"><button class="btn primary" type="submit" name="action" value="reset_fault">Nulstil fejl</button></div>
         </form>
 
-        <form class="panel c7" data-save="zone/6/target">
+        <form class="panel c5" data-save="zone/6/target">
           <header class="panel-head"><h3>Komfort</h3><span class="badge bad" data-bind="z6.badge">Motorfejl</span></header>
           <p class="msg info" data-bind-show="z6.preload" hidden><span><b>Vejr-preload aktiv:</b> <span data-bind="z6.preload">målet hæves +0,0 °C.</span></span></p>
+          <!-- Current temperature is in the zone tile; the panel holds the target and the live details. -->
           <div class="climate">
-            <div class="now" data-bind="z6.temp">17,8<small>°C</small></div>
             <div class="target">
               <button type="button" data-step="-1" aria-label="Sænk måltemperatur">−</button>
               <label class="value"><small>Mål °C</small><input type="number" inputmode="decimal" name="z6_target" value="19.0" min="16" max="28" step="0.5"></label>
@@ -555,25 +520,18 @@
             </div>
           </div>
           <p class="autosave" aria-live="polite"></p>
-          
-        </form>
-
-        <section class="panel c5">
-          <header class="panel-head"><h3>Ventil og motor</h3></header>
-          <dl class="metrics">
-            <div class="metric"><dt>Åbning</dt><dd data-bind="z6.flow">0 <small>%</small></dd></div>
-            <div class="metric zone-ret"><dt>Retur</dt><dd data-bind="z6.return">22,1 <small>°C</small></dd></div>
-          </dl>
-          <div class="bar" style="--v:0%" aria-hidden="true"><i></i></div>
           <dl class="kv">
+            <div><dt>Åbning</dt><dd data-bind="z6.flow">—</dd></div>
+            <div class="zone-ret"><dt>Retur</dt><dd data-bind="z6.return">—</dd></div>
             <div><dt>Motor</dt><dd data-bind="z6.motor">—</dd></div>
             <div><dt>Preheat adv.</dt><dd data-bind="z6.preheat">—</dd></div>
             <div><dt>Vejr-offset nu</dt><dd data-bind="z6.offset">—</dd></div>
             <div><dt>Temperatur fra</dt><dd data-bind="z6.tempFrom">—</dd></div>
           </dl>
-        </section>
+          <footer class="panel-foot" data-bind-show="z6.member" hidden><span class="note" data-bind="z6.memberNote"></span><label class="btn" for="s-z6" data-bind="z6.openPrimary"></label></footer>
+        </form>
 
-        <section class="panel c12">
+        <section class="panel c7">
           <header class="panel-head"><h3>Temperatur</h3><p>Sidste 24 timer og fremskrivning 6 timer</p></header>
           <dl class="metrics">
             <div data-bind-show="z6.expected" hidden>
@@ -600,7 +558,7 @@
         </section>
       </section>
       <section class="view" id="v-conf-sys" aria-labelledby="h-conf-sys">
-        <header class="view-head"><h2 id="h-conf-sys">Manifold</h2><p>Gælder alle zoner på denne V6</p></header>
+        <header class="view-head"><h2 id="h-conf-sys">System</h2><p>Gælder alle zoner på denne V6</p></header>
         <nav class="section-nav" aria-label="Sektioner"><a href="#sec-manifold">Manifold og motorer</a><a href="#sec-regulation">Regulering</a><a href="#sec-connect">Forbindelser</a><a href="#sec-service">Service</a></nav>
 
         <section class="section" id="sec-manifold" aria-labelledby="sec-manifold-h">
@@ -844,14 +802,12 @@
       <section class="view" id="v-conf-z1" aria-labelledby="h-conf-z1">
         <header class="view-head"><h2 id="h-conf-z1"><span data-bind="z1.title">Z1 Josephine</span></h2><p>Opsætning af zonen</p></header>
 
-        <header class="section-head"><span>Zone</span></header>
-
         <form class="panel c6" data-save="zone/1/room">
           <header class="panel-head"><h3>Rum og følere</h3><button class="help-btn" type="button" popovertarget="help-zone-room" style="anchor-name:--a-help-zone-room" aria-label="Hjælp: Rum og følere">?</button></header>
           <div class="subs cols-2">
             <div class="sub">
               <h4>Rum</h4>
-              
+              <p class="msg violet" data-bind-show="z1.member" hidden><span><b data-bind="z1.memberStrong"></b> <span data-bind="z1.memberBody"></span></span></p>
               <label class="switch"><span class="switch-text"><b>Zone aktiveret</b></span><input type="checkbox" role="switch" name="z1_enabled" checked></label>
               <div class="field row"><label for="z1_name">Navn</label><input class="input" id="z1_name" name="z1_name" value="Josephine" maxlength="24"></div>
               <div class="field row"><label for="z1_area">Areal</label><div class="stepper"><button type="button" data-step="-1" aria-label="Sænk areal">−</button><span class="value"><input type="number" inputmode="decimal" id="z1_area" name="z1_area" value="12.0" min="0" max="200" step="0.5"><span class="unit">m²</span></span><button type="button" data-step="1" aria-label="Hæv areal">+</button></div></div>
@@ -930,14 +886,12 @@
       <section class="view" id="v-conf-z2" aria-labelledby="h-conf-z2">
         <header class="view-head"><h2 id="h-conf-z2"><span data-bind="z2.title">Z2 Laura</span></h2><p>Opsætning af zonen</p></header>
 
-        <header class="section-head"><span>Zone</span></header>
-
         <form class="panel c6" data-save="zone/2/room">
           <header class="panel-head"><h3>Rum og følere</h3><button class="help-btn" type="button" popovertarget="help-zone-room" style="anchor-name:--a-help-zone-room" aria-label="Hjælp: Rum og følere">?</button></header>
           <div class="subs cols-2">
             <div class="sub">
               <h4>Rum</h4>
-              
+              <p class="msg violet" data-bind-show="z2.member" hidden><span><b data-bind="z2.memberStrong"></b> <span data-bind="z2.memberBody"></span></span></p>
               <label class="switch"><span class="switch-text"><b>Zone aktiveret</b></span><input type="checkbox" role="switch" name="z2_enabled" checked></label>
               <div class="field row"><label for="z2_name">Navn</label><input class="input" id="z2_name" name="z2_name" value="Laura" maxlength="24"></div>
               <div class="field row"><label for="z2_area">Areal</label><div class="stepper"><button type="button" data-step="-1" aria-label="Sænk areal">−</button><span class="value"><input type="number" inputmode="decimal" id="z2_area" name="z2_area" value="11.0" min="0" max="200" step="0.5"><span class="unit">m²</span></span><button type="button" data-step="1" aria-label="Hæv areal">+</button></div></div>
@@ -1016,14 +970,12 @@
       <section class="view" id="v-conf-z3" aria-labelledby="h-conf-z3">
         <header class="view-head"><h2 id="h-conf-z3"><span data-bind="z3.title">Z3 Toilet</span></h2><p>Opsætning af zonen</p></header>
 
-        <header class="section-head"><span>Zone</span></header>
-
         <form class="panel c6" data-save="zone/3/room">
           <header class="panel-head"><h3>Rum og følere</h3><button class="help-btn" type="button" popovertarget="help-zone-room" style="anchor-name:--a-help-zone-room" aria-label="Hjælp: Rum og følere">?</button></header>
           <div class="subs cols-2">
             <div class="sub">
               <h4>Rum</h4>
-              
+              <p class="msg violet" data-bind-show="z3.member" hidden><span><b data-bind="z3.memberStrong"></b> <span data-bind="z3.memberBody"></span></span></p>
               <label class="switch"><span class="switch-text"><b>Zone aktiveret</b></span><input type="checkbox" role="switch" name="z3_enabled" checked></label>
               <div class="field row"><label for="z3_name">Navn</label><input class="input" id="z3_name" name="z3_name" value="Toilet" maxlength="24"></div>
               <div class="field row"><label for="z3_area">Areal</label><div class="stepper"><button type="button" data-step="-1" aria-label="Sænk areal">−</button><span class="value"><input type="number" inputmode="decimal" id="z3_area" name="z3_area" value="4.5" min="0" max="200" step="0.5"><span class="unit">m²</span></span><button type="button" data-step="1" aria-label="Hæv areal">+</button></div></div>
@@ -1100,16 +1052,14 @@
         </form>
       </section>
       <section class="view" id="v-conf-z4" aria-labelledby="h-conf-z4">
-        <header class="view-head"><h2 id="h-conf-z4"><span data-bind="z4.title">Z4–5 Stue rum 1</span></h2><p>Opsætning af zonen</p></header>
-
-        <header class="section-head"><span>Zone</span></header>
+        <header class="view-head"><h2 id="h-conf-z4"><span data-bind="z4.title">Z4 Stue rum 1</span></h2><p>Opsætning af zonen</p></header>
 
         <form class="panel c6" data-save="zone/4/room">
           <header class="panel-head"><h3>Rum og følere</h3><button class="help-btn" type="button" popovertarget="help-zone-room" style="anchor-name:--a-help-zone-room" aria-label="Hjælp: Rum og følere">?</button></header>
           <div class="subs cols-2">
             <div class="sub">
               <h4>Rum</h4>
-              
+              <p class="msg violet" data-bind-show="z4.member" hidden><span><b data-bind="z4.memberStrong"></b> <span data-bind="z4.memberBody"></span></span></p>
               <label class="switch"><span class="switch-text"><b>Zone aktiveret</b></span><input type="checkbox" role="switch" name="z4_enabled" checked></label>
               <div class="field row"><label for="z4_name">Navn</label><input class="input" id="z4_name" name="z4_name" value="Stue rum 1" maxlength="24"></div>
               <div class="field row"><label for="z4_area">Areal</label><div class="stepper"><button type="button" data-step="-1" aria-label="Sænk areal">−</button><span class="value"><input type="number" inputmode="decimal" id="z4_area" name="z4_area" value="22.0" min="0" max="200" step="0.5"><span class="unit">m²</span></span><button type="button" data-step="1" aria-label="Hæv areal">+</button></div></div>
@@ -1188,18 +1138,16 @@
       <section class="view" id="v-conf-z5" aria-labelledby="h-conf-z5">
         <header class="view-head"><h2 id="h-conf-z5"><span data-bind="z5.title">Z5 Stue rum 2</span></h2><p>Opsætning af zonen</p></header>
 
-        <header class="section-head"><span>Zone</span></header>
-
         <form class="panel c6" data-save="zone/5/room">
           <header class="panel-head"><h3>Rum og følere</h3><button class="help-btn" type="button" popovertarget="help-zone-room" style="anchor-name:--a-help-zone-room" aria-label="Hjælp: Rum og følere">?</button></header>
           <div class="subs cols-2">
             <div class="sub">
               <h4>Rum</h4>
-              <p class="msg violet"><span><b>Grupperet med Z4.</b> Mål og tidsplan styres fra Z4; følere og gulv indstilles her.</span></p>
+              <p class="msg violet" data-bind-show="z5.member" hidden><span><b data-bind="z5.memberStrong"></b> <span data-bind="z5.memberBody"></span></span></p>
               <label class="switch"><span class="switch-text"><b>Zone aktiveret</b></span><input type="checkbox" role="switch" name="z5_enabled" checked></label>
               <div class="field row"><label for="z5_name">Navn</label><input class="input" id="z5_name" name="z5_name" value="Stue rum 2" maxlength="24"></div>
               <div class="field row"><label for="z5_area">Areal</label><div class="stepper"><button type="button" data-step="-1" aria-label="Sænk areal">−</button><span class="value"><input type="number" inputmode="decimal" id="z5_area" name="z5_area" value="18.0" min="0" max="200" step="0.5"><span class="unit">m²</span></span><button type="button" data-step="1" aria-label="Hæv areal">+</button></div></div>
-              <div class="field row"><label for="z5_merge">Gruppér med<span class="hint">Ét rum: fælles mål, ventiler åbner ens</span></label><select class="select" id="z5_merge" name="z5_merge"><option value="">Ingen</option><option value="1">Z1 Josephine</option><option value="2">Z2 Laura</option><option value="3">Z3 Toilet</option><option value="4" selected>Z4 Stue rum 1</option><option value="6">Z6 Soveværelse</option></select></div>
+              <div class="field row"><label for="z5_merge">Gruppér med<span class="hint">Ét rum: fælles mål, ventiler åbner ens</span></label><select class="select" id="z5_merge" name="z5_merge"><option value="">Ingen</option><option value="1">Z1 Josephine</option><option value="2">Z2 Laura</option><option value="3">Z3 Toilet</option><option value="4">Z4 Stue rum 1</option><option value="6">Z6 Soveværelse</option></select></div>
             </div>
             <div class="sub">
               <h4>Følere</h4>
@@ -1274,14 +1222,12 @@
       <section class="view" id="v-conf-z6" aria-labelledby="h-conf-z6">
         <header class="view-head"><h2 id="h-conf-z6"><span data-bind="z6.title">Z6 Soveværelse</span></h2><p>Opsætning af zonen</p></header>
 
-        <header class="section-head"><span>Zone</span></header>
-
         <form class="panel c6" data-save="zone/6/room">
           <header class="panel-head"><h3>Rum og følere</h3><button class="help-btn" type="button" popovertarget="help-zone-room" style="anchor-name:--a-help-zone-room" aria-label="Hjælp: Rum og følere">?</button></header>
           <div class="subs cols-2">
             <div class="sub">
               <h4>Rum</h4>
-              
+              <p class="msg violet" data-bind-show="z6.member" hidden><span><b data-bind="z6.memberStrong"></b> <span data-bind="z6.memberBody"></span></span></p>
               <label class="switch"><span class="switch-text"><b>Zone aktiveret</b></span><input type="checkbox" role="switch" name="z6_enabled" checked></label>
               <div class="field row"><label for="z6_name">Navn</label><input class="input" id="z6_name" name="z6_name" value="Soveværelse" maxlength="24"></div>
               <div class="field row"><label for="z6_area">Areal</label><div class="stepper"><button type="button" data-step="-1" aria-label="Sænk areal">−</button><span class="value"><input type="number" inputmode="decimal" id="z6_area" name="z6_area" value="14.0" min="0" max="200" step="0.5"><span class="unit">m²</span></span><button type="button" data-step="1" aria-label="Hæv areal">+</button></div></div>
@@ -1361,7 +1307,7 @@
 </div>
 
 <!-- Strenge til binderen: statusser og beskeder der skrives ved runtime -->
-<script type="application/json" id="i18n">{"state.calling":"Kalder varme","state.idle":"Hviler","state.fault":"Motorfejl","state.off":"Ikke i brug","state.learning":"Lærer","state.blocked":"Blokeret","tile.fault":"Fejl","tile.learning":"Lærer","tile.learningPct":"Lærer {pct} %","tile.blocked":"Blokeret","badge.calling":"Kalder","sys.dt":"ΔT {dt}°","sys.dtstate":"ΔT {dt}° · kalder","dash.sys.sub":"{zones} zoner · {calling} kalder varme · {faults} fejl","cz.learnPhase.home":"Homer til sæde","cz.learnPhase.open":"Åbner","cz.learnPhase.close":"Lukker","cz.learnPhase.pass":"{phase} · prøve {sample}/{need}","cz.bleAssign":"Tildel","cz.bleAssigned":"Zone {z}","cz.bleSeen":"Nærliggende sensorer","cz.bleSeenEmpty":"Ingen BTHome-sensorer i nærheden","cz.bleScanning":"Scanner…","common.days":"dage","common.hours":"timer","common.minutes":"min","common.open":"Åbn {x}","common.none":"Ingen","common.learned":"Lært","common.needsLearning":"Kræver læring","common.notLearned":"Ikke lært","common.undo":"Fortryd","common.on":"Til","rt.savedOk":"Gemt","rt.saveFailed":"Kunne ikke gemme. Tjek forbindelsen til enheden.","rt.saving":"Gemmer…","rt.unsaved.one":"{n} ændring ikke gemt","rt.unsaved.other":"{n} ændringer ikke gemt","rt.nothingToSave":"Ingen ændringer at gemme","rt.leaveUnsaved":"Du har ugemte ændringer.","rt.autoSaving":"Gemmer…","rt.autoSaved":"Gemt","rt.autoFailed":"Ikke gemt – prøv igen","rt.retry":"Prøv igen","rt.secondsAgo":"{v} s siden","rt.minutesAgo":"{v} min siden","rt.offline":"Offline","device.copyDiag":"Kopiér diagnostik","device.copied":"Kopieret","device.sample":"Stueetage manifold","alert.zoneFault":"{zone} har motorfejl","bal.adaptive":"Adaptiv","bal.static":"Statisk","dev.online":"Online","dev.offline":"Offline","zdash.preload":"målet hæves {offset} °C.","zdash.preloadUntil":"målet hæves {offset} °C · {remaining} tilbage.","src.ble":"BLE-sensor","src.probe":"Lokal probe","csys.touchWaiting":"Afventer","csys.touchWaitingBody":"Tilføj denne manifold i Lune Touch. Dens identitet vises her automatisk.","csys.touchApprove":"Godkend Lune Touch","csys.touchApproved":"Godkendt","csys.touchPending":"Forbinder","csys.touchError":"Ingen forbindelse","csys.touchErrorBody":"Kunne ikke nå Lune Touch. Tjek netværket, og prøv igen eller frakobl.","csys.touchCancel":"Annullér","csys.touchRetry":"Prøv igen","csys.touchControls":"Styrer denne V6","common.copy":"Kopiér","zchart.expected":"Forventet kl. {time}","zchart.at":"Kl. {time}","zchart.noForecast":"Ingen fremskrivning endnu","zchart.faultStrong":"Fremskrivningen antager, at motorfejlen fortsætter.","_dec":",","_lang":"da"}</script>
+<script type="application/json" id="i18n">{"zdash.follows":"følger {z}","zdash.primary":"primær i gruppe {g}","zdash.memberNote":"{m} følger {p}. Ret målet dér.","common.open":"Åbn {x}","cz.memberStrong":"Grupperet med {p}.","cz.member":"Mål og tidsplan styres fra {p}; følere og gulv indstilles her.","state.calling":"Kalder varme","state.idle":"Hviler","state.fault":"Motorfejl","state.off":"Ikke i brug","state.learning":"Lærer","state.blocked":"Blokeret","tile.fault":"Fejl","tile.learning":"Lærer","tile.learningPct":"Lærer {pct} %","tile.blocked":"Blokeret","badge.calling":"Kalder","sys.dt":"ΔT {dt}°","sys.dtstate":"ΔT {dt}° · kalder","dash.sys.sub":"{zones} zoner · {calling} kalder varme · {faults} fejl","cz.learnPhase.home":"Homer til sæde","cz.learnPhase.open":"Åbner","cz.learnPhase.close":"Lukker","cz.learnPhase.pass":"{phase} · prøve {sample}/{need}","cz.bleAssign":"Tildel","cz.bleAssigned":"Zone {z}","cz.bleSeen":"Nærliggende sensorer","cz.bleSeenEmpty":"Ingen BTHome-sensorer i nærheden","cz.bleScanning":"Scanner…","common.days":"dage","common.hours":"timer","common.minutes":"min","common.none":"Ingen","common.learned":"Lært","common.needsLearning":"Kræver læring","common.notLearned":"Ikke lært","common.undo":"Fortryd","common.on":"Til","rt.savedOk":"Gemt","rt.saveFailed":"Kunne ikke gemme. Tjek forbindelsen til enheden.","rt.saving":"Gemmer…","rt.unsaved.one":"{n} ændring ikke gemt","rt.unsaved.other":"{n} ændringer ikke gemt","rt.nothingToSave":"Ingen ændringer at gemme","rt.leaveUnsaved":"Du har ugemte ændringer.","rt.autoSaving":"Gemmer…","rt.autoSaved":"Gemt","rt.autoFailed":"Ikke gemt – prøv igen","rt.retry":"Prøv igen","rt.secondsAgo":"{v} s siden","rt.minutesAgo":"{v} min siden","rt.offline":"Offline","device.copyDiag":"Kopiér diagnostik","device.copied":"Kopieret","device.sample":"Stueetage manifold","alert.zoneFault":"{zone} har motorfejl","bal.adaptive":"Adaptiv","bal.static":"Statisk","dev.online":"Online","dev.offline":"Offline","zdash.preload":"målet hæves {offset} °C.","zdash.preloadUntil":"målet hæves {offset} °C · {remaining} tilbage.","src.ble":"BLE-sensor","src.probe":"Lokal probe","csys.touchWaiting":"Afventer","csys.touchWaitingBody":"Tilføj denne manifold i Lune Touch. Dens identitet vises her automatisk.","csys.touchApprove":"Godkend Lune Touch","csys.touchApproved":"Godkendt","csys.touchPending":"Forbinder","csys.touchError":"Ingen forbindelse","csys.touchErrorBody":"Kunne ikke nå Lune Touch. Tjek netværket, og prøv igen eller frakobl.","csys.touchCancel":"Annullér","csys.touchRetry":"Prøv igen","csys.touchControls":"Styrer denne V6","common.copy":"Kopiér","zchart.expected":"Forventet kl. {time}","zchart.at":"Kl. {time}","zchart.noForecast":"Ingen fremskrivning endnu","zchart.faultStrong":"Fremskrivningen antager, at motorfejlen fortsætter.","_dec":",","_lang":"da"}</script>
 
 <!-- Progressive enhancement: +/−, luk enhedsmenu, hjælp-popover nær ?, filnavn, submit-hook -->
 <script>
@@ -1442,7 +1388,7 @@ function st(f){return f.querySelector(".save-status")}
 function auto(f){return!!f.querySelector(".climate")}
 function track(f){return!!st(f)}
 function cross(){document.querySelectorAll('.tile[data-dirty],.mode label[data-dirty],.section-nav a[data-dirty],.section[data-dirty],details.section[data-dirty]').forEach(function(el){el.removeAttribute("data-dirty")});var conf=false;document.querySelectorAll("form.panel[data-save][data-dirty]").forEach(function(f){var v=f.closest(".view");if(!v||!v.id)return;var m=/^v-(dash|conf)-(.+)$/.exec(v.id);if(!m)return;if(m[1]==="conf")conf=true;var tile=document.querySelector('label.tile[for="s-'+m[2]+'"]');if(tile)tile.setAttribute("data-dirty","");var sec=f.closest("section.section,details.section");if(sec){sec.setAttribute("data-dirty","");if(sec.id){var link=document.querySelector('.section-nav a[href="#'+sec.id+'"]');if(link)link.setAttribute("data-dirty","")}}});if(conf){var lab=document.querySelector('.mode label[for="m-conf"]');if(lab)lab.setAttribute("data-dirty","")}}
-function openSectionFromHash(){var id=(location.hash||"").replace(/^#/,"");if(!id)return;var el=document.getElementById(id);if(el&&el.matches&&el.matches("details.section"))el.open=true}window.addEventListener("hashchange",openSectionFromHash);if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",openSectionFromHash);else openSectionFromHash();function paint(f){if(auto(f)||!track(f)||f.dataset.state==="saving"||f.dataset.state==="saved")return;var s=f._snap||{},c=snap(f),n=0,seen={},sid=(st(f)||{}).id;f.querySelectorAll("[data-dirty]").forEach(function(w){w.removeAttribute("data-dirty");if(w.getAttribute("aria-describedby")===sid)w.removeAttribute("aria-describedby")});Object.keys(Object.assign({},s,c)).forEach(function(k){if(s[k]===c[k])return;var name=k.split(":")[0];if(seen[name])return;seen[name]=1;n++;var el=f.querySelector('[name="'+name+'"]'),w=el&&wrap(el);if(w){w.setAttribute("data-dirty","");if(sid)w.setAttribute("aria-describedby",sid)}});f.dataset.changes=String(n);var b=btn(f),sEl=st(f);if(n){f.dataset.dirty="";if(b){b.removeAttribute("aria-disabled");b.removeAttribute("title")}if(sEl&&f.dataset.state!=="error")sEl.textContent=n===1?t("rt.unsaved.one",{n:1}):t("rt.unsaved.other",{n:n})}else{delete f.dataset.dirty;if(b){b.setAttribute("aria-disabled","true");b.title=t("rt.nothingToSave")}if(sEl&&f.dataset.state!=="saved"&&f.dataset.state!=="error")sEl.textContent=""}cross()}
+function openSectionFromHash(){var id=(location.hash||"").replace(/^#/,"");if(!id)return;var el=document.getElementById(id);if(el&&el.matches&&el.matches("details.section"))el.open=true;if(el&&el.matches&&el.matches("input.state[type=radio]")){el.checked=true;window.scrollTo(0,0)}}window.addEventListener("hashchange",openSectionFromHash);if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",openSectionFromHash);else openSectionFromHash();function paint(f){if(auto(f)||!track(f)||f.dataset.state==="saving"||f.dataset.state==="saved")return;var s=f._snap||{},c=snap(f),n=0,seen={},sid=(st(f)||{}).id;f.querySelectorAll("[data-dirty]").forEach(function(w){w.removeAttribute("data-dirty");if(w.getAttribute("aria-describedby")===sid)w.removeAttribute("aria-describedby")});Object.keys(Object.assign({},s,c)).forEach(function(k){if(s[k]===c[k])return;var name=k.split(":")[0];if(seen[name])return;seen[name]=1;n++;var el=f.querySelector('[name="'+name+'"]'),w=el&&wrap(el);if(w){w.setAttribute("data-dirty","");if(sid)w.setAttribute("aria-describedby",sid)}});f.dataset.changes=String(n);var b=btn(f),sEl=st(f);if(n){f.dataset.dirty="";if(b){b.removeAttribute("aria-disabled");b.removeAttribute("title")}if(sEl&&f.dataset.state!=="error")sEl.textContent=n===1?t("rt.unsaved.one",{n:1}):t("rt.unsaved.other",{n:n})}else{delete f.dataset.dirty;if(b){b.setAttribute("aria-disabled","true");b.title=t("rt.nothingToSave")}if(sEl&&f.dataset.state!=="saved"&&f.dataset.state!=="error")sEl.textContent=""}cross()}
 function bind(f){f.dataset.js="1";f._snap=snap(f);f._label=(btn(f)||{}).textContent||"";f.luneResnap=function(){f._snap=snap(f);if(track(f)&&!auto(f))paint(f)};f.luneSaved=function(ok,msg){var b=btn(f),sEl=st(f),a=f.querySelector(".autosave"),sid=(sEl||{}).id;delete f.dataset.state;if(b)b.removeAttribute("aria-busy");if(ok){f._snap=snap(f);if(auto(f)){if(a){a.textContent=t("rt.autoSaved");setTimeout(function(){if(a.textContent===t("rt.autoSaved"))a.textContent=""},2000)}return}f.querySelectorAll("[data-dirty]").forEach(function(w){w.removeAttribute("data-dirty");if(sid&&w.getAttribute("aria-describedby")===sid)w.removeAttribute("aria-describedby")});f.dataset.state="saved";if(b)b.textContent=t("rt.savedOk")+" ✓";if(sEl)sEl.textContent="";delete f.dataset.dirty;cross();setTimeout(function(){delete f.dataset.state;if(b)b.textContent=f._label;paint(f)},3000)}else if(auto(f)){if(a)a.innerHTML=t("rt.autoFailed")+'<button type="button" class="btn" data-autosave-retry>'+t("rt.retry")+"</button>"}else{f.dataset.state="error";if(sEl)sEl.textContent=msg||t("rt.saveFailed");if(b)b.textContent=f._label;paint(f)}};if(track(f)&&!auto(f))paint(f)}document.querySelectorAll("form.panel[data-save]").forEach(bind);function onEdit(e){var f=e.target&&e.target.closest&&e.target.closest("form.panel[data-save]");if(!f||!f.dataset.js)return;if(auto(f)){if(e.target.disabled)return;var a=f.querySelector(".autosave");if(a)a.textContent=t("rt.autoSaving");clearTimeout(f._autoT);f._autoT=setTimeout(function(){f._autoT=null;f.dataset.state="saving";document.dispatchEvent(new CustomEvent("lune:save",{detail:{key:f.dataset.save,data:new FormData(f),auto:true,form:f}}))},1500)}else if(track(f)){delete f.dataset.state;paint(f)}}document.addEventListener("input",onEdit,true);document.addEventListener("change",onEdit,true);document.addEventListener("reset",function(e){var f=e.target;if(f&&f.matches&&f.matches("form.panel[data-save]"))setTimeout(function(){delete f.dataset.state;paint(f)},0)});document.addEventListener("click",function(e){var retry=e.target.closest&&e.target.closest("[data-autosave-retry]");if(retry){var f=retry.closest("form.panel[data-save]");if(f){var a=f.querySelector(".autosave");if(a)a.textContent=t("rt.autoSaving");f.dataset.state="saving";document.dispatchEvent(new CustomEvent("lune:save",{detail:{key:f.dataset.save,data:new FormData(f),auto:true,form:f}}))}return}var copy=e.target.closest&&e.target.closest("[data-copy]");if(copy){e.preventDefault();var sel=copy.getAttribute("data-copy"),src=sel?document.querySelector(sel):null;var text=(src&&(src.textContent||src.value)||"").trim();if(!text||text==="—")return;var done=function(){var prev=copy.textContent;copy.textContent=t("device.copied")||t("rt.copied")||"Copied";setTimeout(function(){copy.textContent=prev},1600)};if(navigator.clipboard&&navigator.clipboard.writeText)navigator.clipboard.writeText(text).then(done).catch(function(){var ta=document.createElement("textarea");ta.value=text;document.body.appendChild(ta);ta.select();try{document.execCommand("copy");done()}catch(err){}ta.remove()});return}var b=e.target.closest&&e.target.closest('.btn.primary[type="submit"]');if(b&&b.getAttribute("aria-disabled")==="true"&&b===btn(b.closest("form.panel[data-save]"))){e.preventDefault();e.stopPropagation()}},true);document.addEventListener("submit",function(e){var f=e.target;if(!f||!f.matches||!f.matches("form.panel[data-save]"))return;e.preventDefault();var sub=e.submitter,b=btn(f),isSave=!sub||sub===b;if(isSave&&b&&b.getAttribute("aria-disabled")==="true")return;if(isSave&&f.dataset.state==="saving")return;var pop=sub&&sub.closest&&sub.closest(".confirm-pop");if(pop&&pop.matches(":popover-open"))pop.hidePopover();if(isSave&&track(f)&&!auto(f)){f.dataset.state="saving";if(b){b.setAttribute("aria-busy","true");b.textContent=t("rt.saving")}}document.dispatchEvent(new CustomEvent("lune:save",{detail:{key:f.dataset.save,data:new FormData(f,sub),auto:false,form:f}}))});window.addEventListener("beforeunload",function(e){if(document.querySelector("form.panel[data-save][data-dirty]")){e.preventDefault();e.returnValue=t("rt.leaveUnsaved")}});function placeConfirm(pop){if(!pop)return;if(window.matchMedia("(max-width:599.98px)").matches){pop.style.position="";pop.style.inset="";pop.style.top="";pop.style.left="";pop.style.right="";pop.style.bottom="";pop.style.margin="";pop.style.maxHeight="";return}var btn=document.querySelector('button.btn.danger[popovertarget="'+pop.id+'"]');if(!btn)return;var margin=8,gap=8,r=btn.getBoundingClientRect();pop.style.position="fixed";pop.style.inset="unset";pop.style.right="auto";pop.style.bottom="auto";pop.style.margin="0";pop.style.maxHeight="none";pop.style.top="0px";pop.style.left="0px";var w=pop.offsetWidth||288,h=pop.offsetHeight||180;var vw=window.innerWidth,vh=window.innerHeight,maxH=vh-margin*2;if(h>maxH)h=maxH;var left=r.left+(r.width-w)/2;if(left<margin)left=margin;if(left+w>vw-margin)left=Math.max(margin,vw-w-margin);var below=r.bottom+gap,above=r.top-gap-h;var top=(below+h<=vh-margin)?below:above;if(top<margin)top=margin;if(top+h>vh-margin)top=Math.max(margin,vh-h-margin);pop.style.maxHeight=maxH+"px";pop.style.top=top+"px";pop.style.left=left+"px";}document.addEventListener("toggle",function(e){if(e.newState!=="open"||!e.target.classList||!e.target.classList.contains("confirm-pop"))return;placeConfirm(e.target);requestAnimationFrame(function(){if(e.target.matches(":popover-open"))placeConfirm(e.target)});},true);window.addEventListener("resize",function(){document.querySelectorAll(".confirm-pop:popover-open").forEach(placeConfirm);});})();
 </script>
 <script src="/binder.js" defer></script>

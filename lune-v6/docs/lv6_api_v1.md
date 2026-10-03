@@ -272,6 +272,7 @@ Returns all zones plus a stable `node_id`. Additive fields (schema-compatible;
 older clients ignore):
 
 - `node_id` — MAC-based (`lune-v6-<last6hex>`) for Touch room mapping
+- `device_name` / `device_location` — board identity from Device identity (`device_name` is `"Lune V6"` until renamed; `device_location` may be empty). Touch uses them to label the manifold when it has no local name.
 - `group_primary` / `group_members` — legacy sync-group root and members (1-based)
 - `group_id` / `group_role` — first-class manifold group (`single` | `primary` | `member`)
 - `opening_ratio` — current valve ÷ `max_opening_pct`

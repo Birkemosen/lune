@@ -49,7 +49,10 @@ class Lv6ZoneController : public esphome::Component {
 
   // Configuration setters (from Python codegen)
   void set_config_store(Lv6ConfigStore *store) { config_store_ = store; }
-  void set_valve_controller(Lv6ValveController *ctrl) { valve_controller_ = ctrl; }
+  void set_valve_controller(Lv6ValveController *ctrl) {
+    valve_controller_ = ctrl;
+    if (ctrl) ctrl->set_auto_learn_hold(is_manual_mode() || DEVELOPMENT_MANUAL_ONLY);
+  }
   void set_cycle_interval_ms(uint32_t ms) { cycle_interval_ms_ = ms; }
   void set_probe_sensor(uint8_t probe, esphome::sensor::Sensor *sensor) {
     if (probe < MAX_PROBES)
@@ -81,7 +84,11 @@ class Lv6ZoneController : public esphome::Component {
 
   /// Manual mode: suppresses automatic valve positioning.
   /// Manual commands (open/close/calibrate via UI) still work.
-  void set_manual_mode(bool enabled) { manual_mode_.store(enabled, std::memory_order_release); }
+  void set_manual_mode(bool enabled) {
+    manual_mode_.store(enabled, std::memory_order_release);
+    // Automatic (re)learning must not move motors while a person drives them.
+    if (valve_controller_) valve_controller_->set_auto_learn_hold(enabled || DEVELOPMENT_MANUAL_ONLY);
+  }
   bool is_manual_mode() const { return manual_mode_.load(std::memory_order_acquire); }
 
   // State machine accessors (for dashboard/diagnostics)

@@ -12,7 +12,7 @@ import { parseProbeIndex } from '../dashboard-src/utils/available-probes.js';
 import {
   setSetpoint, setEnabled, setDriversEnabled, setGlobalSelect, setGlobalNumber, setGlobalText,
   setZoneSelect, setZoneText, setZoneNumber, applyZoneName, approveTouchProposal, revokeTouchConnection,
-  setMotorTarget, openMotorTimed, closeMotorTimed, stopMotor, command, runI2cScan, postZonePhysics, postForecastProfile, postGroups,
+  setMotorTarget, openMotorTimed, closeMotorTimed, stopMotor, command, runI2cScan, postZonePhysics, postForecastProfile,
   exportSettings, importSettings, saveSettingsBackup, fetchLatestRelease,
   firmwareCheck, firmwareInstall, uploadFirmware, downloadDeviceLogs,
   setManualMode, emergencyStopMotors, fetchPhysicsAlerts, fetchBleScan,
@@ -159,7 +159,8 @@ function zoneLevel(z) {
     return Math.max(1, Math.min(5, Math.ceil(Math.max(pct, 1) / 20)));
   }
   const valve = toNum(ev(key.valve(z)));
-  if (!Number.isFinite(valve)) return 1;
+  // Closed valve or no reading → unlit; orange means heat (DESIGN.md 5.2).
+  if (!Number.isFinite(valve) || valve <= 0) return 0;
   return Math.max(1, Math.min(5, Math.ceil(valve / 20)));
 }
 
@@ -368,7 +369,65 @@ async function applyEightProbeDefaults() {
   }
 }
 
+// Groups come from the sync edge (select-zone_N_sync_to = "Zone P"); V6
+// rebuilds its group table from it. Returns root (primary) per zone and the
+// display label per primary ("Z4–5" for a contiguous run, else "Z2+5").
+function zoneGroups() {
+  const parent = {};
+  for (let z = 1; z <= 6; z++) {
+    const m = /^Zone\s+(\d)$/.exec(String(es(key.syncTo(z)) || ''));
+    const p = m ? Number(m[1]) : 0;
+    if (p >= 1 && p <= 6 && p !== z) parent[z] = p;
+  }
+  const root = {};
+  for (let z = 1; z <= 6; z++) {
+    let r = z;
+    for (let guard = 0; guard < 6 && parent[r]; guard++) r = parent[r];
+    root[z] = r;
+  }
+  const members = {};
+  for (let z = 1; z <= 6; z++) {
+    if (root[z] !== z) (members[root[z]] = members[root[z]] || []).push(z);
+  }
+  const label = {};
+  Object.keys(members).forEach((r) => {
+    const ids = [Number(r), ...members[r]].sort((a, b) => a - b);
+    const run = ids.every((v, i) => i === 0 || v === ids[i - 1] + 1);
+    label[r] = run ? `Z${ids[0]}–${ids[ids.length - 1]}` : `Z${ids.join('+')}`;
+  });
+  return { root, members, label };
+}
+
+function paintGroups(g) {
+  for (let z = 1; z <= 6; z++) {
+    const r = g.root[z];
+    const isMember = r !== z;
+    const isPrimary = !isMember && !!g.members[z];
+    const role = isPrimary ? 'primary' : (isMember ? 'member' : '');
+    const tile = document.querySelector(`label.tile[for="s-z${z}"]`);
+    if (tile) {
+      if (role) tile.dataset.group = role; else delete tile.dataset.group;
+      const id = tile.querySelector('.tile-id');
+      if (id) id.textContent = isPrimary ? g.label[z] : `Z${z}`;
+    }
+    const cid = document.querySelector(`.comfort label[for="s-z${z}"] .id`);
+    if (cid) cid.textContent = isPrimary ? g.label[z] : `Z${z}`;
+    setShow(`z${z}.member`, isMember);
+    if (isMember) {
+      setBind(`z${z}.memberNote`, t('zdash.memberNote', { m: `Z${z}`, p: `Z${r}` }));
+      setBind(`z${z}.openPrimary`, t('common.open', { x: g.label[r] }));
+      document.querySelectorAll(`[data-bind="z${z}.openPrimary"]`).forEach((el) => { el.htmlFor = `s-z${r}`; });
+      setBind(`z${z}.memberStrong`, t('cz.memberStrong', { p: `Z${r}` }));
+      setBind(`z${z}.memberBody`, t('cz.member', { p: `Z${r}` }));
+    }
+    // A member follows its primary's target: lock the climate control.
+    document.querySelectorAll(`#v-dash-z${z} .climate :is(button, input)`).forEach((el) => { el.disabled = isMember; });
+  }
+}
+
 function paintStrip() {
+  const groups = zoneGroups();
+  paintGroups(groups);
   const flow = toNum(ev(gkey.flow));
   const ret = toNum(ev(gkey.ret));
   const dt = Number.isFinite(flow) && Number.isFinite(ret) ? flow - ret : NaN;
@@ -414,7 +473,9 @@ function paintStrip() {
         : st === 'learning' ? 'badge violet'
         : 'badge';
     }
-    setBind(`z${z}.sub`, st === 'learning' ? zoneLearnLong(z) : t(badgeKey));
+    const groupSub = groups.root[z] !== z ? ` · ${t('zdash.follows', { z: `Z${groups.root[z]}` })}`
+      : (groups.members[z] ? ` · ${t('zdash.primary', { g: groups.label[z] })}` : '');
+    setBind(`z${z}.sub`, (st === 'learning' ? zoneLearnLong(z) : t(badgeKey)) + groupSub);
     setShow(`z${z}.fault`, st === 'fault');
     const offset = toNum(ev(key.coordinatorOffset(z)));
     const rem = toNum(ev(key.coordinatorRemaining(z)));
@@ -457,7 +518,7 @@ function paintStrip() {
       now.innerHTML = Number.isFinite(nowT) ? `${num(nowT)}<small>°C</small>` : '—';
     }
     const opening = toNum(ev(key.valve(z)));
-    setBind(`z${z}.flow`, Number.isFinite(opening) ? String(Math.round(opening)) : '—');
+    setBind(`z${z}.flow`, withUnit(opening, '%', 0));
     const zoneProbe = parseProbeIndex(es(key.probe(z)));
     if (zoneProbe) {
       setBind(`z${z}.return`, withUnit(toNum(ev(key.probeTemp(zoneProbe))), '°C'));
@@ -1242,6 +1303,11 @@ function paintFormsFromState() {
   for (let z = 1; z <= 6; z++) {
     const name = document.getElementById(`z${z}_name`);
     if (name && !formIsLocked(name)) name.value = es(key.name(z)) || name.value;
+    const merge = document.getElementById(`z${z}_merge`);
+    if (merge && !formIsLocked(merge)) {
+      const m = /^Zone\s+(\d)$/.exec(String(es(key.syncTo(z)) || ''));
+      merge.value = m ? m[1] : '';
+    }
     const en = document.querySelector(`input[name="z${z}_enabled"]`);
     if (en && !formIsLocked(en)) en.checked = isEntityOn(key.enabled(z));
     const tgt = document.querySelector(`input[name="z${z}_target"]`);
@@ -1523,8 +1589,10 @@ async function handleSave(detail) {
       } else {
         await setZoneSelect(z, 'zone_probe', 'None');
       }
+      // "Group with": the sync edge is the source of truth; V6 rebuilds groups
+      // from it atomically. "" (None) must be sent too, or ungrouping is lost.
       const merge = form[`z${z}_merge`];
-      if (merge) await postGroups({ primary: Number(merge), members: [z] });
+      if (merge != null) await setZoneSelect(z, 'zone_sync_to', merge ? `Zone ${Number(merge)}` : 'None');
       const area = parseNum(form[`z${z}_area`]);
       if (Number.isFinite(area) && area > 0) {
         // settings/number is the proven write path; physics JSON also updated
