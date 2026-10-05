@@ -422,7 +422,7 @@ export function mockBleScan() {
     count: 2,
     sensors: [
       {
-        mac: 'F8:44:77:2A:CC:68',
+        mac: 'AA:BB:CC:DD:EE:01',
         name: 'SBHT-003C',
         temp_c: 21.4,
         rssi: -58,
@@ -430,7 +430,7 @@ export function mockBleScan() {
         zone: 1,
       },
       {
-        mac: 'B4:E6:2D:8A:11:22',
+        mac: 'AA:BB:CC:DD:EE:02',
         name: 'SBHT-003C',
         temp_c: 19.8,
         rssi: -71,

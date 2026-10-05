@@ -277,7 +277,7 @@ Afviste værdier logges med årsag. De må aldrig clampes til grænsen og bruges
     "group_id": "g1",
     "primary_loop": "z1",
     "loops": ["z1"],
-    "sensor_ids": ["F8:44:77:2D:0E:B1"],
+    "sensor_ids": ["AA:BB:CC:DD:EE:03"],
     "include_in_house_temperature": true,
     "area_m2": 21.5,
     "ua_effective_w_per_k": 27.9,
