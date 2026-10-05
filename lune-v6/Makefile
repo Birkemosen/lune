@@ -43,7 +43,7 @@ DESIGN_DIR ?= $(firstword $(wildcard \
 LDS_DIR ?= $(DESIGN_DIR)
 LDS_CONSUMER ?= $(ROOT_ABS)
 
-.PHONY: help check ensure-secrets-link config compile build build-verify bump-build prepare-release release release-deploy release-firmware release-bundle upload deploy ota logs discover monitor erase erase-nvs clean dashboard dashboard-tooling dashboard-build dashboard-reference-traces dashboard-watch design-tokens design-verify test test-dashboard test-ripple test-rev31-logic test-rev32-logic test-safety-limits test-stall-model test-stroke-learning test-balance test-authority-lease test-preheat-policy test-preheat-absorb test-absorb-command test-probe-mapping test-thermal-model test-group-model test-flow-allocator test-control-summary test-hydraulic-policy test-hydraulic-diagnostics test-commissioning-schema test-request-guard test-ble-time-beacon test-settings-backup test-control-mode
+.PHONY: help check ensure-secrets-link config compile build build-verify bump-build prepare-release release release-deploy release-firmware release-bundle upload deploy ota logs discover monitor erase erase-nvs clean dashboard dashboard-tooling dashboard-build dashboard-reference-traces dashboard-watch design-tokens design-verify test test-dashboard test-ripple test-rev31-logic test-rev33-logic test-safety-limits test-stall-model test-stroke-learning test-balance test-authority-lease test-preheat-policy test-preheat-absorb test-absorb-command test-probe-mapping test-thermal-model test-group-model test-flow-allocator test-control-summary test-hydraulic-policy test-hydraulic-diagnostics test-commissioning-schema test-request-guard test-ble-time-beacon test-settings-backup test-control-mode
 
 help:
 	@echo "Lune V6 ESPHome tasks"
@@ -63,7 +63,7 @@ help:
 	@echo "  make test          Run all host unit tests"
 	@echo "  make test-ripple   Run ripple-counter unit tests (5 rates × 5 cases)"
 	@echo "  make test-rev31-logic  Run Rev 3.1 one-hot and endpoint-evidence tests"
-	@echo "  make test-rev32-logic  Run GPIO-bridge decoder/tacho + endpoint_logic tests"
+	@echo "  make test-rev33-logic  Run Rev 3.3 decoder/tacho + endpoint_logic tests"
 	@echo "  make test-safety-limits Run runtime-ceiling + current-cap-ladder tests"
 	@echo "  make test-stall-model  Replay measured motor traces against the stall model"
 	@echo "  make test-balance  Run adaptive-balancing step-math unit tests"
@@ -198,8 +198,8 @@ RIPPLE_SRCS      = components/lv6_valve_controller/ripple_counter.cpp \
 RIPPLE_OUT       = /tmp/test_ripple_counter
 REV31_LOGIC_SRCS = test/rev31_logic/test_rev31_logic.cpp
 REV31_LOGIC_OUT  = /tmp/test_lv6_rev31_logic
-REV32_LOGIC_SRCS = test/rev32_logic/test_rev32_logic.cpp
-REV32_LOGIC_OUT  = /tmp/test_lv6_rev32_logic
+REV33_LOGIC_SRCS = test/rev33_logic/test_rev33_logic.cpp
+REV33_LOGIC_OUT  = /tmp/test_lv6_rev33_logic
 SAFETY_LIMITS_SRCS = test/safety_limits/test_safety_limits.cpp
 SAFETY_LIMITS_OUT  = /tmp/test_lv6_safety_limits
 STALL_MODEL_SRCS = test/stall_model/test_stall_model.cpp
@@ -215,9 +215,9 @@ test-rev31-logic:
 	$(RIPPLE_CXX) $(RIPPLE_CXXFLAGS) $(REV31_LOGIC_SRCS) -o $(REV31_LOGIC_OUT)
 	$(REV31_LOGIC_OUT)
 
-test-rev32-logic:
-	$(RIPPLE_CXX) $(RIPPLE_CXXFLAGS) $(REV32_LOGIC_SRCS) -o $(REV32_LOGIC_OUT)
-	$(REV32_LOGIC_OUT)
+test-rev33-logic:
+	$(RIPPLE_CXX) $(RIPPLE_CXXFLAGS) $(REV33_LOGIC_SRCS) -o $(REV33_LOGIC_OUT)
+	$(REV33_LOGIC_OUT)
 
 test-safety-limits:
 	$(RIPPLE_CXX) $(RIPPLE_CXXFLAGS) $(SAFETY_LIMITS_SRCS) -o $(SAFETY_LIMITS_OUT)
@@ -334,7 +334,7 @@ test-control-mode:
 test-dashboard:
 	sh test/dashboard/test_dashboard.sh
 
-test: design-verify test-dashboard test-ripple test-rev31-logic test-rev32-logic test-safety-limits test-stall-model test-stroke-learning test-balance test-authority-lease test-preheat-policy test-preheat-absorb test-absorb-command test-probe-mapping test-thermal-model test-group-model test-flow-allocator test-control-summary test-hydraulic-policy test-hydraulic-diagnostics test-commissioning-schema test-request-guard test-ble-time-beacon test-settings-backup test-control-mode
+test: design-verify test-dashboard test-ripple test-rev31-logic test-rev33-logic test-safety-limits test-stall-model test-stroke-learning test-balance test-authority-lease test-preheat-policy test-preheat-absorb test-absorb-command test-probe-mapping test-thermal-model test-group-model test-flow-allocator test-control-summary test-hydraulic-policy test-hydraulic-diagnostics test-commissioning-schema test-request-guard test-ble-time-beacon test-settings-backup test-control-mode
 
 # Installs the LATEST build only — no bump, no compile — so one build can be
 # rolled out to several devices. Build first with `make build` (or `make compile`).

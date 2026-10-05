@@ -325,7 +325,6 @@ lv6_valve_controller:
   address1_pin: ${pin_motor_addr1}
   address2_pin: ${pin_motor_addr2}
   address3_pin: ${pin_motor_addr3}
-  latch_arm_pin: ${pin_latch_arm}
   comm_tacho_pin: ${pin_comm_tacho}
   adc_tacho_pin: ${pin_adc_tacho}
   driver_nsleep_pin: ${pin_driver_nsleep}

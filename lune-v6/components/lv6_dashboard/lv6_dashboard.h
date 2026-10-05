@@ -326,7 +326,6 @@ class LV6Dashboard : public Component, public AsyncWebHandler {
   /// (/zones/{z}/absorb-arm|absorb-disarm, forced_action "arm"/"disarm").
   void handle_absorb_window_(AsyncWebServerRequest *request, const char *body,
                              uint8_t zone = 0, const char *forced_action = nullptr);
-  void handle_arm_clock_probe_(AsyncWebServerRequest *request, const char *body);
   void handle_decoder_probe_(AsyncWebServerRequest *request, const char *body);
   void send_v1_(AsyncWebServerRequest *request, int code, const char *err_code = nullptr,
                 const char *err_message = nullptr);

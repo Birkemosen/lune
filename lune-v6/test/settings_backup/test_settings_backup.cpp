@@ -76,7 +76,7 @@ lv6::DeviceConfig make_known_config() {
   cfg.motor.learned_factor_min_samples = 7;
   cfg.motor.learned_factor_max_deviation_pct = 0.2f;
   cfg.motor.auto_apply_learned_factors = false;
-  cfg.motor.rev32_motion_decision_ms = 900;
+  cfg.motor.motion_decision_ms = 900;
   cfg.motor.stall_plateau_factor_x10 = 35;
   cfg.motor.stall_plateau_floor_ms = 180;
   cfg.motor.stall_plateau_ceiling_ms = 800;
@@ -210,10 +210,11 @@ int main() {
   expect(restored.motor.relearn_after_hours == 200u, "relearn hours round-trip");
   expect(!restored.motor.auto_apply_learned_factors, "auto-apply learned factors round-trips");
   expect(restored.motor.learned_factor_min_samples == 7, "learned factor samples round-trip");
-  expect(restored.motor.stall_plateau_factor_x10 == 35, "rev32 stall plateau factor round-trips");
+  expect(restored.motor.motion_decision_ms == 900u, "motion decision point round-trips");
+  expect(restored.motor.stall_plateau_factor_x10 == 35, "stall plateau factor round-trips");
   expect_near(restored.motor.open_endstop_current_factor, 1.35f,
-              "rev32 open endstop factor round-trips");
-  expect(restored.motor.contact_recovery_ripples == 22, "rev32 contact recovery round-trips");
+              "open endstop factor round-trips");
+  expect(restored.motor.contact_recovery_ripples == 22, "contact recovery round-trips");
 
   expect_near(restored.control.comfort_band_c, 0.75f, "comfort band round-trips");
   expect(restored.control.mode == lv6::HeatingProfile::NORMAL, "heating mode round-trips");
@@ -323,6 +324,17 @@ int main() {
     expect(res.ok && !applied, "learned data is skipped when the caller declines");
     expect(keep[0].learned_open_ripples == 0, "declined learned data leaves telemetry untouched");
     expect(res.skipped > 0, "declined learned data is counted as skipped");
+  }
+
+  // --- 4b. Legacy key from before the Rev 3.2 removal ----------------------
+  {
+    lv6::DeviceConfig cfg{};
+    const std::string legacy =
+        replace_once(doc, "\"motion_decision_ms\"", "\"rev32_motion_decision_ms\"");
+    const sb::ImportResult res =
+        sb::apply_import_json(legacy.c_str(), cfg, true, nullptr, nullptr, nullptr, nullptr);
+    expect(res.ok && cfg.motor.motion_decision_ms == 900u,
+           "legacy rev32_motion_decision_ms still imports");
   }
 
   // --- 5. Envelope rejection ----------------------------------------------

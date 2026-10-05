@@ -1,31 +1,88 @@
 #include "rev33_motor_backend.h"
 
+#include "esphome/core/hal.h"
 #include "esphome/core/log.h"
+#include "esp_rom_sys.h"
+
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+
+#include <inttypes.h>
 
 namespace lv6 {
 
 static const char *const TAG = "lv6_rev33_motor";
 
-bool Rev33MotorBackend::setup() {
-  // Rev 3.2's LATCH_ARM pin is Rev 3.3's DRIVER_N_SLEEP — the same GPIO17 with a
-  // different job. Configure it here as a plain output and never let the base
-  // class's arm machinery near it.
-  gpio_reset_pin(pins33_.driver_nsleep);
-  gpio_reset_pin(pins33_.motor_enable);
-  gpio_reset_pin(pins33_.latch_state);      // FAULT_N_RAW on this revision
-  gpio_reset_pin(pins33_.rail_overcurrent);
-  gpio_reset_pin(pins33_.fault_usb);
+void Rev33MotorBackend::delay_us_(uint32_t microseconds) const {
+  esp_rom_delay_us(microseconds);
+}
 
-  const uint64_t output_mask = (1ULL << pins33_.address0) |
-                               (1ULL << pins33_.address1) |
-                               (1ULL << pins33_.address2) |
-                               (1ULL << pins33_.address3) |
-                               (1ULL << pins33_.motor_enable) |
-                               (1ULL << pins33_.driver_nsleep);
+void Rev33MotorBackend::delay_ms_(uint32_t milliseconds) const {
+  // ESPHome pins CONFIG_FREERTOS_HZ at 1000, so a millisecond is a tick.  The
+  // floor of one tick keeps this honest if that ever changes.
+  TickType_t ticks = pdMS_TO_TICKS(milliseconds);
+  vTaskDelay(ticks == 0 ? 1 : ticks);
+}
+
+bool Rev33MotorBackend::configure_tacho_() {
+  pcnt_unit_config_t unit_cfg = {};
+  unit_cfg.low_limit = -1;
+  unit_cfg.high_limit = PCNT_HIGH_LIMIT;
+  // A full stroke is 659-1048 commutations, so the 16-bit counter would not
+  // wrap on its own; accumulating on the watch point makes that independent of
+  // how long a learning move runs.
+  unit_cfg.flags.accum_count = 1;
+  if (pcnt_new_unit(&unit_cfg, &pcnt_unit_) != ESP_OK) {
+    ESP_LOGE(TAG, "PCNT unit for COMM_TACHO_N unavailable");
+    return false;
+  }
+
+  pcnt_glitch_filter_config_t filter_cfg = {};
+  filter_cfg.max_glitch_ns = PCNT_GLITCH_NS;
+  if (pcnt_unit_set_glitch_filter(pcnt_unit_, &filter_cfg) != ESP_OK)
+    return false;
+
+  pcnt_chan_config_t chan_cfg = {};
+  chan_cfg.edge_gpio_num = static_cast<int>(pins_.comm_tacho);
+  chan_cfg.level_gpio_num = -1;
+  if (pcnt_new_channel(pcnt_unit_, &chan_cfg, &pcnt_channel_) != ESP_OK)
+    return false;
+
+  // COMM_TACHO_N is open-collector with a pull-up to 3V3_LOGIC, so a
+  // commutation event is a falling edge.  Counting one edge per event keeps
+  // the count directly comparable to the measured 659/1048 stroke figures.
+  if (pcnt_channel_set_edge_action(pcnt_channel_,
+                                   PCNT_CHANNEL_EDGE_ACTION_HOLD,
+                                   PCNT_CHANNEL_EDGE_ACTION_INCREASE) != ESP_OK)
+    return false;
+
+  if (pcnt_unit_add_watch_point(pcnt_unit_, PCNT_HIGH_LIMIT) != ESP_OK ||
+      pcnt_unit_enable(pcnt_unit_) != ESP_OK ||
+      pcnt_unit_clear_count(pcnt_unit_) != ESP_OK ||
+      pcnt_unit_start(pcnt_unit_) != ESP_OK)
+    return false;
+
+  return true;
+}
+
+bool Rev33MotorBackend::setup() {
+  gpio_reset_pin(pins_.driver_nsleep);
+  gpio_reset_pin(pins_.motor_enable);
+  gpio_reset_pin(pins_.fault_raw);
+  gpio_reset_pin(pins_.rail_overcurrent);
+  gpio_reset_pin(pins_.fault_usb);
+
+  const uint64_t output_mask = (1ULL << pins_.address0) |
+                               (1ULL << pins_.address1) |
+                               (1ULL << pins_.address2) |
+                               (1ULL << pins_.address3) |
+                               (1ULL << pins_.motor_enable) |
+                               (1ULL << pins_.driver_nsleep);
   gpio_config_t outputs = {};
   outputs.pin_bit_mask = output_mask;
   // INPUT_OUTPUT so gpio_get_level() reads the pad rather than the output latch;
-  // a pure output reads back 0 whatever it is driving.
+  // a pure output reads back 0 whatever it is driving, so the decoder-address
+  // readback in the diagnostics and in probe_decoder() would report 0000.
   outputs.mode = GPIO_MODE_INPUT_OUTPUT;
   outputs.pull_up_en = GPIO_PULLUP_DISABLE;
   outputs.pull_down_en = GPIO_PULLDOWN_ENABLE;
@@ -36,19 +93,19 @@ bool Rev33MotorBackend::setup() {
 
   // Safe state first, before anything can select a bridge: no drive permit, no
   // decoder enable, address 0 — which reaches no bridge input at all.
-  gpio_set_level(pins33_.driver_nsleep, 0);
-  gpio_set_level(pins33_.motor_enable, 0);
-  gpio_set_level(pins33_.address0, 0);
-  gpio_set_level(pins33_.address1, 0);
-  gpio_set_level(pins33_.address2, 0);
-  gpio_set_level(pins33_.address3, 0);
+  gpio_set_level(pins_.driver_nsleep, 0);
+  gpio_set_level(pins_.motor_enable, 0);
+  gpio_set_level(pins_.address0, 0);
+  gpio_set_level(pins_.address1, 0);
+  gpio_set_level(pins_.address2, 0);
+  gpio_set_level(pins_.address3, 0);
 
   // The three fault nets are open-drain with their own 10k pull-ups to
   // 3V3_LOGIC and a 1 nF at the module end, so no internal pull is wanted.
   gpio_config_t faults = {};
-  faults.pin_bit_mask = (1ULL << pins33_.latch_state) |
-                        (1ULL << pins33_.rail_overcurrent) |
-                        (1ULL << pins33_.fault_usb);
+  faults.pin_bit_mask = (1ULL << pins_.fault_raw) |
+                        (1ULL << pins_.rail_overcurrent) |
+                        (1ULL << pins_.fault_usb);
   faults.mode = GPIO_MODE_INPUT;
   faults.pull_up_en = GPIO_PULLUP_DISABLE;
   faults.pull_down_en = GPIO_PULLDOWN_DISABLE;
@@ -57,7 +114,9 @@ bool Rev33MotorBackend::setup() {
     return false;
   }
 
-  // A missing PCNT unit must not inhibit the drive path: it costs the motion
+  // ADC1 belongs to the controller's continuous driver; the backend only owns
+  // the decoder, the permit, the fault nets and the commutation counter. A
+  // missing PCNT unit must not inhibit the drive path: it costs the motion
   // evidence, not the ability to stop.
   if (!configure_tacho_())
     ESP_LOGE(TAG, "COMM_TACHO_N PCNT unavailable; drive still enabled");
@@ -66,54 +125,86 @@ bool Rev33MotorBackend::setup() {
   ESP_LOGI(TAG,
            "rev33_gpio ready: DRIVER_N_SLEEP GPIO%d, FAULT_N_RAW GPIO%d, "
            "RAIL_OVERCURRENT GPIO%d, FAULT_USB_RAW GPIO%d — all three faults "
-           "ACTIVE LOW. No fault latch on this revision.",
-           static_cast<int>(pins33_.driver_nsleep),
-           static_cast<int>(pins33_.latch_state),
-           static_cast<int>(pins33_.rail_overcurrent),
-           static_cast<int>(pins33_.fault_usb));
+           "ACTIVE LOW.",
+           static_cast<int>(pins_.driver_nsleep),
+           static_cast<int>(pins_.fault_raw),
+           static_cast<int>(pins_.rail_overcurrent),
+           static_cast<int>(pins_.fault_usb));
   return true;
 }
 
+int Rev33MotorBackend::motor_enable_level() const {
+  return gpio_get_level(pins_.motor_enable);
+}
 int Rev33MotorBackend::fault_raw_level() const {
-  return gpio_get_level(pins33_.latch_state);
+  return gpio_get_level(pins_.fault_raw);
 }
 int Rev33MotorBackend::rail_overcurrent_level() const {
-  return gpio_get_level(pins33_.rail_overcurrent);
+  return gpio_get_level(pins_.rail_overcurrent);
 }
 int Rev33MotorBackend::fault_usb_level() const {
-  return gpio_get_level(pins33_.fault_usb);
+  return gpio_get_level(pins_.fault_usb);
 }
 int Rev33MotorBackend::driver_nsleep_level() const {
-  return gpio_get_level(pins33_.driver_nsleep);
+  return gpio_get_level(pins_.driver_nsleep);
 }
 
-bool Rev33MotorBackend::fault_latched() const {
-  // The controller asks "may I keep driving?". On this revision that is any of
-  // the three nets, not just FAULT_N_RAW. Attribution stays on the per-net
-  // accessors. ACTIVE LOW, and this is the inverse of Rev 3.2: getting the
-  // sense backwards reports "no fault" exactly when a driver has failed.
-  return any_fault();
-}
+Rev33MotorBackend::DecoderProbe Rev33MotorBackend::probe_decoder(uint8_t zone, bool reverse,
+                                                                uint32_t hold_ms) {
+  DecoderProbe result{};
+  result.zone = zone;
+  result.reverse = reverse;
+  if (hold_ms > 30000)
+    hold_ms = 30000;
 
-bool Rev33MotorBackend::any_fault() const {
-  return gpio_get_level(pins33_.latch_state) == 0 ||
-         gpio_get_level(pins33_.rail_overcurrent) == 0 ||
-         gpio_get_level(pins33_.fault_usb) == 0;
-}
+  // MOTOR_ENABLE stays low for the whole probe. The decoder output is what we
+  // want to observe; an energised bridge is not, and the drive permit may well
+  // be asserted during bring-up.
+  gpio_set_direction(pins_.motor_enable, GPIO_MODE_OUTPUT);
+  coast();
+  // `zone` is the 1-based channel the contract and the UI use; select() takes
+  // the 0-based index the rest of the controller passes (rev33_logic.h).
+  // Feeding it straight through silently probes the *next* channel.
+  if (zone == 0 ||
+      !select(static_cast<uint8_t>(zone - 1),
+              reverse ? Rev33Direction::REVERSE : Rev33Direction::FORWARD)) {
+    ESP_LOGE(TAG, "Decoder probe rejected zone %u %s: not in the channel map",
+             static_cast<unsigned>(zone), reverse ? "reverse" : "forward");
+    return result;
+  }
 
-void Rev33MotorBackend::poll_motion(uint32_t now_ms, bool drive_active) {
-  Rev32MotorBackend::poll_motion(now_ms, drive_active);
-  // The latch used to drop the permit in hardware. Firmware owns DRIVER_N_SLEEP
-  // now, so a fault net that asserts mid-move has to put the bridges back to
-  // sleep here — coasting MOTOR_ENABLE alone leaves them awake.
-  if (any_fault())
-    set_drive_permit(false);
-}
+  result.accepted = true;
+  result.decoder_address = decoder_address();
+  result.a0 = gpio_get_level(pins_.address0);
+  result.a1 = gpio_get_level(pins_.address1);
+  result.a2 = gpio_get_level(pins_.address2);
+  result.a3 = gpio_get_level(pins_.address3);
+  result.motor_enable = gpio_get_level(pins_.motor_enable);
+  ESP_LOGI(TAG,
+           "Decoder probe: zone %u %s -> address %u, A3..A0 = %d%d%d%d on "
+           "GPIO%d/%d/%d/%d, MOTOR_ENABLE=%d. Holding %" PRIu32 " ms — the matching "
+           "74HC4514 output should be the only one asserted.",
+           static_cast<unsigned>(zone), reverse ? "REVERSE" : "FORWARD",
+           static_cast<unsigned>(result.decoder_address),
+           result.a3, result.a2, result.a1, result.a0,
+           static_cast<int>(pins_.address3), static_cast<int>(pins_.address2),
+           static_cast<int>(pins_.address1), static_cast<int>(pins_.address0),
+           result.motor_enable, hold_ms);
 
-void Rev33MotorBackend::set_drive_permit(bool permitted) {
-  gpio_set_level(pins33_.driver_nsleep, permitted ? 1 : 0);
-  if (!permitted)
-    selection_.coast();
+  uint32_t remaining = hold_ms;
+  while (remaining > 0) {
+    const uint32_t chunk = remaining > 100 ? 100 : remaining;
+    esphome::delay(chunk);
+    remaining -= chunk;
+  }
+
+  // Park on address 0: Q0-Q3 reach no bridge input, so it selects nothing.
+  coast();
+  gpio_set_level(pins_.address0, 0);
+  gpio_set_level(pins_.address1, 0);
+  gpio_set_level(pins_.address2, 0);
+  gpio_set_level(pins_.address3, 0);
+  return result;
 }
 
 bool Rev33MotorBackend::arm_latch() {
@@ -129,34 +220,113 @@ bool Rev33MotorBackend::arm_latch() {
   // driver that comes up faulted has asserted nFAULT before we look.
   delay_ms_(1);
 
-  const int raw = gpio_get_level(pins33_.latch_state);
-  const int rail = gpio_get_level(pins33_.rail_overcurrent);
-  const int usb = gpio_get_level(pins33_.fault_usb);
+  const int raw = gpio_get_level(pins_.fault_raw);
+  const int rail = gpio_get_level(pins_.rail_overcurrent);
+  const int usb = gpio_get_level(pins_.fault_usb);
   if (raw == 0 || rail == 0 || usb == 0) {
     set_drive_permit(false);
     ESP_LOGE(TAG,
              "Drive permit refused: FAULT_N_RAW=%d RAIL_OVERCURRENT=%d "
              "FAULT_USB_RAW=%d (0 = asserted). A bridge fault, the 150 mA rail "
-             "comparator, or the USB switch current-limiting — the three nets "
-             "are separate so this is attributable, unlike Rev 3.2.",
+             "comparator, or the USB switch current-limiting.",
              raw, rail, usb);
     return false;
   }
-  // selection_.arm() takes "is the fault line asserted", not "is it high".
+  // selection_.arm() takes "is a fault asserted", not "is the line high".
   return selection_.arm(false);
 }
 
-void Rev33MotorBackend::assert_arm_high() {
-  // GPIO17 is DRIVER_N_SLEEP on this revision. Forcing it high here would wake
-  // the bridges without going through arm_latch()'s fault check.
-  ESP_LOGW(TAG, "LATCH_ARM force-high ignored: GPIO17 is DRIVER_N_SLEEP on Rev 3.3");
+void Rev33MotorBackend::write_address_() {
+  const uint8_t address = selection_.decoder_address();
+  if (!rev33_address_is_reachable(address)) {
+    // select() validates the index, so this is unreachable unless the address
+    // map itself is wrong.  Leave the decoder on address 0 rather than guess.
+    ESP_LOGE(TAG, "Refusing to write unreachable decoder address %u", address);
+    return;
+  }
+  gpio_set_level(pins_.address0, address & 0x01u);
+  gpio_set_level(pins_.address1, (address >> 1) & 0x01u);
+  gpio_set_level(pins_.address2, (address >> 2) & 0x01u);
+  gpio_set_level(pins_.address3, (address >> 3) & 0x01u);
 }
 
-Rev32MotorBackend::ArmClockProbe Rev33MotorBackend::probe_arm_clock(uint32_t,
-                                                                   uint32_t,
-                                                                   bool) {
-  ESP_LOGW(TAG, "ARM_CLK probe refused: Rev 3.3 has no fault latch");
-  return {};
+bool Rev33MotorBackend::select(uint8_t index, Rev33Direction direction) {
+  if (!ready_ || !selection_.select(index, direction))
+    return false;
+  write_address_();
+  // The 4514's address latch is transparent only while inhibited.  Give the
+  // address a full millisecond to settle before drive resumes.
+  delay_us_(1000);
+  return true;
+}
+
+bool Rev33MotorBackend::drive() {
+  if (!ready_ || fault_latched()) {
+    gpio_set_level(pins_.motor_enable, 0);
+    selection_.observe_fault(true);
+    return false;
+  }
+  if (!selection_.enable())
+    return false;
+  gpio_set_level(pins_.motor_enable, 1);
+  return true;
+}
+
+void Rev33MotorBackend::coast() {
+  gpio_set_level(pins_.motor_enable, 0);
+  selection_.coast();
+}
+
+bool Rev33MotorBackend::fault_latched() const {
+  // The controller asks "may I keep driving?". That is any of the three nets,
+  // not just FAULT_N_RAW. Attribution stays on the per-net accessors.
+  return any_fault();
+}
+
+bool Rev33MotorBackend::any_fault() const {
+  return gpio_get_level(pins_.fault_raw) == 0 ||
+         gpio_get_level(pins_.rail_overcurrent) == 0 ||
+         gpio_get_level(pins_.fault_usb) == 0;
+}
+
+void Rev33MotorBackend::set_drive_permit(bool permitted) {
+  gpio_set_level(pins_.driver_nsleep, permitted ? 1 : 0);
+  if (!permitted)
+    selection_.coast();
+}
+
+void Rev33MotorBackend::reset_motion() {
+  tacho_.reset(0);
+  last_hardware_count_ = 0;
+  if (pcnt_unit_)
+    pcnt_unit_clear_count(pcnt_unit_);
+}
+
+void Rev33MotorBackend::poll_motion(uint32_t now_ms, bool drive_active) {
+  if (ready_ && pcnt_unit_ != nullptr) {
+    int hardware = 0;
+    if (pcnt_unit_get_count(pcnt_unit_, &hardware) == ESP_OK) {
+      last_hardware_count_ = hardware < 0 ? 0u : static_cast<uint32_t>(hardware);
+
+      if (drive_active) {
+        tacho_.observe_count(last_hardware_count_, now_ms);
+      } else {
+        // The bridge is off - whatever the comparator did across this interval
+        // was not commutation of the selected motor.
+        tacho_.rebase_count(last_hardware_count_);
+      }
+
+      // Mirror an asserted fault in the selection state so the next drive()
+      // has to go through arm_latch() again.
+      if (fault_latched())
+        selection_.observe_fault(true);
+    }
+  }
+  // Firmware owns DRIVER_N_SLEEP, so a fault net that asserts mid-move has to
+  // put the bridges back to sleep here — coasting MOTOR_ENABLE alone leaves
+  // them awake.
+  if (any_fault())
+    set_drive_permit(false);
 }
 
 }  // namespace lv6

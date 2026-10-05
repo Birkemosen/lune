@@ -5,23 +5,17 @@
 # which `check_design.py` asserts against the schematic. If they disagree, the
 # contract is right.
 #
-# What changed from Rev 3.2, and why the pin map is not a superset:
+# Safety path:
 #
-#   * The fault latch is gone (U2, Q1, R4, R5, C4). LATCH_ARM and LATCH_STATE
-#     went with it, freeing GPIO17 and GPIO16. The hazard decision behind that
-#     removal is recorded in design-review R3.3-3 — read it before treating this
-#     board as a drop-in for Rev 3.2.
-#   * FAULT_N_RAW now reaches firmware directly on GPIO16, active LOW, pulled up
-#     by R3. On Rev 3.2 the equivalent input was LATCH_STATE, active HIGH. The
-#     polarity is inverted; a backend that reads one as the other is wrong in
-#     the dangerous direction.
-#   * The rail overcurrent comparator left the wired-AND for its own net on
-#     GPIO48, pulled up by R41, so a bridge fault and a rail overcurrent are
-#     finally distinguishable (O12).
-#   * DRIVER_N_SLEEP is driven from GPIO17. R31 still pulls it down, so GPIOs in
-#     high-Z put the drivers to sleep and U7's NAND inhibits the decoder — the
-#     same failsafe the latch's Q output used to define.
-#   * ADC_TACHO is back in the continuous stream at 6 dB, matching ADC_CURRENT.
+#   * There is no hardware fault latch. The hazard decision behind that is
+#     recorded in design-review R3.3-3.
+#   * FAULT_N_RAW reaches firmware directly on GPIO16, active LOW, pulled up by
+#     R3. Reading it as active high is wrong in the dangerous direction.
+#   * The rail overcurrent comparator has its own net on GPIO48, pulled up by
+#     R41, so a bridge fault and a rail overcurrent are distinguishable (O12).
+#   * DRIVER_N_SLEEP is driven from GPIO17. R31 pulls it down, so GPIOs in
+#     high-Z put the drivers to sleep and U7's NAND inhibits the decoder.
+#   * ADC_TACHO is in the continuous stream at 6 dB, matching ADC_CURRENT.
 #     R11/R12 moved from 1k/1k to 10k/4k7 so TACHO_REF sits at 1.055 V and the
 #     amplified ripple fits the 1.75 V span. Two attenuations on one ADC unit is
 #     what ESP-IDF rejects and what took the whole stream down as design-review
@@ -46,8 +40,7 @@ substitutions:
   # gate, not a global nSLEEP. The real nSLEEP is pin_driver_nsleep below.
   pin_nsleep: "18"
   # FAULT_N_RAW, now only the three DRV8411 nFAULT outputs wired-AND, pulled up
-  # by R3 and filtered by C3. ACTIVE LOW — and note the polarity flip from
-  # Rev 3.2, where the equivalent input was LATCH_STATE, active HIGH.
+  # by R3 and filtered by C3. ACTIVE LOW.
   pin_nfault: "16"
   # FAULT_USB_RAW, the TPS2553 fault pin on its own net (R42 pull-up, C42).
   # Split off the wired-AND so a USB current-limit event is distinguishable from
@@ -61,14 +54,7 @@ substitutions:
   # at the module end. Trip is 150 mA nominal (142-158 worst case); see design-review
   # R3.3-4 for why that sits below the DRV8411's own 180-230 mA regulation.
   pin_rail_overcurrent: "48"
-  # There is no LATCH_ARM on Rev 3.3 — U2, Q1, R4, R5 and C4 are gone. This
-  # substitution exists only because the shared lv6_valve_controller block in
-  # lune.yaml passes latch_arm_pin unconditionally; the rev33 backend never
-  # reads it. It points at GPIO17 because that pad is now DRIVER_N_SLEEP, so a
-  # stray reference lands on a pin the backend already owns rather than a
-  # random one.
-  pin_latch_arm: "17"
-  # DRIVER_N_SLEEP, the drive permit the latch used to hold. High wakes the
+  # DRIVER_N_SLEEP, the firmware-held drive permit. High wakes the
   # three bridges and releases U7's decoder inhibit; R31 defines the safe state.
   pin_driver_nsleep: "17"
 
@@ -82,7 +68,7 @@ substitutions:
   pin_comm_tacho: "38"
 
   # Four plain address bits. No bit encodes direction; the channel/direction
-  # pair maps through the decoder's 12-entry table in rev32_logic.h.
+  # pair maps through the decoder's 12-entry table in rev33_logic.h.
   pin_motor_addr0: "12"
   pin_motor_addr1: "11"
   pin_motor_addr2: "14"

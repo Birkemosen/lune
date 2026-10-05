@@ -13,48 +13,34 @@ compatibility; the Lune V6 component directories and internal names use the `lv6
 This folder is ESPHome-only. The legacy PlatformIO and ESP-IDF source tree has been
 removed.
 
-## One firmware, three boards
-
-Each hardware revision has its own entrypoint and its own motor backend, and **none of
-them may be flashed on another revision's board** — the pin maps collide throughout.
-See [Firmware entrypoints](#firmware-entrypoints).
-
 ## Hardware Revisions
 
 | Revision | Status | Motor drive |
 |----------|--------|-------------|
 | [`rev3.0`](hardware/lune-v6-rev3.0/) | superseded | — |
 | [`rev3.1-lean`](hardware/lune-v6-rev3.1-lean/) | superseded | 6× DRV8215 over I2C |
-| [`rev3.2`](hardware/lune-v6-rev3.2/) | previous production path — keep `lune-v6-rev32.yaml` for that PCB | 3× DRV8411 + hardware one-hot + fault latch |
-| [**`rev3.3`**](hardware/lune-v6-rev3.3/) | **current** — `lune.yaml` → `lune-v6-rev33.yaml` / `rev33_gpio` | 3× DRV8411 + one-hot; no latch; firmware `DRIVER_N_SLEEP` |
+| [**`rev3.3`**](hardware/lune-v6-rev3.3/) | **current** — `lune.yaml` → `lune-v6-rev33.yaml` / `rev33_gpio` | 3× DRV8411 + hardware one-hot; firmware-held `DRIVER_N_SLEEP` |
 
-Default firmware entrypoint (`configurations/lune-v6.yaml` → `lune.yaml`) includes
+The firmware entrypoint (`configurations/lune-v6.yaml` → `lune.yaml`) includes
 `packages/board/lune-v6-rev33.yaml`. See
 [`hardware/lune-v6-rev3.3/firmware-integration.md`](hardware/lune-v6-rev3.3/firmware-integration.md).
-Rev 3.2 and 3.3 pin maps collide — never flash across revisions.
+The image is for Rev 3.3 only: at boot the controller checks for the Rev 3.3 fault-net
+pull-ups and refuses to drive any motor on a board that does not have them.
 
 ## Rev3.3 Board
 
 Authoritative hardware docs live under
 [`hardware/lune-v6-rev3.3/`](hardware/lune-v6-rev3.3/) (design contract ECO
-`rev3.3-P`, EasyEDA project). Outline ~90 × 70 mm, ESP32-S3-WROOM-1-N8R8,
-USB-C powered, six RJ9 valve channels.
-
-Compared with rev 3.2: fault latch / `LATCH_ARM` removed; `DRIVER_N_SLEEP` and
-active-low `FAULT_N_RAW`; rail overcurrent trip ~150 mA (`rev3.3-P`). Shared
-current sense + commutation tacho remain.
-
-## Rev3.2 Board (previous)
-
-Two-layer board, outline **100 × 70 mm** with a 22 × 7 mm antenna cutout in the north
-edge, ESP32-S3-WROOM-1-N8R8 (8 MB flash, 8 MB octal PSRAM), USB-C powered. All connectors
-except USB-C exit the south edge; USB-C is on the west, beside the module's USB pads.
+`rev3.3-P`, EasyEDA project). Two-layer board, target outline **90 × 72 mm**,
+ESP32-S3-WROOM-1-N8R8 (8 MB flash, 8 MB octal PSRAM), USB-C powered, six RJ9 valve
+channels.
 
 > **The 85 °C ambient rating is conditional.** R8 modules are rated −40 ~ 65 °C unless
 > PSRAM ECC is enabled, which needs `CONFIG_SPIRAM_ECC_ENABLE=y` **and**
 > `CONFIG_SPIRAM_MODE_OCT=y`. Neither is set today. The **Free PSRAM** sensor is the
 > proof: ~7680 kB means ECC is on and the 85 °C applies; ~8192 kB means it is not.
-> See [`hardware/lune-v6-rev3.2/architecture.md`](hardware/lune-v6-rev3.2/architecture.md).
+> See `module_temperature_rating` in
+> [`hardware/lune-v6-rev3.3/design-contract.json`](hardware/lune-v6-rev3.3/design-contract.json).
 
 ### Motor drive
 
@@ -62,8 +48,7 @@ Six 3.3 V H-bridge channels from **three `DRV8411PWPR` dual drivers**. Channel s
 is a **hardware one-hot** `74HC4514` 4-to-16 decoder, so only one bridge can ever be
 active — the address is latched while driving, and firmware cannot select two motors at
 once. `DRV8410PWPR` is the nominated second source - pin-compatible including the NC
-pins 11/14, so no extra capacitors - but it is not stocked at LCSC. `DRV8833PWPR` was
-dropped in rev3.2-E: TI supersedes it with the DRV8411, and it specifies no xISEN trip.
+pins 11/14, so no extra capacitors - but it is not stocked at LCSC.
 
 The actuators are Homematic IP VdMot on Danfoss RA-N adapters, wired over 4P4C/RJ9.
 
@@ -76,69 +61,76 @@ That single node serves three functions:
 
 - **ADC current** — filtered by 1 kΩ/100 nF into `ADC_CURRENT`.
 - **Commutation tacho** — the AC ripple is tapped *before* the ADC filter, AC-coupled
-  around a mid-rail reference, band-pass amplified by a `TLV9001`, and squared up by the
+  around a 1.055 V reference, band-pass amplified by a `TLV9001`, and squared up by the
   spare `LMV393` channel into `COMM_TACHO_N`. The commutation band is 20–40 Hz at
   0.7–3.0 mA of ripple. Measured full-stroke counts on the qualified actuator: **659
   closing, 1048 opening**. This replaces the rev3.1 BEMF frontend, which was removed.
-- **Rail overcurrent backstop** — a comparator on the unfiltered node trips at 2.8 V,
-  i.e. 280 mA nominal (267–293 mA worst case).
+- **Rail overcurrent backstop** — a comparator on the unfiltered node trips at 1.5 V,
+  i.e. **150 mA** nominal (142–158 mA worst case, ECO `rev3.3-P`), on its own
+  `RAIL_OVERCURRENT` net.
 
 Per-bridge current regulation uses 1 Ω xISEN resistors against the DRV8411's 200 mV
 reference, giving a 178–232 mA ceiling. Both limits are **board-protection backstops**:
-the actuator draws 14–19 mA running and peaks at 33–50 mA on the closing stop, and
-firmware caps at 100 mA. Neither can engage in normal operation.
+the actuator draws 14–19 mA running and peaks at 47–60 mA on the closing stop. Neither
+can engage in normal operation.
 
 ### Safety chain
 
 ```text
-driver faults + rail overcurrent + TPS2553 fault -> async fault latch -> shutdown
+driver nFAULT (FAULT_N_RAW) ─┐
+rail overcurrent            ─┼─> three active-LOW GPIOs -> firmware drops DRIVER_N_SLEEP
+TPS2553 fault (FAULT_USB_RAW)┘
 ```
 
-- **Fault latch** — `74LVC1G74`. Powers up disarmed. **Firmware cannot clear a fault.**
-- **No hardware runtime cutoff.** Rev3.2-B carried a `74HC4060` max-on-time timer; it is
-  removed by hazard assessment (`actuator_overrun_hazard`). An over-driven actuator strips
-  its own gears in the opening direction only, a parted head releases the pin to full flow
-  with the seal still in the manifold, and the loop cannot exceed the mixing-valve supply
-  temperature — so worst case is one actuator, self-announcing. The timer also collided
-  with learning mode, which needs 43–85 s to find both end stops against a 56–86 s cutoff.
-  Actuator travel is bounded by the **firmware runtime limit** and tacho stall evidence.
-- **USB input limiter** — `TPS2553-1`, 1.0–1.172 A, **latch-off**. An input fault
-  removes power from the ESP32 too, so the failure is silent and needs a physical
-  replug.
+- **No hardware fault latch.** The hazard decision is design-review R3.3-3. The drive
+  permit is `DRIVER_N_SLEEP`, held by firmware; `R31` pulls it low, so a GPIO in high-Z
+  puts the drivers to sleep and `U7`'s NAND inhibits the decoder.
+- **Attributable faults.** A bridge fault, a rail overcurrent and a USB-switch fault each
+  have their own net and pull-up. Firmware refuses the permit while any of them is
+  asserted and withdraws it if one asserts mid-move.
+- **No hardware runtime cutoff.** It was removed by hazard assessment
+  (`actuator_overrun_hazard`). An over-driven actuator strips its own gears in the
+  opening direction only, a parted head releases the pin to full flow with the seal
+  still in the manifold, and the loop cannot exceed the mixing-valve supply temperature
+  — so worst case is one actuator, self-announcing. Actuator travel is bounded by the
+  **firmware runtime limit** and tacho stall evidence.
+- **USB input limiter** — `TPS2553`, constant-current **auto-retry** (ECO `rev3.3-M`).
+  An input fault no longer removes power; the switch regulates, asserts
+  `FAULT_USB_RAW` on GPIO15 and recovers when the overload clears.
 
-### Rev3.2 GPIO map
+### Rev3.3 GPIO map
 
-Authoritative source: [`hardware/lune-v6-rev3.2/design-contract.json`](hardware/lune-v6-rev3.2/design-contract.json).
+Authoritative source: [`hardware/lune-v6-rev3.3/design-contract.json`](hardware/lune-v6-rev3.3/design-contract.json).
 
-| GPIO | Pad | Signal | Function |
-|------|-----|--------|----------|
-| 1 | 39 | `ADC_TACHO` | amplified commutation ripple (ADC1_CH0) |
-| 2 | 38 | `ADC_CURRENT` | shared current sense, filtered (ADC1_CH1) |
-| 21 | 23 | `I2C_SDA` | I2C data, `J21` display pads, 4k7 pull-up `R16` |
-| 47 | 24 | `I2C_SCL` | I2C clock, `J21`, 4k7 pull-up `R17` |
-| 18 | 11 | `MOTOR_ENABLE` | drive enable (safe level = 0) |
-| 11 | 19 | `MOTOR_ADDR1` | decoder address bit 1 |
-| 12 | 20 | `MOTOR_ADDR0` | decoder address bit 0 |
-| 13 | 21 | `MOTOR_ADDR3` | decoder address bit 3 (was `MOTOR_TERM_DIR`) |
-| 14 | 22 | `MOTOR_ADDR2` | decoder address bit 2 |
-| 16 | 9 | `LATCH_STATE` | armed / not armed readback |
-| 17 | 10 | `LATCH_ARM` | edge-coupled arm clock |
-| 19 / 20 | 13 / 14 | `USB_DM` / `USB_DP` | native USB |
-| 38 | 31 | `COMM_TACHO_N` | commutation pulses, open-drain |
-| 8 | 12 | `ONEWIRE_MCU` | DS18B20 bus; declared ADC1 exception |
-| 43 / 44 | 37 / 36 | `UART_TX_MCU` / `UART_RX_MCU` | ROM console; 1 k `R53`/`R54` in series to `J22`, where the nets become `UART_TX_DBG` / `UART_RX_DBG` |
-| 4 | 4 | `STATUS_LED_N` | status LED, **active low**; declared ADC1 exception |
+| GPIO | Signal | Function |
+|------|--------|----------|
+| 1 | `ADC_TACHO` | amplified commutation ripple (ADC1_CH0), 6 dB |
+| 2 | `ADC_CURRENT` | shared current sense, filtered (ADC1_CH1), 6 dB |
+| 21 | `I2C_SDA` | I2C data, `J21` display pads, 4k7 pull-up `R16` |
+| 47 | `I2C_SCL` | I2C clock, `J21`, 4k7 pull-up `R17` |
+| 18 | `MOTOR_ENABLE` | per-move decoder gate (safe level = 0) |
+| 12 | `MOTOR_ADDR0` | decoder address bit 0 |
+| 11 | `MOTOR_ADDR1` | decoder address bit 1 |
+| 14 | `MOTOR_ADDR2` | decoder address bit 2 |
+| 13 | `MOTOR_ADDR3` | decoder address bit 3 (was `MOTOR_TERM_DIR`) |
+| 17 | `DRIVER_N_SLEEP` | drive permit, high = awake (safe level = 0) |
+| 16 | `FAULT_N_RAW` | DRV8411 nFAULT wired-AND, **active low** |
+| 48 | `RAIL_OVERCURRENT` | rail overcurrent comparator, **active low** |
+| 15 | `FAULT_USB_RAW` | TPS2553 fault, **active low** |
+| 19 / 20 | `USB_DM` / `USB_DP` | native USB |
+| 38 | `COMM_TACHO_N` | commutation pulses, open-drain |
+| 8 | `ONEWIRE_MCU` | DS18B20 bus; declared ADC1 exception |
+| 43 / 44 | `UART_TX` / `UART_RX` | ROM console; 1 k `R53`/`R54` in series to `J22` |
+| 4 | `STATUS_LED_N` | status LED, **active low**; declared ADC1 exception |
 
 GPIO 0, 3, 19, 20, 45 and 46 are contractually forbidden for motor control. Module pads
 28–30 (`IO35`–`IO37`) are consumed by the octal PSRAM and unavailable on an N8R8.
 
 The two ADCs sit on the module's **east** side because ADC1 is `GPIO1`–`GPIO10` and ADC2
-is unusable while WiFi runs — pads 38/39 are the only ADC-capable pins there. That leaves
-the west side to the USB pair. `GPIO5`, `GPIO6`, `GPIO7`, `GPIO9` and `GPIO10` are the
-spare ADC1 channels, and `GPIO15` (pad 8) is free after rev3.2-H. Two ADC1 channels are
-deliberately spent on digital: `GPIO4` on `STATUS_LED_N` (rev3.2-G) and `GPIO8` on
-`ONEWIRE_MCU` (rev3.2-H). Both are declared in `adc1_digital_exceptions` and printed by
-`check_design.py` on every run.
+is unusable while WiFi runs. `GPIO5`, `GPIO6`, `GPIO7`, `GPIO9` and `GPIO10` are the
+spare ADC1 channels. Two ADC1 channels are deliberately spent on digital: `GPIO4` on
+`STATUS_LED_N` and `GPIO8` on `ONEWIRE_MCU`. Both are declared in
+`adc1_digital_exceptions` and printed by `check_design.py` on every run.
 
 ### External connections
 
@@ -153,14 +145,13 @@ deliberately spent on digital: `GPIO4` on `STATUS_LED_N` (rev3.2-G) and `GPIO8` 
 ## Firmware entrypoints
 
 The firmware identity is `lune-v6` (WiFi/DHCP/OTA hostname `lune-v6-<mac>`).
-Hardware revision 3.3 is the default board package, not part of the device name.
+The hardware revision is the board package, not part of the device name.
 
 | File | Role |
 |---|---|
 | `configurations/lune-v6.yaml` | Firmware entrypoint (`device_name: lune-v6`) |
 | `configurations/lune-v6-release.yaml` | Public release entrypoint — same firmware, no WiFi credentials |
-| `packages/board/lune-v6-rev33.yaml` | **Current** Rev 3.3 PCB pins, `rev33_gpio` motor backend, status LED |
-| `packages/board/lune-v6-rev32.yaml` | Rev 3.2 PCB only — do not mix with a 3.3 board |
+| `packages/board/lune-v6-rev33.yaml` | Rev 3.3 PCB pins, `rev33_gpio` motor backend, status LED |
 | `packages/board/esp32-s3.yaml` | ESP32-S3-WROOM-1-N8R8 (8 MB flash, octal PSRAM) |
 
 ```sh
@@ -180,44 +171,26 @@ make release-deploy HOST=192.168.x.x
 `make release-firmware VERSION=v1.1.0` builds the publishable bundle instead —
 see [Flashing and updates](#flashing-and-updates).
 
-### What differs on rev3.2
+### `rev33_gpio` backend
 
-| | rev3.1 | rev3.2 |
-|---|---:|---:|
-| `ADC_CURRENT` | 4 | **2** (6 dB attenuation) |
-| `ADC_BEMF` → `ADC_TACHO` | 5 | **1** |
-| `MOTOR_ENABLE` | 13 | **18** |
-| `MOTOR_ADDR0/1/2` | 10 / 11 / 12 | **12 / 11 / 14** |
-| direction pin → `MOTOR_ADDR3` | 14 | **13**, a plain address bit |
-| `LATCH_ARM` | 16, DC-coupled | **17**, edge-coupled |
-| latch readback | `nFAULT` 17, active low | `LATCH_STATE` **16**, active **high** |
-| `I2C_SDA` / `I2C_SCL` | 8 / 9 | **21 / 47** |
-| `ONEWIRE_MCU` | 42 | **8** (declared ADC1 exception) |
-| `STATUS_LED_N` | 48, WS2812 | **4**, a single active-low LED |
-| motion evidence | BEMF mux across a coast | `COMM_TACHO_N` on **38**, PCNT |
-| motor addressing | `(dir << 3) \| (ch - 1)` | 12-entry `decoder.channel_address_map` |
+There is no I2C motor driver on rev3.3 — channel select is the hardware one-hot
+decoder — so `motor_addresses` is inert under `rev33_gpio`. The component rejects the
+Rev 3.1 options (`adc_bemf_pin`, `direction_pin`, `bemf_threshold_raw`,
+`latch_arm_pin`), requires `driver_nsleep_pin`, `rail_overcurrent_pin` and
+`fault_usb_pin`, rejects duplicate or contractually forbidden motor GPIO, and requires
+`ipropi_pin` and `adc_tacho_pin` to be on ADC1.
 
-There is no I2C motor driver on rev3.2 at all — channel select is the hardware one-hot
-decoder — so `motor_addresses` is inert under `rev32_gpio`. The component rejects
-`adc_bemf_pin`, `direction_pin` and `bemf_threshold_raw` under that backend, rejects
-duplicate or contractually forbidden motor GPIO, and requires `ipropi_pin` and
-`adc_tacho_pin` to be on ADC1.
-
-Spare after rev3.2-H: **5**, **6**, **7**, **9**, **10** (all ADC1) and **15**. GPIO **4**
-and **8** were freed by the analog move but are now spent on `STATUS_LED_N` and
-`ONEWIRE_MCU`, both declared exceptions.
-
-### Endstop detection on rev3.2
+### Endstop detection on rev3.3
 
 Closing is four mechanical phases and two of them — pin contact and the hard stop — look
-nearly identical in the current domain. Rev3.2 separates them on **whether the rotor
+nearly identical in the current domain. Rev 3.3 separates them on **whether the rotor
 recovers**, which is magnitude-independent and therefore works just as well on the gentle
 opening stop where the current barely moves. Opening's endstop is the motor's own gear
 train bottoming out: a smaller resistance than pop-off, and the direction the contract
 names as the damaging one.
 
-- One ADC1 DMA stream carries `ADC_CURRENT` (6 dB) and `ADC_TACHO` (12 dB) at 10 kHz
-  each. It replaced two blocking oneshot reads per 10 ms tick.
+- One ADC1 DMA stream carries `ADC_CURRENT` and `ADC_TACHO`, both at 6 dB, at 10 kHz
+  each.
 - The absolute current cap is evaluated on a DMA frame peak and acted on at 1 ms rather
   than 20 ms — that margin is force into a rigid stop.
 - The stall verdict scales with the observed commutation cadence: ~150 ms instead of a
@@ -226,18 +199,17 @@ names as the damaging one.
   computable on-device — § 2 of the validation plan's release gate.
 
 See [`docs/endstop_detection.md`](docs/endstop_detection.md) and
-[`hardware/lune-v6-rev3.2/firmware-integration.md`](hardware/lune-v6-rev3.2/firmware-integration.md).
+[`hardware/lune-v6-rev3.3/firmware-integration.md`](hardware/lune-v6-rev3.3/firmware-integration.md).
 
-### Still open on rev3.2
+### Still open on rev3.3
 
 - Automatic startup calibration is **off**. Every current threshold, stroke time and
-  commutation count is a bring-up value; rev3.1's were measured under a 70 % hold duty
-  and rev3.2 drives at full rail.
+  commutation count is a bring-up value.
 - PCNT's glitch filter tops out near 12 µs, so the contract's 200 µs minimum-width
-  rejection is not implemented. The 10 kHz `ADC_TACHO` stream now makes it measurable
+  rejection is not implemented. The 10 kHz `ADC_TACHO` stream makes it measurable
   whether that matters.
-- Soft-approach does not exist on rev3.2 — there is no duty control to reduce. Detection
-  speed is the pop-off protection.
+- Soft-approach does not exist — there is no duty control to reduce. Detection speed is
+  the pop-off protection.
 
 ## Repository Layout
 
@@ -249,8 +221,8 @@ lune-v6/
 │   ├── lv6_dashboard/
 │   ├── lv6_valve_controller/
 │   └── lv6_zone_controller/
-├── configurations/      # Per-revision and variant configs
-├── hardware/            # KiCad schematics, design contract, review docs
+├── configurations/      # Firmware and release entrypoints
+├── hardware/            # EasyEDA project, design contract, review docs
 ├── web/                 # Local dashboard sources
 ├── docs/
 ├── README.md
@@ -383,7 +355,7 @@ yourself from this repository.
 - `secrets.yaml` lives at the repository root and is gitignored;
   `secrets.yaml.example` is the committed template.
 - Device-local commands can be run with `make -C lune-v6 <target>`.
-- Only one motor may run at a time. On rev3.2 this is enforced in hardware by the one-hot
+- Only one motor may run at a time. On rev3.3 this is enforced in hardware by the one-hot
   decoder, not by firmware convention.
 
 ## Documentation
@@ -399,10 +371,9 @@ yourself from this repository.
   ripple capture requirements
 - [docs/hydraulic_commissioning.md](docs/hydraulic_commissioning.md)
 - [docs/esp32-s3_ufh_pcb_solution.md](docs/esp32-s3_ufh_pcb_solution.md)
-- [hardware/lune-v6-rev3.2/architecture.md](hardware/lune-v6-rev3.2/architecture.md) —
-  rev3.2 design rationale
-- [hardware/lune-v6-rev3.2/design-review.md](hardware/lune-v6-rev3.2/design-review.md)
-- [hardware/lune-v6-rev3.2/validation-plan.md](hardware/lune-v6-rev3.2/validation-plan.md)
+- [hardware/lune-v6-rev3.3/design-review.md](hardware/lune-v6-rev3.3/design-review.md)
+- [hardware/lune-v6-rev3.3/validation-plan.md](hardware/lune-v6-rev3.3/validation-plan.md)
+- [hardware/lune-v6-rev3.3/firmware-integration.md](hardware/lune-v6-rev3.3/firmware-integration.md)
 
 ## Inspiration & Credits
 
@@ -416,9 +387,11 @@ This project was inspired by and builds upon ideas from:
 - [Motor Controller Tachometer](https://yyao.ca/projects/motor_controller_tachometer/) by
   Yi Yao — back-EMF tachometer circuit design
 
-Rev3.2 derives position from commutation ripple on the shared current sense rather than
+Rev 3.3 derives position from commutation ripple on the shared current sense rather than
 from BEMF, but these designs shaped the approach.
 
 ## License
 
-See [../LICENSE](../LICENSE).
+Firmware: [GPL-3.0-or-later](../LICENSE). Hardware design in
+[`hardware/`](hardware/): [CC BY-NC-SA 4.0](hardware/LICENSE), non-commercial. See the
+[root README](../README.md#license).

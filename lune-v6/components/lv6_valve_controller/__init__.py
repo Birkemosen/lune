@@ -1,11 +1,11 @@
 # =============================================================================
 # LV6 Valve Controller — ESPHome External Component
 # =============================================================================
-# Four motor hardware backends:
+# Three motor hardware backends:
 #   drv8215_i2c  6x DRV8215 I2C drivers with current-sense endstop detection
 #   rev31_gpio   3-bit one-hot decoder + direction pin + BEMF mux (Rev 3.1 Lean)
-#   rev32_gpio   4-bit decoder + AC-coupled fault latch + commutation tacho (Rev 3.2)
-#   rev33_gpio   same decoder/tacho as Rev 3.2, firmware-held DRIVER_N_SLEEP, no latch
+#   rev33_gpio   4-bit decoder + commutation tacho, firmware-held DRIVER_N_SLEEP
+#                and three attributable fault nets (Rev 3.3)
 # =============================================================================
 
 import esphome.codegen as cg
@@ -47,7 +47,6 @@ CONF_AUTO_START_CALIBRATION = "auto_start_calibration"
 
 BACKEND_DRV8215_I2C = "drv8215_i2c"
 BACKEND_REV31_GPIO = "rev31_gpio"
-BACKEND_REV32_GPIO = "rev32_gpio"
 BACKEND_REV33_GPIO = "rev33_gpio"
 
 # Mirrors MotorBackendKind in lv6_valve_controller.h.
@@ -55,10 +54,9 @@ BACKEND_KIND = {
     BACKEND_REV33_GPIO: 3,
     BACKEND_DRV8215_I2C: 0,
     BACKEND_REV31_GPIO: 1,
-    BACKEND_REV32_GPIO: 2,
 }
 
-# hardware/lune-v6-rev3.2/design-contract.json: forbidden_motor_control_gpio.
+# hardware/lune-v6-rev3.3/design-contract.json: forbidden_motor_control_gpio.
 # Strapping pins and the USB-JTAG pair; a motor control line on any of them
 # either breaks boot or is driven during reset.
 FORBIDDEN_MOTOR_GPIO = {0, 3, 19, 20, 45, 46}
@@ -67,22 +65,7 @@ FORBIDDEN_MOTOR_GPIO = {0, 3, 19, 20, 45, 46}
 # GPIO1-10 for analog.
 ADC1_GPIO = range(1, 11)
 
-# Pins the Rev 3.2 backend takes exclusive ownership of, in config-key order.
-REV32_PINS = (
-    CONF_NSLEEP_PIN,
-    CONF_NFAULT_PIN,
-    CONF_IPROPI_PIN,
-    CONF_ADDRESS0_PIN,
-    CONF_ADDRESS1_PIN,
-    CONF_ADDRESS2_PIN,
-    CONF_ADDRESS3_PIN,
-    CONF_LATCH_ARM_PIN,
-    CONF_COMM_TACHO_PIN,
-    CONF_ADC_TACHO_PIN,
-)
-
-# Rev 3.3 dropped LATCH_ARM and added the drive permit plus two attributable
-# fault nets. latch_arm_pin may still appear as an alias of driver_nsleep_pin.
+# Pins the Rev 3.3 backend takes exclusive ownership of, in config-key order.
 REV33_PINS = (
     CONF_NSLEEP_PIN,
     CONF_NFAULT_PIN,
@@ -98,10 +81,11 @@ REV33_PINS = (
     CONF_FAULT_USB_PIN,
 )
 
-# Rev 3.1-only options.  Accepting them silently under rev32_gpio is how a stale
-# entrypoint gets flashed onto Rev 3.2 hardware, where GPIO5 no longer exists as
+# Rev 3.1-only options.  Accepting them silently under rev33_gpio is how a stale
+# entrypoint gets flashed onto Rev 3.3 hardware, where GPIO5 no longer exists as
 # a no-connect and ADC_CURRENT has moved off GPIO4.
-REV31_ONLY = (CONF_ADC_BEMF_PIN, CONF_DIRECTION_PIN, CONF_BEMF_THRESHOLD_RAW)
+REV31_ONLY = (CONF_ADC_BEMF_PIN, CONF_DIRECTION_PIN, CONF_BEMF_THRESHOLD_RAW,
+              CONF_LATCH_ARM_PIN)
 
 lv6_ns = cg.esphome_ns.namespace("lv6")
 Lv6ValveController = lv6_ns.class_("Lv6ValveController", cg.Component)
@@ -113,8 +97,8 @@ def _reject_rev31_only(config, board):
     if stale:
         raise cv.Invalid(
             f"{', '.join(stale)} belong to the Rev 3.1 backend and have no meaning "
-            f"on {board}: the BEMF mux was removed and ADC_BEMF's GPIO is now an "
-            f"amplified analog input. Remove them."
+            f"on {board}: the BEMF mux and the fault latch were removed, and "
+            f"ADC_BEMF's GPIO is now an amplified analog input. Remove them."
         )
 
 
@@ -157,31 +141,12 @@ def _validate_backend(config):
         if missing:
             raise cv.Invalid(
                 f"hardware_backend: rev33_gpio requires {', '.join(missing)}. "
-                f"Rev 3.3 removed the fault latch, so the drive permit and each "
+                f"Rev 3.3 has no fault latch, so the drive permit and each "
                 f"fault source need their own pin. See design-review R3.3-3."
             )
         _reject_rev31_only(config, "Rev 3.3")
         _validate_motor_pins(config, REV33_PINS, "Rev 3.3")
-        # latch_arm_pin is still passed by the shared lv6_valve_controller block
-        # in lune.yaml. It is an alias of DRIVER_N_SLEEP, not a second pin.
-        if CONF_LATCH_ARM_PIN in config:
-            latch = config[CONF_LATCH_ARM_PIN]
-            nsleep = config[CONF_DRIVER_NSLEEP_PIN]
-            if latch != nsleep:
-                raise cv.Invalid(
-                    f"latch_arm_pin GPIO{latch} must equal driver_nsleep_pin "
-                    f"GPIO{nsleep} on Rev 3.3: there is no LATCH_ARM, and the "
-                    f"substitution exists only so a stray write lands on the "
-                    f"drive permit rather than a random GPIO."
-                )
         _validate_adc_and_tacho(config)
-        return config
-    if backend != BACKEND_REV32_GPIO:
-        return config
-
-    _reject_rev31_only(config, "Rev 3.2")
-    _validate_motor_pins(config, REV32_PINS, "Rev 3.2")
-    _validate_adc_and_tacho(config)
     return config
 
 
@@ -191,8 +156,9 @@ CONFIG_SCHEMA = cv.All(
             cv.GenerateID(): cv.declare_id(Lv6ValveController),
             cv.Required(CONF_CONFIG_STORE_ID): cv.use_id(Lv6ConfigStore),
             cv.Required(CONF_I2C_ID): cv.use_id(i2c.I2CBus),
-            # On the discrete backends these three are MOTOR_ENABLE, LATCH_STATE
-            # and ADC_CURRENT; the names are inherited from the DRV8215 path.
+            # On the discrete backends these three are MOTOR_ENABLE, the fault
+            # input (LATCH_STATE on Rev 3.1, FAULT_N_RAW on Rev 3.3) and
+            # ADC_CURRENT; the names are inherited from the DRV8215 path.
             cv.Required(CONF_NSLEEP_PIN): cv.int_,
             cv.Required(CONF_NFAULT_PIN): cv.int_,
             cv.Required(CONF_IPROPI_PIN): cv.int_,
@@ -207,16 +173,17 @@ CONFIG_SCHEMA = cv.All(
             cv.Optional(CONF_ADDRESS0_PIN, default=10): cv.int_range(min=0, max=48),
             cv.Optional(CONF_ADDRESS1_PIN, default=11): cv.int_range(min=0, max=48),
             cv.Optional(CONF_ADDRESS2_PIN, default=12): cv.int_range(min=0, max=48),
-            # Rev 3.2 only.  MOTOR_ADDR3 is a plain address bit: it replaced
+            # Rev 3.3 only.  MOTOR_ADDR3 is a plain address bit: it replaced
             # MOTOR_TERM_DIR and no bit encodes direction any more.
             cv.Optional(CONF_ADDRESS3_PIN, default=13): cv.int_range(min=0, max=48),
             cv.Optional(CONF_DIRECTION_PIN): cv.int_range(min=0, max=48),
-            cv.Optional(CONF_LATCH_ARM_PIN, default=16): cv.int_range(min=0, max=48),
+            # Rev 3.1 only.
+            cv.Optional(CONF_LATCH_ARM_PIN): cv.int_range(min=0, max=48),
             cv.Optional(CONF_COMM_TACHO_PIN, default=38): cv.int_range(min=0, max=48),
-            # Requires Rev 3.3 hardware: TACHO_REF centred for the 6 dB span.
+            # TACHO_REF must be centred for the 6 dB span.
             cv.Optional(CONF_ADC_TACHO_ENABLED, default=False): cv.boolean,
-            # Rev 3.3 only: the latch is gone, so the drive permit and the
-            # raw fault net each need their own pin.
+            # Rev 3.3 only: the drive permit and each fault source need their
+            # own pin.
             cv.Optional(CONF_RAIL_OVERCURRENT_PIN): cv.int_range(min=0, max=48),
             cv.Optional(CONF_DRIVER_NSLEEP_PIN): cv.int_range(min=0, max=48),
             cv.Optional(CONF_FAULT_USB_PIN): cv.int_range(min=0, max=48),
@@ -262,7 +229,6 @@ async def to_code(config):
     cg.add(var.set_address1_pin(config[CONF_ADDRESS1_PIN]))
     cg.add(var.set_address2_pin(config[CONF_ADDRESS2_PIN]))
     cg.add(var.set_address3_pin(config[CONF_ADDRESS3_PIN]))
-    cg.add(var.set_latch_arm_pin(config[CONF_LATCH_ARM_PIN]))
     cg.add(var.set_comm_tacho_pin(config[CONF_COMM_TACHO_PIN]))
     cg.add(var.set_adc_tacho_pin(config[CONF_ADC_TACHO_PIN]))
     cg.add(var.set_adc_tacho_enabled(config[CONF_ADC_TACHO_ENABLED]))
@@ -278,6 +244,8 @@ async def to_code(config):
 
     if CONF_ADC_BEMF_PIN in config:
         cg.add(var.set_adc_bemf_pin(config[CONF_ADC_BEMF_PIN]))
+    if CONF_LATCH_ARM_PIN in config:
+        cg.add(var.set_latch_arm_pin(config[CONF_LATCH_ARM_PIN]))
     if CONF_DIRECTION_PIN in config:
         cg.add(var.set_direction_pin(config[CONF_DIRECTION_PIN]))
     if CONF_BEMF_THRESHOLD_RAW in config:

@@ -401,7 +401,7 @@ static constexpr uint32_t CONTROL_CONFIG_VERSION = 2;
 /// old factory map (zones→P1–P6, manifold P7/P8).
 static constexpr uint32_t PROBE_CONFIG_VERSION = 2;
 static constexpr uint32_t PID_CONFIG_VERSION = 1;
-/// v2 adds the Rev 3.2 endstop policy (continuous drive, commutation-cadence
+/// v2 adds the GPIO-bridge endstop policy (continuous drive, commutation-cadence
 /// stall debounce, learned-count endpoint window, phase-2 contact recovery) and
 /// drops open_hard_cap_factor / open_hard_cap_floor_ma, which were persisted but
 /// never read after that detection path was reverted.
@@ -538,15 +538,15 @@ struct MotorConfig {
   float pin_engage_step_ma = 2.0f;              // Current increase to detect pin contact
   uint16_t pin_engage_margin_ripples = 50;       // Offset toward open from detected point
 
-  // --- Rev 3.2 endstop policy -------------------------------------------------
-  // Rev 3.2 drives continuously and its motion evidence is the commutation
+  // --- GPIO-bridge endstop policy ---------------------------------------------
+  // Rev 3.3 drives continuously and its motion evidence is the commutation
   // tacho, so none of the PWM-anchored timing above applies. See
-  // hardware/lune-v6-rev3.2/firmware-integration.md. All of these are bring-up
+  // hardware/lune-v6-rev3.3/firmware-integration.md. All of these are bring-up
   // values derived from measured actuator data, not production constants.
   //
   // Point at which a zero commutation count means "it never turned". 0 derives
   // it from the tacho contract (blanking + 2 × worst-case period).
-  uint32_t rev32_motion_decision_ms = 0;
+  uint32_t motion_decision_ms = 0;
   // Stall verdict debounce = observed cadence × factor, clamped. Scaling with
   // the motor's actual speed instead of a fixed 750 ms is what brings detection
   // latency inside Rev 3.0 requirement E-08's 250 ms bound.
@@ -642,7 +642,7 @@ struct MotorConfig {
   uint32_t rehome_after_moves = 50;
   uint32_t rehome_after_hours = 168;
 
-  // --- Working-range learning (Rev 3.2/3.3) ------------------------------------
+  // --- Working-range learning (Rev 3.3) ----------------------------------------
   // Learn pin contact (100 %) and seat (0 %) on close passes that start in dead
   // space, instead of driving into the open endstop. stroke_learning.h has the
   // sequence. Bring-up values: the Rev 3.3 trace put pin contact ~2000 counts
@@ -688,7 +688,7 @@ struct MotorTelemetry {
   /// How learned_*_ripples/_ms are to be read. Adding it changed the blob size,
   /// which discards telemetry learned under the old full-stroke meaning.
   StrokeModel stroke_model = StrokeModel::FULL_STROKE;
-  // Rev 3.2 stroke-phase anchors. The blob is size-validated on load, so adding
+  // Stroke-phase anchors. The blob is size-validated on load, so adding
   // fields here invalidates old telemetry rather than misreading it.
   uint32_t pin_engage_open_ripples = 0;    // Ripples from closed end at pin release (open pass)
   // Seating depth: commutations from pin contact to the hard stop. Far more
