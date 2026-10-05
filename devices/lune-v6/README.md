@@ -132,4 +132,4 @@ This project was inspired by and builds upon ideas from:
 
 ## License
 
-See [../../LICENSE](../../LICENSE).
+See [the root README](../../README.md#license).
