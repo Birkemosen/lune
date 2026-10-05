@@ -1,0 +1,27 @@
+# =============================================================================
+# Lune V6 firmware — public release build
+# =============================================================================
+# Identical to lune-v6.yaml (same device name, same board, same components)
+# except for WiFi: the published factory/OTA images must not contain the build
+# host's WiFi credentials, and must not override credentials a user already
+# provisioned on the device.
+#
+# packages/network/wifi-release.yaml supplies the AP + captive portal, and the
+# `!remove` block below drops the `!secret`-backed station block that
+# packages/network/wifi.yaml contributes through the shared base.
+#
+# Build:  make -C lune-v6 release-firmware VERSION=v1.2.3
+# =============================================================================
+
+substitutions:
+  device_name: lune-v6
+  friendly_name: "Lune V6"
+
+packages:
+  base:         !include ../lune.yaml
+  ble:          !include ../packages/hardware/ble.yaml
+  wifi_release: !include ../packages/network/wifi-release.yaml
+
+wifi:
+  ssid: !remove
+  password: !remove

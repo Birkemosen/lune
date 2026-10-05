@@ -1,0 +1,245 @@
+# =============================================================================
+# Status LED — single green LED (Rev 3.2)
+# =============================================================================
+# Rev 3.2 replaced the WS2812 with `D3`, a plain KT-0805G green LED driven
+# through `R23` (1 kOhm) from `STATUS_LED_N`, which is **active low**.  One
+# colour cannot carry the nine states the RGB vocabulary did, so the states are
+# collapsed onto blink *rate*, which a person reads far more reliably than
+# brightness:
+#
+#   solid dim       = normal, connected to Home Assistant     (code 1)
+#   breathing       = normal, standalone mode                 (code 2)
+#   solid bright    = motor running                           (code 3)
+#   fast blink      = booting / WiFi connecting                (code 0)
+#   slow blink      = warning, or no 1-Wire sensors found     (codes 4, 5)
+#   heartbeat       = calibration in progress                 (code 8)
+#   double blink    = error or critical fault                 (codes 6, 7)
+#   brief flash     = command received
+#
+# `led_status_code` still carries the exact state for the dashboard and the API,
+# so nothing downstream loses resolution - only the LED does.
+# =============================================================================
+
+globals:
+  - id: led_status_code
+    type: int
+    restore_value: no
+    initial_value: '0'
+
+output:
+  # STATUS_LED_N sinks the LED, so the pin is inverted: logic "on" is a low
+  # level.  R10-R15's pulldown convention does not apply here - the pin idles
+  # high-Z at boot and the external pull-up keeps the LED dark.
+  - platform: ledc
+    id: status_led_out
+    pin:
+      number: ${pin_status_led}
+      inverted: true
+    frequency: 1000Hz
+
+light:
+  - platform: monochromatic
+    name: "Status LED"
+    id: rgb_status_led
+    output: status_led_out
+    internal: true
+    restore_mode: ALWAYS_OFF
+    default_transition_length: 200ms
+    effects:
+      - pulse:
+          name: "Breathing"
+          transition_length: 2s
+          update_interval: 2s
+          min_brightness: 10%
+          max_brightness: 40%
+      - strobe:
+          name: "Fast Blink"
+          colors:
+            - state: true
+              brightness: 30%
+              duration: 250ms
+            - state: false
+              duration: 250ms
+      - strobe:
+          name: "Slow Blink"
+          colors:
+            - state: true
+              brightness: 45%
+              duration: 800ms
+            - state: false
+              duration: 800ms
+      - strobe:
+          name: "Double Blink"
+          colors:
+            - state: true
+              brightness: 100%
+              duration: 120ms
+            - state: false
+              duration: 150ms
+            - state: true
+              brightness: 100%
+              duration: 120ms
+            - state: false
+              duration: 900ms
+      - strobe:
+          name: "Heartbeat"
+          colors:
+            - state: true
+              brightness: 70%
+              duration: 120ms
+            - state: false
+              duration: 200ms
+            - state: true
+              brightness: 25%
+              duration: 120ms
+            - state: false
+              duration: 1200ms
+
+script:
+  - id: led_status_boot
+    then:
+      - lambda: id(led_status_code) = 0;
+      - lambda: |-
+          auto call = id(rgb_status_led).turn_on();
+          call.set_brightness(0.3f);
+          call.set_effect("Fast Blink");
+          call.perform();
+
+  - id: led_status_ok
+    then:
+      - lambda: id(led_status_code) = 1;
+      - lambda: |-
+          auto call = id(rgb_status_led).turn_on();
+          call.set_brightness(0.2f);
+          call.set_effect("None");
+          call.perform();
+
+  - id: led_status_standalone
+    then:
+      - lambda: id(led_status_code) = 2;
+      - lambda: |-
+          auto call = id(rgb_status_led).turn_on();
+          call.set_brightness(0.3f);
+          call.set_effect("Breathing");
+          call.perform();
+
+  - id: led_status_motor
+    then:
+      - lambda: id(led_status_code) = 3;
+      - lambda: |-
+          auto call = id(rgb_status_led).turn_on();
+          call.set_brightness(0.8f);
+          call.set_effect("None");
+          call.perform();
+
+  - id: led_status_warning
+    then:
+      - lambda: id(led_status_code) = 4;
+      - lambda: |-
+          auto call = id(rgb_status_led).turn_on();
+          call.set_brightness(0.45f);
+          call.set_effect("Slow Blink");
+          call.perform();
+
+  - id: led_status_no_sensors
+    then:
+      - lambda: id(led_status_code) = 5;
+      - lambda: |-
+          auto call = id(rgb_status_led).turn_on();
+          call.set_brightness(0.45f);
+          call.set_effect("Slow Blink");
+          call.perform();
+
+  - id: led_status_error
+    then:
+      - lambda: id(led_status_code) = 6;
+      - lambda: |-
+          auto call = id(rgb_status_led).turn_on();
+          call.set_brightness(1.0f);
+          call.set_effect("Double Blink");
+          call.perform();
+
+  - id: led_status_critical
+    then:
+      - lambda: id(led_status_code) = 7;
+      - lambda: |-
+          auto call = id(rgb_status_led).turn_on();
+          call.set_brightness(1.0f);
+          call.set_effect("Double Blink");
+          call.perform();
+
+  - id: led_status_calibrating
+    then:
+      - lambda: id(led_status_code) = 8;
+      - lambda: |-
+          auto call = id(rgb_status_led).turn_on();
+          call.set_brightness(0.7f);
+          call.set_effect("Heartbeat");
+          call.perform();
+
+  - id: led_flash_command
+    then:
+      - light.turn_on:
+          id: rgb_status_led
+          brightness: 100%
+          transition_length: 0ms
+      - delay: 100ms
+      - script.execute: led_update_status
+
+  - id: led_update_status
+    then:
+      - if:
+          condition:
+            lambda: |-
+              auto fault = id(lv6_valves).get_last_fault();
+              return fault == lv6::FaultCode::OVERCURRENT ||
+                     fault == lv6::FaultCode::STALL ||
+                     fault == lv6::FaultCode::THERMAL;
+          then:
+            - script.execute: led_status_critical
+          else:
+            - if:
+                condition:
+                  lambda: return id(lv6_valves).is_calibrating();
+                then:
+                  - script.execute: led_status_calibrating
+                else:
+                  - if:
+                      condition:
+                        lambda: return id(lv6_valves).is_motor_busy();
+                      then:
+                        - script.execute: led_status_motor
+                      else:
+                        - if:
+                            condition:
+                              lambda: |-
+                                bool p1 = id(probe_temp_1).has_state() && !std::isnan(id(probe_temp_1).state);
+                                bool p2 = id(probe_temp_2).has_state() && !std::isnan(id(probe_temp_2).state);
+                                bool p3 = id(probe_temp_3).has_state() && !std::isnan(id(probe_temp_3).state);
+                                bool p4 = id(probe_temp_4).has_state() && !std::isnan(id(probe_temp_4).state);
+                                bool p5 = id(probe_temp_5).has_state() && !std::isnan(id(probe_temp_5).state);
+                                bool p6 = id(probe_temp_6).has_state() && !std::isnan(id(probe_temp_6).state);
+                                bool p7 = id(probe_temp_7).has_state() && !std::isnan(id(probe_temp_7).state);
+                                bool p8 = id(probe_temp_8).has_state() && !std::isnan(id(probe_temp_8).state);
+                                return !(p1 || p2 || p3 || p4 || p5 || p6 || p7 || p8);
+                            then:
+                              - script.execute: led_status_no_sensors
+                            else:
+                              - if:
+                                  condition:
+                                    wifi.connected:
+                                  then:
+                                    - if:
+                                        condition:
+                                          api.connected:
+                                        then:
+                                          - script.execute: led_status_ok
+                                        else:
+                                          - script.execute: led_status_standalone
+                                  else:
+                                    - script.execute: led_status_boot
+
+interval:
+  - interval: 2s
+    then:
+      - script.execute: led_update_status

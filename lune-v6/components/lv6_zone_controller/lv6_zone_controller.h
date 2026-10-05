@@ -1,0 +1,413 @@
+// =============================================================================
+// LV6 Zone Controller — ESPHome Component Header
+// =============================================================================
+// Zone state machine with control algorithms, hydraulic balancing, and failsafe.
+// Reads temperatures from ESPHome sensors, drives valves via Lv6ValveController.
+// Runs as a FreeRTOS task (10s cycle) alongside ESPHome's main loop.
+// =============================================================================
+
+#pragma once
+
+#include "esphome/core/component.h"
+#include "esphome/components/sensor/sensor.h"
+#include "../lv6_config_store/lv6_config_store.h"
+#include "../lv6_config_store/lv6_types.h"
+#include "../lv6_valve_controller/lv6_valve_controller.h"
+#include "control_algorithms.h"
+#include "adaptive_balance.h"
+#include "control_mode_policy.h"
+#include "flow_allocator.h"
+#include "hydraulic_policy.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "freertos/semphr.h"
+#include "freertos/queue.h"
+#include <array>
+#include <atomic>
+#include <string>
+
+namespace lv6 {
+
+struct SetpointAdjustment {
+  uint8_t zone;
+  float offset_c;
+};
+
+/// Command received from Helios-3 optimizer for a single zone.
+/// All temporal validation (valid_until, preheat windows) is performed by the
+/// Helios client before writing here; the zone controller only applies the values.
+struct HeliosZoneCommand {
+  float setpoint_offset_c = 0.0f;  ///< Setpoint offset; zone controller clamps to [min_offset_c, max_offset_c]
+  float preheat_floor_c = 0.0f;    ///< If > 0, effective setpoint will be at least this value
+};
+
+class Lv6ZoneController : public esphome::Component {
+ public:
+  float get_setup_priority() const override { return esphome::setup_priority::DATA; }
+  void setup() override;
+  void dump_config() override;
+
+  // Configuration setters (from Python codegen)
+  void set_config_store(Lv6ConfigStore *store) { config_store_ = store; }
+  void set_valve_controller(Lv6ValveController *ctrl) {
+    valve_controller_ = ctrl;
+    if (ctrl) ctrl->set_auto_learn_hold(is_manual_mode() || DEVELOPMENT_MANUAL_ONLY);
+  }
+  void set_cycle_interval_ms(uint32_t ms) { cycle_interval_ms_ = ms; }
+  void set_probe_sensor(uint8_t probe, esphome::sensor::Sensor *sensor) {
+    if (probe < MAX_PROBES)
+      probe_sensors_[probe] = sensor;
+  }
+
+  // Thread-safe public API (callable from lambdas, etc.)
+  ZoneSnapshot get_zone_snapshot(uint8_t zone) const;
+  bool try_get_system_snapshot(SystemSnapshot *out, uint32_t timeout_ms = 25) const;
+  SystemSnapshot get_system_snapshot() const;
+
+  float get_zone_temperature(uint8_t zone) const;
+  float get_valve_position(uint8_t zone) const;
+  float get_manifold_flow_temperature() const;
+  float get_manifold_return_temperature() const;
+
+  void set_zone_setpoint(uint8_t zone, float setpoint_c);
+  bool apply_setpoint_adjustment(uint8_t zone, float offset_c);
+
+  // Helios-3 optimizer commands (applied on top of user setpoint)
+  void apply_helios_command(uint8_t zone, const HeliosZoneCommand &cmd);
+  void clear_all_helios_commands();
+
+  /// Enable or disable a zone. Disabled zones close their valve and persist to NVS.
+  void set_zone_enabled(uint8_t zone, bool enabled);
+  bool is_zone_enabled(uint8_t zone) const;
+  void set_control_algorithm(ControlAlgorithm algorithm);
+  ControlAlgorithm get_control_algorithm() const;
+
+  /// Manual mode: suppresses automatic valve positioning.
+  /// Manual commands (open/close/calibrate via UI) still work.
+  void set_manual_mode(bool enabled) {
+    manual_mode_.store(enabled, std::memory_order_release);
+    // Automatic (re)learning must not move motors while a person drives them.
+    if (valve_controller_) valve_controller_->set_auto_learn_hold(enabled || DEVELOPMENT_MANUAL_ONLY);
+  }
+  bool is_manual_mode() const { return manual_mode_.load(std::memory_order_acquire); }
+
+  // State machine accessors (for dashboard/diagnostics)
+  ControllerState get_controller_state() const { return controller_state_.load(std::memory_order_acquire); }
+  SystemConditionState get_system_condition_state() const { return system_condition_state_.load(std::memory_order_acquire); }
+
+  /// Assign a zone return probe. Returns false if the probe is already used by
+  /// another role (caller should surface a conflict error).
+  bool set_zone_probe(uint8_t zone, int8_t probe);
+  int8_t get_zone_probe(uint8_t zone) const;
+  bool set_manifold_flow_probe(int8_t probe);
+  int8_t get_manifold_flow_probe() const;
+  bool set_manifold_return_probe(int8_t probe);
+  int8_t get_manifold_return_probe() const;
+
+  // External temperature source (BLE sensor or HTTP EXTERNAL ingest)
+  void set_zone_external_temperature(uint8_t zone, float temp_c);
+  float get_zone_external_temperature(uint8_t zone) const;
+  void set_zone_temp_source(uint8_t zone, TempSource source);
+  TempSource get_zone_temp_source(uint8_t zone) const;
+
+  // BLE sensor (Shelly BLU H&T, BTHome, etc.)
+  void set_zone_ble_mac(uint8_t zone, const std::string &mac);
+  std::string get_zone_ble_mac(uint8_t zone) const;
+
+  // EXTERNAL HTTP ingest: stable sensor_id (routing) + optional friendly name (UI)
+  void set_zone_sensor_id(uint8_t zone, const std::string &sensor_id);
+  std::string get_zone_sensor_id(uint8_t zone) const;
+  void set_zone_sensor_name(uint8_t zone, const std::string &name);
+  std::string get_zone_sensor_name(uint8_t zone) const;
+
+  // Lightweight MAC match for the BLE advertise hot path (loopTask). Copies
+  // only the 18-byte MAC fields — never the whole DeviceConfig — so it is safe
+  // to call per advertisement. Returns the matching zone index (0..5) or -1.
+  // Only matches zones with TempSource::BLE_SENSOR.
+  int8_t match_ble_mac(const char *mac) const;
+
+  /// Match EXTERNAL zone by sensor_id (case-insensitive). Returns 0..5 or -1.
+  int8_t match_external_sensor_id(const char *sensor_id) const;
+
+  /// Apply a producer room-temp reading. Returns matched zone (0..5) or -1 if
+  /// unbound / rejected. Updates EXTERNAL slot only when source is EXTERNAL.
+  int8_t apply_external_room_temperature(const char *sensor_id, float temp_c,
+                                         int64_t observed_at_ms = 0);
+
+  /// Age of last external (BLE or HTTP) sample in ms, or UINT32_MAX if never.
+  uint32_t get_zone_external_temp_age_ms(uint8_t zone) const;
+
+  static constexpr uint32_t EXTERNAL_TEMP_STALE_MS = 60 * 60 * 1000;       ///< BLE path
+  static constexpr uint32_t EXTERNAL_HTTP_TEMP_STALE_MS = 15 * 60 * 1000;  ///< HTTP EXTERNAL
+
+  // BLE sensor discovery — callable from BLE advertise lambda (loopTask)
+  struct BleSensorSeen {
+    char mac[18];       ///< "AA:BB:CC:DD:EE:FF\0"
+    char name[24];      ///< Advertised local name (scan response); "" if unknown
+    float temp_c;       ///< Last parsed temperature, or NAN if not seen yet
+    int8_t rssi;
+    uint32_t last_ms;
+  };
+  static constexpr uint8_t BLE_SEEN_SLOTS = 16;
+  static constexpr uint32_t BLE_SEEN_STALE_MS = 10 * 60 * 1000UL;  ///< 10 min
+
+  // temp_c may be NAN (device seen but no temperature in this packet); name may
+  // be null/empty (no scan-response name yet). Existing entries keep a known
+  // name/temperature when a later packet omits it.
+  void report_ble_sensor_seen(const char *mac, float temp_c, int8_t rssi, const char *name = nullptr);
+  uint8_t get_ble_discovered(BleSensorSeen *out, uint8_t max) const;
+
+  // Zone physical properties
+  void set_zone_name(uint8_t zone, const std::string &name);  ///< Friendly name (persisted in ZoneConfig)
+  void set_zone_area_m2(uint8_t zone, float area_m2);
+  float get_zone_area_m2(uint8_t zone) const;
+  void set_zone_pipe_spacing_mm(uint8_t zone, float spacing_mm);
+  float get_zone_pipe_spacing_mm(uint8_t zone) const;
+  void set_zone_pipe_type(uint8_t zone, PipeType type);
+  PipeType get_zone_pipe_type(uint8_t zone) const;
+
+  // Probe role (room temperature vs return water)
+  void set_zone_probe_role(uint8_t zone, ProbeRole role);
+  ProbeRole get_zone_probe_role(uint8_t zone) const;
+
+  // Zone sync (two zones in one room share setpoint + averaged temperature)
+  void set_zone_sync(uint8_t zone, int8_t target_zone);
+  int8_t get_zone_sync(uint8_t zone) const;
+
+  // Balancing configuration
+  void set_balance_mode(BalanceMode mode);
+  BalanceMode get_balance_mode() const;
+  void set_secondary_flow_commissioning(bool enabled);
+  bool secondary_flow_commissioning_enabled() const;
+  void set_secondary_min_total_opening_pct(float pct);
+  float get_secondary_min_total_opening_pct() const;
+  void set_target_delta_t(float delta_c);
+  float get_target_delta_t() const;
+
+  /// Reset adaptive balancing: clears every zone's learned multiplier back to
+  /// 1.0, drops the in-RAM error accumulators, and forces a balance rebuild on
+  /// the next cycle. Persists the cleared multipliers to the durable zones blob.
+  void reset_balancing();
+
+  void set_simple_preheat_enabled(bool enabled);
+  bool is_simple_preheat_enabled() const;
+  bool is_preheat_absorbing() const { return preheat_absorb_active_.load(); }
+  /// Armed absorb window from coordinator (P5). Runtime-only; never survives reboot.
+  bool is_absorb_arm_active() const { return absorb_arm_active_(); }
+  /// 0=idle, 1=reactive, 2=armed — for history / API absorb_state.
+  uint8_t absorb_mode_code() const;
+  /// Arm an absorb window. Returns clamped TTL seconds. Reboot clears the arm.
+  /// `reason` is ledger/display only (already normalized by the HTTP layer).
+  float arm_absorb_window(uint32_t ttl_s, const char *request_id, const char *reason);
+  /// Explicit disarm. Ends forced absorption immediately; local auto-detection
+  /// resumes on the next control cycle. Idempotent when no arm is active.
+  void clear_absorb_arm();
+  /// Per-zone absorb (Touch slab charge before a forecast load peak). The zone
+  /// keeps its opening above setpoint (absorb band) until TTL or disarm.
+  float arm_zone_absorb(uint8_t zone, uint32_t ttl_s, const char *reason);
+  void clear_zone_absorb(uint8_t zone);
+  bool is_zone_absorb_armed(uint8_t zone) const;
+  uint8_t zone_absorb_mask() const;
+  const char *absorb_arm_reason() const { return absorb_arm_reason_; }
+  /// Last arm end: "" | "disarm" | "expired" (display / ledger).
+  const char *absorb_arm_end_reason() const { return absorb_arm_end_reason_; }
+  float get_loop_share_pct(uint8_t zone) const;
+  uint8_t get_absorb_capacity_rank(uint8_t zone) const;
+  /// Relative Kv at opening percent for Motor lab / diagnostics.
+  float get_relative_kv(uint8_t zone, float opening_pct) const;
+  /// Lease state from the dashboard. Losing the lease clears Touch's temporary
+  /// commands (setpoint offsets, absorb arms) on the next control cycle.
+  void set_touch_authority_active(bool active) {
+    const bool was = touch_authority_active_.exchange(active, std::memory_order_acq_rel);
+    if (was && !active)
+      lease_lost_pending_.store(true, std::memory_order_release);
+  }
+  bool is_touch_authority_active() const { return touch_authority_active_.load(std::memory_order_acquire); }
+  /// Optional Touch-requested control mode for the active lease. Cleared when
+  /// the lease expires or Touch omits the field.
+  void set_touch_control_mode(bool valid, HeatingProfile mode);
+  bool has_touch_control_mode() const { return touch_control_mode_valid_.load(std::memory_order_acquire); }
+  HeatingProfile get_touch_control_mode() const {
+    return static_cast<HeatingProfile>(touch_control_mode_.load(std::memory_order_acquire));
+  }
+  HeatingProfile get_effective_control_mode() const;
+  HeatDemandSummary get_heat_demand() const;
+  float get_zone_preheat_advance(uint8_t zone) const;
+
+  /// Persist heating-mode settings (local law used when Touch is offline).
+  void set_heating_mode(HeatingProfile mode);
+  void set_hp_overheat_margin_c(float margin_c);
+  void set_hp_base_pct(float pct);
+  void set_hp_trim_floor_pct(float pct);
+
+  bool is_connected() const { return true; }  // WiFi managed by ESPHome
+
+  uint32_t get_cycle_count() const { return cycle_count_.load(std::memory_order_relaxed); }
+
+ protected:
+  static constexpr uint32_t STACK_SIZE = 16384;  ///< DeviceConfig grew with EXTERNAL sensor fields
+  static constexpr UBaseType_t PRIORITY = 6;
+  // Core 0 hosts ESPHome's main loop and the ESP-IDF WiFi/lwIP work.  Keep the
+  // long-running control cycle on Core 1 so a sensor/display or I2C stall
+  // cannot starve the main task and trip the CPU0 interrupt watchdog.
+  static constexpr BaseType_t CORE = 1;
+  static constexpr uint8_t ADJ_QUEUE_LEN = 12;
+
+  static constexpr uint32_t TEMP_FAILSAFE_MS = 60 * 60 * 1000;
+  static constexpr float FALLBACK_SETPOINT_C = 20.0f;
+  static constexpr bool DEVELOPMENT_MANUAL_ONLY = false;
+  static constexpr float SIMPLE_PREHEAT_MAX_ADVANCE_C = 0.8f;
+  static constexpr float SIMPLE_PREHEAT_LEARN_UP_GAIN = 0.35f;
+  static constexpr float SIMPLE_PREHEAT_LEARN_DOWN_GAIN = 0.50f;
+  static constexpr float SIMPLE_PREHEAT_OVERSHOOT_DECAY_C = 0.02f;
+
+  // Component references
+  Lv6ConfigStore *config_store_ = nullptr;
+  Lv6ValveController *valve_controller_ = nullptr;
+
+  // ESPHome sensor references
+  std::array<esphome::sensor::Sensor *, MAX_PROBES> probe_sensors_{};
+
+  // Control algorithms (one per zone)
+  std::array<AdaptiveControl, NUM_ZONES> algorithms_;
+
+  // Snapshots (mutex-protected)
+  mutable SemaphoreHandle_t snapshot_mutex_ = nullptr;
+  std::array<ZoneSnapshot, NUM_ZONES> snapshots_;
+
+  // Hydraulic balance
+  std::array<float, NUM_ZONES> balance_factors_;
+  bool balance_dirty_ = true;
+
+  // Adaptive balancing accumulators (runtime only; adapt_i lives in ZoneConfig).
+  // adapt_err_ema_[i] is a long-window EMA of the control error (setpoint−temp)
+  // gathered only on cycles where the sample reflects a balancing condition;
+  // adapt_samples_[i] counts those eligible cycles this interval.
+  std::array<float, NUM_ZONES> adapt_err_ema_{};
+  std::array<uint32_t, NUM_ZONES> adapt_samples_{};
+  uint32_t last_adapt_ms_ = 0;
+  // Set by reset_balancing() (dashboard task), consumed by the zone task — clears
+  // the RAM accumulators without a cross-thread float race.
+  std::atomic<bool> adapt_reset_pending_{false};
+
+  // Setpoint adjustments
+  QueueHandle_t adj_queue_ = nullptr;
+  std::array<float, NUM_ZONES> requested_setpoints_{};
+  std::array<float, NUM_ZONES> setpoint_offsets_;
+
+  // Helios-3 optimizer commands (protected by helios_mutex_)
+  mutable SemaphoreHandle_t helios_mutex_ = nullptr;
+  std::array<HeliosZoneCommand, NUM_ZONES> helios_cmds_;
+
+  // Preheat absorption (external pre-buffering; runtime only)
+  std::atomic<bool> preheat_absorb_active_{false};
+  // Runtime lease state only; no authority survives reboot.
+  std::atomic<bool> touch_authority_active_{false};
+  std::atomic<bool> lease_lost_pending_{false};
+  std::array<std::atomic<uint32_t>, NUM_ZONES> absorb_zone_expires_ms_{};
+  std::atomic<bool> touch_control_mode_valid_{false};
+  std::atomic<uint8_t> touch_control_mode_{static_cast<uint8_t>(HeatingProfile::HEAT_PUMP)};
+  HeatingProfile last_effective_mode_{HeatingProfile::HEAT_PUMP};
+  std::array<bool, NUM_ZONES> normal_closed_{};
+  control_mode_policy::HeatDemandTimers heat_demand_timers_{};
+  HeatDemandSummary heat_demand_{};
+  uint32_t heat_demand_last_ms_{0};
+  uint8_t preheat_absorb_detect_cycles_ = 0;
+  // Armed absorb window (coordinator command). Expiry is millis(); 0 = inactive.
+  // Never persisted — reboot clears the arm.
+  uint32_t absorb_arm_expires_at_ms_{0};
+  char absorb_arm_request_id_[48]{};
+  char absorb_arm_reason_[64]{};
+  char absorb_arm_end_reason_[16]{};  ///< "" | disarm | expired
+  uint8_t absorb_arm_source_{0};  ///< 0=none, 1=armed, 2=reactive (history code)
+
+  // Flow allocator (A4) — runtime energy debt + loop shares.
+  flow_allocator::State flow_alloc_{};
+  uint32_t flow_alloc_last_ms_{0};
+  std::array<float, NUM_ZONES> loop_share_pct_{};
+  std::array<uint8_t, NUM_ZONES> absorb_capacity_rank_{};
+
+  // Simple response-based preheat (runtime only; not persisted)
+  std::array<float, NUM_ZONES> preheat_advance_c_;
+  std::array<bool, NUM_ZONES> preheat_episode_active_;
+  std::array<float, NUM_ZONES> preheat_episode_min_temp_c_;
+  std::array<float, NUM_ZONES> preheat_episode_max_temp_c_;
+  std::array<float, NUM_ZONES> preheat_episode_setpoint_c_;
+
+  // Failsafe tracking
+  std::array<uint32_t, NUM_ZONES> last_valid_temp_ms_;
+
+  // External temperatures (BLE sensor, etc.)
+  std::array<float, NUM_ZONES> external_temperatures_;
+  std::array<uint32_t, NUM_ZONES> external_temp_last_ms_;
+
+  std::atomic<uint32_t> cycle_count_{0};
+  uint32_t cycle_interval_ms_ = 10000;
+  std::atomic<bool> manual_mode_{false};
+
+  // State machine tracking (atomic for cross-thread reads)
+  std::atomic<ControllerState> controller_state_{ControllerState::UNKNOWN};
+  std::atomic<SystemConditionState> system_condition_state_{SystemConditionState::UNKNOWN};
+
+  TaskHandle_t task_handle_ = nullptr;
+
+  // BLE discovery cache (written and read from loopTask; protected by ble_seen_mutex_)
+  mutable SemaphoreHandle_t ble_seen_mutex_ = nullptr;
+  std::array<BleSensorSeen, BLE_SEEN_SLOTS> ble_seen_{};
+  uint8_t ble_seen_count_ = 0;
+
+  // FreeRTOS task
+  static void task_func_(void *arg);
+  void run_();
+  void run_cycle_();
+  void check_failsafes_();
+
+  // State machine updates (called during run_cycle_)
+  void update_controller_state_();
+  void update_system_condition_state_();
+  void update_zone_display_states_();
+
+  // Helpers
+  float read_zone_temperature_(uint8_t zone) const;
+  float read_zone_return_temperature_(uint8_t zone) const;
+  float read_manifold_flow_() const;
+  float read_manifold_return_() const;
+
+  ZoneState classify_zone_(float temp, float setpoint, float comfort_band, float preheat_advance_c,
+                           float absorb_band_c = 0.0f) const;  // legacy helper retained for tests
+  float compute_raw_position_(uint8_t zone, float temp, float setpoint);
+  void update_simple_preheat_(uint8_t zone, float temp, float setpoint, float comfort_band, ZoneState state);
+  void reset_simple_preheat_(uint8_t zone);
+  void update_preheat_absorb_(const DeviceConfig &cfg,
+                              const std::array<float, NUM_ZONES> &temps,
+                              const std::array<float, NUM_ZONES> &setpoints);
+  bool absorb_arm_active_() const;
+  /// House absorb (reactive or house arm) or this zone's own arm.
+  bool zone_absorbing_(uint8_t zone) const;
+  void expire_absorb_arm_if_needed_();
+
+  // Hydraulic balancing
+  void recalculate_balance_factors_();
+  void recalculate_dynamic_balance_factors_();
+  float apply_hydraulic_balance_(uint8_t zone, float raw_position);
+  void enforce_minimum_total_opening_(std::array<float, NUM_ZONES> &positions);
+  void calculate_hydraulic_outputs_();
+
+  // Adaptive balancing (room-temperature feedback; docs/adaptive_balancing.md)
+  /// Fold one eligible cycle's control error into the zone's long-window EMA.
+  void accumulate_balance_error_(uint8_t zone, float e_i, float window_s);
+  /// Outer loop: when adapt_interval_s has elapsed, step every contributing
+  /// zone's learned multiplier toward the manifold common-mode and persist it.
+  void update_adaptive_balance_(const DeviceConfig &cfg);
+  /// Resistance-aware static prior weight (un-normalized) for one zone.
+  static float static_balance_weight_(const ZoneConfig &zc);
+
+  static float calculate_pipe_length_m_(float area_m2, float spacing_mm, float supply_pipe_m);
+  static float pipe_correction_factor_(PipeType type);
+  static float floor_correction_factor_(FloorType type, float cover_thickness_mm);
+  // Reference loop length (m) for the resistance length_term — a standard
+  // 15 m² room at 200 mm spacing (~75 m) maps to length_term ≈ 1.0.
+  static constexpr float LENGTH_REF_M = 75.0f;
+};
+
+}  // namespace lv6

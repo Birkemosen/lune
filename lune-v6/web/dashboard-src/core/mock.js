@@ -1,0 +1,821 @@
+// core/mock.js
+
+import { setEntity, es, ev, setLive, sampleHistory, setI2cResult, addActivity, setDashboardValue, setZoneStateHistory, getDashboardValue, appendDeviceLog } from './store.js';
+import { key, gkey } from '../utils/keys.js';
+
+const ZONES = 6;
+const PROBES = 8;
+
+let timer = null;
+let tick = 0;
+let mockLogSeq = 1;
+
+// preview.html?empty: no supply/return reading and no temperature on Z3, to
+// check the "—" / collapsed-graph empty states (DESIGN.md 5.9, 6.5).
+const EMPTY = typeof location !== 'undefined' && /[?&]empty\b/.test(location.search);
+const EMPTY_ZONE = 3;
+
+// Rotating sample log lines so the mock Logs view looks alive.
+const MOCK_LOG_SAMPLES = [
+  [3, 'lv6_zone', 'Control cycle: 4 zones heating, house avg 21.3°C'],
+  [3, 'lv6_valve', 'Motor 2 reached open endstop (ripples=412)'],
+  [5, 'lv6_ripple', 'ADC DMA buffer drained, 2048 samples'],
+  [2, 'lv6_zone', 'Zone 5 disabled — skipping control'],
+];
+
+const MOCK_UPTIME_BASE = 18 * 3600 + 12 * 60;
+let mockBootMs = Date.now();
+const MOCK_MOVE_MS = 4200;
+
+const state = {
+  temp: new Float32Array(ZONES),
+  setpoint: new Float32Array(ZONES),
+  valve: new Float32Array(ZONES),
+  enabled: new Uint8Array(ZONES),
+  driversEnabled: 1,
+  fault: 0,
+  manualMode: 0
+};
+
+const mockMotor = {
+  busy: false,
+  direction: 'open',
+  zone: 1,
+  startedAt: 0,
+};
+
+function seed() {
+  state.manualMode = 0;
+  mockBootMs = Date.now();
+  setDashboardValue('manualMode', false);
+  for (let index = 0; index < ZONES; index++) {
+    state.temp[index] = 20.5 + index * 0.4;
+    state.setpoint[index] = 21.0 + (index % 3) * 0.5;
+    state.valve[index] = 12 + index * 8;
+    state.enabled[index] = index === 4 ? 0 : 1;
+
+    const zone = index + 1;
+    setEntity(key.temp(zone), { value: EMPTY && zone === EMPTY_ZONE ? null : state.temp[index] });
+    setEntity(key.setpoint(zone), { value: state.setpoint[index] });
+    setEntity(key.baseSetpoint(zone), { value: state.setpoint[index] });
+    setEntity(key.effectiveSetpoint(zone), { value: state.setpoint[index] });
+    setEntity(key.coordinatorOffset(zone), { value: zone === 1 ? 1.5 : 0 });
+    setEntity(key.coordinatorRemaining(zone), { value: zone === 1 ? 2400 : 0 });
+    if (zone === 1) setEntity(key.effectiveSetpoint(1), { value: state.setpoint[0] + 1.5 });
+    setEntity(key.valve(zone), { value: state.valve[index] });
+    setEntity(key.state(zone), { state: state.valve[index] > 5 ? 'heating' : 'idle' });
+    setEntity(key.enabled(zone), { value: !!state.enabled[index], state: state.enabled[index] ? 'on' : 'off' });
+    setEntity(key.probe(zone), { state: 'None' });
+    setEntity(key.tempSource(zone), { state: zone % 2 ? 'Local Probe' : 'BLE' });
+    setEntity(key.syncTo(zone), { state: 'None' });
+    setEntity(key.ble(zone), { state: 'AA:BB:CC:DD:EE:0' + zone });
+    setEntity(key.name(zone), { state: ['Living Room', 'Kitchen', 'Bedroom', 'Bathroom', 'Office', 'Hallway'][index] || '' });
+    setEntity(key.preheatAdvance(zone), { value: 0.08 + (index * 0.03) });
+    const working = zone === 1 ? 1847 : 0;
+    const span = zone === 1 ? 1897 : 0;
+    setEntity(key.motorOpenRipples(zone), { value: span });
+    setEntity(key.motorCloseRipples(zone), { value: span });
+    setEntity(key.motorWorkingRipples(zone), { value: working });
+    setEntity(key.motorPinFreeRipples(zone), { value: zone === 1 ? 1013 : 0 });
+    setEntity(key.motorStrokeModel(zone), { state: zone === 1 ? 'working_range' : 'full_stroke' });
+    setEntity(key.motorOpenFactor(zone), { value: 0 });
+    setEntity(key.motorCloseFactor(zone), { value: zone === 1 ? 1.51 : 0 });
+    setEntity(key.motorLastFault(zone), { state: 'NONE' });
+    setEntity(key.motorLearnPct(zone), { value: 0 });
+    setEntity(key.motorLearnPhase(zone), { state: '' });
+    setEntity(key.motorLearnSample(zone), { value: 0 });
+    setEntity(key.motorLearnSamplesNeeded(zone), { value: 0 });
+    const prior = [1, 0.85, 0.4, 1, 1, 0.85][index];
+    const learned = [1.08, 0.81, 0.44, 0.97, 0.97, 1][index];
+    setEntity(key.balancePrior(zone), { value: prior });
+    setEntity(key.balanceLearned(zone), { value: learned });
+    setEntity(key.balanceEffective(zone), { value: Number((prior * learned).toFixed(2)) });
+  }
+
+  for (let probe = 1; probe <= PROBES; probe++) {
+    const zone = probe <= ZONES ? probe : ZONES;
+    const value = state.temp[zone - 1] + (probe > ZONES ? 1 : 0.1 * probe);
+    setEntity(key.probeTemp(probe), { value });
+  }
+
+  setEntity(gkey.flow, { value: EMPTY ? null : 34.1 });
+  setEntity(gkey.ret, { value: EMPTY ? null : 30.4 });
+  setEntity(gkey.uptime, { value: MOCK_UPTIME_BASE });
+  setEntity(gkey.wifi, { value: -57 });
+  setEntity(gkey.drivers, { value: true, state: 'on' });
+  setEntity(gkey.fault, { value: false, state: 'off' });
+  setEntity(gkey.ip, { state: '192.168.1.86' });
+  setEntity(gkey.ssid, { state: 'MockLab' });
+  setEntity(gkey.mac, { state: 'D8:3B:DA:12:34:56' });
+  setEntity(gkey.firmware, { state: 'v1.0.0-1' });
+  setEntity(gkey.resetReason, { state: 'Software reset (esp_restart)' });
+  setEntity(gkey.esphomeVersion, { state: '2026.9.1' });
+  setEntity(gkey.deviceDisplayName, { state: 'Lune V6' });
+  setEntity(gkey.deviceLocation, { state: 'Ground floor manifold' });
+  setDashboardValue('esphomeVersion', '2026.9.1');
+  setEntity(gkey.manifoldFlowProbe, { state: 'Probe 1' });
+  setEntity(gkey.manifoldReturnProbe, { state: 'Probe 2' });
+  setEntity(gkey.manifoldType, { state: 'NC (Normally Closed)' });
+  setEntity(gkey.motorProfileDefault, { state: 'HmIP VdMot' });
+  setEntity(gkey.closeThresholdMultiplier, { value: 1.45 });
+  setEntity(gkey.closeSlopeThreshold, { value: 1.0 });
+  setEntity(gkey.closeSlopeCurrentFactor, { value: 1.4 });
+  setEntity(gkey.openThresholdMultiplier, { value: 1.7 });
+  setEntity(gkey.openSlopeThreshold, { value: 0.8 });
+  setEntity(gkey.openSlopeCurrentFactor, { value: 1.3 });
+  setEntity(gkey.openRippleLimitFactor, { value: 1.1 });
+  setEntity(gkey.openEndstopCurrentFactor, { value: 1.25 });
+  setEntity(gkey.openEndstopStallFraction, { value: 0.3 });
+  setEntity(gkey.closeTrailingStepMa, { value: 2.5 });
+  setEntity(gkey.closeTrailingSustainMs, { value: 1000 });
+  setEntity(gkey.closeTrailingRefMs, { value: 2000 });
+  setEntity(gkey.capCloseSeatMa, { value: 34.0 });
+  setEntity(gkey.capCloseSeatFrames, { value: 4 });
+  setEntity(gkey.capClosePopoffMa, { value: 36.0 });
+  setEntity(gkey.capStallMa, { value: 65.0 });
+  setEntity(gkey.capOpenStopMa, { value: 40.0 });
+  setEntity(gkey.capCircuitFaultMa, { value: 85.0 });
+  setEntity(gkey.closeRuntimeLimitCounts, { value: 2600 });
+  setEntity(gkey.workingRangeLearning, { value: 1 });
+  setEntity(gkey.learnOpenStartRipples, { value: 2200 });
+  setEntity(gkey.learnOpenStepRipples, { value: 125 });
+  setEntity(gkey.learnOpenMaxRipples, { value: 2450 });
+  setEntity(gkey.learnMinFreeRipples, { value: 100 });
+  setEntity(gkey.learnSamples, { value: 3 });
+  setEntity(gkey.learnMaxSpreadPct, { value: 10 });
+  setEntity(gkey.pinEngageStepMa, { value: 2.0 });
+  setEntity(gkey.pinEngageMarginRipples, { value: 50 });
+  setEntity(gkey.genericRuntimeLimitSeconds, { value: 45 });
+  setEntity(gkey.hmipRuntimeLimitSeconds, { value: 38 });
+  setEntity(gkey.relearnAfterMovements, { value: 2000 });
+  setEntity(gkey.relearnAfterHours, { value: 168 });
+  setEntity(gkey.learnedFactorMinSamples, { value: 3 });
+  setEntity(gkey.learnedFactorMaxDeviationPct, { value: 12 });
+  setEntity(gkey.simplePreheatEnabled, { state: 'on' });
+  setEntity(gkey.minZoneFlowPct, { value: 15 });
+  setEntity(gkey.minimumFlowAlways, { state: 'off' });
+  setEntity(gkey.heatingMode, { state: 'heat_pump' });
+  setEntity(gkey.effectiveHeatingMode, { state: 'heat_pump' });
+  setEntity(gkey.heatingModeSource, { state: 'local' });
+  setEntity(gkey.balancingMode, { state: 'adaptive' });
+  setEntity(gkey.hpOverheatMarginC, { value: 1.0 });
+  setEntity(gkey.hpBasePct, { value: 60 });
+  setEntity(gkey.hpTrimFloorPct, { value: 15 });
+  setEntity(gkey.heatDemandRecommendation, { state: 'hold' });
+  setEntity(gkey.heatDemandCriticalZone, { value: 1 });
+  setEntity(gkey.heatDemandSaturatedS, { value: 0 });
+  setEntity(gkey.bleClockSyncEnabled, { state: 'on' });
+  setEntity(gkey.bleClockSyncIntervalMin, { value: 60 });
+  setEntity(gkey.bleClockSyncLastOkS, { value: (Number(Date.now() / 1000) | 0) - 900 });
+  setEntity(gkey.bleClockSyncLastError, { state: '' });
+  setEntity(gkey.bleClockSyncAdvertising, { state: 'off' });
+  setEntity(gkey.authorityInstallationId, { state: 'house-main' });
+  setEntity(gkey.authorityCoordinatorId, { state: 'lune-touch' });
+  setEntity(gkey.authorityConfigured, { state: 'on', value: true });
+  setEntity(gkey.authorityProposalPending, { state: 'off', value: false });
+  setEntity(gkey.authorityState, { state: 'touch_normal' });
+  setEntity(gkey.authorityReason, { state: 'lease_renewed' });
+  setEntity(gkey.authorityLeaseRemainingS, { value: 72 });
+  setEntity(gkey.cpuLoadCore0, { value: 18.5 });
+  setEntity(gkey.cpuLoadCore1, { value: 7.2 });
+  setEntity(gkey.freeInternalKb, { value: 142 });
+  setEntity(gkey.freeDmaKb, { value: 118 });
+  setEntity(gkey.largestInternalKb, { value: 64 });
+  setEntity(gkey.minInternalKb, { value: 96 });
+  setEntity(gkey.freePsramKb, { value: 7800 });
+  setEntity(gkey.largestPsramKb, { value: 4096 });
+  setEntity(gkey.bleHubEnabled, { state: 'on' });
+  setEntity(gkey.bleScanning, { state: 'on' });
+  setEntity(gkey.bleDemanded, { state: 'on' });
+  setEntity(gkey.bleAdsPerSec, { value: 2.4 });
+  setEntity(gkey.bleLastAdvAgeMs, { value: 850 });
+  sampleHistory(true);
+
+  // Generate 24 h of mock zone-state history (5-min intervals = 288 entries).
+  const INTERVAL_S = 300;
+  const NOW_S = (Number(Date.now() / 1000) | 0);
+  const TOTAL = 288;
+  // Zone 5 is disabled in mock; zone 4 always idle; others alternate heating/idle
+  const patterns = [
+    // zone 0: mostly heating with short idle gaps
+    [5,5,5,6,5,5,5,5,6,6,5,5,5,5,5,6,5,5,5,5,5,6,6,5],
+    // zone 1: mostly idle, some heating
+    [6,6,5,5,6,6,6,5,5,6,6,6,5,5,6,6,6,6,5,5,6,6,5,5],
+    // zone 2: heating then idle then heating
+    [5,5,5,5,5,5,6,6,6,6,6,6,5,5,5,5,6,6,6,6,5,5,5,5],
+    // zone 3: always idle
+    [6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6,6],
+    // zone 4: off (disabled)
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+    // zone 5: mix of heating and idle
+    [5,6,5,5,5,6,6,5,5,6,5,5,5,6,5,5,6,6,5,5,5,5,6,6],
+  ];
+  const mockEntries = [];
+  for (let i = 0; i < TOTAL; i++) {
+    const age_s = (TOTAL - 1 - i) * INTERVAL_S;
+    const t = NOW_S - age_s;
+    const hourIndex = Math.floor(i / 12) % 24;   // 12 entries per hour
+    const states = patterns.map((p) => p[hourIndex % p.length]);
+    // Mock a couple of absorption episodes (~3 h and ~9 h ago) so the band shows.
+    const hoursAgo = age_s / 3600;
+    const absorbing = (hoursAgo > 2.5 && hoursAgo < 3.5) || (hoursAgo > 8.5 && hoursAgo < 9.5) ? 1 : 0;
+    // Mock flow/return/demand so the 24 h graphs have data: more heating zones →
+    // higher demand, warmer flow, wider flow/return delta.
+    const heating = states.filter((s) => s === 5).length;
+    const demandPct = Math.round(Math.min(100, heating * 15 + Math.abs(Math.sin(i / 8)) * 6));
+    const flowC = Number((30 + heating * 1.4 + Math.sin(i / 11) * 1.5).toFixed(1));
+    const returnC = Number((flowC - (1.4 + heating * 0.35)).toFixed(1));
+    // Per-zone room temp + sp_plan (indices 11..16 / 17..22) for Fremskrivning.
+    const zoneTemps = state.temp.map((base, zi) => {
+      if (EMPTY && zi === EMPTY_ZONE - 1) return null;
+      const wobble = Math.sin((i + zi * 7) / 18) * 0.25;
+      const drift = (states[zi] === 5 ? 0.15 : -0.08) * Math.sin(i / 40);
+      return Number((base + wobble + drift).toFixed(1));
+    });
+    const zoneSps = state.setpoint.map((sp) => Number(sp.toFixed(1)));
+    mockEntries.push([t, ...states, absorbing, EMPTY ? null : flowC, EMPTY ? null : returnC, demandPct, ...zoneTemps, ...zoneSps]);
+  }
+  setZoneStateHistory({ interval_s: INTERVAL_S, uptime_s: NOW_S, count: TOTAL, entries: mockEntries });
+
+  // Seed the device-log stream with a few lines.
+  seedMockLogs(6);
+}
+
+function seedMockLogs(n) {
+  const lines = [];
+  for (let i = 0; i < n; i++) {
+    const s = MOCK_LOG_SAMPLES[mockLogSeq % MOCK_LOG_SAMPLES.length];
+    lines.push([mockLogSeq, s[0], s[1], s[2]]);
+    mockLogSeq++;
+  }
+  appendDeviceLog(lines, mockLogSeq);
+  // Stagger clocks so a batch seed does not share one timestamp.
+  const log = getDashboardValue('deviceLog') || [];
+  const base = Date.now() - (n - 1) * 1000;
+  for (let i = 0; i < n && i < log.length; i++) {
+    log[log.length - n + i].at = base + i * 1000;
+  }
+}
+
+function simulate() {
+  tick += 1;
+  setEntity(gkey.uptime, { value: MOCK_UPTIME_BASE + Math.floor((Date.now() - mockBootMs) / 1000) });
+  setEntity(gkey.wifi, { value: -55 - Math.round((1 + Math.sin(tick / 4)) * 6) });
+
+  let openDemand = 0;
+  let activeZones = 0;
+  let maxValve = 0;
+
+  for (let index = 0; index < ZONES; index++) {
+    const zone = index + 1;
+    const enabled = !!state.enabled[index];
+    const current = state.temp[index];
+    const setpoint = state.setpoint[index];
+    const demand = enabled && state.driversEnabled && !state.manualMode && current < setpoint - 0.25;
+
+    if (state.manualMode) {
+      state.valve[index] = Math.max(0, state.valve[index]);
+    } else if (!enabled || !state.driversEnabled) {
+      state.valve[index] = Math.max(0, state.valve[index] - 6);
+    } else if (demand) {
+      state.valve[index] = Math.min(100, state.valve[index] + 7 + (zone % 3));
+    } else {
+      state.valve[index] = Math.max(0, state.valve[index] - 5);
+    }
+
+    const drift = demand ? 0.05 + state.valve[index] / 2200 : -0.03 + state.valve[index] / 3200;
+    state.temp[index] = current + drift + Math.sin((tick + zone) / 5) * 0.04;
+
+    if (enabled && state.valve[index] > 0) {
+      openDemand += state.valve[index];
+      activeZones += 1;
+      maxValve = Math.max(maxValve, state.valve[index]);
+    }
+
+    setEntity(key.temp(zone), { value: EMPTY && zone === EMPTY_ZONE ? null : state.temp[index] });
+    setEntity(key.valve(zone), { value: Math.round(state.valve[index]) });
+    const preheat = Math.max(0, (state.setpoint[index] - state.temp[index] - 0.15) * 0.22);
+    setEntity(key.preheatAdvance(zone), { value: Number(preheat.toFixed(2)) });
+    setEntity(key.state(zone), { state: !enabled ? 'off' : demand ? 'heating' : 'idle' });
+    setEntity(key.enabled(zone), { value: enabled, state: enabled ? 'on' : 'off' });
+    setEntity(key.probeTemp(zone), { value: state.temp[index] + Math.sin((tick + zone) / 6) * 0.1 });
+  }
+
+  const flow = 29.5 + maxValve * 0.075 + activeZones * 0.18 + Math.sin(tick / 6) * 0.25;
+  const ret = flow - (activeZones ? 2.1 + openDemand / Math.max(1, activeZones * 50) : 1.1);
+
+  setEntity(gkey.flow, { value: EMPTY ? null : Number(flow.toFixed(1)) });
+  setEntity(gkey.ret, { value: EMPTY ? null : Number(ret.toFixed(1)) });
+  setEntity(key.probeTemp(1), { value: Number((flow + 0.2).toFixed(1)) });
+  setEntity(key.probeTemp(2), { value: Number((ret - 0.4).toFixed(1)) });
+  sampleHistory(true);
+
+  // Keep history uptime_s current so the timeline x-axis tracks wall time.
+  const hist = getDashboardValue('zoneStateHistory');
+  if (hist) hist.uptime_s = (Number(Date.now() / 1000) | 0);
+
+  // Emit a mock log line every few ticks so the Logs view looks live.
+  if (tick % 3 === 0) seedMockLogs(1);
+  setDashboardValue('stateTick', Date.now());
+}
+
+function startMockMotor(zone, direction) {
+  mockMotor.busy = true;
+  mockMotor.direction = direction;
+  mockMotor.zone = zone;
+  mockMotor.startedAt = Date.now();
+}
+
+function mockElapsedMs() {
+  if (!mockMotor.startedAt) return 0;
+  return Date.now() - mockMotor.startedAt;
+}
+
+function mockCurrentMa(elapsed, direction, running) {
+  if (!running) return 0.4;
+  const open = direction === 'open';
+  if (elapsed < 180) return open ? 22 : 28;
+  if (elapsed < 500) return open ? 15.2 : 19.4;
+  if (elapsed < 2200) return open ? 14.6 : 19.1;
+  if (!open && elapsed < 2800) return 24.2;
+  if (!open && elapsed < 3400) return 20.4;
+  if (elapsed < MOCK_MOVE_MS - 300) return open ? 18.5 : 26.8;
+  return open ? 25.4 : 41.2;
+}
+
+function mockStrokePhase(elapsed, direction, running) {
+  if (!running) return 0;
+  if (direction === 'open') return elapsed > MOCK_MOVE_MS - 300 ? 3 : 0;
+  if (elapsed < 2200) return 0;
+  if (elapsed < 3000) return 1;
+  if (elapsed < MOCK_MOVE_MS - 300) return 2;
+  return 3;
+}
+
+function mockTachoPeriodUs(elapsed, running) {
+  if (!running) return 0;
+  if (elapsed < 200) return 3200;
+  if (elapsed < 2200) return 1800 + Math.round(Math.sin(elapsed / 140) * 80);
+  return 4200;
+}
+
+export function mockDiagnosticsSnapshot() {
+  const elapsed = mockElapsedMs();
+  const busy = mockMotor.busy && elapsed < MOCK_MOVE_MS;
+  if (mockMotor.busy && !busy) mockMotor.busy = false;
+  const current = mockCurrentMa(elapsed, mockMotor.direction, busy || elapsed < MOCK_MOVE_MS + 80);
+  return {
+    ok: true,
+    version: 'v1',
+    data: {
+      heap: {
+        internal_kb: ev(gkey.freeInternalKb) || 142,
+        dma_kb: ev(gkey.freeDmaKb) || 118,
+        largest_internal_kb: ev(gkey.largestInternalKb) || 64,
+        min_internal_kb: ev(gkey.minInternalKb) || 96,
+        psram_kb: ev(gkey.freePsramKb) || 7800,
+        largest_psram_kb: ev(gkey.largestPsramKb) || 4096,
+        internal_allocated_kb: 280,
+        internal_free_blocks: 12,
+        internal_alloc_blocks: 180,
+      },
+      ble: {
+        enabled: es(gkey.bleHubEnabled) === 'on',
+        scanning: es(gkey.bleScanning) === 'on',
+        demanded: es(gkey.bleDemanded) === 'on',
+        ads_per_sec: ev(gkey.bleAdsPerSec) || 0,
+        last_adv_age_ms: ev(gkey.bleLastAdvAgeMs) || 0,
+      },
+      drivers_enabled: !!state.driversEnabled,
+      motor_safety: {
+        backend: 'mock',
+        motor_busy: busy,
+        drive_on: busy,
+        latch_faulted: false,
+        fault_code: 0,
+        current_ma: Number(current.toFixed(1)),
+        stroke_phase: mockStrokePhase(elapsed, mockMotor.direction, busy),
+        armed: !!state.driversEnabled,
+        latch_arm_level: 1,
+        latch_state_level: 0,
+        motor_enable_level: 0,
+        tacho_period_us: mockTachoPeriodUs(elapsed, busy),
+        tacho_cadence_us: mockTachoPeriodUs(elapsed, busy),
+        tacho_rejected: busy ? Math.floor(elapsed / 900) : 0,
+        tacho_hardware_count: busy ? Math.floor(elapsed / 8) : 0,
+        tacho_adc_count: busy ? Math.floor(elapsed / 8) : 0,
+        tacho_amp_raw: busy ? 40 : 0,
+        invalid_samples: 0,
+        motion_evidence_count: busy ? Math.floor(elapsed / 8) : 0,
+        motor_runtime_ms: busy ? elapsed : 0,
+        sample_sequence: tick,
+      },
+    },
+  };
+}
+
+/** Discovered BTHome sensors for GET /api/v1/ble-scan (and binder Scan). */
+export function mockBleScan() {
+  setEntity(gkey.bleScanning, { state: 'on' });
+  addActivity('BLE scan refreshed');
+  return {
+    count: 2,
+    sensors: [
+      {
+        mac: 'F8:44:77:2A:CC:68',
+        name: 'SBHT-003C',
+        temp_c: 21.4,
+        rssi: -58,
+        age_s: 2,
+        zone: 1,
+      },
+      {
+        mac: 'B4:E6:2D:8A:11:22',
+        name: 'SBHT-003C',
+        temp_c: 19.8,
+        rssi: -71,
+        age_s: 8,
+        zone: -1,
+      },
+    ],
+  };
+}
+
+function mockTraceCurrent(t, direction) {
+  const open = direction === 'open';
+  if (t < 180) return open ? 22 - t * 0.03 : 28 - t * 0.04;
+  if (t < 650) return open ? 14.8 : 19.2;
+  if (t < 2200) return (open ? 14.5 : 19.0) + Math.sin(t / 90) * 0.35;
+  if (!open && t < 2600) return 19.0 + (t - 2200) * 0.012;
+  if (!open && t < 3000) return 23.8 - (t - 2600) * 0.008;
+  if (t < 3400) return open ? 16.2 + (t - 2200) * 0.004 : 22.5 + (t - 3000) * 0.01;
+  const stall = open ? 14.5 + (t - 3400) * 0.018 : 26 + (t - 3400) * 0.03;
+  return Math.min(open ? 26.4 : 44.5, stall);
+}
+
+export function mockMotorTraceCsv(direction) {
+  const dir = direction || mockMotor.direction || 'open';
+  const open = dir === 'open';
+  const duration = open ? 3900 : 4200;
+  const rows = [
+    't_ms,motion_count,current_ma,adc_current_raw,drive_on,direction_open,armed,stroke_phase,tacho_period_us,tacho_amp_raw,bemf_raw_a,bemf_raw_b,bemf_differential_raw,bemf_separation_us,bemf_valid,bemf_moving,invalid_bemf_samples',
+  ];
+  let ripples = 0;
+  for (let t = 0; t <= duration; t += 10) {
+    const current = mockTraceCurrent(t, dir);
+    if (t > 180 && t < duration - 80) ripples += t % 20 === 0 ? 1 : 0;
+    let phase = 0;
+    if (open) phase = t > duration - 400 ? 3 : 0;
+    else if (t >= 2200 && t < 3000) phase = 1;
+    else if (t >= 3000 && t < 3600) phase = 2;
+    else if (t >= 3600) phase = 3;
+    const period = t < 200 ? 3200 : (t < duration - 400 ? 1800 + Math.round(Math.sin(t / 140) * 80) : 4200);
+    rows.push([
+      t, ripples, current.toFixed(1), 1200, 1, open ? 1 : 0, 1, phase,
+      period, 40, 0, 0, 0, 0, 0, 1, 0,
+    ].join(','));
+  }
+  return rows.join('\n') + '\n';
+}
+
+export function startMock() {
+  if (timer) return;
+  seed();
+  setLive(true);
+  setDashboardValue('stateTick', Date.now());
+  timer = setInterval(simulate, 1200);
+}
+
+export function handleMockPost(body) {
+  const k = body.key || '';
+  const v = body.value;
+  const zone = body.zone || 0;
+
+  if (k === 'zone_setpoint' && zone >= 1 && zone <= ZONES) {
+    const value = Number(v);
+    if (!Number.isNaN(value)) {
+      state.setpoint[zone - 1] = value;
+      setEntity(key.setpoint(zone), { value });
+      setEntity(key.baseSetpoint(zone), { value });
+      setEntity(key.effectiveSetpoint(zone), { value });
+      addActivity('Zone ' + zone + ' setpoint set to ' + value.toFixed(1) + '°C', zone);
+    }
+    return;
+  }
+
+  if (k === 'zone_enabled' && zone >= 1 && zone <= ZONES) {
+    const enabled = v > 0.5;
+    state.enabled[zone - 1] = enabled ? 1 : 0;
+    setEntity(key.enabled(zone), { value: enabled, state: enabled ? 'on' : 'off' });
+    addActivity('Zone ' + zone + (enabled ? ' enabled' : ' disabled'), zone);
+    return;
+  }
+
+  if (k === 'drivers_enabled') {
+    const enabled = v > 0.5;
+    state.driversEnabled = enabled ? 1 : 0;
+    if (!enabled) mockMotor.busy = false;
+    setEntity(gkey.drivers, { value: enabled, state: enabled ? 'on' : 'off' });
+    addActivity(enabled ? 'Motor drivers enabled' : 'Motor drivers disabled');
+    return;
+  }
+
+  if (k === 'manual_mode') {
+    const enabled = v > 0.5;
+    state.manualMode = enabled ? 1 : 0;
+    setDashboardValue('manualMode', enabled);
+    return;
+  }
+
+  if (k === 'motor_target' && zone >= 1 && zone <= ZONES) {
+    const value = Number(v || 0);
+    setEntity(key.motorTarget(zone), { value: Math.max(0, Math.min(100, Math.round(value))) });
+    addActivity('Motor ' + zone + ' target set to ' + value + '%', zone);
+    return;
+  }
+
+  if (k === 'command') {
+    const cmd = String(v);
+
+    if (cmd === 'i2c_scan') {
+      setI2cResult('I2C_SCAN: ----- begin -----\nI2C_SCAN: found 0x3C\nI2C_SCAN: found 0x44\nI2C_SCAN: found 0x76\nI2C_SCAN: ----- end -----');
+      addActivity('I2C scan complete');
+      return;
+    }
+
+    if (cmd === 'ble_scan') {
+      setEntity(gkey.bleScanning, { state: 'on' });
+      addActivity('BLE scan started');
+      return;
+    }
+
+    if (cmd === 'calibrate_all_motors' || cmd === 'restart') {
+      addActivity('Command executed: ' + cmd);
+      return;
+    }
+
+    if (cmd === 'firmware_check' || cmd === 'firmware_prepare') {
+      addActivity('Command executed: ' + cmd);
+      return;
+    }
+
+    if (cmd === 'firmware_install') {
+      addActivity('Firmware install started (mock) — valves stop, device reboots');
+      return;
+    }
+
+    if (cmd === 'open_motor_timed' && zone >= 1 && zone <= ZONES) {
+      startMockMotor(zone, 'open');
+      addActivity('Motor ' + zone + ' open timed', zone);
+      return;
+    }
+    if (cmd === 'close_motor_timed' && zone >= 1 && zone <= ZONES) {
+      startMockMotor(zone, 'close');
+      addActivity('Motor ' + zone + ' close timed', zone);
+      return;
+    }
+    if (cmd === 'stop_motor' && zone >= 1 && zone <= ZONES) {
+      mockMotor.busy = false;
+      addActivity('Motor ' + zone + ' stopped', zone);
+      return;
+    }
+    if (cmd === 'motor_reset_fault' && zone >= 1 && zone <= ZONES) {
+      setEntity(key.motorLastFault(zone), { state: 'NONE' });
+      addActivity('Motor ' + zone + ' fault reset', zone);
+      return;
+    }
+    if (cmd === 'motor_reset_learned_factors' && zone >= 1 && zone <= ZONES) {
+      addActivity('Motor ' + zone + ' learned factors reset', zone);
+      return;
+    }
+    if (cmd === 'motor_reset_and_relearn' && zone >= 1 && zone <= ZONES) {
+      addActivity('Motor ' + zone + ' reset and relearn started', zone);
+      setEntity(key.state(zone), { state: 'calibrating' });
+      const need = 3;
+      setEntity(key.motorLearnPct(zone), { value: 0 });
+      setEntity(key.motorLearnPhase(zone), { state: 'home' });
+      setEntity(key.motorLearnSample(zone), { value: 0 });
+      setEntity(key.motorLearnSamplesNeeded(zone), { value: need });
+      const steps = [
+        { pct: 5, phase: 'home', sample: 0 },
+        { pct: 20, phase: 'open', sample: 0 },
+        { pct: 35, phase: 'close', sample: 1 },
+        { pct: 50, phase: 'open', sample: 1 },
+        { pct: 65, phase: 'close', sample: 2 },
+        { pct: 80, phase: 'open', sample: 2 },
+        { pct: 95, phase: 'close', sample: 3 },
+        { pct: 100, phase: 'done', sample: 3 },
+      ];
+      steps.forEach((step, i) => {
+        setTimeout(() => {
+          setEntity(key.motorLearnPct(zone), { value: step.pct });
+          setEntity(key.motorLearnPhase(zone), { state: step.phase });
+          setEntity(key.motorLearnSample(zone), { value: step.sample });
+          setEntity(key.motorLearnSamplesNeeded(zone), { value: need });
+          setDashboardValue('stateTick', Date.now());
+          if (step.phase === 'done') {
+            setEntity(key.state(zone), { state: 'idle' });
+            setEntity(key.motorLearnPhase(zone), { state: '' });
+            setEntity(key.motorOpenRipples(zone), { value: 1897 });
+            setEntity(key.motorCloseRipples(zone), { value: 1897 });
+            setEntity(key.motorWorkingRipples(zone), { value: 1847 });
+            setEntity(key.motorPinFreeRipples(zone), { value: 1013 });
+            setEntity(key.motorStrokeModel(zone), { state: 'working_range' });
+          }
+        }, 700 * (i + 1));
+      });
+      return;
+    }
+    if (cmd === 'ble_clock_sync_now') {
+      setEntity(gkey.bleClockSyncAdvertising, { state: 'on' });
+      setEntity(gkey.bleClockSyncLastError, { state: '' });
+      setEntity(gkey.bleClockSyncLastOkS, { value: (Number(Date.now() / 1000) | 0) });
+      addActivity('Room clock beacon refreshed');
+      return;
+    }
+    if (cmd === 'dump_task_stats') {
+      addActivity('Task stats dumped to device log (mock)');
+      return;
+    }
+    return;
+  }
+
+  // Select settings (zone-scoped)
+  if (k === 'zone_probe' && zone >= 1) { setEntity(key.probe(zone), { state: String(v) }); addActivity('Setting updated: ' + k + ' = ' + v, zone); return; }
+  if (k === 'zone_temp_source' && zone >= 1) { setEntity(key.tempSource(zone), { state: String(v) }); addActivity('Setting updated: ' + k + ' = ' + v, zone); return; }
+  if (k === 'zone_sync_to' && zone >= 1) { setEntity(key.syncTo(zone), { state: String(v) }); addActivity('Setting updated: ' + k + ' = ' + v, zone); return; }
+
+  // Select settings (global)
+  if (k === 'manifold_type') { setEntity(gkey.manifoldType, { state: String(v) }); addActivity('Setting updated: ' + k + ' = ' + v); return; }
+  if (k === 'manifold_flow_probe') { setEntity(gkey.manifoldFlowProbe, { state: String(v) }); addActivity('Setting updated: ' + k + ' = ' + v); return; }
+  if (k === 'manifold_return_probe') { setEntity(gkey.manifoldReturnProbe, { state: String(v) }); addActivity('Setting updated: ' + k + ' = ' + v); return; }
+  if (k === 'motor_profile_default') { setEntity(gkey.motorProfileDefault, { state: String(v) }); addActivity('Setting updated: ' + k + ' = ' + v); return; }
+  if (k === 'simple_preheat_enabled') { setEntity(gkey.simplePreheatEnabled, { state: String(v) }); addActivity('Setting updated: ' + k + ' = ' + v); return; }
+  if (k === 'minimum_flow_always') { setEntity(gkey.minimumFlowAlways, { state: String(v) }); addActivity('Setting updated: ' + k + ' = ' + v); return; }
+  if (k === 'heating_mode') {
+    const mode = String(v) === 'normal' ? 'normal' : 'heat_pump';
+    setEntity(gkey.heatingMode, { state: mode });
+    setEntity(gkey.effectiveHeatingMode, { state: mode });
+    setEntity(gkey.heatingModeSource, { state: 'local' });
+    addActivity('Setting updated: ' + k + ' = ' + mode);
+    return;
+  }
+  if (k === 'ble_clock_sync_enabled') { setEntity(gkey.bleClockSyncEnabled, { state: String(v) }); addActivity('Setting updated: ' + k + ' = ' + v); return; }
+  // Text settings
+  if (k === 'zone_name' && zone >= 1) { setEntity(key.name(zone), { state: String(v) }); addActivity('Setting updated: ' + k + ' = ' + v, zone); return; }
+  if (k === 'zone_ble_mac' && zone >= 1) { setEntity(key.ble(zone), { state: String(v) }); addActivity('Setting updated: ' + k + ' = ' + v, zone); return; }
+  if (k === 'zone_sensor_id' && zone >= 1) { setEntity(key.sensorId(zone), { state: String(v) }); addActivity('Setting updated: ' + k + ' = ' + v, zone); return; }
+  if (k === 'zone_sensor_name' && zone >= 1) { setEntity(key.sensorName(zone), { state: String(v) }); addActivity('Setting updated: ' + k + ' = ' + v, zone); return; }
+  if (k === 'authority_approve_proposal') {
+    setEntity(gkey.authorityInstallationId, { state: es(gkey.authorityProposalInstallationId) || 'lune-mock' });
+    setEntity(gkey.authorityCoordinatorId, { state: es(gkey.authorityProposalCoordinatorId) || 'touch-mock' });
+    setEntity(gkey.authorityConfigured, { state: 'on', value: true });
+    setEntity(gkey.authorityProposalPending, { state: 'off', value: false });
+    addActivity('Discovered Lune Touch approved');
+    return;
+  }
+  if (k === 'authority_revoke') {
+    setEntity(gkey.authorityInstallationId, { state: '' });
+    setEntity(gkey.authorityCoordinatorId, { state: '' });
+    setEntity(gkey.authorityConfigured, { state: 'off', value: false });
+    setEntity(gkey.authorityState, { state: 'unconfigured' });
+    addActivity('Lune Touch disconnected');
+    return;
+  }
+
+  // Number settings (global motor calibration)
+  const numMap = {
+    close_threshold_multiplier: gkey.closeThresholdMultiplier,
+    close_slope_threshold: gkey.closeSlopeThreshold,
+    close_slope_current_factor: gkey.closeSlopeCurrentFactor,
+    open_threshold_multiplier: gkey.openThresholdMultiplier,
+    open_slope_threshold: gkey.openSlopeThreshold,
+    open_slope_current_factor: gkey.openSlopeCurrentFactor,
+    open_ripple_limit_factor: gkey.openRippleLimitFactor,
+    open_endstop_current_factor: gkey.openEndstopCurrentFactor,
+    open_endstop_stall_fraction: gkey.openEndstopStallFraction,
+    close_trailing_step_ma: gkey.closeTrailingStepMa,
+    close_trailing_sustain_ms: gkey.closeTrailingSustainMs,
+    close_trailing_ref_ms: gkey.closeTrailingRefMs,
+    cap_close_seat_ma: gkey.capCloseSeatMa,
+    cap_close_seat_frames: gkey.capCloseSeatFrames,
+    cap_close_popoff_ma: gkey.capClosePopoffMa,
+    cap_stall_ma: gkey.capStallMa,
+    cap_open_stop_ma: gkey.capOpenStopMa,
+    cap_circuit_fault_ma: gkey.capCircuitFaultMa,
+    close_runtime_limit_counts: gkey.closeRuntimeLimitCounts,
+    working_range_learning: gkey.workingRangeLearning,
+    learn_open_start_ripples: gkey.learnOpenStartRipples,
+    learn_open_step_ripples: gkey.learnOpenStepRipples,
+    learn_open_max_ripples: gkey.learnOpenMaxRipples,
+    learn_min_free_ripples: gkey.learnMinFreeRipples,
+    learn_samples: gkey.learnSamples,
+    learn_max_spread_pct: gkey.learnMaxSpreadPct,
+    pin_engage_step_ma: gkey.pinEngageStepMa,
+    pin_engage_margin_ripples: gkey.pinEngageMarginRipples,
+    generic_runtime_limit_seconds: gkey.genericRuntimeLimitSeconds,
+    hmip_runtime_limit_seconds: gkey.hmipRuntimeLimitSeconds,
+    relearn_after_movements: gkey.relearnAfterMovements,
+    relearn_after_hours: gkey.relearnAfterHours,
+    learned_factor_min_samples: gkey.learnedFactorMinSamples,
+    learned_factor_max_deviation_pct: gkey.learnedFactorMaxDeviationPct,
+    min_zone_flow_pct: gkey.minZoneFlowPct,
+    hp_overheat_margin_c: gkey.hpOverheatMarginC,
+    hp_base_pct: gkey.hpBasePct,
+    hp_trim_floor_pct: gkey.hpTrimFloorPct,
+    ble_clock_sync_interval_min: gkey.bleClockSyncIntervalMin
+  };
+
+  if (numMap[k]) {
+    const numeric = Number(v);
+    if (!Number.isNaN(numeric)) {
+      setEntity(numMap[k], { value: numeric });
+      addActivity('Setting updated: ' + k + ' = ' + v);
+    }
+    return;
+  }
+}
+
+// ---- firmware + settings backup mocks ----
+
+// Mock mode never touches GitHub: it answers with a release that is newer than
+// the mock firmware version so the update banner and header badge are visible.
+const MOCK_LATEST_TAG = 'v1.1.0';
+
+export function mockLatestRelease() {
+  return {
+    tag_name: MOCK_LATEST_TAG,
+    published_at: new Date(Date.now() - 36 * 3600 * 1000).toISOString(),
+    body: 'Faster endstop detection on HmIP valves.\n' +
+      'Room clock broadcasts now retry after a busy radio.\n' +
+      'Dashboard: firmware updates and settings backup.',
+    assets: [
+      { name: 'lune-v6-' + MOCK_LATEST_TAG + '.ota.bin', browser_download_url: 'https://github.com/birkemosen/lune/releases/latest/download/lune-v6-' + MOCK_LATEST_TAG + '.ota.bin' },
+      { name: 'manifest-lune-v6.json', browser_download_url: 'https://github.com/birkemosen/lune/releases/latest/download/manifest-lune-v6.json' },
+    ],
+  };
+}
+
+export function mockSettingsExport(includeLearned) {
+  const zones = [];
+  for (let zone = 1; zone <= ZONES; zone++) {
+    zones.push({
+      zone,
+      name: es(key.name(zone)),
+      enabled: es(key.enabled(zone)) === 'on',
+      setpoint_c: ev(key.setpoint(zone)),
+      probe: es(key.probe(zone)),
+      temp_source: es(key.tempSource(zone)),
+      ble_mac: es(key.ble(zone)),
+      sensor_id: es(key.sensorId(zone)),
+      sensor_name: es(key.sensorName(zone)),
+      sync_to: es(key.syncTo(zone)),
+    });
+  }
+  return {
+    _type: 'lune-v6-settings',
+    _version: 1,
+    exported_at: new Date().toISOString(),
+    firmware: es(gkey.firmware),
+    device: { mac: es(gkey.mac) },
+    settings: {
+      manifold_type: es(gkey.manifoldType),
+      manifold_flow_probe: es(gkey.manifoldFlowProbe),
+      manifold_return_probe: es(gkey.manifoldReturnProbe),
+      motor_profile_default: es(gkey.motorProfileDefault),
+      min_zone_flow_pct: ev(gkey.minZoneFlowPct),
+      minimum_flow_always: es(gkey.minimumFlowAlways) === 'on',
+      heating_mode: es(gkey.heatingMode) || 'heat_pump',
+      hp_overheat_margin_c: ev(gkey.hpOverheatMarginC),
+      hp_base_pct: ev(gkey.hpBasePct),
+      hp_trim_floor_pct: ev(gkey.hpTrimFloorPct),
+      simple_preheat_enabled: es(gkey.simplePreheatEnabled) === 'on',
+      ble_clock_sync_enabled: es(gkey.bleClockSyncEnabled) === 'on',
+      ble_clock_sync_interval_min: ev(gkey.bleClockSyncIntervalMin),
+    },
+    zones,
+    learned: includeLearned ? { motors: zones.map((z) => ({ zone: z.zone, open_ripples: 400 + z.zone, close_ripples: 390 + z.zone })) } : null,
+  };
+}
+
+export function mockSettingsImport(envelope, restoreLearned) {
+  const settingsCount = Object.keys((envelope && envelope.settings) || {}).length;
+  const zoneCount = Array.isArray(envelope && envelope.zones) ? envelope.zones.length : 0;
+  const learnedCount = restoreLearned && envelope && envelope.learned ? ZONES : 0;
+  addActivity('Settings restored from backup (mock)');
+  return {
+    applied: settingsCount + zoneCount + learnedCount,
+    skipped: restoreLearned ? 0 : ZONES,
+    ignored: envelope && envelope._version === 1 ? 0 : 1,
+  };
+}
+
+window.__lv6_mock = {
+  setSetpoint(zone, value) {
+    handleMockPost({ key: 'zone_setpoint', value, zone });
+  },
+  toggleZone(zone) {
+    const enabled = !state.enabled[zone - 1];
+    handleMockPost({ key: 'zone_enabled', value: enabled ? 1 : 0, zone });
+  }
+};

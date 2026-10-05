@@ -1,0 +1,502 @@
+// core/store.js
+
+import { notify, subscribe } from './component.js';
+import { gkey, key } from '../utils/keys.js';
+
+export const NZ = 6;
+export const HISTORY_MAX = 28;
+export const E = Object.create(null);
+
+const zoneNames = loadZoneNames();
+
+const D = {
+  section: 'overview',
+  settingsPanel: 'touch',
+  selectedZone: 1,
+  // Zone canvas: mutually exclusive Live (dashboard) vs Config panes.
+  zoneViewMode: 'dashboard',
+  live: false,
+  pendingWrites: 0,
+  lastWriteAt: 0,
+  firmwareVersion: '',
+  // { current, latest, url } once a newer GitHub release has been seen, else null.
+  firmwareUpdateAvailable: null,
+  resetReason: '',
+  i2cResult: 'No scan has been run yet.',
+  activityLog: [],
+  zoneLog: createZoneLog(),
+  historyFlow: [],
+  historyReturn: [],
+  historyDemand: [],
+  historyZoneTemp: createZoneLog(), // reused shape: array per zone 1..6
+  historyZoneSp: createZoneLog(),
+  lastHistoryAt: 0,
+  zoneNames,
+  manualMode: false,
+  zoneStateHistory: null,   // { interval_s, uptime_s, count, entries: [[uptime_s,z0..z5,absorbing],...] }
+  deviceLog: [],            // [{ seq, level, tag, msg }] live device log lines (newest last)
+  deviceLogSeq: 0,          // highest seq seen → passed as ?since= to /logs
+  // Physics provisioning alerts from GET /zones: [{zone, kind:'unset'|'high_r'}]
+  physicsAlerts: [],
+};
+
+export const DEVICE_LOG_MAX = 300;
+
+function createZoneLog() {
+  const out = Object.create(null);
+  for (let zone = 1; zone <= NZ; zone++) out[zone] = [];
+  return out;
+}
+
+function loadZoneNames() {
+  let values = [];
+  try {
+    const raw =
+      localStorage.getItem('lv6_zone_names') ||
+      localStorage.getItem('hv6_zone_names') ||  // HeatValve-era key
+      '[]';
+    values = JSON.parse(raw);
+  } catch (error) {
+    values = [];
+  }
+  while (values.length < NZ) values.push('');
+  return values.slice(0, NZ);
+}
+
+function persistZoneNames() {
+  try {
+    localStorage.setItem('lv6_zone_names', JSON.stringify(D.zoneNames));
+    localStorage.removeItem('hv6_zone_names');
+  } catch (error) {
+    // Ignore localStorage failures in constrained/mock environments.
+  }
+}
+
+function dashboardKey(key) {
+  return '$dashboard:' + key;
+}
+
+function normalizeZone(zone) {
+  return Math.max(1, Math.min(NZ, Number(zone) || 1));
+}
+
+function toNumber(value) {
+  // '' and null are missing values, never 0 (DESIGN.md 6.5).
+  if (value == null || value === '') return null;
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  if (typeof value === 'string') {
+    const direct = Number(value);
+    if (!Number.isNaN(direct)) return direct;
+    const match = value.match(/-?\d+(?:[\.,]\d+)?/);
+    if (match) {
+      const parsed = Number(String(match[0]).replace(',', '.'));
+      return Number.isNaN(parsed) ? null : parsed;
+    }
+  }
+  return null;
+}
+
+export function ev(id) {
+  const entity = E[id];
+  if (!entity) return null;
+  if (entity.v != null) return entity.v;
+  if (entity.value != null) return entity.value;
+  return toNumber(entity.s != null ? entity.s : entity.state);
+}
+
+export function es(id) {
+  const entity = E[id];
+  if (!entity) return '';
+  if (entity.s != null) return entity.s;
+  if (entity.state != null) return entity.state;
+  if (entity.v === true) return 'ON';
+  if (entity.v === false) return 'OFF';
+  if (entity.value === true) return 'ON';
+  if (entity.value === false) return 'OFF';
+  return '';
+}
+
+export function isOnState(value) {
+  if (value === true) return true;
+  if (value === false) return false;
+  return String(value || '').toLowerCase() === 'on';
+}
+
+export function isEntityOn(id) {
+  return isOnState(es(id));
+}
+
+/** Touch discovered a coordinator that still needs local approval. */
+export function touchNeedsAttention() {
+  return isEntityOn(gkey.authorityProposalPending);
+}
+
+/** Count zones with a blocking motor fault (not unlearned / in-flight learning). */
+export function countZoneFaults() {
+  let faults = 0;
+  for (let zone = 1; zone <= NZ; zone++) {
+    const phase = String(es(key.motorLearnPhase(zone)) || '').toLowerCase();
+    if (phase === 'home' || phase === 'open' || phase === 'close') continue;
+    const open = Number(ev(key.motorOpenRipples(zone)));
+    const close = Number(ev(key.motorCloseRipples(zone)));
+    const learned = (Number.isFinite(open) && open > 0) || (Number.isFinite(close) && close > 0);
+    if (!learned) continue;
+    const fault = String(es(key.motorLastFault(zone)) || '').toLowerCase();
+    if (fault && fault !== 'none' && fault !== 'ok' && fault !== 'blocked') faults += 1;
+  }
+  return faults;
+}
+
+/**
+ * Highest-priority chrome attention action (header chip + deep-link).
+ * Touch approval beats zone faults; firmware updates stay on their own badge.
+ */
+export function countPhysicsAlerts() {
+  const list = getDashboardValue('physicsAlerts');
+  return Array.isArray(list) ? list.length : 0;
+}
+
+export function primaryAttentionAction() {
+  if (touchNeedsAttention()) {
+    return { kind: 'touch', section: 'settings', focus: 'touch' };
+  }
+  const faults = countZoneFaults();
+  if (faults > 0) {
+    return { kind: 'faults', section: 'zones', count: faults };
+  }
+  const physics = countPhysicsAlerts();
+  if (physics > 0) {
+    return { kind: 'physics', section: 'zones', count: physics };
+  }
+  return null;
+}
+
+export function setEntity(id, patch) {
+  let entity = E[id];
+
+  if (!entity) {
+    entity = E[id] = { v: null, s: null };
+  }
+
+  if ('v' in patch) {
+    entity.v = patch.v;
+    entity.value = patch.v;
+  }
+  if ('value' in patch) {
+    entity.v = patch.value;
+    entity.value = patch.value;
+  }
+  if ('s' in patch) {
+    entity.s = patch.s;
+    entity.state = patch.s;
+  }
+  if ('state' in patch) {
+    entity.s = patch.state;
+    entity.state = patch.state;
+  }
+
+  for (const key in patch) {
+    if (key === 'v' || key === 'value' || key === 's' || key === 'state') continue;
+    entity[key] = patch[key];
+  }
+
+  notify(id);
+
+  if (id === 'text_sensor-firmware_version') {
+    setDashboardValue('firmwareVersion', es(id) || '');
+  }
+
+  // Bridge device-side friendly zone names (text-zone_<n>_name) into D.zoneNames
+  // so the existing zoneTag/zoneLabel consumers stay in sync without changes.
+  // Only act on a real change — this runs for every entity on every 1 Hz poll.
+  if (id.startsWith('text-zone_') && id.endsWith('_name')) {
+    const n = parseInt(id.slice(10, -5), 10);
+    if (n >= 1 && n <= NZ) {
+      const v = es(id) || '';
+      if (D.zoneNames[n - 1] !== v) {
+        D.zoneNames[n - 1] = v;
+        persistZoneNames();  // keep the load-time cache fresh from the device
+        notify(dashboardKey('zoneNames'));
+      }
+    }
+  }
+}
+
+export function subscribeDashboard(key, fn) {
+  subscribe(dashboardKey(key), fn);
+}
+
+export function getDashboardValue(key) {
+  return D[key];
+}
+
+export function setDashboardValue(key, value) {
+  D[key] = value;
+  notify(dashboardKey(key));
+}
+
+export function setSection(section) {
+  const next = section === 'logs' ? 'diagnostics' : section;
+  // Settings destinations only exist in Configure mode.
+  if (next === 'settings' && D.zoneViewMode !== 'config') {
+    D.zoneViewMode = 'config';
+    notify(dashboardKey('zoneViewMode'));
+  }
+  if (D.section === next) return;
+  D.section = next;
+  notify(dashboardKey('section'));
+}
+
+export function setSettingsPanel(panel) {
+  let next = String(panel || 'touch');
+  // Hydraulics / Comfort / Motors / legacy Plant are one System settings canvas.
+  if (next === 'hydraulics' || next === 'comfort' || next === 'motors' || next === 'plant') next = 'system';
+  if (D.settingsPanel === next) return;
+  D.settingsPanel = next;
+  notify(dashboardKey('settingsPanel'));
+}
+
+export function setSelectedZone(zone) {
+  const next = normalizeZone(zone);
+  if (D.selectedZone === next) return;
+  D.selectedZone = next;
+  notify(dashboardKey('selectedZone'));
+  // zoneViewMode is global — stay on Configure when switching Z1↔Z6.
+}
+
+export function setZoneViewMode(mode) {
+  const next = mode === 'config' ? 'config' : 'dashboard';
+  if (D.zoneViewMode === next) return;
+  D.zoneViewMode = next;
+  notify(dashboardKey('zoneViewMode'));
+  // Leaving Configure hides Settings destinations — bounce off that section.
+  if (next === 'dashboard' && D.section === 'settings') {
+    D.section = 'overview';
+    notify(dashboardKey('section'));
+  }
+}
+
+export function setLive(value) {
+  const next = !!value;
+  if (D.live === next) return;
+  D.live = next;
+  notify(dashboardKey('live'));
+}
+
+export function beginPendingWrite() {
+  D.pendingWrites += 1;
+  notify(dashboardKey('pendingWrites'));
+}
+
+export function endPendingWrite() {
+  D.pendingWrites = Math.max(0, D.pendingWrites - 1);
+  D.lastWriteAt = Date.now();
+  notify(dashboardKey('pendingWrites'));
+}
+
+/** How long after a write we ignore inbound /state echoes (optimistic UI). */
+export const WRITE_ECHO_SUPPRESS_MS = 2000;
+
+export function shouldSuppressStateUpdate() {
+  if (D.pendingWrites > 0) return true;
+  return (Date.now() - D.lastWriteAt) < WRITE_ECHO_SUPPRESS_MS;
+}
+
+/** ms until a full /state apply is allowed again (0 = apply now). */
+export function msUntilStateUnsuppressed() {
+  if (D.pendingWrites > 0) return WRITE_ECHO_SUPPRESS_MS;
+  const left = WRITE_ECHO_SUPPRESS_MS - (Date.now() - D.lastWriteAt);
+  return left > 0 ? left : 0;
+}
+
+// Zone names are device-persistent: the UI commits via api.applyZoneName() →
+// POST /settings/text(zone_name), and the device echo flows back through the
+// text-zone_<n>_name bridge in setEntity() above (which updates D.zoneNames).
+
+export function zoneTag(zone) {
+  return D.zoneNames[normalizeZone(zone) - 1] || '';
+}
+
+/** Trimmed friendly/room name, or empty string when unset. */
+export function zoneFriendly(zone) {
+  return String(zoneTag(zone) || '').trim();
+}
+
+/** Compact hardware id: Z1..Z6 */
+export function zoneIdShort(zone) {
+  return 'Z' + normalizeZone(zone);
+}
+
+/** Expanded hardware id: Zone 1..Zone 6 */
+export function zoneIdLong(zone) {
+  return 'Zone ' + normalizeZone(zone);
+}
+
+/** Alias kept for older call sites; prefer zoneIdShort. */
+export function zoneShortLabel(zone) {
+  return zoneIdShort(zone);
+}
+
+/**
+ * Plain-text / a11y label.
+ * With friendly name: "Zone 1 - Kontor"; otherwise "Zone 1".
+ */
+export function zoneLabel(zone) {
+  const index = normalizeZone(zone);
+  const friendly = zoneFriendly(index);
+  return friendly ? zoneIdLong(index) + ' - ' + friendly : zoneIdLong(index);
+}
+
+function escapeZoneHtml(value) {
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+/** Responsive Zx / Zone x spans; pair with .zone-id-short/.zone-id-long CSS. */
+export function zoneIdMarkup(zone) {
+  const index = normalizeZone(zone);
+  return '<span class="zone-id-short">' + zoneIdShort(index) + '</span>' +
+    '<span class="zone-id-long">' + zoneIdLong(index) + '</span>';
+}
+
+/**
+ * Display markup: id first, then friendly name when set.
+ * Example: Z1 - Kontor / Zone 1 - Kontor. Without name: Z1 / Zone 1.
+ * Pair with CSS that hides .zone-title-name in compact mobile menus.
+ */
+export function zoneTitleMarkup(zone) {
+  const index = normalizeZone(zone);
+  const friendly = zoneFriendly(index);
+  const id = zoneIdMarkup(index);
+  if (friendly) {
+    return '<span class="zone-title-id">' + id + '</span>' +
+      '<span class="zone-title-name"> - ' + escapeZoneHtml(friendly) + '</span>';
+  }
+  return '<span class="zone-title-id">' + id + '</span>';
+}
+
+export function setI2cResult(text) {
+  D.i2cResult = text || 'No scan has been run yet.';
+  notify(dashboardKey('i2cResult'));
+}
+
+export function addActivity(message, zone) {
+  const entry = {
+    time: timeStamp(),
+    msg: String(message || '')
+  };
+
+  D.activityLog.push(entry);
+  while (D.activityLog.length > 60) D.activityLog.shift();
+
+  if (zone >= 1 && zone <= NZ) {
+    const bucket = D.zoneLog[zone];
+    bucket.push(entry);
+    while (bucket.length > 8) bucket.shift();
+    notify(dashboardKey('zoneLog:' + zone));
+  }
+
+  notify(dashboardKey('activityLog'));
+}
+
+export function getActivityLog(zone) {
+  if (zone >= 1 && zone <= NZ) return D.zoneLog[zone];
+  return D.activityLog;
+}
+
+export function pushHistory(key, value) {
+  const target = D[key];
+  if (!Array.isArray(target)) return;
+  const numeric = toNumber(value);
+  if (numeric == null) return;
+  target.push(numeric);
+  while (target.length > HISTORY_MAX) target.shift();
+  notify(dashboardKey(key));
+}
+
+export function sampleHistory(force) {
+  const now = Date.now();
+  if (!force && now - D.lastHistoryAt < 3200) return;
+  D.lastHistoryAt = now;
+
+  let demand = 0;
+  let active = 0;
+  for (let zone = 1; zone <= NZ; zone++) {
+    const valve = ev('sensor-zone_' + zone + '_valve_pct');
+    if (valve != null) {
+      demand += valve;
+      active += 1;
+    }
+  }
+
+  pushHistory('historyFlow', ev('sensor-manifold_flow_temperature'));
+  pushHistory('historyReturn', ev('sensor-manifold_return_temperature'));
+  pushHistory('historyDemand', active ? demand / active : 0);
+  for (let zone = 1; zone <= NZ; zone++) {
+    pushZoneHistory('historyZoneTemp', zone, ev('sensor-zone_' + zone + '_temperature'));
+    pushZoneHistory('historyZoneSp', zone, ev('number-zone_' + zone + '_base_setpoint')
+      ?? ev('number-zone_' + zone + '_setpoint'));
+  }
+}
+
+function pushZoneHistory(bucket, zone, value) {
+  const target = D[bucket] && D[bucket][zone];
+  if (!target) return;
+  const numeric = toNumber(value);
+  if (numeric == null) return;
+  target.push(numeric);
+  while (target.length > HISTORY_MAX) target.shift();
+  notify(dashboardKey(bucket + ':' + zone));
+}
+
+export function getZoneSeries(kind, zone) {
+  const bucket = kind === 'sp' ? D.historyZoneSp : D.historyZoneTemp;
+  return (bucket && bucket[zone]) ? bucket[zone].slice() : [];
+}
+
+function timeStamp() {
+  const value = new Date();
+  return String(value.getHours()).padStart(2, '0') + ':' +
+    String(value.getMinutes()).padStart(2, '0') + ':' +
+    String(value.getSeconds()).padStart(2, '0');
+}
+
+export function setZoneStateHistory(data) {
+  D.zoneStateHistory = data || null;
+  notify(dashboardKey('zoneStateHistory'));
+}
+
+// ---- live device log (fed by GET /api/v1/logs) ----
+
+export function getDeviceLogSeq() {
+  return D.deviceLogSeq;
+}
+
+export function appendDeviceLog(lines, nextSeq) {
+  if (Array.isArray(lines) && lines.length) {
+    const receivedAt = Date.now();
+    for (const l of lines) {
+      // Wire shape: [seq, level, tag, msg] — stamp arrival time for the UI clock.
+      D.deviceLog.push({ seq: l[0], level: l[1], tag: l[2], msg: l[3], at: receivedAt });
+      if (l[0] > D.deviceLogSeq) D.deviceLogSeq = l[0];
+    }
+    while (D.deviceLog.length > DEVICE_LOG_MAX) D.deviceLog.shift();
+    notify(dashboardKey('deviceLog'));
+  }
+  if (typeof nextSeq === 'number' && nextSeq > D.deviceLogSeq) {
+    // next_seq is the firmware's running counter; never re-request seqs we've seen.
+    D.deviceLogSeq = nextSeq - 1;
+  }
+}
+
+export function getDeviceLog() {
+  return D.deviceLog;
+}
+
+export function clearDeviceLog() {
+  D.deviceLog = [];
+  notify(dashboardKey('deviceLog'));
+}

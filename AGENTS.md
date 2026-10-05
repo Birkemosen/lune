@@ -1,0 +1,131 @@
+# AGENTS.md
+
+Guidance for agents working in this repository.
+
+## Project Shape
+
+This is a Birkemosen monorepo. Each hardware product owns its code in a
+dedicated subfolder:
+
+```text
+lune-v6/         ESPHome firmware, local dashboard, hardware files, V6 tests/docs
+docs/            Cross-device notes; brand architecture lives in lune-coordinator
+shared/          Shared contracts/design notes; no shared runtime dashboard code
+```
+
+Lune Touch / Lune Mini coordinator code lives in the private repository
+`Birkemosen/lune-coordinator`. Product brand architecture is owned there
+(`docs/lune_brand_architecture.md`).
+
+Lune Design System code lives in the private repository
+`Birkemosen/lune-design-system`. The shared design system and components is owned there.
+Every change to UI etc. must conform into Lune Design System.
+
+Keep hardware code separate unless a deliberate shared package is introduced. In
+particular, Lune V6 must remain a safe local manifold node and must not depend on Lune
+Touch / Mini for baseline heating safety.
+
+## Common Commands
+
+Run these from the repository root:
+
+```bash
+make config
+make dashboard-build
+make build
+make deploy
+make logs
+make test
+make test-v6
+make deploy-v6 HOST=192.168.x.x
+make release
+make release VERSION=v1.1.0
+make release-firmware VERSION=v1.1.0
+```
+
+`make release-firmware` builds the publishable bundle (renamed `.factory.bin` /
+`.ota.bin` plus `manifest-lune-v6.json` in the gitignored `lune-v6/dist/`) from
+`lune-v6/configurations/lune-v6-release.yaml`, which carries no WiFi credentials.
+`.github/workflows/build-release-firmware.yml` runs the same target on release
+creation.
+
+Device-local commands also work:
+
+```bash
+make -C lune-v6 config
+make -C lune-v6 dashboard-build
+make -C lune-v6 test
+```
+
+The Makefiles resolve `esphome`, `platformio`, and `python3` from the repo-root
+`.venv313/` -> `.venv/` -> PATH. The Lune V6 firmware entrypoint is:
+
+```text
+lune-v6/configurations/lune-v6.yaml
+```
+
+The hostname is `lune-v6-<mac>`. Hardware revision 3.3 is a board package
+(`packages/board/lune-v6-rev33.yaml`), not part of the device name.
+
+`secrets.yaml` stays at the repository root and remains gitignored.
+
+## Lune V6
+
+Lune V6 is the local 6-zone hydronic manifold controller. Its code lives under
+`lune-v6/`:
+
+```text
+lune.yaml
+configurations/
+packages/
+components/
+web/
+test/
+hardware/
+docs/
+```
+
+Dashboard source is `lune-v6/web/dashboard-src/` and the committed bundle is
+`lune-v6/web/dashboard.js`. The dashboard must use `/api/v1`, not ESPHome
+entity REST routes.
+
+Important local ownership:
+
+- Motor movement and endstop safety
+- Local temperature source freshness (probe, on-manifold BLE, HTTP EXTERNAL)
+- `sensor_id` → zone mapping for EXTERNAL ingest (producers never choose the zone)
+- Conservative zone control without coordinator
+- Minimum flow protection
+- Command validation, clamp, expiry, and reporting
+- Snapshot / diagnostics API for local state
+
+Lune Touch / Mini must not ingest room temperatures; they send setpoint/authority
+commands only. BYO hubs (Shelly / HA / Homey) POST to `/api/v1/room-temperatures`.
+See `lune-v6/docs/external_room_temperature.md`.
+
+When changing persisted config structs, increment the relevant version in
+`lune-v6/components/lv6_config_store/lv6_types.h`.
+
+## Lune Touch / Mini
+
+Coordinator-owned code lives in the private `Birkemosen/lune-coordinator` repository.
+It owns forecast fetch/cache, wind/solar/thermal-lead decisions, whole-house learning,
+zone prioritization, and command ledgers.
+
+Coordinator ownership includes forecast fetch/cache, wind/solar/thermal-lead decisions,
+whole-house learning, zone prioritization, and command ledgers. Lune V6 still validates
+and clamps every command locally.
+
+## Dashboard Sharing
+
+Design tokens, CSS components, and the V6 reference shell live in the sibling
+[`lune-design-system`](https://github.com/Birkemosen/lune-design-system)
+repository (`DESIGN.md`, `AGENTS.md`, `tokens/tokens.json`, `css/lune-ui.src.css`,
+`examples/v6/`). Install/build with `make design-tokens` / `make dashboard-build`
+(see `lds.yaml`). The product UI is static HTML/CSS (radio navigation) plus a
+thin `binder.js` for `/api/v1` live data — not the legacy LDS1 component kit.
+
+**Design changes must land in `lune-design-system` first** (CSS, reference
+HTML/i18n), then rebuild into `lune-v6`. Do not fix visual structure only under
+`lune-v6/web/`.
+

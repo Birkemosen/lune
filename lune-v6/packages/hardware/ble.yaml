@@ -1,0 +1,114 @@
+# BLE passive scanning for BTHome temperature sensors (Shelly BLU H&T, etc.)
+# Sensors feed into the zone controller's external temperature slot via the
+# lv6_bthome_bridge component (NimBLE observer callbacks).
+# Configure MAC address per zone in Settings > Zone X BLE MAC.
+#
+# To use: set zone temp source to "BLE Sensor" and enter the device MAC address.
+# The MAC is printed on the device label (e.g. "AA:BB:CC:DD:EE:FF").
+#
+# Keep the BLE controller off until WiFi has associated. Sharing the 2.4 GHz
+# radio during the 4-way handshake is a common Auth Expired / Association
+# Expired failure on ESP32-S3 + UniFi. lv6_ble_demand enforces a 15s settle
+# after WiFi connect, then enables NimBLE only while config still needs it
+# (any zone TempSource=BLE, or ble clock sync enabled). After demand drops,
+# scan stops and the hub disables following a short idle grace.
+#
+# Scan epoch: 640ms interval / 320ms window (~50% duty, longer quiet gaps than
+# 320/160). Override via nimble_hub interval/window if field-tuning coexistence.
+#
+# Stack: ESP-IDF NimBLE via nimble_hub (Observer + Broadcaster, concurrent scan+advertise).
+
+nimble_hub:
+  id: lv6_ble
+  enable_on_boot: false
+  # Quieter 50% duty: longer quiet gaps than 320/160 for WiFi coexistence.
+  interval: 640ms
+  window: 320ms
+  active: false
+
+lv6_ble_demand:
+  id: lv6_ble_demand_gate
+  hub_id: lv6_ble
+  config_store_id: lv6_config
+  wifi_settle: 15s
+  idle_grace: 30s
+
+lv6_bthome_bridge:
+  id: lv6_bthome
+  hub_id: lv6_ble
+  zone_controller_id: lv6_zones
+  zone_temp_sensors:
+    - ble_temp_zone_1
+    - ble_temp_zone_2
+    - ble_temp_zone_3
+    - ble_temp_zone_4
+    - ble_temp_zone_5
+    - ble_temp_zone_6
+
+lv6_ble_time_beacon:
+  id: lv6_ble_clock
+  time_id: sntp_time
+  config_store_id: lv6_config
+  hub_id: lv6_ble
+
+lv6_dashboard:
+  ble_time_beacon_id: lv6_ble_clock
+  nimble_hub_id: lv6_ble
+
+wifi:
+  on_disconnect:
+    # Belt-and-suspenders with lv6_ble_demand: drop the controller immediately
+    # so a reconnect gets the 2.4 GHz radio alone during association.
+    - nimble_hub.stop_scan:
+        id: lv6_ble
+    - nimble_hub.disable:
+        id: lv6_ble
+
+sensor:
+  - platform: template
+    name: "Zone 1 BLE Temperature"
+    id: ble_temp_zone_1
+    unit_of_measurement: "°C"
+    accuracy_decimals: 1
+    entity_category: diagnostic
+    icon: "mdi:bluetooth-transfer"
+
+  - platform: template
+    name: "Zone 2 BLE Temperature"
+    id: ble_temp_zone_2
+    unit_of_measurement: "°C"
+    accuracy_decimals: 1
+    entity_category: diagnostic
+    icon: "mdi:bluetooth-transfer"
+
+  - platform: template
+    name: "Zone 3 BLE Temperature"
+    id: ble_temp_zone_3
+    unit_of_measurement: "°C"
+    accuracy_decimals: 1
+    entity_category: diagnostic
+    icon: "mdi:bluetooth-transfer"
+
+  - platform: template
+    name: "Zone 4 BLE Temperature"
+    id: ble_temp_zone_4
+    unit_of_measurement: "°C"
+    accuracy_decimals: 1
+    entity_category: diagnostic
+    icon: "mdi:bluetooth-transfer"
+
+  - platform: template
+    name: "Zone 5 BLE Temperature"
+    id: ble_temp_zone_5
+    unit_of_measurement: "°C"
+    accuracy_decimals: 1
+    entity_category: diagnostic
+    icon: "mdi:bluetooth-transfer"
+
+  - platform: template
+    name: "Zone 6 BLE Temperature"
+    id: ble_temp_zone_6
+    unit_of_measurement: "°C"
+    accuracy_decimals: 1
+    entity_category: diagnostic
+    icon: "mdi:bluetooth-transfer"

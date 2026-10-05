@@ -1,0 +1,22 @@
+# =============================================================================
+# WiFi for public release binaries — AP + captive portal only
+# =============================================================================
+# Deliberately has no `ssid`/`password`: a published factory/OTA image must not
+# carry the build host's credentials, and a station block in the image would
+# take precedence over the credentials a user already provisioned through the
+# captive portal or Improv. Without one, the device keeps using its stored
+# credentials across an OTA and falls back to the setup AP when they fail.
+#
+# Used by configurations/lune-v6-release.yaml, which also `!remove`s the
+# station block inherited from packages/network/wifi.yaml.
+# =============================================================================
+
+wifi:
+  power_save_mode: none
+  use_psram: true
+  output_power: 20.5dB
+  ap:
+    ssid: "${fallback_ap_ssid}"
+    ap_timeout: 5min
+
+captive_portal:

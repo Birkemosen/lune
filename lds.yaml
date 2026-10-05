@@ -1,0 +1,14 @@
+# Lune V6 — Lune Design System 2 consumer.
+# Built artifacts live under lune-v6/web/ui/ via `make design-tokens` /
+# `make dashboard-build`. The sibling checkout is ../lune-design-system.
+schema: 2
+design_system: ../lune-design-system
+project: v6
+artifacts:
+  - kind: css
+    source: dist/v6/lune-ui.css
+    dest: lune-v6/web/ui/lune-ui.css
+  - kind: html
+    note: Built by lune-v6/web/build_ui.py into lune-v6/web/ui/{en,da}/
+  - kind: binder
+    note: Built by esbuild from lune-v6/web/binder-src into lune-v6/web/ui/binder.js

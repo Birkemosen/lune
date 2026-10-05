@@ -1,0 +1,142 @@
+# Lune V6 Architecture
+
+Installer- and operator-facing UI help lives in [Manual.md](./Manual.md).
+This file is the engineering overview.
+
+## System Overview
+
+Lune V6 is a 6-zone underfloor heating (UFH) manifold controller in the Birkemosen Lune product line. It is built on ESP32-S3 with ESPHome firmware. Custom C++
+components run as FreeRTOS tasks alongside the ESPHome main loop and separate hardware
+control (motor FSM, endstop detection) from heating logic (zone state machine, control
+algorithms, hydraulic balance).
+
+The current repository and code still use the historical `lune` and `lv6` names.
+Treat those as internal implementation names until a deliberate migration is planned.
+Public product references should use Lune V6.
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│                     Config Composition                       │
+│  configurations/lune-v6.yaml → lune.yaml       │
+│  (substitutions + packages: board / hardware / network /     │
+│   zones)                                                     │
+└────────────────────────────┬─────────────────────────────────┘
+                             ▼
+┌──────────────────────────────────────────────────────────────┐
+│                    Custom C++ Components                     │
+│                                                              │
+│  lv6_config_store ← lv6_valve_controller ← lv6_zone_controller
+│                                                  ↑           │
+│                                          lv6_dashboard       │
+└────────────────────────────┬─────────────────────────────────┘
+                             ▼
+┌──────────────────────────────────────────────────────────────┐
+│                       Hardware Layer                         │
+│  • 3× DRV8411 dual H-bridges, 74HC4514 one-hot decoder      │
+│  • Shared INA180A1 current sense + COMM_TACHO_N              │
+│  • 1-Wire DS18B20 probes (8 slots)                           │
+│  • BLE (BTHome / Shelly BLU H&T + clock beacon)              │
+│  • Status LED (active-low GPIO), display                     │
+└──────────────────────────────────────────────────────────────┘
+```
+
+## Repository Structure
+
+```
+lune/
+├── lune.yaml          Shared base config (substitutions + packages)
+├── configurations/
+│   └── lune-v6.yaml  Firmware entrypoint (hostname lune-v6-<mac>)
+├── packages/
+│   ├── board/                ESP32-S3 board definition
+│   ├── hardware/             BLE, display, I2C, motors, LED, 1-Wire, sensors
+│   ├── network/              WiFi, API, OTA
+│   └── zones/                Climate entities, zone sensors, UI, dashboard wiring
+├── components/               Custom ESPHome external components (C++)
+│   ├── lv6_config_store/     NVS persistence (DeviceConfig struct)
+│   ├── lv6_valve_controller/ Motor FSM, endstop detection, ripple counting
+│   ├── lv6_zone_controller/  Zone state machine, algorithms, hydraulic balance
+│   ├── lv6_ble_time_beacon/  Shelly Date/Time Broadcast for BLU display clocks
+│   └── lv6_dashboard/        HTTP API (/api/v1), dashboard asset serving
+├── web/
+│   ├── build_ui.py           LDS2 HTML shell + i18n build
+│   ├── i18n/                 en/da string catalogues
+│   ├── binder-src/           Live binder (esbuild → dist/binder.js)
+│   ├── dashboard-src/core/   Shared /api/v1 client + store (used by binder)
+│   └── ui/                   Built CSS, HTML, binder (embedded in firmware)
+├── test/ripple_counter/      Host-side unit tests (clang++, no ESP-IDF)
+├── docs/                     Architecture, API contract, integration docs
+└── Makefile                  Build/deploy/test targets
+```
+
+## FreeRTOS Task Layout
+
+| Task | Core | Priority | Period |
+|------|------|----------|--------|
+| `lv6_valve` (motor FSM) | 1 | 7 | 10 ms tick |
+| `lv6_ripple` (DMA ADC) | 1 | 7 | continuous |
+| `lv6_zone` (control cycle) | 1 | 6 | 10 s (configurable) |
+| `lv6_nvs` (flash commit) | 1 | 1 | event-driven |
+| ESPHome loopTask | 0 | 1 | — |
+
+Cross-task state is exchanged via FreeRTOS queues and mutexes. Dashboard snapshots are
+assembled in `lv6_dashboard::loop()` (main loop) under a dedicated `snapshot_mutex_`.
+
+## Data Flow
+
+### Local Control
+
+```
+Temp source (DS18B20 / BLE) → Zone state machine → Control algorithm → Hydraulic balance
+                                   ↑                (tanh/linear/PID)        ↓
+                              Setpoint + offsets                       Valve position
+                                                                            ↓
+                                                                   Motor FSM (one at a time)
+                                                                            ↓
+                                                                       DRV8215 I2C
+```
+
+### Setpoint-offset command path
+
+Coordinator optimizers write per-zone setpoint-offset / preheat commands through
+`Lv6ZoneController::apply_helios_command()`. Offsets are clamped in firmware by per-zone
+safety limits; if a producer goes stale, its offsets are cleared and local control
+continues unchanged. The Helios command slot is runtime state only (Touch offsets);
+there is no persisted `HeliosConfig` / `ForecastConfig` NVS section.
+
+Whole-house coordination and heat-source integration are provided by Lune Touch,
+not an external HTTP optimizer — the previous `lv6_helios_client` was removed. Removing any
+producer reverts transparently to local control: no vendor lock-in, no safety dependency
+on an external service. Heating modes, heat-demand summary, and the Asgard feed-temp
+trim contract are documented in
+[`docs/lune_whole_house_flow_temperature.md`](../../docs/lune_whole_house_flow_temperature.md).
+
+## Hardware Layer
+
+- **Motor Control**: 6× DRV8215 I2C H-bridges with shared IPROPI ADC current sensing
+- **Constraint**: One motor at a time (all IPROPI outputs wire-ORed to GPIO7; the valve
+  FSM enforces sequential execution)
+- **Endstop Detection**: Four-path software detection (threshold, slope, hard cap, ripple
+  limit) with per-direction parameters — see [endstop_detection.md](endstop_detection.md)
+- **Sensors**: 1-Wire DS18B20 (8 slots, NVS-persisted ROM mapping), on-manifold BLE
+  BTHome, and authenticated HTTP EXTERNAL ingest (`POST /api/v1/room-temperatures`,
+  `sensor_id` → zone mapping on V6 only). See [external_room_temperature.md](external_room_temperature.md).
+- **Communication**: WiFi, ESPHome native API (Home Assistant), HTTP/JSON (dashboard +
+  Lune Touch). No MQTT on V6 — hubs forward room temps over HTTP.
+
+## Dashboard API
+
+Dashboard transport uses the dedicated `/api/v1` JSON namespace served by
+`lv6_dashboard` on the device web server (port 80):
+
+- The dashboard is served at `/` (cookie / Accept-Language), `/en/`, `/da/`,
+  `/lune-ui.css`, and `/binder.js` (also `/dashboard.js`); `/dashboard` and
+  `/dashboard/` are retained as redirect-only legacy bookmarks
+- All dashboard reads/writes go through `/api/v1` — the dashboard must not call
+  ESPHome entity REST routes (`/climate`, `/switch`, `/number`, …)
+- Home Assistant integration continues through the ESPHome native API
+- Contract: [lv6_api_v1.md](lv6_api_v1.md)
+
+Frontend source lives under `lune-v6/web/` (LDS2 `build_ui.py` + `binder-src/`) and
+is built into `lune-v6/web/ui/`, which is embedded into the firmware
+at build time.

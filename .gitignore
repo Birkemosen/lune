@@ -1,0 +1,26 @@
+# macOS
+.DS_Store
+
+# ESPHome build artifacts
+.esphome/
+traces/
+.cache/
+# Release bundle (binaries + manifest) produced by `make release-firmware`
+dist/
+# IDE
+.vscode/
+.idea/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Local secrets (copy secrets.yaml, rename, and add your credentials)
+# secrets.yaml is kept as a template with placeholder values
+secrets.yaml
+
+# Claude Code session state (contains per-session tool allow-lists)
+.claude/settings.json
+graphify-out/
+.code-review-graph/
