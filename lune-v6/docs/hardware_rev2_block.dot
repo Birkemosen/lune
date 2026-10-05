@@ -1,0 +1,71 @@
+// HeatValve-6 Rev 2 — shared-driver / motor-mux block diagram
+// Render:  dot -Tsvg hardware_rev2_block.dot -o hardware_rev2_block.svg
+//          dot -Tpng hardware_rev2_block.dot -o hardware_rev2_block.png
+digraph lv6_rev2 {
+  rankdir=LR;
+  graph [fontname="Helvetica", fontsize=11, splines=ortho, nodesep=0.4, ranksep=0.8];
+  node  [fontname="Helvetica", fontsize=10, shape=box, style="rounded,filled", fillcolor="#eef3fb"];
+  edge  [fontname="Helvetica", fontsize=9];
+
+  mcu [label="ESP32-S3-WROOM-1\nN16R8\n(PCNT, LEDC, ADC1, BLE/WiFi)", fillcolor="#dbe7ff", height=1.1];
+
+  subgraph cluster_pwr {
+    label="Power"; style="rounded,dashed"; color="#999999";
+    usb [label="USB-C VBUS\nsole input", fillcolor="#fdecea"];
+    rail [label="+3V3_SYS\nbuck + bulk\nlogic + motors", fillcolor="#fdecea"];
+    analog [label="+3V3_A / VBIAS\nfiltered analog", fillcolor="#fdecea"];
+  }
+
+  hbr [label="shared DRV8837\nH-bridge\nOUT1=MOT_COM\nOUT2=MOT_DRV", fillcolor="#f3f8f1"];
+
+  subgraph cluster_mux {
+    label="6x low-Ron bidirectional motor mux"; style="rounded,filled"; fillcolor="#f3f8f1"; color="#7aa37a";
+    mx1 [label="mux 1"]; mx2 [label="mux 2"]; mx3 [label="mux 3"];
+    mx4 [label="mux 4"]; mx5 [label="mux 5"]; mx6 [label="mux 6"];
+  }
+
+  motors [label="6x 2-wire\nmanifold actuators\npin2=MOT_COM\npin3=MOTx_SEL", fillcolor="#eef3fb"];
+  shunt [label="shared low-side\nshunt RSH1", fillcolor="#fff6da"];
+
+  subgraph cluster_fe {
+    label="Shared sense front-end"; style="rounded,filled"; fillcolor="#f6f1fb"; color="#9a7ab0";
+    current [label="INA current\nADC_CURRENT"];
+    bemf [label="MOT_COM/MOT_DRV\ndifferential BEMF\nADC_BEMF"];
+    tacho [label="AC gain + comparator\nTACHO_EDGE"];
+    flim [label="force comparator\nPWM-DAC threshold"];
+    latch [label="latch\nDRIVE_PERMIT", fillcolor="#fde9d9"];
+  }
+
+  usb -> rail;
+  rail -> hbr [label="VM=3V3"];
+  analog -> current;
+  analog -> bemf;
+
+  mcu -> hbr [label="HBR_IN1/2"];
+  mcu -> mx1 [label="MUX_EN1..6"];
+  mcu -> mx6 [style=dotted];
+  hbr -> mx1 [label="MOT_DRV"];
+  hbr -> motors [label="MOT_COM"];
+  mx1 -> motors [label="MOT1_SEL"];
+  mx6 -> motors [label="MOT6_SEL", style=dotted];
+
+  hbr -> shunt [label="driver GND"];
+  shunt -> current;
+  hbr -> bemf [label="motor bus"];
+  bemf -> tacho;
+  shunt -> flim;
+
+  current -> mcu [label="ADC"];
+  bemf -> mcu [label="ADC"];
+  tacho -> mcu [label="PCNT"];
+  mcu -> flim [label="FLIM_PWM"];
+  flim -> latch [label="trip"];
+  mcu -> latch [label="arm/reset"];
+  latch -> mcu [label="state"];
+  latch -> hbr [label="nSLEEP / cut drive", color="#c0392b", fontcolor="#c0392b"];
+
+  ble [label="BLE room sensors\n(balancing feedback)", fillcolor="#eef3fb"];
+  ow  [label="1-Wire manifold\nsupply + return", fillcolor="#eef3fb"];
+  ble -> mcu;
+  ow -> mcu;
+}

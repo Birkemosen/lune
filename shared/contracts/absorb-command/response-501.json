@@ -1,0 +1,8 @@
+{
+  "ok": false,
+  "version": "v1",
+  "error": {
+    "code": "not_implemented",
+    "message": "Absorb window accepted for ledger but effect not yet enabled (P3 stub)"
+  }
+}

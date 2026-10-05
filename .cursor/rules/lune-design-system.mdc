@@ -1,0 +1,50 @@
+---
+description: Lune Design System 2 is the authority for Lune V6 dashboard UI
+globs: lune-v6/web/**,lune-v6/web/binder-src/**
+alwaysApply: true
+---
+
+# Lune Design System 2
+
+When designing, building, or changing UI in the Lune V6 dashboard, treat the
+sibling `lune-design-system` repository (`DESIGN.md`, `AGENTS.md`,
+`tokens/tokens.json`, `css/lune-ui.src.css`, `examples/v6/`) as the authority.
+
+## Sync rule (mandatory)
+
+Any visual or structural design change must be made in **lune-design-system
+first**, then pulled into `lune-v6` via `make design-tokens` /
+`make dashboard-build`. Do not fix layout, components, tokens, or the V6
+reference shell only under `lune-v6/web/` — mirror the same change in LDS
+(`css/lune-ui.src.css`, `examples/v6/build_ui.py`, `examples/v6/i18n/` as
+needed). Product-only live binding stays in `lune-v6/web/binder-src/`.
+
+## Required
+
+1. Build UI with components from `css/lune-ui.src.css`. Prefer an existing
+   component before inventing a new one.
+2. Use only tokens (`var(--…)`) from `tokens/tokens.json`. No hex, no `#fff`,
+   no px sizes outside `--space-*` / `--fs-*` / `--r-*` / `--hit`.
+3. Views are `section.view` with id `v-{dash|conf}-{scope}` under `main.content`.
+4. Content in 2–4 `.panel`s (widths `c4`–`c8`). Forms are `form.panel` with
+   `data-save` and one `.btn.primary` in `.panel-foot`.
+5. All text from the i18n catalogue (`lune-v6/web/i18n/`). Sentence case.
+6. Destructive actions use `.confirm-pop`; never an inline disclosure, never "OK".
+7. Colour meaning: orange=heat, blue=weather/sensors, green=ok, yellow=soon,
+   red=fault now, violet=learning/groups. Colour is never the only signal.
+8. JS only for live data, +/− steppers, and form submit (`lune:save`). No JS
+   navigation or view state — use radio/checkbox/`details`.
+
+## Do not
+
+- Sidebar, modals, or tabs beyond the mode pill
+- External resources (fonts, CDN, images)
+- Panel shadows; depth comes from `--card` on `--bg`
+- `display: none` on `.state` inputs
+- Inventing parallel palettes or hardcoding colours
+- Patching only the generated/copied CSS or HTML under `lune-v6/web/ui/`
+
+## Before done
+
+- Edit LDS source, then `make design-tokens` and `make -C lune-v6 dashboard-build`
+- Check 360 / 820 / 1440, light and dark, keyboard

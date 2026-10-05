@@ -1,0 +1,381 @@
+# =============================================================================
+# Lune V6 — Shared Base Configuration
+# =============================================================================
+# This file is the shared firmware base. The device entrypoint is
+# configurations/lune-v6.yaml and `!include`s this file plus BLE.
+# PCB pins and the status LED come from packages/board/lune-v6-rev33.yaml;
+# the ESP32-S3-WROOM-1-N8R8 module comes from packages/board/esp32-s3.yaml.
+#
+# Build/deploy via the Makefile (`make build`). Do NOT add
+# `nimble_hub:` / BLE packages live in packages/hardware/ble.yaml.
+# =============================================================================
+
+# =============================================================================
+# Substitutions — All user-tunable settings in one place
+# =============================================================================
+substitutions:
+  # Runtime identity. `name_add_mac_suffix` below produces
+  # lune-v6-<six-hex-MAC> for the ESPHome/API hostname.
+  device_name: lune-v6
+  friendly_name: "Lune V6"
+
+  # Network — fallback AP name when WiFi is unreachable
+  fallback_ap_ssid: "Lune V6 Setup"
+
+  # Control parameters — defaults (adjustable at runtime via HA)
+  default_comfort_band: "0.5"        # °C dead-band around setpoint
+  default_min_valve_opening: "25.0"  # % minimum total valve opening (heat-pump protection)
+  default_maintenance_base: "15.0"   # % valve position when zone is satisfied (idle/minimal flow)
+  default_demand_boost: "30.0"       # % added to calculated position when zone has demand
+
+  # Zone controller timing
+  zone_cycle_interval: 10s
+
+  # 1-Wire timing — slower polling improves DS18B20 bus stability with many probes
+  onewire_update_interval: 10s
+  onewire_resolution_bits: "10"
+
+esphome:
+  name: ${device_name}
+  name_add_mac_suffix: true
+  friendly_name: ${friendly_name}
+  comment: "Lune V6 local 6-zone hydronic manifold controller"
+  project:
+    name: birkemosen.lune-v6
+    version: ${firmware_version}${firmware_suffix}
+  on_boot:
+    - priority: 800
+      then:
+      - logger.log: "Lune V6 booting..."
+      - lambda: |-
+          // Apply persisted DS18B20 ROM map early so probe slots stay stable across reboots.
+          if (id(probe_addr_1) != 0) id(probe_temp_1)->set_address(id(probe_addr_1));
+          if (id(probe_addr_2) != 0) id(probe_temp_2)->set_address(id(probe_addr_2));
+          if (id(probe_addr_3) != 0) id(probe_temp_3)->set_address(id(probe_addr_3));
+          if (id(probe_addr_4) != 0) id(probe_temp_4)->set_address(id(probe_addr_4));
+          if (id(probe_addr_5) != 0) id(probe_temp_5)->set_address(id(probe_addr_5));
+          if (id(probe_addr_6) != 0) id(probe_temp_6)->set_address(id(probe_addr_6));
+          if (id(probe_addr_7) != 0) id(probe_temp_7)->set_address(id(probe_addr_7));
+          if (id(probe_addr_8) != 0) id(probe_temp_8)->set_address(id(probe_addr_8));
+
+# WiFi provisioning over USB (Improv protocol) — works with ESPHome Web Installer
+improv_serial:
+
+# mDNS stays off. The S3 build hits allocator failures when the responder is
+# enabled; Touch finds V6 nodes with a LAN HTTP probe, not .local names.
+mdns:
+  disabled: true
+
+# System clock via SNTP. Used for wall-clock diagnostics and future coordinator
+# interactions. Without a time source the ESP stays on the 1970 epoch.
+time:
+  - platform: sntp
+    id: sntp_time
+    timezone: Europe/Copenhagen
+
+# =============================================================================
+# Packages — Platform, network, hardware, zones (radio NOT included here)
+# =============================================================================
+packages:
+  # Version
+  version:      !include version.yaml
+  # Module (N8R8) then PCB revision (pins + status LED)
+  mcu:          !include packages/board/esp32-s3.yaml
+  pcb:          !include packages/board/lune-v6-rev33.yaml
+  # TEMPORARY — remove after investigation (standalone heap tracing + early start).
+  # Disable by deleting this line and rebuilding; do not ship as production default.
+  # heap_tracing: !include packages/debug/heap-tracing.yaml
+  # Network (radio-agnostic only — wifi/api/ota are in every variant)
+  wifi:         !include packages/network/wifi.yaml
+  api:          !include packages/network/api.yaml
+  ota:          !include packages/network/ota.yaml
+  # Hardware
+  i2c:          !include packages/hardware/i2c.yaml
+  onewire:      !include packages/hardware/onewire.yaml
+  motors:       !include packages/hardware/motors.yaml
+  display:      !include packages/hardware/display.yaml
+  hw_sensors:   !include packages/hardware/sensors.yaml
+  # Zones
+  zone_sensors: !include packages/zones/sensors.yaml
+  climate:      !include packages/zones/climate.yaml
+  ui:           !include packages/zones/ui.yaml
+  dashboard:    !include packages/zones/lv6_dashboard.yaml
+
+# =============================================================================
+# External Components — Custom hardware drivers
+# =============================================================================
+external_components:
+  - source:
+      type: local
+      path: ../components
+    components:
+      - nimble_hub
+      - lv6_valve_controller
+      - lv6_zone_controller
+      - lv6_config_store
+      - lv6_dashboard
+      - lv6_ble_time_beacon
+      - lv6_bthome_bridge
+      - lv6_ble_demand
+
+# =============================================================================
+# Logger
+# =============================================================================
+logger:
+  level: DEBUG
+  logs:
+    component: ERROR
+    climate: WARN
+    sensor: WARN
+    light: ERROR
+    script: ERROR
+    dallas.temp.sensor: INFO
+    gpio.one_wire: INFO
+    lv6_onewire: INFO
+    text_sensor: WARN   # suppress text-sensor state-change noise (IP/SSID/zone state)
+
+# =============================================================================
+# Flash-write batching for ESPHome `restore_value` state (preferences)
+# =============================================================================
+# The only restore_value users here are the DS18B20 ROM map globals below, which
+# change at most once (auto-learn) and self-heal if lost. ESPHome's 60 s default
+# would re-arm a flash commit every minute; 15 min caps worst-case flash wear on
+# a board already at ~92 % flash. The custom Lv6ConfigStore NVS path is separate
+# (its own debounced commit task) and unaffected by this.
+preferences:
+  flash_write_interval: 15min
+
+# =============================================================================
+# Control Parameters — Tune these for your heating system
+# =============================================================================
+globals:
+  # Persisted ROM map for Probe 1..8 (auto-learned once, then reused every boot).
+  - id: probe_addr_1
+    type: uint64_t
+    restore_value: true
+    initial_value: '0'
+  - id: probe_addr_2
+    type: uint64_t
+    restore_value: true
+    initial_value: '0'
+  - id: probe_addr_3
+    type: uint64_t
+    restore_value: true
+    initial_value: '0'
+  - id: probe_addr_4
+    type: uint64_t
+    restore_value: true
+    initial_value: '0'
+  - id: probe_addr_5
+    type: uint64_t
+    restore_value: true
+    initial_value: '0'
+  - id: probe_addr_6
+    type: uint64_t
+    restore_value: true
+    initial_value: '0'
+  - id: probe_addr_7
+    type: uint64_t
+    restore_value: true
+    initial_value: '0'
+  - id: probe_addr_8
+    type: uint64_t
+    restore_value: true
+    initial_value: '0'
+  # Per-probe consecutive-miss counters (watchdog). Not persisted.
+  - id: probe_fail_cycles
+    type: int[8]
+    restore_value: no
+    initial_value: '{0, 0, 0, 0, 0, 0, 0, 0}'
+
+  - id: global_comfort_band
+    type: float
+    restore_value: true
+    initial_value: "${default_comfort_band}"
+  - id: global_min_valve_opening
+    type: float
+    restore_value: true
+    initial_value: "${default_min_valve_opening}"
+  - id: global_maintenance_base
+    type: float
+    restore_value: true
+    initial_value: "${default_maintenance_base}"
+  - id: global_demand_boost
+    type: float
+    restore_value: true
+    initial_value: "${default_demand_boost}"
+
+interval:
+  # Resource diagnostics: per-task stack headroom (min free since boot).
+  # Complements the debug component's heap/loop-time sensors below.
+  - interval: 300s
+    then:
+      - lambda: |-
+          static const char *const task_names[] = {
+            "lv6_valve", "lv6_ripple", "lv6_zone", "lv6_nvs", "loopTask"
+          };
+          for (const char *name : task_names) {
+            TaskHandle_t handle = xTaskGetHandle(name);
+            if (handle == nullptr) continue;
+            ESP_LOGD("lv6_diag", "Task %-10s stack headroom: %5u bytes",
+                     name, (unsigned) uxTaskGetStackHighWaterMark(handle));
+          }
+
+  - interval: 30s
+    then:
+      - lambda: |-
+          uint64_t *slots[8] = {
+            &id(probe_addr_1), &id(probe_addr_2), &id(probe_addr_3), &id(probe_addr_4),
+            &id(probe_addr_5), &id(probe_addr_6), &id(probe_addr_7), &id(probe_addr_8)
+          };
+          decltype(id(probe_temp_1)) probes[8] = {
+            id(probe_temp_1), id(probe_temp_2), id(probe_temp_3), id(probe_temp_4),
+            id(probe_temp_5), id(probe_temp_6), id(probe_temp_7), id(probe_temp_8)
+          };
+
+          // --- Watchdog: per-probe consecutive-miss counters --------------------
+          // A slot counts as missing when its sensor never published or reads NAN.
+          int mapped = 0, missing = 0;
+          for (int i = 0; i < 8; i++) {
+            if (*slots[i] == 0) { id(probe_fail_cycles)[i] = 0; continue; }
+            mapped++;
+            const bool ok = probes[i]->has_state() && !std::isnan(probes[i]->state);
+            if (ok) { id(probe_fail_cycles)[i] = 0; } else { missing++; id(probe_fail_cycles)[i]++; }
+          }
+
+          if (mapped >= 2 && missing == mapped) {
+            // Every mapped probe is unavailable at once → almost certainly a
+            // 1-Wire bus fault, not a stale ROM map. Resetting would wipe a
+            // valid map, so keep it and wait for the bus to recover.
+            ESP_LOGE("lv6_onewire", "All %d mapped probes missing — suspected 1-Wire bus fault; keeping ROM map", mapped);
+          } else if (mapped >= 4 && missing >= 2) {
+            // Map reset must stay atomic: a partially cleared map would make
+            // index-based fallback assign a ROM another slot already owns.
+            int persistent = 0;
+            for (int i = 0; i < 8; i++) {
+              if (id(probe_fail_cycles)[i] >= 4) {
+                persistent++;
+                ESP_LOGW("lv6_onewire", "Probe %d ROM 0x%016llx missing for %d cycles",
+                         i + 1, (unsigned long long) *slots[i], id(probe_fail_cycles)[i]);
+              }
+            }
+            if (persistent >= 2) {
+              ESP_LOGW("lv6_onewire",
+                       "Probe map stale (%d/%d mapped probes persistently missing) — resetting map and rebooting. "
+                       "Re-verify zone probe assignments after relearn.", persistent, mapped);
+              for (int i = 0; i < 8; i++) { *slots[i] = 0; id(probe_fail_cycles)[i] = 0; }
+              App.safe_reboot();
+              return;
+            }
+          }
+
+          // --- Auto-learn any unmapped probe slots, persist discovered ROMs -----
+          auto parse_addr = [](const std::string &s) -> uint64_t {
+            if (s.empty()) return 0;
+            return strtoull(s.c_str(), nullptr, 16);
+          };
+          auto addr_exists = [&](uint64_t v) -> bool {
+            if (v == 0) return false;
+            for (int i = 0; i < 8; i++)
+              if (*slots[i] == v) return true;
+            return false;
+          };
+
+          int learned = 0;
+          for (int i = 0; i < 8; i++) {
+            if (*slots[i] != 0) continue;
+            const uint64_t found = parse_addr(probes[i]->get_address_name());
+            if (found == 0) continue;
+            if (addr_exists(found)) {
+              ESP_LOGW("lv6_onewire", "Skip Probe %d learn: duplicate ROM 0x%016llx", i + 1, (unsigned long long) found);
+              continue;
+            }
+            *slots[i] = found;
+            learned++;
+            ESP_LOGI("lv6_onewire", "Learned Probe %d ROM 0x%016llx", i + 1, (unsigned long long) found);
+          }
+
+          if (learned > 0) {
+            int now_mapped = 0;
+            for (int i = 0; i < 8; i++)
+              if (*slots[i] != 0) now_mapped++;
+            ESP_LOGI("lv6_onewire", "Persistent probe map updated: %d/8 mapped", now_mapped);
+          }
+
+# =============================================================================
+# Custom Component Configuration — Device-specific hardware
+# =============================================================================
+
+# NVS config store (zone settings, motor calibration)
+lv6_config_store:
+  id: lv6_config
+
+# Valve controller — edit motor_addresses to match your PCB wiring
+lv6_valve_controller:
+  id: lv6_valves
+  config_store_id: lv6_config
+  i2c_id: i2c_bus
+  nsleep_pin: ${pin_nsleep}
+  nfault_pin: ${pin_nfault}
+  ipropi_pin: ${pin_adc_current}
+  current_sense: motor_current_adc
+  motor_addresses: [0x30, 0x31, 0x32, 0x33, 0x34, 0x35]
+  hardware_backend: ${motor_hardware_backend}
+  address0_pin: ${pin_motor_addr0}
+  address1_pin: ${pin_motor_addr1}
+  address2_pin: ${pin_motor_addr2}
+  address3_pin: ${pin_motor_addr3}
+  latch_arm_pin: ${pin_latch_arm}
+  comm_tacho_pin: ${pin_comm_tacho}
+  adc_tacho_pin: ${pin_adc_tacho}
+  driver_nsleep_pin: ${pin_driver_nsleep}
+  rail_overcurrent_pin: ${pin_rail_overcurrent}
+  fault_usb_pin: ${pin_fault_usb}
+  adc_tacho_enabled: ${adc_tacho_enabled}
+  auto_start_calibration: ${motor_auto_start_calibration}
+
+# Zone controller
+lv6_zone_controller:
+  id: lv6_zones
+  config_store_id: lv6_config
+  valve_controller_id: lv6_valves
+  cycle_interval: ${zone_cycle_interval}
+  probe_sensors:
+    - probe_temp_1
+    - probe_temp_2
+    - probe_temp_3
+    - probe_temp_4
+    - probe_temp_5
+    - probe_temp_6
+    - probe_temp_7
+    - probe_temp_8
+
+debug:
+  update_interval: 10s
+
+# -----------------------------------------------------------------------------
+# Runtime diagnostics
+#
+# Exposed so we can observe resource pressure (loop time spikes, heap
+# exhaustion, fragmentation). Visible in HA and the custom dashboard.
+# Keep update intervals slow \u2014 these are watch-dogs, not trend graphs.
+# -----------------------------------------------------------------------------
+sensor:
+  - platform: debug
+    free:
+      name: "Free heap"
+    block:
+      name: "Largest free block"
+    loop_time:
+      name: "Loop time (max ms over interval)"
+    psram:
+      name: "Free PSRAM"
+
+# Reset cause of the last boot. Distinguishes a clean OTA/software restart from
+# a brownout, watchdog or panic, which is the first thing to check after an
+# unexplained reboot.
+text_sensor:
+  - platform: debug
+    reset_reason:
+      id: reset_reason_text
+      name: "Reset Reason"

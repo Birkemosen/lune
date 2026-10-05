@@ -1,0 +1,14 @@
+{
+  "ok": true,
+  "version": "v1",
+  "data": {
+    "accepted": true,
+    "status": "disarmed",
+    "request_id": "absorb-fc-001-disarm",
+    "source": "lune-touch",
+    "reason": "thermal_buffer",
+    "action": "disarm",
+    "end_reason": "disarm",
+    "survives_reboot": false
+  }
+}

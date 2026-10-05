@@ -1,0 +1,41 @@
+api:
+  reboot_timeout: 0s
+  # One Touch/HA client is sufficient for this local manifold node. Keep the
+  # native API from consuming the socket/heap budget needed by the dashboard.
+  listen_backlog: 2
+  max_connections: 3
+  max_send_queue: 4
+  encryption:
+    key: !secret api_key
+  services:
+    - service: motor_reset_fault
+      variables:
+        zone: int
+      then:
+        - lambda: |-
+            if (zone < 0 || zone >= 6) { ESP_LOGW("lv6_svc", "reset_fault: invalid zone %d", zone); return; }
+            if (!id(lv6_valves).reset_fault(static_cast<uint8_t>(zone)))
+              ESP_LOGW("lv6_svc", "Zone %d reset fault rejected (controller busy)", zone + 1);
+    - service: motor_reset_and_relearn
+      variables:
+        zone: int
+      then:
+        - lambda: |-
+            if (zone < 0 || zone >= 6) { ESP_LOGW("lv6_svc", "reset_and_relearn: invalid zone %d", zone); return; }
+            if (!id(lv6_valves).reset_and_relearn(static_cast<uint8_t>(zone)))
+              ESP_LOGW("lv6_svc", "Zone %d reset+relearn rejected (drivers disabled or busy)", zone + 1);
+    - service: motor_reset_learned_factors
+      variables:
+        zone: int
+      then:
+        - lambda: |-
+            if (zone < 0 || zone >= 6) { ESP_LOGW("lv6_svc", "reset_learned_factors: invalid zone %d", zone); return; }
+            id(lv6_valves).reset_learned_factors(static_cast<uint8_t>(zone));
+
+# The stock ESPHome web UI (`web_server: version 2`) was removed: it kept an SSE
+# connection plus per-entity JSON state for all ~60 entities in *internal* heap,
+# which on this BLE+WiFi+dashboard board drove free internal heap critically low
+# (~15 KB). Nothing uses it — the custom dashboard and /api/v1 are served on
+# `web_server_base` (auto-loaded by lv6_dashboard + captive_portal, port 80) and
+# Home Assistant uses the native API. The custom dashboard lives at /; the
+# former /dashboard bookmark redirects there.

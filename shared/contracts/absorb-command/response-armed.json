@@ -1,0 +1,16 @@
+{
+  "ok": true,
+  "version": "v1",
+  "data": {
+    "accepted": true,
+    "status": "armed",
+    "request_id": "absorb-fc-001",
+    "source": "lune-touch",
+    "reason": "thermal_buffer",
+    "action": "arm",
+    "ttl_s": 1800,
+    "ttl_requested_s": 1800,
+    "clamp_applied": false,
+    "survives_reboot": false
+  }
+}

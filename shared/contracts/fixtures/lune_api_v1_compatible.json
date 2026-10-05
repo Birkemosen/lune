@@ -1,0 +1,9 @@
+{
+  "ok": true,
+  "api_version": "lune.api/v1",
+  "device": {"id": "v6-ground", "boot_id": "a1b2c3d4", "firmware_version": "2026.7.29"},
+  "timestamp": {"utc_ms": 1735689600000, "valid": true},
+  "data_revision": 42,
+  "freshness": {"state": "fresh", "age_ms": 0, "quality": "healthy"},
+  "data": {"zone": 1}
+}

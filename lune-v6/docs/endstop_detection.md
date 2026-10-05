@@ -1,0 +1,881 @@
+# Endstop Detection Algorithms
+
+> **Measured data, Rev 3.3.** Everything below is anchored to two captured Motor Lab
+> traces, kept as CI fixtures in `test/fixtures/` and replayed by
+> `make test-stall-model`. Numbers that are *not* from those traces are marked
+> provisional. The close trace is the run that destroyed an actuator; the open trace
+> was captured on that same, already-broken unit, so **no healthy open endstop has
+> ever been measured on this hardware**.
+
+## The mechanics being detected
+
+Closing a manifold valve is four mechanically distinct phases, and **phases 2 and 4
+look nearly identical in the current domain** — both are a rise under load. Separating
+them is the whole problem:
+
+| Phase | What is happening | Current (measured) | Rotation |
+|---|---|---|---|
+| 1 Free travel | The actuator plunger has not reached the valve pin | flat, **24.2 mA** | steady, **78 Hz** |
+| 2 **Pin contact** | Initial resistance, after which it partly falls back | ramps **~1 mA/s** to 32.5 mA | barely changes |
+| 3 Pressure | Pressing the pin down against the valve spring | **plateau 31–32.5 mA for 17.5 s** | ~77 Hz |
+| 4 **Hard stop** | The pin cannot be pressed further | ramps **~2 mA/s** | slows 80 → 34 Hz |
+
+Three consequences drive everything below.
+
+**The commutation counter does not stop at a stop — it inflates.** Through the grind
+the measured count rate *rose* to 88 Hz while the current said the rotor was
+stationary. Brush arcing produces edges that PCNT cannot distinguish from
+commutations. So `commutation_plateau`, `StrokePhase::STOPPING` and the stall
+debounce are **all structurally defeated on this actuator**, and a current-domain
+trip must never be withheld pending a plateau. This is also why a count *ceiling*
+is fail-safe: inflation makes it fire early.
+
+**The closing hazard is over-travel, not over-current.** Pop-off current is roughly
+4× running and is never reached; the plunger simply keeps extending until its
+anti-rotation tap leaves its guide and snaps. 40 s of close travel — 3120 counts at
+78 Hz — puts it at the housing exit. Current detection is only *how you stop before
+the travel limit*, which is why the unconditional ceiling in
+`safety_limits.h` is the load-bearing guarantee and not a backstop.
+
+**Closing is the harder direction to detect, not opening.** Instrumented
+measurements of this actuator (3.3 V, 1 Ω shunt) give:
+
+| | Opening | Closing |
+|---|---|---|
+| Duration | ~45 s | ~71 s |
+| Running current | 15–20 mA, **flat** | 15–20 mA **ramping to ~90 mA** against the valve spring |
+| At the endstop | ~100 mA — a clean **5× step** | ~100 mA — only a **~10 mA step** on an already-elevated baseline |
+
+Earlier revisions of this document claimed the opposite ("the opening stop is a
+smaller resistance"), quoting Rev 3.1 measurements taken at 70 % PWM hold duty which
+this document itself invalidates for continuous drive. That claim drove a change
+that accepted an opening endpoint with *no* current evidence at all; it has been
+reverted.
+
+The practical consequence is that the two directions need **structurally different
+references**, not merely different constants:
+
+| Direction | Reference | Primary detector |
+|---|---|---|
+| **Open** — flat baseline, clean step | `I_free`, the frozen running minimum | fraction of the stall span, `open_endstop_stall_fraction` |
+| **Close** — continuously rising baseline | **trailing window**, `I(t) − I(t−2 s)` | `TrailingStepDetector`, 2.5 mA sustained 1 s |
+
+> **Trailing step at the real tick rate.** Before build 123 the detector stored every
+> observation in 48 slots, which at the 10 ms FSM tick reaches back only 470 ms, so no
+> sample was ever 2 s old and it **never tripped on a device**. The 500 ms fixture rows
+> hid it. History is now decimated to span two windows. Replayed at 10 ms against the
+> close fixture it trips at ~40.16 s: past the pin (a 750 ms sustain already
+> false-fires there at ~20.7 s) but ~160 ms after the 40 s wall. On that trace the
+> first close stop is the seat cap (34 mA, 39.25 s), then `close_current_factor` 1.45
+> (39.75 s).
+
+## Hardware generations
+
+The detection paths are shared; what differs is where the signals come from and whether
+the drive can be modulated at all.
+
+| | Rev 3.0 / 3.1 (DRV8215) | Rev 3.1 Lean | **Rev 3.2** |
+|---|---|---|---|
+| Current | IPROPI current mirror, DMA @ 15 kHz | IPROPI, oneshot | Shunt → INA180A1 @ 10 V/A, **DMA @ 10 kHz** |
+| Rotation | current-ripple zero crossings | BEMF differential across a coast | **`COMM_TACHO_N` counted by PCNT** |
+| Cross-check | — | — | **`ADC_TACHO` in the same DMA stream** |
+| Drive | boost 350 ms → 70 % hold, soft-approach | same | **continuous, no duty control** |
+| Stall debounce | fixed 750 ms | fixed 750 ms | **scaled to observed cadence, ~150 ms** |
+| Timing anchors | `pwm_boost_ms` | `pwm_boost_ms` | **derived from the tacho contract** |
+
+Everything in the *Detection Paths*, *Pin Engagement* and *Calibration* sections below
+describes the shared algorithm; the **Rev 3.2** section states where it differs.
+
+## Hardware Context (Rev 3.0 / 3.1)
+
+Lune V6 rev3.0/3.1 uses DRV8215 H-bridge drivers with the built-in IPROPI current-mirror
+output as the **only analog feedback signal**. All 6 IPROPI outputs are wire-ORed to a
+single 5.1 kΩ sense resistor read by the ESP32-S3 ADC (GPIO7). Only one motor runs at
+a time (firmware invariant), so the active motor's current appears cleanly on the bus.
+
+### Signal Characteristics
+
+| Signal  | LV6 Hardware                        |
+|---------|-------------------------------------|
+| Tacho   | Derived from IPROPI current modulation via ADC zero-crossing detection |
+| Current | Same IPROPI signal, EMA-filtered (α = 0.05) at 10 ms FSM tick rate |
+
+Key implications of the single-signal design:
+
+- **PWM dead zones**: During PWM hold-phase off-time, IPROPI = 0 (coast mode). Both
+  ripple counting and current sensing are blind during these intervals.
+- **Ripple SNR**: Current ripple from commutator switching has lower amplitude than
+  voltage back-EMF ripple. The hysteresis-based zero-crossing detector (12% band,
+  5-tick PWM debounce) works, but is noisy.
+- **No independent stall signal**: LV6 cannot cleanly separate high current and ripple
+  cessation, since both come from IPROPI.
+
+> The current figures throughout this document were measured on Rev 3.1 under the
+> 70 % hold duty. Rev 3.2 drives at full rail continuously, so **every threshold,
+> stroke time and commutation count here is invalid on it until re-measured** — see
+> `hardware/lune-v6-rev3.2/design-contract.json`.
+
+## The mechanical ceiling — the one guarantee that does not depend on detection
+
+`safety_limits.h::compute_move_ceiling()` bounds every move in **both commutation
+counts and milliseconds**, computed once at `start_motor_()` and enforced in
+`process_tick_()` regardless of phase, evidence, plateau or classifier verdict.
+Whichever limit is reached first wins.
+
+```
+expected = remaining_fraction x learned_stroke(dir)
+ceiling  = expected x (1 + stroke_uncertainty_pct/100) + overrun_budget(dir)
+limit    = clamp(ceiling, runtime_floor, min(bootstrap(dir), user_max, timed))
+```
+
+| | Close | Open |
+|---|---|---|
+| Destruction boundary | 40 s / **3120 counts** (plunger at housing exit) | none — gear wear is cumulative |
+| Bootstrap ceiling | **34 s / 2600 counts** | 45 s / 3600 counts |
+| Overrun budget | 2000 ms / 150 counts | 3000 ms / 250 counts |
+
+Counts are the mechanically meaningful currency: plunger extension follows
+commutations, not seconds. The millisecond ceiling covers the opposite failure —
+a tacho that has gone quiet while the motor still turns.
+
+`remaining_fraction` is applied only when `position_confident_[zone]` is set, which
+happens **only** on a confirmed endpoint and is cleared on boot, on any fault, on
+`set_drivers_enabled(false)` and on relearn. Travel scaling can therefore only ever
+*tighten* the window.
+
+Timing is wall-clock (`esp_timer_get_time()`), not a tick accumulator: an
+accumulator under-counts whenever the FSM task is starved, silently stretching every
+safety window exactly when the system is busiest. The VdMot project hit the same bug
+class and fixed it by moving their motor loop into a timer ISR.
+
+Notably, eQ-3's own FALMOT-C12 appears to have **no** run-time limit — field reports
+describe actuators that miss the endstop and grind for minutes — so this ceiling is
+the main respect in which this firmware is safer than the OEM controller.
+
+## Detection Overview
+
+Mechanisms work together in the 10 ms tick loop and at move-execution level.
+
+**Simplified model (VdMot-aligned, Rev 3.2/3.3):**
+
+Primary method matches [Lenti84 VdMot Controller](https://github.com/Lenti84/VdMot_Controller)
+(`motor.cpp` `TimerHandler0`): after inrush debounce, **filtered current >
+free-travel mean × 1.7 → endstop immediately**. Commutation count is for position
+only and must not withhold a current trip. Absolute caps are the safety net.
+HmIP mechanical ceiling is **40 s** (plunger exits the housing at full close from
+a fully retracted open) — stricter than VdMot's 120 s `TIMEOUT_NORMALCURRENT`.
+
+| Role | Mechanism | Notes |
+|---|---|---|
+| Primary | Threshold (free-travel mean × 1.45 close) | VdMot uses `currentbound_*_fac = 17`; 1.7 trips past the 40 s wall on the Rev 3.3 trace |
+| Close absolute | Seat cap ~38 mA (UNDER_LOAD) | Our sense scale; VdMot logs used ~65–70 mA |
+| Working cap | Raw > 60 mA sustained | VdMot `overcnt` at 60 mA |
+| Safety | Hard cap raw > 100 mA | VdMot ±100 mA |
+| Open backup | Stall / STOPPING + open-fast | Gentle gear-train stop |
+| Close withhold | Stroke-phase CONTACT | Pin ≠ seat |
+| Hard wall | HmIP ≤ 40 s | Housing-exit mechanical limit |
+
+**Slope is telemetry only** — it duplicated threshold+stall (both still need a
+plateau on Rev 3.2) and false-tripped on pin engagement. Config fields remain for
+Motor Lab diagnostics but do not trip the drive.
+
+Current-based paths are gated by a **startup guard** — `pwm_boost_ms +
+ENDSTOP_SETTLE_MS` (~650 ms), shrunk further for near-stop normal moves. Rotation
+paths use their own ripple-based timing and can fire sooner. Threshold factors are
+**per-direction**.
+
+```
+                        ┌─────────────────────────────────────┐
+     Motor Running      │         10ms Tick Loop              │
+     ─────────────►     │                                     │
+                        │  ┌─── Path 1: Threshold ──────┐    │
+                        │  │  current > mean × factor    │    │
+                        │  │  sustained 6 ticks (60ms)   │────┤
+                        │  └─────────────────────────────┘    │
+                        │                                     │     ┌──────────┐
+                        │  ┌─── Path 3: Hard Cap ────────┐    │     │          │
+                        │  │  current > 100 mA (instant) │────┼────►│  STOP    │
+                        │  └─────────────────────────────┘    │     │  MOTOR   │
+                        │                                     │     │          │
+                        │  ┌─── Path 5: Stall plateau ───┐    │     └──────────┘
+                        │  │  ripples stopped + connected│────┤         ▲
+                        │  └─────────────────────────────┘    │         │
+                        └─────────────────────────────────────┘         │
+                                                                        │
+                        ┌─────────────────────────────────────┐         │
+     Drive-to-Endstop   │  Path 4: Ripple Safety Limit       │         │
+     (open only)        │  ripples > learned × factor         │─────────┘
+                        └─────────────────────────────────────┘
+```
+
+Rev 3.2/3.3 route evidence through `classify_endpoint()` in `endpoint_logic.h`
+(revision-neutral; aliases remain in `rev32_logic.h` for older references):
+
+- **Open:** plateau + current present → ENDPOINT (no current-rise required);
+  STOPPING cadence also accepts in a commanded window.
+- **Close:** CONTACT withholds; FREE_TRAVEL + plateau → JAM; UNDER_LOAD/STOPPING
+  + load evidence + window → ENDPOINT.
+
+## Detection Paths
+
+### Path 1: Adaptive Threshold (Primary)
+
+Detects when filtered current exceeds the running mean by a configurable factor,
+sustained for multiple consecutive ticks.
+
+```
+condition:  current_filtered > mean_current[dir] × current_factor
+debounce:   6 consecutive 10 ms FSM ticks (60 ms sustained)
+```
+
+| Parameter | Close Default | Open Default | Config Field |
+|-----------|--------------|-------------|--------------|
+| Current factor | 1.45× | 1.7× (1.25× on Rev 3.2/3.3) | `close_current_factor` / `open_current_factor` |
+| Debounce | 6 ticks (60ms) | 6 ticks (60ms) | `ENDSTOP_HIGH_TICKS` (compile-time) |
+
+The threshold references a **per-direction** running mean (`mean_open_currents_[]` /
+`mean_close_currents_[]`), each updated after a move in that direction. This matters
+because closing draws materially more current than opening (see profile below): a
+single blended mean is biased upward by the close direction, inflating the open
+threshold above the gentle open stall so the threshold path never trips and the motor
+grinds past the open stop. With a direction-specific mean the open threshold tracks
+the open running current. The debounce counter resets to zero on any below-threshold
+reading, so the overcurrent must be genuinely sustained.
+
+**Close direction:** With 1.7× factor and ~19 mA close mean → threshold ≈ 32 mA. The
+close endstop ramps to 35–50 mA and triggers cleanly.
+
+**Open direction:** With 1.7× factor and ~15 mA open mean → threshold ≈ 26 mA. The
+open endstop reaches 23–27 mA, so with the per-direction mean this path can confirm
+when a current bite exists. When it does not (flat ~24 mA free travel), Path 5 /
+STOPPING cadence owns the open stop.
+
+### Path 2: Slope (telemetry only — not an endstop trip)
+
+dI/dt is still computed every 500 ms for logs and Motor Lab overlays, but **it no
+longer stops the motor**. On Rev 3.2 both threshold and stall already require a
+commutation plateau before an endpoint is accepted, so slope added no unique stop
+path — and it false-tripped on pin-engagement ramps. Config fields
+(`*_slope_threshold_ma_per_s`, `*_slope_current_factor`) remain writable for
+diagnostics / future tuning experiments.
+
+### Path 3: Hard Safety Cap (Fast, low-latency)
+
+A fast stop evaluated on the **raw** per-frame current (~17 ms latency) rather than the
+~200 ms-lagged EMA, with a tiny 2-tick debounce, against a **fixed** ceiling:
+
+```
+raw_current > 100 mA      (ENDSTOP_HARD_CAP_MA)
+debounce: 2 consecutive raw frames (HARD_CAP_TICKS)
+```
+
+This is a pure catastrophic-fault guard (shorted winding, hard stall). A lower,
+direction-aware *open* cap (`mean_open × factor`, floored) was tried and reverted: the
+open **breakaway/early-travel** current (~45 mA measured) sits well above the gentle open
+stall, so a low open cap fired ~600 ms into the open pass and killed it ("travel too
+short"). The open endstop is handled by Path 5 (stall / STOPPING) plus optional
+threshold/open-fast when a current bite exists; the hard cap stays a safety net.
+
+### Path 4: Ripple Safety Limit (Open Direction Only)
+
+An additional mechanism at the move-execution level (outside the tick loop). During
+**drive-to-endstop OPEN** moves, it enforces a maximum ripple count derived from the
+learned full-stroke count.
+
+```
+condition:  ripple_count ≥ learned_open_ripples × ripple_limit_factor
+```
+
+| Parameter | Default | Config Field |
+|-----------|---------|--------------|
+| Ripple limit factor | 1.10× | `open_ripple_limit_factor` (0 = disabled) |
+
+**Why only opening:** The open direction has a gentler current profile that makes
+threshold/slope detection less reliable. The ripple limit provides belt-and-suspenders
+safety — if the motor has counted 10% more ripples than a full stroke without endstop
+detection firing, something is wrong. Set to 0 to disable.
+
+### Path 5: Rotation Stall (Ripple Plateau)
+
+A **magnitude-independent** path: a motor pressed against the mechanical stop can no
+longer commutate, so its ripple count stops advancing. This is the backstop for
+low-current motors whose stall never reaches the current-referenced thresholds — most
+importantly on a **fresh calibration**, before a real `mean_open` is learned, when the
+default 20 mA mean puts every current path (threshold, hard cap, slope floor) above the
+motor's actual open stall. Without it those motors miss the open endstop entirely and
+grind to the runtime-safety cap (`MECHANICAL_OVERRUN`).
+
+```
+condition:  ripple_count has not advanced for RIPPLE_STALL_MS (750 ms)
+arming:     after the inrush guard AND "connected" — either ripple_count ≥
+            RIPPLE_STALL_MIN_COUNT (20, observed rotation) OR current present
+            (≥ low_current_threshold_ma, motor energized and pressed on the stop)
+```
+
+| Parameter | Default | Config Field |
+|-----------|---------|--------------|
+| Stall window | 750 ms | `RIPPLE_STALL_MS` (compile-time) |
+| Min rotation to arm | 20 ripples | `RIPPLE_STALL_MIN_COUNT` (compile-time) |
+
+This is LV6's analogue of the BEMF stall sensing used by current-less ESPHome valve
+controllers (e.g. nliaudat's 8-ch shield, where a BEMF binary sensor *is* the endstop):
+commutation-ripple frequency tracks RPM, so a ripple plateau means the rotor stopped.
+
+**Already at the endstop.** The arming deliberately accepts *current present* as proof
+of connection, not only rotation. A valve that resets/powers up already at the stop it's
+being driven toward (e.g. homing open a valve that defaults to 100% open) never turns —
+no ripples — but it *does* draw current pressed against the stop. That reads as
+endstop-reached, exactly like a current-based controller, instead of a false
+`OPEN_CIRCUIT`. Only a truly disconnected motor — **no current AND no ripples** — is left
+to the open-circuit / no-ripple paths. The window is baselined from the guard (not motor
+start) so a slow breakaway gets a full `RIPPLE_STALL_MS` to show its first ripple. Limits
+grinding to ~750 ms versus the full ~45 s runtime cap. Gated to calibration /
+drive-to-endstop moves so a motor blocked *mid-travel* on a normal move isn't recorded as
+being at a limit.
+
+### Path 6: Already-at-Endstop (Fast)
+
+A fast special case of Path 5 for "the valve was already on the stop it is being driven
+toward" — closing an already-closed valve, or driving open a valve that reset fully open.
+
+```
+EARLY (during boost, before the current-filter debounce):
+    motor_run_time ≥ EARLY_STALL_MS (250 ms)  AND
+    ripple_count == 0  AND  raw current present
+LATE  (after the guard, backstop):
+    motor_run_time ≥ pwm_boost_ms + ALREADY_AT_STOP_MS  AND  ripple_count == 0  AND  current present
+gated to:   calibration or drive-to-endstop moves
+```
+
+The motor commutates *during* the boost phase, so a moving valve already has ripples by a
+few tens of ms in; **zero** ripples by `EARLY_STALL_MS` means it never moved — it is
+pressed against the stop. The **early** variant runs *before* the current debounce
+specifically so it fires mid-boost (~250 ms), capping the full-force time on an
+already-closed valve to roughly VdMot's 250 ms and preventing the actuator pop-off — the
+350 ms boost would otherwise drive an already-closed valve into its stop at full force.
+Current presence is required so a disconnected motor (no current, no ripples) is left to
+the open-circuit path instead. A moving motor (any ripple) is exempt, so it does not cut
+breakaway short. This is why VdMot-style close-first needs no separate homing pass.
+
+> Trade-off: `EARLY_STALL_MS` must exceed the worst-case breakaway time under full boost.
+> If a genuinely slow valve produces its first ripple after it, the pass stops short and
+> calibration fails ("travel too short") — which is recoverable, unlike a pop-off — so the
+> value is biased toward hardware safety.
+
+## Rev 3.2
+
+Rev 3.2 replaced the DRV8215s with three DRV8411 dual bridges behind a hardware one-hot
+`74HC4514` decoder, added a dedicated commutation tacho, and removed duty-cycle control.
+The detection paths above still apply; these are the differences.
+
+### The drive is continuous
+
+The 4514 feeds the driver inputs static logic, so the only way to modulate motor voltage
+would be to chop `MOTOR_ENABLE` — and that is actively harmful here. The 40 ms chop
+period sits *inside* the 25–50 ms commutation period the tacho counts, and every off-edge
+is a fresh drive-start step into an AC-coupled front end with a 100 ms settling time.
+
+`effective_hold_duty_()` therefore returns 100 % on Rev 3.2, which also means
+**soft-approach does not exist there**. The pop-off defence is fast detection instead —
+see *No hardware runtime cutoff* in `hardware/lune-v6-rev3.2/architecture.md` for why a
+timer was judged the wrong instrument.
+
+### One DMA stream, two channels
+
+`ADC_CURRENT` (GPIO2, 6 dB) and `ADC_TACHO` (GPIO1, 12 dB) share one continuous ADC1
+pattern at 20 kHz aggregate, 10 kHz each, in 512-byte frames (6.4 ms). The oneshot and
+continuous drivers cannot share an ADC unit, so the backend does not read its own ADC:
+it is told the current by the ripple task.
+
+This replaced two blocking oneshot reads per 10 ms FSM tick — 200 conversions a second,
+each taking the ADC lock, with `ADC_TACHO` sampled at Nyquist against its own 20–40 Hz
+band and therefore unable to cross-check anything.
+
+Three things fall out of it:
+
+- **The absolute current cap is evaluated in the ripple task**, on each frame's peak,
+  and consumed by `motor_loop_()` at 1 ms. That is ~1 ms to take the drive off instead
+  of 20 ms (10 ms tick × 2-tick debounce). On the closing hard stop that difference is
+  stall torque into a rigid stop, and torque × duration is the damage mechanism.
+- **`ADC_TACHO` gets a real cross-check.** A second `RippleCounter` runs on the analog
+  waveform at 10 kHz, and its count is published beside the PCNT count so the hardware
+  counter's missed- and false-edge rate can be computed *on the device*. That rate is
+  § 2 of the validation plan's release gate. `COMM_TACHO_N` through PCNT remains the
+  authority for position; the analog count never reaches the endpoint decision.
+- **Blanking became structural.** The DMA path already blanks after each drive-on
+  transition; with continuous drive that happens exactly once per move, so it is the
+  contract's mandatory 250 ms tacho blanking, sized from the stream's sample rate.
+
+### Timing anchors come from the tacho, not the PWM profile
+
+There is no boost phase, so `pwm_boost_ms` is meaningless. One derived anchor replaces
+it everywhere:
+
+```
+motion_decision_ms = BLANKING_MS + 2 × (tacho_max_period_us / 1000)   // 250 + 400 = 650 ms
+```
+
+It self-adjusts with the tacho configuration and by construction cannot land inside the
+blanking window. That last property is not cosmetic: `EARLY_STALL_MS` was 250 ms and so
+is the blanking, so on Rev 3.2 the early already-at-stop path saw a zero commutation
+count *by construction* and raised `BLOCKED` on a healthy move. That path is skipped on
+Rev 3.2; `already_at_stop` in `detect_endstop_()` covers the same condition, anchored
+here and routed through the endpoint classifier.
+
+`detect_pin_engagement_()` is likewise anchored on commutation count rather than on
+`ENDSTOP_MIN_RUNTIME_MS`, and simply reads the stroke tracker's answer.
+
+### The stall debounce scales with cadence
+
+A fixed debounce has to be sized for the slowest case; 750 ms on this actuator is 15–30
+missed commutations. `Rev32TachoQualifier` keeps an EMA of the commutation period and
+scales the debounce to it:
+
+```
+debounce = clamp(cadence × stall_plateau_factor, floor, ceiling)     // ×3.0, 150 ms, 750 ms
+```
+
+At the measured 20–40 Hz that lands on the 150 ms floor — inside Rev 3.0 requirement
+E-08's 250 ms bound, which `firmware-integration.md` previously recorded as unmet. With
+no cadence established yet the ceiling stands, which is the old behaviour.
+
+One trap worth naming: the *first* credited count advance after a move starts spans from
+drive start and therefore carries the whole blanking window. Feeding it to the EMA would
+set the cadence to ~250 ms. It is taken as the origin and the average starts from the
+second.
+
+### The stroke phase model
+
+`StrokeTracker` (in `endpoint_logic.h`, host-tested by `make test-rev32-logic`) tracks
+which of the four phases the stroke is in, from `(count, current, cadence stretch)`:
+
+| Transition | Condition |
+|---|---|
+| free travel → contact | current steps up **and** the rotor slows |
+| contact → free travel | current falls back **and** the rotor recovers — *phase 2 completing* |
+| contact → under load | the bump outlasts `contact_recovery_ripples` (15) — *real seating* |
+| any → stopping | the silence exceeds `stall_plateau_factor` × cadence |
+
+Two rules follow, both in `classify_endpoint()`:
+
+- **No endpoint is accepted while the phase is `CONTACT`.** At that instant phase 2 and
+  phase 4 are genuinely indistinguishable, however strong the load evidence is. The
+  tracker leaves `CONTACT` by recovering, by outlasting the window, or by the rotor
+  actually stopping — and only then is the question answered.
+- **Closing: a stop in free travel is a `JAM`, not an endpoint.** The valve seat is only
+  reachable through phases 2 and 3. Opening has no contact phase, so this rule is
+  closing-only.
+
+This generalises what `detect_pin_engagement_()` already did during calibration — it
+re-baselined detection to the seating onset precisely so the phase-2 bump would not stop
+the valve "barely seated" — to every move, and onto a discriminator that does not depend
+on current magnitude.
+
+### Direction-specific thresholds
+
+| | Closing | Opening |
+|---|---|---|
+| The stop is | a pin in a seat, rigid | the gear train bottoming out |
+| Current factor | `close_current_factor` **1.45×** (VdMot uses 1.7×) | **`open_endstop_current_factor` 1.25×** |
+| Missing it costs | pop-off | a stripped gear train over tens of seconds |
+
+The load-evidence requirement is *not* relaxed in either direction: the contract records
+the tacho as `is_load_bearing: false`, so cadence alone may never establish an endpoint.
+Only the threshold moves, to match the mechanics.
+
+### The learned-count endpoint window
+
+Endpoint condition 6 — "a direction-specific learned-count endpoint window" — is now
+real. Closing measures from the contact the tracker observed, using the learned seating
+depth, which is far more repeatable than the full stroke because it does not depend on
+where the move started:
+
+```
+closing:  count ≥ contact_count + contact_to_stop_close_ripples × (1 − tolerance)
+opening:  count ≥ approach_stroke_ripples × (1 − tolerance)          // no contact phase
+unknown:  satisfied                                                  // may not withhold
+```
+
+Only a lower bound. Stopping late is covered by `open_ripple_limit_factor` and the
+runtime cap.
+
+### Rev 3.2 configuration
+
+Hardware facts (pins, tacho qualification limits) live in
+`packages/board/lune-v6-rev32.yaml`. Endstop *policy* lives in `MotorConfig` in NVS, so
+it is tunable during bring-up without a reflash:
+
+| Field | Default | Purpose |
+|---|---|---|
+| `rev32_motion_decision_ms` | 0 | 0 derives it from the tacho contract |
+| `stall_plateau_factor_x10` | 30 | cadence multiplier for the stall verdict |
+| `stall_plateau_floor_ms` | 150 | ...and its floor |
+| `stall_plateau_ceiling_ms` | 750 | ...and its ceiling, also the no-cadence answer |
+| `endpoint_window_tolerance_pct` | 25 | how far short of the learned count still counts |
+| `open_endstop_current_factor` | 1.25 | the gear-train stop is softer than the seat |
+| `contact_recovery_ripples` | 15 | commutations the rotor has to recover within |
+
+The absolute cap ladder (`cap_*` in `MotorConfig`, evaluated per DMA frame) ships
+with these bring-up defaults, taken from the Rev 3.3 fixtures:
+
+| Field | Default | Purpose |
+|---|---|---|
+| `cap_close_seat_ma` / `_frames` | 34 / **4** | seat, gated to UNDER_LOAD/STOPPING; 4 frames because the pressure plateau peaks at 33.6 mA |
+| `cap_close_popoff_ma` / `_frames` | 36 / 2 | ungated close backstop |
+| `cap_stall_ma` / `_frames` | **65** / 3 | above the 57–59 mA open breakaway, which this rung is not gated on |
+| `cap_open_stop_ma` / `_frames` | 40 / 3 | armed only past breakaway |
+| `cap_circuit_fault_ma` / `_frames` | 85 / 2 | frame peak; never an endpoint |
+
+`MOTOR_CONFIG_VERSION` is 6; older blobs are invalidated rather than reinterpreted, so
+a device picks up these defaults on first boot after flashing.
+
+### Rev 3.2 timing sequence
+
+```
+Motor start
+    │
+    ├── 0 ms:     continuous drive (no boost, no hold, no soft-approach)
+    │
+    ├── 250 ms:   tacho blanking ends — the AC-coupled front end has settled
+    │
+    ├── 500 ms:   DEBOUNCE_TICKS elapsed; detect_endstop_() begins
+    │
+    ├── 650 ms:   motion_decision_ms — a zero commutation count now means
+    │               "it never turned", and already_at_stop can fire
+    │
+    ├── travel:   stroke tracker advances free travel → contact → under load
+    │               (closing), or stays in free travel (opening)
+    │
+    └── stop:     rotor silence past ~150 ms (cadence × 3) with load evidence,
+                    a commanded endpoint and the learned count → ENDPOINT
+                  ...or the absolute cap, caught within ~1 ms by the DMA path
+```
+
+## Signal Processing
+
+### Current Filtering
+
+Raw ADC readings are smoothed with an exponential moving average (EMA):
+
+```
+filtered = filtered × (1 - α) + raw × α
+α = 0.05  (slow filter — ~200ms time constant at 10ms ticks)
+```
+
+The slow filter constant smooths out PWM ripple while preserving the endstop current
+rise, which develops over seconds.
+
+### Mean Current Tracking
+
+Each motor zone maintains **two** running mean currents — one per direction
+(`mean_open_currents_[]` / `mean_close_currents_[]`), both initialized to 20 mA. They
+adapt to individual motor characteristics and aging. The threshold, slope-floor, and
+open hard-cap paths reference the mean for the **active** direction, making detection
+self-adjusting and immune to the close/open current asymmetry. Both are persisted to
+NVS (`mean_open_current_ma` / `mean_close_current_ma`) and reloaded on boot.
+
+## Current Profile Reference
+
+### Rev 3.3, measured (`test/fixtures/`)
+
+| Quantity | Close | Open |
+|---|---|---|
+| Free travel | **24.2 mA** | **24.4 mA** |
+| Free-travel cadence | **78 Hz** | **85 Hz** |
+| Breakaway | — | **57–59 mA for ~4 s**, decaying below 28 mA only at ~5.3 s |
+| Pin contact | count ~1000, ramp ~1 mA/s | n/a |
+| Pressure plateau | 31–32.5 mA, 17.5 s | n/a |
+| Total counts observed | 3966 (over-travelled) | 3417 (no stop reached) |
+| Stall (regressed) | **60–62 mA** | — |
+
+The design contract previously recorded 659 / 1048 counts and a 20–40 Hz band; both
+were wrong by large factors and have been corrected. `actuator_locked_rotor_ma` was
+47 (3.2 V / 68 Ω); measurement puts it at 60–62 mA.
+
+### Rev 3.0 / 3.1, historical — **not valid on Rev 3.2/3.3**
+
+Measured with HmIP VDMOT + Danfoss RA-N at 70 % PWM hold duty:
+
+| Phase       | Steady-state | Endstop peak | Ripple count |
+|-------------|-------------|-------------|--------------|
+| Closing     | 14–19 mA    | 33–50 mA   | ~659         |
+| Opening     | 14–15 mA    | 23–27 mA   | ~1048        |
+
+Notable features:
+- **Mid-travel step** at ~2500 counts (closing): current jumps from ~14 to ~19 mA
+  when the actuator pin contacts the valve pin. Not an endstop.
+- **Opening inrush**: Brief spike to ~30–40 mA in the first ~100 ms as the spring
+  releases. Handled by the startup guard.
+- **Asymmetric endstop**: Closing endstop current (~35–50 mA) is significantly higher
+  than opening (~25 mA) because closing compresses the return spring.
+
+## Timing Sequence
+
+```
+Motor Start
+    │
+    ├── 0 ms:     BOOST phase (100% duty)
+    │               Current inrush — current detection DISABLED
+    │
+    ├── 250 ms:   Path 6 EARLY already-at-stop: 0 ripples + current → STOP
+    │               (during boost; pre-empts pop-off on an already-closed valve)
+    │
+    ├── 350 ms:   HOLD phase (70% duty, 40ms PWM period)
+    │               Current settles to steady-state
+    │
+    ├── 650 ms:   startup guard (boost + settle) reached
+    │               ✓ Paths 1–2 (threshold/slope) ENABLED; Path 5 plateau armed
+    │
+    ├── 650+ ms:  Slope tracking begins (500ms windows)
+    │               Each window: compute dI/dt
+    │
+    ├── Endstop approach:
+    │   ├── Current rises as motor stalls
+    │   ├── Path 1 (threshold): 6 ticks above mean[dir]×factor → STOP
+    │   ├── Path 2 (slope): close 2 windows / open 1 window, dI/dt > threshold → STOP
+    │   ├── Path 3 (hard cap): raw > 100 mA (close) / mean_open×1.7 (open) → STOP
+    │   ├── Path 4 (ripple, open only): ripples > learned×1.10 → STOP
+    │   ├── Path 5 (rotation stall): no ripple advance for 750 ms → STOP
+    │   └── Path 6 (already-at-stop): 0 ripples after boost + current → STOP
+    │
+    └── Motor stopped, position updated to 0% or 100%
+```
+
+## Per-Direction Parameter Summary
+
+| Parameter | Close | Open | Rationale |
+|-----------|-------|------|-----------|
+| Threshold mean | `mean_close` | `mean_open` | Per-direction; close runs hotter than open |
+| Threshold factor | **1.45×** (VdMot `currentbound_*_fac` is 1.7×) | 1.7× / open_endstop 1.25× on Rev 3.2 | Lenti84 VdMot Controller; retuned to the Rev 3.3 trace |
+| Slope threshold | 0.6 mA/s | 0.15 mA/s | Close ramps steeply; open ramps gently |
+| Slope floor | 1.3× | 1.3× | Same mid-travel step protection both ways |
+| Slope windows | 2 (1 s) | 1 (~500 ms) | Open ramp is slow; long grind = clicking |
+| Hard cap | 100 mA (fixed) | 100 mA (fixed) | Catastrophic guard only; open uses Path 5 stall, not current |
+| Ripple limit | N/A | 1.10× | Extra safety for harder-to-detect open endstop |
+
+## Pin Engagement Detection
+
+### Problem
+
+The VdMot actuator has a physical dead zone at the open end of travel. When the
+actuator pin lifts off the valve body, further opening has no effect on flow. This
+means a portion of the full mechanical stroke is wasted — the motor moves through the
+dead zone without changing flow.
+
+### The Current Step
+
+During closing (from open endstop to closed endstop), a distinctive current step
+occurs at approximately 30% of travel from the open end:
+
+```
+Closing direction (from open → closed):
+
+Current (mA)
+  20 ┤                                     ╱╱╱ endstop
+     │                                    ╱
+  19 ┤──────────────────────────────────╱──
+     │            pin engaged ▲        ╱
+  18 ┤                        │       ╱
+     │           ↑ step ~5 mA │
+  14 ┤───────────┘            │
+     │  dead zone  │  active flow zone  │
+     └──────────────────────────────────── Ripples
+     0          ~200                    659
+     (open end)                    (closed end)
+```
+
+The step from ~14 mA to ~19 mA occurs when the actuator pin physically contacts the
+valve pin in the valve body. Before this point, the actuator moves freely with no load
+from the valve spring.
+
+### Detection Algorithm
+
+Pin engagement is detected **during calibration close passes** only (not during normal
+operation):
+
+```
+condition:  current_filtered > baseline + pin_engage_step_ma
+debounce:   20 consecutive 10ms ticks (200ms sustained)
+```
+
+| Parameter | Default | Config Field |
+|-----------|---------|--------------|
+| Step threshold | 3.0 mA | `pin_engage_step_ma` |
+| Margin offset | 50 ripples | `pin_engage_margin_ripples` |
+| Debounce | 20 ticks (200ms) | `PIN_ENGAGE_DEBOUNCE_TICKS` (compile-time) |
+
+1. After the startup guard (1200ms), the filtered current is sampled as the baseline
+2. Each tick, if `current > baseline + step_threshold` is sustained for 200ms, the
+   ripple count is recorded as `pin_engage_close_ripples`
+3. The margin offset moves the effective point further toward open, past the
+   detection point, ensuring the pin is fully disengaged at 100% flow
+
+### Flow Range Remapping
+
+When pin engagement data exists (from calibration), position targets are remapped
+from flow % to physical %:
+
+```
+flow 0%   → physical 0%   (closed endstop, no flow)
+flow 100% → physical P%   (pin fully disengaged + margin clearance)
+
+where P = (1 - (pin_engage_ripples - margin) / total_close_ripples) × 100
+```
+
+**Example** with pin engagement at 200 ripples, margin 50, total close 659:
+- Effective engagement: 200 - 50 = 150 ripples from open end
+- Max flow physical: (1 - 150/659) × 100 = 77.2%
+- At physical 77.2%, the pin is 50 ripples past disengagement — fully lifted
+- Flow 50% → physical 38.6%
+- Flow 100% → physical 77.2%
+
+This remapping only affects normal moves via `execute_move_()`. Calibration passes
+use the full physical stroke and are unaffected.
+
+### Limitations
+
+- **EMA filter latency**: The α=0.05 filter smears the step over ~500ms, so the
+  recorded ripple count is slightly delayed from the true engagement point. The
+  margin parameter compensates — it adds clearance past the detected point so that
+  100% flow guarantees the pin is fully disengaged.
+- **Per-valve variation**: Different valve bodies and actuator wear may shift the
+  engagement point. It is learned per-zone during calibration.
+- **Opening direction**: Detection runs only during close passes because the current
+  drop when the pin disengages during opening is harder to detect reliably.
+
+## ESPHome Configuration Entities
+
+All per-direction parameters are exposed as number entities (UI mode: box) under
+`entity_category: config`, taking effect on the next motor run. Values are persisted
+to NVS.
+
+| Entity Name | Range | Default | Step |
+|-------------|-------|---------|------|
+| Motor N Close Endstop Threshold | 1.1× – 3.0× | 1.45× | 0.1 |
+| Motor N Close Endstop Slope | 0.1 – 5.0 mA/s | 0.6 | 0.05 |
+| Motor N Close Endstop Slope Floor | 1.0× – 2.5× | 1.3× | 0.1 |
+| Motor N Open Endstop Threshold | 1.1× – 3.0× | 1.7× | 0.1 |
+| Motor N Open Endstop Slope | 0.05 – 5.0 mA/s | 0.15 | 0.05 |
+| Motor N Open Endstop Slope Floor | 1.0× – 2.5× | 1.3× | 0.1 |
+| Motor N Open Endstop Ripple Limit | 0.0× – 2.0× | 1.10× | 0.1 |
+| Pin Engage Step | 1.0 – 10.0 mA | 3.0 | 0.5 |
+| Pin Engage Margin | 0 – 200 ripples | 50 | 10 |
+
+## Calibration (Learning)
+
+### Working-range learning (Rev 3.2 / 3.3, default)
+
+Everything on the open side of pin contact is **dead space**: the plunger has let go of
+the valve pin, so opening further changes no flow and only walks the actuator toward its
+own gear-train stop. That is the direction whose overrun strips gears, and its stop has
+never been measured on a healthy unit. So the open endstop is **never a target**. The
+range that matters, pin contact (100 %) to seat (0 %), is learned entirely on close
+passes (`stroke_learning.h`, `make test-stroke-learning`):
+
+| Step | What happens |
+|---|---|
+| Home | Close to the seat from wherever the valve is. |
+| Open leg | Open by at most `learn_open_start_ripples` (2200) counts. The open-stop cap, the endpoint classifier and the per-move ceiling stay armed; if the gear stop comes first the leg ends there and later legs are capped to it. |
+| Close pass | Must show **at least `learn_min_free_ripples` (100) counts of free travel before pin contact**. That is the proof the leg ended in dead space. No proof: the next leg opens `learn_open_step_ripples` (125) further, up to `learn_open_max_ripples` (2450). |
+| Record | Working range W = seat count − pin onset count. |
+| Repeat | Until `learn_samples` (3) consecutive samples agree within `learn_max_spread_pct` (10 %); the median wins. Two extra passes are allowed to outlive an early outlier. |
+
+**Pin onset comes from current, not from the stroke tracker.** The tracker's contact test
+also needs the rotor to slow, and on this actuator pin contact barely moves the cadence.
+The current ramp is the usable signal (~1 mA/s off the flat free-travel level), but a step
+detector on it latches late: 2 mA above baseline is ~2 s and ~115 counts after the ramp
+began. `PinOnsetDetector` therefore reports the **last count the current was still within
+0.5 mA of the baseline**. On the close fixture that is count 978 against a ramp that
+starts at ~960–1000; the step itself latches at 1094.
+
+**The close ceiling bounds the learnable range.** Every open leg is closed again under the
+close bootstrap ceiling (2600 counts / 34 s), so `sanitize_motor_cfg_()` caps the leg at
+that ceiling minus its 150-count budget. A working range longer than ~2400 counts could
+not be closed from 100 % inside the ceiling either, so this is a real limit, not a
+tuning choice. While learning runs, ceilings ignore the stroke being relearned: an open
+leg does not move the recorded position, and old stroke × 0 % would cut the next close
+pass after ~150 counts. On time the margin is thinner: 2450 counts at the measured 78 Hz
+is ~31.4 s against 34 s.
+
+Afterwards 0–100 % spans the seat to **W + `pin_engage_margin_ripples` (50)** counts open.
+100 % is a count-based open leg from the seat (it re-homes first like any open leg), so
+the per-move ceiling for it is the learned span × 1.2 + budget rather than the 45 s
+bootstrap. `flow_to_physical_pct_()` is the identity: there is no dead zone left inside
+the range to remap around. The telemetry field `stroke_model` records which meaning the
+learned counts have; settings backups only restore counts learned under the working
+range.
+
+Failure modes are named, not folded into "travel too short": homing failed, open leg
+faulted, seat not confirmed, no dead space within the open limit, pin not found (the gear
+stop was reached and still no onset), range implausibly short, not repeatable. A failed
+relearn keeps the previous profile, as before.
+
+### Legacy double pass (Rev 3.0 / 3.1, or `working_range_learning = false`)
+
+Each attempt runs **close → open → close** (VdMot order), measuring per-pass:
+- Run time (ms)
+- Ripple count (commutator zero-crossings)
+
+**Close-first** leans on the reliable endstop: closing compresses the return spring and
+draws high current (33–50 mA), so its stop is far easier to detect than the gentle open
+stop. It also ends the routine closed (0 %), the position the control layer expects.
+
+Calibration runs at **full hold duty** the whole way — no soft-approach. Soft-approach
+drops to ~40 % duty near the stop, which these low-torque motors cannot push through, so a
+pass would stall short and run to the runtime cap (`MECHANICAL_OVERRUN`); it also engaged
+off stale learned strokes. The endstop is eased by the rotation paths, not reduced duty.
+
+**Pop-off safety without homing.** The historical failure was driving an *already-closed*
+valve into its stop at full force, popping the actuator socket off the pin. The
+**early already-at-stop** path (Path 6) catches this mid-boost (~250 ms, before the
+current debounce) when the valve produces zero ripples — magnitude-independent, no current
+tuning, capping full-force time to roughly VdMot's 250 ms. This is also why no separate
+"home" pass is needed: a close into an already-closed valve self-terminates fast instead
+of over-driving. The blind window for the *current*-based paths is `pwm_boost_ms +
+ENDSTOP_SETTLE_MS` (~650 ms).
+
+On **Rev 3.2** this path is disabled — `EARLY_STALL_MS` and the tacho blanking are both
+250 ms, so it would see a zero count by construction. The same protection comes from
+`already_at_stop` at `motion_decision_ms` (~650 ms), the cadence-scaled stall verdict
+(~150 ms once turning) and the 1 ms DMA current cap. Rev 3.2 also drives at full rail
+throughout, so there is no reduced-duty hold to fall back on: detection speed *is* the
+protection.
+
+Validation: each pass must exceed `calibration_min_travel_ms = 3000 ms`.
+Up to `calibration_max_retries = 2` retry attempts. On failure, zone is marked blocked.
+
+After successful calibration, the learned values (open_ms, close_ms, open_ripples,
+close_ripples, deadzone_ms, mean_open_current, mean_close_current) are persisted to NVS.
+
+## Automatic Relearn
+
+Recalibration is triggered automatically when either condition is met:
+
+| Trigger         | Default          | Config field                |
+|-----------------|------------------|-----------------------------|
+| Movement count  | 2000 movements   | `relearn_after_movements`   |
+| Time elapsed    | 168 hours (1 wk) | `relearn_after_hours`       |
+
+Checked every 10 seconds when idle. Only one zone relearns at a time. Zones that are
+blocked, not present, or never learned are skipped.
+
+## Compile-Time Constants
+
+| Constant                      | Value    | Unit    | Purpose                                   |
+|-------------------------------|----------|---------|-------------------------------------------|
+| `TICK_MS`                     | 10       | ms      | Motor FSM tick interval                   |
+| `ENDSTOP_SETTLE_MS`          | 300      | ms      | Post-boost settle; guard = boost + this (~650 ms) |
+| `ENDSTOP_MIN_RUNTIME_MS`     | 1200     | ms      | Pin-engagement baseline settle (not the endstop guard) |
+| `ALREADY_AT_STOP_MS`         | 100      | ms      | Post-boost margin for already-at-stop (fires ~450 ms) |
+| `RIPPLE_STALL_MS`            | 750      | ms      | Rotation-stall plateau window (Rev 3.0/3.1; Rev 3.2 scales it — see above) |
+| `Rev32TachoQualifier::BLANKING_MS` | 250 | ms   | Rev 3.2 tacho blanking after drive start  |
+| `REV32_ADC_SAMPLE_RATE_HZ`   | 10000    | Hz      | Rev 3.2 per-channel DMA rate (20 kHz aggregate) |
+| `REV32_DMA_FRAME_BYTES`      | 512      | bytes   | Rev 3.2 DMA frame — 6.4 ms, halved for hard-cap latency |
+| `REV32_TACHO_GATE_HZ`        | 100      | Hz      | Minimum-period gate for the analog cross-check counter |
+| `ENDSTOP_HIGH_TICKS`         | 6        | ticks   | Sustained threshold debounce (60 ms)      |
+| `ENDSTOP_HARD_CAP_MA`        | 100.0    | mA      | Emergency safety cap                      |
+| `SLOPE_WINDOW_TICKS`         | 50       | ticks   | Slope evaluation window (500 ms)          |
+| `ENDSTOP_SLOPE_WINDOWS`      | 2        | windows | Consecutive rising windows required       |
+| `CURRENT_FILTER_ALPHA`       | 0.05     | —       | EMA filter coefficient for current        |
+| `DEBOUNCE_TICKS`             | 50       | ticks   | Initial debounce after motor start (500 ms) |
+| `INITIAL_MEAN_CURRENT_MA`    | 20.0     | mA      | Bootstrap mean before first calibration   |

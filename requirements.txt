@@ -1,0 +1,4 @@
+# Reproducible firmware build environment for Lune V6 and Lune Touch.
+# ESPHome 2026.8: platform-neutral BLE layer + WiFi coexistence scan defaults.
+esphome==2026.8.2
+platformio==6.1.19
