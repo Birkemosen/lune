@@ -4,7 +4,7 @@
 
 namespace lv6 {
 
-// Common surface of the discrete-GPIO motor backends (Rev 3.1 and Rev 3.2).
+// Common surface of the discrete-GPIO motor backends (Rev 3.1 and Rev 3.3).
 // The DRV8215 I2C path is not a member: it has no decoder, no fault latch and
 // no shared ADC, so forcing it through this interface would only add branches.
 //
@@ -34,7 +34,7 @@ class GpioMotorBackend {
   virtual float read_current_ma() = 0;
 
   // Motion evidence, however the revision obtains it: BEMF differential across
-  // a coast interruption on Rev 3.1, qualified commutation edges on Rev 3.2.
+  // a coast interruption on Rev 3.1, qualified commutation edges on Rev 3.3.
   virtual void reset_motion() = 0;
   virtual uint32_t motion_evidence_count() const = 0;
   virtual bool motion_observed() const = 0;
@@ -42,7 +42,7 @@ class GpioMotorBackend {
 
   // Called once per FSM tick while a move is in progress, with the elapsed
   // drive time.  Rev 3.1 overrides it to nothing (its BEMF sampling is driven
-  // on a slower period by the controller); Rev 3.2 drains the hardware
+  // on a slower period by the controller); Rev 3.3 drains the hardware
   // commutation counter here.
   virtual void poll_motion(uint32_t now_ms, bool drive_active) {}
 

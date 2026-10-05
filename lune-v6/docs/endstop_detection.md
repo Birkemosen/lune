@@ -74,7 +74,7 @@ references**, not merely different constants:
 The detection paths are shared; what differs is where the signals come from and whether
 the drive can be modulated at all.
 
-| | Rev 3.0 / 3.1 (DRV8215) | Rev 3.1 Lean | **Rev 3.2** |
+| | Rev 3.0 / 3.1 (DRV8215) | Rev 3.1 Lean | **Rev 3.3** |
 |---|---|---|---|
 | Current | IPROPI current mirror, DMA @ 15 kHz | IPROPI, oneshot | Shunt → INA180A1 @ 10 V/A, **DMA @ 10 kHz** |
 | Rotation | current-ripple zero crossings | BEMF differential across a coast | **`COMM_TACHO_N` counted by PCNT** |
@@ -84,7 +84,7 @@ the drive can be modulated at all.
 | Timing anchors | `pwm_boost_ms` | `pwm_boost_ms` | **derived from the tacho contract** |
 
 Everything in the *Detection Paths*, *Pin Engagement* and *Calibration* sections below
-describes the shared algorithm; the **Rev 3.2** section states where it differs.
+describes the shared algorithm; the **Rev 3.3** section states where it differs.
 
 ## Hardware Context (Rev 3.0 / 3.1)
 
@@ -111,9 +111,9 @@ Key implications of the single-signal design:
   cessation, since both come from IPROPI.
 
 > The current figures throughout this document were measured on Rev 3.1 under the
-> 70 % hold duty. Rev 3.2 drives at full rail continuously, so **every threshold,
+> 70 % hold duty. Rev 3.3 drives at full rail continuously, so **every threshold,
 > stroke time and commutation count here is invalid on it until re-measured** — see
-> `hardware/lune-v6-rev3.2/design-contract.json`.
+> `hardware/lune-v6-rev3.3/design-contract.json`.
 
 ## The mechanical ceiling — the one guarantee that does not depend on detection
 
@@ -156,7 +156,7 @@ the main respect in which this firmware is safer than the OEM controller.
 
 Mechanisms work together in the 10 ms tick loop and at move-execution level.
 
-**Simplified model (VdMot-aligned, Rev 3.2/3.3):**
+**Simplified model (VdMot-aligned, Rev 3.3):**
 
 Primary method matches [Lenti84 VdMot Controller](https://github.com/Lenti84/VdMot_Controller)
 (`motor.cpp` `TimerHandler0`): after inrush debounce, **filtered current >
@@ -176,7 +176,7 @@ a fully retracted open) — stricter than VdMot's 120 s `TIMEOUT_NORMALCURRENT`.
 | Hard wall | HmIP ≤ 40 s | Housing-exit mechanical limit |
 
 **Slope is telemetry only** — it duplicated threshold+stall (both still need a
-plateau on Rev 3.2) and false-tripped on pin engagement. Config fields remain for
+plateau on Rev 3.3) and false-tripped on pin engagement. Config fields remain for
 Motor Lab diagnostics but do not trip the drive.
 
 Current-based paths are gated by a **startup guard** — `pwm_boost_ms +
@@ -208,8 +208,8 @@ paths use their own ripple-based timing and can fire sooner. Threshold factors a
                         └─────────────────────────────────────┘
 ```
 
-Rev 3.2/3.3 route evidence through `classify_endpoint()` in `endpoint_logic.h`
-(revision-neutral; aliases remain in `rev32_logic.h` for older references):
+Rev 3.3 routes evidence through `classify_endpoint()` in `endpoint_logic.h`
+(revision-neutral):
 
 - **Open:** plateau + current present → ENDPOINT (no current-rise required);
   STOPPING cadence also accepts in a commanded window.
@@ -230,7 +230,7 @@ debounce:   6 consecutive 10 ms FSM ticks (60 ms sustained)
 
 | Parameter | Close Default | Open Default | Config Field |
 |-----------|--------------|-------------|--------------|
-| Current factor | 1.45× | 1.7× (1.25× on Rev 3.2/3.3) | `close_current_factor` / `open_current_factor` |
+| Current factor | 1.45× | 1.7× (1.25× on Rev 3.3) | `close_current_factor` / `open_current_factor` |
 | Debounce | 6 ticks (60ms) | 6 ticks (60ms) | `ENDSTOP_HIGH_TICKS` (compile-time) |
 
 The threshold references a **per-direction** running mean (`mean_open_currents_[]` /
@@ -253,7 +253,7 @@ STOPPING cadence owns the open stop.
 ### Path 2: Slope (telemetry only — not an endstop trip)
 
 dI/dt is still computed every 500 ms for logs and Motor Lab overlays, but **it no
-longer stops the motor**. On Rev 3.2 both threshold and stall already require a
+longer stops the motor**. On Rev 3.3 both threshold and stall already require a
 commutation plateau before an endpoint is accepted, so slope added no unique stop
 path — and it false-tripped on pin-engagement ramps. Config fields
 (`*_slope_threshold_ma_per_s`, `*_slope_current_factor`) remain writable for
@@ -362,9 +362,9 @@ breakaway short. This is why VdMot-style close-first needs no separate homing pa
 > calibration fails ("travel too short") — which is recoverable, unlike a pop-off — so the
 > value is biased toward hardware safety.
 
-## Rev 3.2
+## Rev 3.3
 
-Rev 3.2 replaced the DRV8215s with three DRV8411 dual bridges behind a hardware one-hot
+Rev 3.3 replaced the DRV8215s with three DRV8411 dual bridges behind a hardware one-hot
 `74HC4514` decoder, added a dedicated commutation tacho, and removed duty-cycle control.
 The detection paths above still apply; these are the differences.
 
@@ -375,9 +375,9 @@ would be to chop `MOTOR_ENABLE` — and that is actively harmful here. The 40 ms
 period sits *inside* the 25–50 ms commutation period the tacho counts, and every off-edge
 is a fresh drive-start step into an AC-coupled front end with a 100 ms settling time.
 
-`effective_hold_duty_()` therefore returns 100 % on Rev 3.2, which also means
+`effective_hold_duty_()` therefore returns 100 % on Rev 3.3, which also means
 **soft-approach does not exist there**. The pop-off defence is fast detection instead —
-see *No hardware runtime cutoff* in `hardware/lune-v6-rev3.2/architecture.md` for why a
+see *No hardware runtime cutoff* in `hardware/lune-v6-rev3.3/architecture.md` for why a
 timer was judged the wrong instrument.
 
 ### One DMA stream, two channels
@@ -417,9 +417,9 @@ motion_decision_ms = BLANKING_MS + 2 × (tacho_max_period_us / 1000)   // 250 + 
 
 It self-adjusts with the tacho configuration and by construction cannot land inside the
 blanking window. That last property is not cosmetic: `EARLY_STALL_MS` was 250 ms and so
-is the blanking, so on Rev 3.2 the early already-at-stop path saw a zero commutation
+is the blanking, so on Rev 3.3 the early already-at-stop path saw a zero commutation
 count *by construction* and raised `BLOCKED` on a healthy move. That path is skipped on
-Rev 3.2; `already_at_stop` in `detect_endstop_()` covers the same condition, anchored
+Rev 3.3; `already_at_stop` in `detect_endstop_()` covers the same condition, anchored
 here and routed through the endpoint classifier.
 
 `detect_pin_engagement_()` is likewise anchored on commutation count rather than on
@@ -428,7 +428,7 @@ here and routed through the endpoint classifier.
 ### The stall debounce scales with cadence
 
 A fixed debounce has to be sized for the slowest case; 750 ms on this actuator is 15–30
-missed commutations. `Rev32TachoQualifier` keeps an EMA of the commutation period and
+missed commutations. `Rev33TachoQualifier` keeps an EMA of the commutation period and
 scales the debounce to it:
 
 ```
@@ -446,7 +446,7 @@ second.
 
 ### The stroke phase model
 
-`StrokeTracker` (in `endpoint_logic.h`, host-tested by `make test-rev32-logic`) tracks
+`StrokeTracker` (in `endpoint_logic.h`, host-tested by `make test-rev33-logic`) tracks
 which of the four phases the stroke is in, from `(count, current, cadence stretch)`:
 
 | Transition | Condition |
@@ -499,15 +499,15 @@ unknown:  satisfied                                                  // may not 
 Only a lower bound. Stopping late is covered by `open_ripple_limit_factor` and the
 runtime cap.
 
-### Rev 3.2 configuration
+### Rev 3.3 configuration
 
 Hardware facts (pins, tacho qualification limits) live in
-`packages/board/lune-v6-rev32.yaml`. Endstop *policy* lives in `MotorConfig` in NVS, so
+`packages/board/lune-v6-rev33.yaml`. Endstop *policy* lives in `MotorConfig` in NVS, so
 it is tunable during bring-up without a reflash:
 
 | Field | Default | Purpose |
 |---|---|---|
-| `rev32_motion_decision_ms` | 0 | 0 derives it from the tacho contract |
+| `motion_decision_ms` | 0 | 0 derives it from the tacho contract |
 | `stall_plateau_factor_x10` | 30 | cadence multiplier for the stall verdict |
 | `stall_plateau_floor_ms` | 150 | ...and its floor |
 | `stall_plateau_ceiling_ms` | 750 | ...and its ceiling, also the no-cadence answer |
@@ -529,7 +529,7 @@ with these bring-up defaults, taken from the Rev 3.3 fixtures:
 `MOTOR_CONFIG_VERSION` is 6; older blobs are invalidated rather than reinterpreted, so
 a device picks up these defaults on first boot after flashing.
 
-### Rev 3.2 timing sequence
+### Rev 3.3 timing sequence
 
 ```
 Motor start
@@ -592,7 +592,7 @@ The design contract previously recorded 659 / 1048 counts and a 20–40 Hz band;
 were wrong by large factors and have been corrected. `actuator_locked_rotor_ma` was
 47 (3.2 V / 68 Ω); measurement puts it at 60–62 mA.
 
-### Rev 3.0 / 3.1, historical — **not valid on Rev 3.2/3.3**
+### Rev 3.0 / 3.1, historical — **not valid on Rev 3.3**
 
 Measured with HmIP VDMOT + Danfoss RA-N at 70 % PWM hold duty:
 
@@ -646,7 +646,7 @@ Motor Start
 | Parameter | Close | Open | Rationale |
 |-----------|-------|------|-----------|
 | Threshold mean | `mean_close` | `mean_open` | Per-direction; close runs hotter than open |
-| Threshold factor | **1.45×** (VdMot `currentbound_*_fac` is 1.7×) | 1.7× / open_endstop 1.25× on Rev 3.2 | Lenti84 VdMot Controller; retuned to the Rev 3.3 trace |
+| Threshold factor | **1.45×** (VdMot `currentbound_*_fac` is 1.7×) | 1.7× / open_endstop 1.25× on Rev 3.3 | Lenti84 VdMot Controller; retuned to the Rev 3.3 trace |
 | Slope threshold | 0.6 mA/s | 0.15 mA/s | Close ramps steeply; open ramps gently |
 | Slope floor | 1.3× | 1.3× | Same mid-travel step protection both ways |
 | Slope windows | 2 (1 s) | 1 (~500 ms) | Open ramp is slow; long grind = clicking |
@@ -763,7 +763,7 @@ to NVS.
 
 ## Calibration (Learning)
 
-### Working-range learning (Rev 3.2 / 3.3, default)
+### Working-range learning (Rev 3.3, default)
 
 Everything on the open side of pin contact is **dead space**: the plunger has let go of
 the valve pin, so opening further changes no flow and only walks the actuator toward its
@@ -834,10 +834,10 @@ tuning, capping full-force time to roughly VdMot's 250 ms. This is also why no s
 of over-driving. The blind window for the *current*-based paths is `pwm_boost_ms +
 ENDSTOP_SETTLE_MS` (~650 ms).
 
-On **Rev 3.2** this path is disabled — `EARLY_STALL_MS` and the tacho blanking are both
+On **Rev 3.3** this path is disabled — `EARLY_STALL_MS` and the tacho blanking are both
 250 ms, so it would see a zero count by construction. The same protection comes from
 `already_at_stop` at `motion_decision_ms` (~650 ms), the cadence-scaled stall verdict
-(~150 ms once turning) and the 1 ms DMA current cap. Rev 3.2 also drives at full rail
+(~150 ms once turning) and the 1 ms DMA current cap. Rev 3.3 also drives at full rail
 throughout, so there is no reduced-duty hold to fall back on: detection speed *is* the
 protection.
 
@@ -867,11 +867,11 @@ blocked, not present, or never learned are skipped.
 | `ENDSTOP_SETTLE_MS`          | 300      | ms      | Post-boost settle; guard = boost + this (~650 ms) |
 | `ENDSTOP_MIN_RUNTIME_MS`     | 1200     | ms      | Pin-engagement baseline settle (not the endstop guard) |
 | `ALREADY_AT_STOP_MS`         | 100      | ms      | Post-boost margin for already-at-stop (fires ~450 ms) |
-| `RIPPLE_STALL_MS`            | 750      | ms      | Rotation-stall plateau window (Rev 3.0/3.1; Rev 3.2 scales it — see above) |
-| `Rev32TachoQualifier::BLANKING_MS` | 250 | ms   | Rev 3.2 tacho blanking after drive start  |
-| `REV32_ADC_SAMPLE_RATE_HZ`   | 10000    | Hz      | Rev 3.2 per-channel DMA rate (20 kHz aggregate) |
-| `REV32_DMA_FRAME_BYTES`      | 512      | bytes   | Rev 3.2 DMA frame — 6.4 ms, halved for hard-cap latency |
-| `REV32_TACHO_GATE_HZ`        | 100      | Hz      | Minimum-period gate for the analog cross-check counter |
+| `RIPPLE_STALL_MS`            | 750      | ms      | Rotation-stall plateau window (Rev 3.0/3.1; Rev 3.3 scales it — see above) |
+| `Rev33TachoQualifier::BLANKING_MS` | 250 | ms   | Rev 3.3 tacho blanking after drive start  |
+| `REV33_ADC_SAMPLE_RATE_HZ`   | 10000    | Hz      | Rev 3.3 per-channel DMA rate (20 kHz aggregate) |
+| `REV33_DMA_FRAME_BYTES`      | 512      | bytes   | Rev 3.3 DMA frame — 6.4 ms, halved for hard-cap latency |
+| `REV33_TACHO_GATE_HZ`        | 100      | Hz      | Minimum-period gate for the analog cross-check counter |
 | `ENDSTOP_HIGH_TICKS`         | 6        | ticks   | Sustained threshold debounce (60 ms)      |
 | `ENDSTOP_HARD_CAP_MA`        | 100.0    | mA      | Emergency safety cap                      |
 | `SLOPE_WINDOW_TICKS`         | 50       | ticks   | Slope evaluation window (500 ms)          |

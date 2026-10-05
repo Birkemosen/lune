@@ -1914,7 +1914,7 @@ void LV6Dashboard::handle_state_(AsyncWebServerRequest *request) {
   if (!append(
       "\"number-learned_factor_max_deviation_pct\":{\"value\":%s},", num_buf)) return;
 
-  // Rev 3.2/3.3 endstop policy: the fields detect_endstop_() and the DMA cap
+  // GPIO-bridge endstop policy: the fields detect_endstop_() and the DMA cap
   // ladder actually read on the GPIO-bridge backends.
   if (!flush()) return;
   struct MotorNum { const char *key; float value; int decimals; };
@@ -2654,7 +2654,7 @@ void LV6Dashboard::handle_diagnostics_(AsyncWebServerRequest *request) {
            "\"bemf_raw_a\":%u,\"bemf_raw_b\":%u,\"bemf_differential_raw\":%d,"
            "\"sample_separation_us\":%u,\"bemf_threshold_raw\":%u,"
            "\"sample_valid\":%s,\"sample_moving\":%s,\"invalid_samples\":%u,"
-           "\"armed\":%s,\"latch_arm_level\":%d,\"latch_state_level\":%d,"
+           "\"armed\":%s,\"fault_raw_level\":%d,"
            "\"motor_enable_level\":%d,\"driver_nsleep_level\":%d,"
            "\"rail_overcurrent_level\":%d,\"fault_usb_level\":%d,"
            "\"adc_notifies\":%lu,\"adc_frames\":%lu,"
@@ -2708,8 +2708,7 @@ void LV6Dashboard::handle_diagnostics_(AsyncWebServerRequest *request) {
            motor_diag.sample_moving ? "true" : "false",
            static_cast<unsigned>(motor_diag.consecutive_invalid_samples),
            motor_diag.armed ? "true" : "false",
-           static_cast<int>(motor_diag.latch_arm_level),
-           static_cast<int>(motor_diag.latch_state_level),
+           static_cast<int>(motor_diag.fault_raw_level),
            static_cast<int>(motor_diag.motor_enable_level),
            static_cast<int>(motor_diag.driver_nsleep_level),
            static_cast<int>(motor_diag.rail_overcurrent_level),
@@ -3243,14 +3242,6 @@ void LV6Dashboard::handle_v1_(AsyncWebServerRequest *request, const char *path) 
     this->handle_forecast_profile_(request, static_cast<uint8_t>(zone), body);
     return;
   }
-  // Bring-up instrument, not a control surface: it only wiggles LATCH_ARM while
-  // the bridges are coasting, so it lives outside the queued-action path.
-  if (strcmp(path, "/motors/arm-clock-probe") == 0) {
-    if (!this->authorize_write_(request))
-      return;
-    this->handle_arm_clock_probe_(request, body);
-    return;
-  }
   if (strcmp(path, "/motors/decoder-probe") == 0) {
     if (!this->authorize_write_(request))
       return;
@@ -3534,10 +3525,6 @@ void LV6Dashboard::handle_v1_(AsyncWebServerRequest *request, const char *path) 
     send_text_(request, 200, "application/json", response, false, "no-cache");
     return;
   }
-  if (act.key == "drivers_enabled" && act.has_num && act.num_val != 0.0f &&
-      this->valve_controller_ && this->valve_controller_->has_fault_latch())
-    this->valve_controller_->assert_latch_arm_high();
-
   // Probe role uniqueness — reject before enqueue so the client sees 409.
   if (this->config_store_ &&
       (act.key == "zone_probe" || act.key == "manifold_flow_probe" ||
@@ -3904,47 +3891,6 @@ void LV6Dashboard::handle_absorb_window_(AsyncWebServerRequest *request, const c
   send_text_(request, 200, "application/json", response, true, "no-store");
 }
 
-// Square-waves LATCH_ARM for a few seconds. A single arm edge is a ~3 V spike
-// that decays in about a millisecond, so no multimeter can confirm whether it
-// survives R4/C4 and reaches U2's clock. A periodic edge can be read on U2
-// pin 1 in AC volts. Runs inline on the HTTP task: the ESPHome loop must not
-// block for seconds, and nothing here energises a bridge.
-void LV6Dashboard::handle_arm_clock_probe_(AsyncWebServerRequest *request, const char *body) {
-  if (this->valve_controller_ == nullptr) {
-    this->send_v1_(request, 503, "controller_unavailable", "Valve controller unavailable");
-    return;
-  }
-  float num = 0.0f;
-  bool flag = false;
-  const uint32_t hz =
-      parse_num_param(request, body, "hz", &num) ? static_cast<uint32_t>(num) : 100u;
-  const uint32_t duration_ms =
-      parse_num_param(request, body, "duration_ms", &num) ? static_cast<uint32_t>(num) : 5000u;
-  const bool clamp = parse_bool_param(request, body, "clamp", &flag) && flag;
-
-  lv6::Rev32MotorBackend::ArmClockProbe probe{};
-  if (!this->valve_controller_->has_fault_latch()) {
-    this->send_v1_(request, 400, "no_latch",
-                   "Rev 3.3 has no LATCH_ARM; GPIO17 is DRIVER_N_SLEEP");
-    return;
-  }
-  if (!this->valve_controller_->probe_arm_clock(hz, duration_ms, clamp, &probe)) {
-    this->send_v1_(request, 503, "backend_unavailable", "Rev 3.2 motor backend is not active");
-    return;
-  }
-
-  char buf[320];
-  snprintf(buf, sizeof(buf),
-           "{\"ok\":true,\"version\":\"v1\",\"data\":{\"cycles\":%u,\"hz\":%u,"
-           "\"clamp\":%s,\"armed\":%s,\"armed_at_cycle\":%u,\"latch_state_start\":%d,"
-           "\"latch_state_end\":%d}}",
-           static_cast<unsigned>(probe.cycles), static_cast<unsigned>(probe.hz),
-           probe.clamp ? "true" : "false",
-           probe.armed ? "true" : "false", static_cast<unsigned>(probe.armed_at_cycle),
-           probe.latch_state_start, probe.latch_state_end);
-  send_text_(request, 200, "application/json", buf, true, "no-store");
-}
-
 // Holds one decoder address with the bridges coasting so the 74HC4514 outputs
 // can be checked against the twelve-entry channel map with a meter. Nothing is
 // energised: MOTOR_ENABLE stays low for the whole hold, and the decoder is
@@ -3969,11 +3915,11 @@ void LV6Dashboard::handle_decoder_probe_(AsyncWebServerRequest *request, const c
   const uint32_t hold_ms =
       parse_num_param(request, body, "duration_ms", &num) ? static_cast<uint32_t>(num) : 10000u;
 
-  lv6::Rev32MotorBackend::DecoderProbe probe{};
+  lv6::Rev33MotorBackend::DecoderProbe probe{};
   if (!this->valve_controller_->probe_decoder(static_cast<uint8_t>(zone), reverse,
                                               hold_ms, &probe)) {
     this->send_v1_(request, 503, "probe_unavailable",
-                   "Rev 3.2 backend inactive, or a move is in progress");
+                   "Rev 3.3 backend inactive, or a move is in progress");
     return;
   }
   if (!probe.accepted) {
@@ -4276,7 +4222,7 @@ void LV6Dashboard::dispatch_set_(const DashboardAction &act) {
       motor_cfg.learned_factor_min_samples = static_cast<uint8_t>(num_val);
     else if (strcmp(key, "learned_factor_max_deviation_pct") == 0)
       motor_cfg.learned_factor_max_deviation_pct = num_val / 100.0f;
-    // Rev 3.2/3.3 endstop policy. Range checks live in sanitize_motor_cfg_(),
+    // GPIO-bridge endstop policy. Range checks live in sanitize_motor_cfg_(),
     // which reload_motor_config() runs, so a bad value cannot reach a trip path.
     else if (strcmp(key, "open_endstop_current_factor") == 0)
       motor_cfg.open_endstop_current_factor = num_val;

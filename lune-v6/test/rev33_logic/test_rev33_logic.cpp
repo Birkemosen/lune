@@ -1,12 +1,11 @@
-#include "rev32_logic.h"
+#include "rev33_logic.h"
 
 #include <cassert>
 #include <cstdio>
 #include <set>
-#include <type_traits>
 
-// Endpoint detection is revision-neutral (endpoint_logic.h). Rev32* aliases in
-// rev32_logic.h keep older call sites compiling; exercise the shared names here.
+// Endpoint detection is revision-neutral (endpoint_logic.h); exercise the
+// shared names here.
 using lv6::classify_endpoint;
 using lv6::endpoint_decision_records_position;
 using lv6::endpoint_decision_stops_drive;
@@ -15,10 +14,10 @@ using lv6::EndpointEvidence;
 using lv6::StrokeConfig;
 using lv6::StrokePhase;
 using lv6::StrokeTracker;
-using lv6::rev32_decoder_address;
-using lv6::Rev32DecoderSelection;
-using lv6::Rev32Direction;
-using lv6::Rev32TachoQualifier;
+using lv6::rev33_decoder_address;
+using lv6::Rev33DecoderSelection;
+using lv6::Rev33Direction;
+using lv6::Rev33TachoQualifier;
 
 // decoder.channel_address_map, transcribed from design-contract.json.  If this
 // table and the header disagree, the contract is right and the header is stale.
@@ -35,8 +34,8 @@ static void test_address_map_matches_the_contract() {
   std::set<uint8_t> seen;
   for (const auto &row : CONTRACT) {
     const uint8_t index = row.channel - 1;
-    assert(rev32_decoder_address(index, Rev32Direction::FORWARD) == row.forward);
-    assert(rev32_decoder_address(index, Rev32Direction::REVERSE) == row.reverse);
+    assert(rev33_decoder_address(index, Rev33Direction::FORWARD) == row.forward);
+    assert(rev33_decoder_address(index, Rev33Direction::REVERSE) == row.reverse);
     // Q0-Q3 reach no bridge input, so no reachable address may land there.
     assert(row.forward >= 4 && row.forward <= 15);
     assert(row.reverse >= 4 && row.reverse <= 15);
@@ -45,8 +44,8 @@ static void test_address_map_matches_the_contract() {
   }
   assert(seen.size() == 12);
   // Out-of-range channels must not silently alias onto a real motor.
-  assert(rev32_decoder_address(6, Rev32Direction::FORWARD) == lv6::REV32_ADDRESS_INVALID);
-  assert(rev32_decoder_address(200, Rev32Direction::REVERSE) == lv6::REV32_ADDRESS_INVALID);
+  assert(rev33_decoder_address(6, Rev33Direction::FORWARD) == lv6::REV33_ADDRESS_INVALID);
+  assert(rev33_decoder_address(200, Rev33Direction::REVERSE) == lv6::REV33_ADDRESS_INVALID);
 }
 
 // The Rev 3.1 encoding was (dir << 3) | (channel - 1).  If firmware ever
@@ -56,76 +55,76 @@ static void test_superseded_formula_is_not_equivalent() {
   int disagreements = 0;
   for (const auto &row : CONTRACT) {
     const uint8_t index = row.channel - 1;
-    if (rev32_decoder_address(index, Rev32Direction::FORWARD) != index)
+    if (rev33_decoder_address(index, Rev33Direction::FORWARD) != index)
       ++disagreements;
-    if (rev32_decoder_address(index, Rev32Direction::REVERSE) != (index + 8u))
+    if (rev33_decoder_address(index, Rev33Direction::REVERSE) != (index + 8u))
       ++disagreements;
   }
   assert(disagreements >= 10);
 }
 
 static void test_selection_is_fail_safe() {
-  Rev32DecoderSelection selection;
-  // Boot state is unarmed, so drive is refused before any latch handshake.
+  Rev33DecoderSelection selection;
+  // Boot state is unarmed, so drive is refused before the permit is granted.
   assert(!selection.armed);
   assert(!selection.enable());
 
-  // Arming is rejected while LATCH_STATE reads high (faulted or not armed).
+  // Arming is rejected while a fault net is asserted.
   assert(!selection.arm(true));
   assert(!selection.armed);
 
   assert(selection.arm(false));
   assert(selection.armed);
 
-  for (uint8_t index = 0; index < lv6::REV32_CHANNEL_COUNT; ++index) {
+  for (uint8_t index = 0; index < lv6::REV33_CHANNEL_COUNT; ++index) {
     selection.coast();
-    assert(selection.select(index, Rev32Direction::FORWARD));
+    assert(selection.select(index, Rev33Direction::FORWARD));
     assert(selection.decoder_address() == CONTRACT[index].forward);
     assert(selection.enable());
     // Address changes are refused while the bridge is live.
-    assert(!selection.select(0, Rev32Direction::REVERSE));
+    assert(!selection.select(0, Rev33Direction::REVERSE));
     assert(selection.decoder_address() == CONTRACT[index].forward);
 
     selection.coast();
-    assert(selection.select(index, Rev32Direction::REVERSE));
+    assert(selection.select(index, Rev33Direction::REVERSE));
     assert(selection.decoder_address() == CONTRACT[index].reverse);
     assert(selection.enable());
   }
   selection.coast();
-  assert(!selection.select(lv6::REV32_CHANNEL_COUNT, Rev32Direction::FORWARD));
+  assert(!selection.select(lv6::REV33_CHANNEL_COUNT, Rev33Direction::FORWARD));
 }
 
-static void test_arm_only_from_coast_and_latch_drops_drive() {
-  Rev32DecoderSelection selection;
+static void test_arm_only_from_coast_and_fault_drops_drive() {
+  Rev33DecoderSelection selection;
   assert(selection.arm(false));
-  assert(selection.select(2, Rev32Direction::FORWARD));
+  assert(selection.select(2, Rev33Direction::FORWARD));
   assert(selection.enable());
 
-  // Re-arming a live bridge would reset the runtime cutoff mid-move.
+  // Re-granting the permit on a live bridge is refused.
   assert(!selection.arm(false));
 
-  // LATCH_STATE going high removes drive and the armed state together.
-  selection.observe_latch(true);
+  // A fault net asserting removes drive and the armed state together.
+  selection.observe_fault(true);
   assert(!selection.enabled);
   assert(!selection.armed);
   assert(!selection.enable());
 
-  // A low reading does not silently re-arm; that needs an explicit arm pulse.
-  selection.observe_latch(false);
+  // A clear reading does not silently re-arm; that needs an explicit grant.
+  selection.observe_fault(false);
   assert(!selection.armed);
   assert(selection.arm(false));
 }
 
 static void test_tacho_blanking_and_qualification() {
-  Rev32TachoQualifier tacho(200, 8000, 200000);
+  Rev33TachoQualifier tacho(200, 8000, 200000);
   tacho.reset(1000);
 
   // Everything inside the blanking window is discarded, however well formed.
   assert(tacho.blanked(1000));
-  assert(tacho.blanked(1000 + Rev32TachoQualifier::BLANKING_MS - 1));
+  assert(tacho.blanked(1000 + Rev33TachoQualifier::BLANKING_MS - 1));
   assert(!tacho.observe_edge(1000000, 5000, 1100));
   assert(tacho.count() == 0);
-  assert(!tacho.blanked(1000 + Rev32TachoQualifier::BLANKING_MS));
+  assert(!tacho.blanked(1000 + Rev33TachoQualifier::BLANKING_MS));
 
   // A chopper-width pulse is rejected on width alone.
   assert(!tacho.observe_edge(2000000, 20, 1300));
@@ -149,7 +148,7 @@ static void test_tacho_blanking_and_qualification() {
 }
 
 static void test_plateau_requires_edges_first() {
-  Rev32TachoQualifier tacho;
+  Rev33TachoQualifier tacho;
   tacho.reset(0);
   // No edges yet: silence is not a plateau, it is a motor that never turned.
   assert(!tacho.plateau_for(100000, 750));
@@ -162,7 +161,7 @@ static void test_plateau_requires_edges_first() {
 // PCNT gives a count, not widths.  The count path must still refuse to credit
 // a delta whose implied cadence is far above the commutation band.
 static void test_hardware_count_path() {
-  Rev32TachoQualifier tacho(200, 8000, 200000);
+  Rev33TachoQualifier tacho(200, 8000, 200000);
   tacho.reset(1000);
 
   // The first observation only establishes the baseline; a counter that was
@@ -209,7 +208,7 @@ static void test_hardware_count_path() {
 // advance after reset() spans from drive start, so it carries the whole
 // blanking window.
 static void test_cadence_baseline() {
-  Rev32TachoQualifier tacho(200, 8000, 200000);
+  Rev33TachoQualifier tacho(200, 8000, 200000);
   tacho.reset(0);
   assert(tacho.cadence_us() == 0);
 
@@ -230,7 +229,7 @@ static void test_cadence_baseline() {
 }
 
 static void test_adaptive_plateau() {
-  Rev32TachoQualifier tacho(200, 8000, 200000);
+  Rev33TachoQualifier tacho(200, 8000, 200000);
   tacho.reset(0);
 
   // No cadence yet: the ceiling stands.  That is the conservative answer, and
@@ -668,27 +667,11 @@ static void test_circuit_fault_never_becomes_an_endpoint() {
   assert(classify_endpoint(e) == EndpointDecision::OVERCURRENT);
 }
 
-static void test_rev32_aliases_still_match() {
-  // Compatibility shims in rev32_logic.h must track the shared types.
-  static_assert(std::is_same_v<lv6::Rev32StrokeTracker, StrokeTracker>);
-  static_assert(std::is_same_v<lv6::Rev32EndpointEvidence, EndpointEvidence>);
-  EndpointEvidence e = moving_normally();
-  e.commutation_plateau = true;
-  e.load_evidence = true;
-  e.commanded_endpoint = true;
-  e.endpoint_window = true;
-  e.direction_is_open = true;
-  e.phase = StrokePhase::FREE_TRAVEL;
-  assert(lv6::classify_rev32_endpoint(e) == classify_endpoint(e));
-  assert(lv6::rev32_decision_records_endpoint(EndpointDecision::ENDPOINT));
-  assert(lv6::rev32_decision_stops_drive(EndpointDecision::JAM));
-}
-
 int main() {
   test_address_map_matches_the_contract();
   test_superseded_formula_is_not_equivalent();
   test_selection_is_fail_safe();
-  test_arm_only_from_coast_and_latch_drops_drive();
+  test_arm_only_from_coast_and_fault_drops_drive();
   test_tacho_blanking_and_qualification();
   test_plateau_requires_edges_first();
   test_hardware_count_path();
@@ -705,7 +688,6 @@ int main() {
   test_endpoint_classifier();
   test_only_endpoint_records_position();
   test_circuit_fault_never_becomes_an_endpoint();
-  test_rev32_aliases_still_match();
-  std::printf("endpoint_logic + rev32_logic: all assertions passed\n");
+  std::printf("endpoint_logic + rev33_logic: all assertions passed\n");
   return 0;
 }

@@ -605,9 +605,9 @@ size_t write_export_json(char *out, size_t out_cap, const lv6::DeviceConfig &cfg
   b.key_num("learned_factor_max_deviation_pct", m.learned_factor_max_deviation_pct);
   b.addf(",");
   b.key_bool("auto_apply_learned_factors", m.auto_apply_learned_factors);
-  // Rev 3.2 endstop policy.
+  // GPIO-bridge endstop policy.
   b.addf(",");
-  b.key_int("rev32_motion_decision_ms", m.rev32_motion_decision_ms);
+  b.key_int("motion_decision_ms", m.motion_decision_ms);
   b.addf(",");
   b.key_int("stall_plateau_factor_x10", m.stall_plateau_factor_x10);
   b.addf(",");
@@ -990,8 +990,10 @@ ImportResult apply_import_json(const char *json, lv6::DeviceConfig &cfg, bool re
     apply_float(node, "learned_factor_max_deviation_pct", m.learned_factor_max_deviation_pct, 0.0,
                 1.0, result.applied);
     apply_bool(node, "auto_apply_learned_factors", m.auto_apply_learned_factors, result.applied);
-    apply_int(node, "rev32_motion_decision_ms", m.rev32_motion_decision_ms, 0, 10000,
+    // Backups written before the Rev 3.2 support was removed use the old key.
+    apply_int(node, "rev32_motion_decision_ms", m.motion_decision_ms, 0, 10000,
               result.applied);
+    apply_int(node, "motion_decision_ms", m.motion_decision_ms, 0, 10000, result.applied);
     apply_int(node, "stall_plateau_factor_x10", m.stall_plateau_factor_x10, 1, 200, result.applied);
     apply_int(node, "stall_plateau_floor_ms", m.stall_plateau_floor_ms, 10, 5000, result.applied);
     apply_int(node, "stall_plateau_ceiling_ms", m.stall_plateau_ceiling_ms, 10, 10000,

@@ -5,7 +5,7 @@
 namespace lv6 {
 
 // Host-testable stroke-phase + endpoint decision for the discrete GPIO-bridge
-// motor path (Rev 3.2 and Rev 3.3 share this).  Keep this file free of ESP-IDF
+// motor path (Rev 3.3).  Keep this file free of ESP-IDF
 // and free of board-revision names so detection is not coupled to a PCB spin.
 //
 // Closing a manifold valve is four mechanically distinct phases, and phases 2

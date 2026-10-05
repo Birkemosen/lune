@@ -1,7 +1,7 @@
 # =============================================================================
-# Status LED — single green LED (Rev 3.2)
+# Status LED — single green LED
 # =============================================================================
-# Rev 3.2 replaced the WS2812 with `D3`, a plain KT-0805G green LED driven
+# The board has no WS2812; `D3` is a plain KT-0805G green LED driven
 # through `R23` (1 kOhm) from `STATUS_LED_N`, which is **active low**.  One
 # colour cannot carry the nine states the RGB vocabulary did, so the states are
 # collapsed onto blink *rate*, which a person reads far more reliably than

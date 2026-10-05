@@ -7,7 +7,7 @@
 namespace lv6 {
 
 // Pure, host-testable contract for the discrete one-hot decoder and its
-// commutation-tacho qualifier.  Shared by Rev 3.2 and Rev 3.3 board packages.
+// commutation-tacho qualifier used by the Rev 3.3 board.
 // Keep this file free of ESP-IDF so the safety invariants can be exercised in
 // CI.  Stroke-phase / endpoint *detection* lives in endpoint_logic.h so it is
 // not tied to a PCB revision name.
@@ -18,53 +18,54 @@ namespace lv6 {
 //      direction, so the channel/direction pair maps to a decoder output
 //      through a twelve-entry table rather than a formula.  See
 //      decoder.address_bit0_rationale in design-contract.json.
-//   2. Rev 3.2 referenced the runtime cutoff to LATCH_STATE (armed time).
-//      Rev 3.3 dropped the latch; DRIVER_N_SLEEP is the firmware drive permit.
+//   2. There is no hardware fault latch.  DRIVER_N_SLEEP is the firmware-held
+//      drive permit, and three active-LOW fault nets withdraw it.
 //   3. The BEMF mux is gone.  Motion evidence comes from COMM_TACHO_N, a
 //      digital comparator output counted continuously while driving.
-enum class Rev32Direction : uint8_t { FORWARD = 0, REVERSE = 1 };
+enum class Rev33Direction : uint8_t { FORWARD = 0, REVERSE = 1 };
 
-inline constexpr uint8_t REV32_CHANNEL_COUNT = 6;
-inline constexpr uint8_t REV32_ADDRESS_INVALID = 0xFFu;
+inline constexpr uint8_t REV33_CHANNEL_COUNT = 6;
+inline constexpr uint8_t REV33_ADDRESS_INVALID = 0xFFu;
 
 // decoder.channel_address_map, indexed by channel - 1.  Addresses 0-3 are
 // unreachable by design: Q0-Q3 reach no bridge input.
-inline constexpr uint8_t REV32_FORWARD_ADDRESS[REV32_CHANNEL_COUNT] = {
+inline constexpr uint8_t REV33_FORWARD_ADDRESS[REV33_CHANNEL_COUNT] = {
     7u, 4u, 13u, 14u, 9u, 10u};
-inline constexpr uint8_t REV32_REVERSE_ADDRESS[REV32_CHANNEL_COUNT] = {
+inline constexpr uint8_t REV33_REVERSE_ADDRESS[REV33_CHANNEL_COUNT] = {
     6u, 5u, 12u, 15u, 8u, 11u};
 
-constexpr bool rev32_valid_channel_index(uint8_t index) {
-  return index < REV32_CHANNEL_COUNT;
+constexpr bool rev33_valid_channel_index(uint8_t index) {
+  return index < REV33_CHANNEL_COUNT;
 }
 
 // index is 0-based; channel 1 in the contract is index 0 here, matching the
 // zone numbering the rest of the controller uses.
-constexpr uint8_t rev32_decoder_address(uint8_t index, Rev32Direction direction) {
-  return rev32_valid_channel_index(index)
-             ? (direction == Rev32Direction::REVERSE ? REV32_REVERSE_ADDRESS[index]
-                                                     : REV32_FORWARD_ADDRESS[index])
-             : REV32_ADDRESS_INVALID;
+constexpr uint8_t rev33_decoder_address(uint8_t index, Rev33Direction direction) {
+  return rev33_valid_channel_index(index)
+             ? (direction == Rev33Direction::REVERSE ? REV33_REVERSE_ADDRESS[index]
+                                                     : REV33_FORWARD_ADDRESS[index])
+             : REV33_ADDRESS_INVALID;
 }
 
-constexpr bool rev32_address_is_reachable(uint8_t address) {
+constexpr bool rev33_address_is_reachable(uint8_t address) {
   return address >= 4u && address <= 15u;
 }
 
 // Selection state machine.  The address may only change while the decoder is
-// inhibited, and drive is refused while the latch reports faulted or unarmed.
-struct Rev32DecoderSelection {
+// inhibited, and drive is refused until the permit is granted with every fault
+// net clear.
+struct Rev33DecoderSelection {
   uint8_t index{0};
-  Rev32Direction direction{Rev32Direction::FORWARD};
+  Rev33Direction direction{Rev33Direction::FORWARD};
   bool enabled{false};
   bool armed{false};
 
   constexpr uint8_t decoder_address() const {
-    return rev32_decoder_address(index, direction);
+    return rev33_decoder_address(index, direction);
   }
 
-  bool select(uint8_t new_index, Rev32Direction new_direction) {
-    if (enabled || !rev32_valid_channel_index(new_index))
+  bool select(uint8_t new_index, Rev33Direction new_direction) {
+    if (enabled || !rev33_valid_channel_index(new_index))
       return false;
     index = new_index;
     direction = new_direction;
@@ -72,7 +73,7 @@ struct Rev32DecoderSelection {
   }
 
   bool enable() {
-    if (!armed || !rev32_valid_channel_index(index))
+    if (!armed || !rev33_valid_channel_index(index))
       return false;
     enabled = true;
     return true;
@@ -80,21 +81,21 @@ struct Rev32DecoderSelection {
 
   void coast() { enabled = false; }
 
-  // The latch may only be armed from coast.  An arm attempt that finds the raw
-  // fault still asserted leaves the selection unarmed; firmware cannot clear a
-  // hardware fault, so this is the only recovery path there is.
-  bool arm(bool latch_state_high) {
+  // The permit may only be granted from coast.  A grant attempt that finds a
+  // fault net still asserted leaves the selection unarmed; firmware cannot clear
+  // a hardware fault, so this is the only recovery path there is.
+  bool arm(bool fault_asserted) {
     if (enabled)
       return false;
-    armed = !latch_state_high;
+    armed = !fault_asserted;
     return armed;
   }
 
-  // LATCH_STATE going high mid-move is a fault.  Going high while idle is the
-  // runtime cutoff self-disarming, which is normal; the caller distinguishes
-  // the two by whether a move was in progress.
-  void observe_latch(bool latch_state_high) {
-    if (!latch_state_high)
+  // A fault net asserting withdraws the permit and the drive together.  The
+  // caller distinguishes a mid-move fault from an idle one by whether a move
+  // was in progress.
+  void observe_fault(bool fault_asserted) {
+    if (!fault_asserted)
       return;
     armed = false;
     enabled = false;
@@ -104,9 +105,9 @@ struct Rev32DecoderSelection {
 // Commutation edges are qualified on width and period before they count.  The
 // analog band-pass rejects the 50 kHz chopper; this is the cheap second line
 // against the ~20 us pulses that survive it.
-class Rev32TachoQualifier {
+class Rev33TachoQualifier {
  public:
-  Rev32TachoQualifier(uint16_t min_pulse_us = 200, uint32_t min_period_us = 8000,
+  Rev33TachoQualifier(uint16_t min_pulse_us = 200, uint32_t min_period_us = 8000,
                       uint32_t max_period_us = 200000)
       : min_pulse_us_(min_pulse_us),
         min_period_us_(min_period_us),
@@ -269,27 +270,5 @@ class Rev32TachoQualifier {
   bool have_edge_{false};
   bool have_hw_count_{false};
 };
-
-// Stroke-phase + endpoint decision live in endpoint_logic.h (revision-neutral).
-// Keep the Rev32* aliases so older call sites and design-contract references
-// keep compiling while controllers move to the shared names.
-using Rev32StrokePhase = StrokePhase;
-using Rev32StrokeConfig = StrokeConfig;
-using Rev32StrokeTracker = StrokeTracker;
-using Rev32EndpointDecision = EndpointDecision;
-using Rev32EndpointEvidence = EndpointEvidence;
-
-constexpr Rev32EndpointDecision classify_rev32_endpoint(
-    const Rev32EndpointEvidence &e) {
-  return classify_endpoint(e);
-}
-
-constexpr bool rev32_decision_records_endpoint(Rev32EndpointDecision decision) {
-  return endpoint_decision_records_position(decision);
-}
-
-constexpr bool rev32_decision_stops_drive(Rev32EndpointDecision decision) {
-  return endpoint_decision_stops_drive(decision);
-}
 
 }  // namespace lv6

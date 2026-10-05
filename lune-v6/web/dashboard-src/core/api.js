@@ -159,32 +159,6 @@ export function setDriversEnabled(enabled) {
   return postV1('/drivers/enabled', { enabled: !!enabled }, { key: 'drivers_enabled', value: enabled ? 1 : 0 });
 }
 
-// Square-wave LATCH_ARM so a DMM can see the coupled clock on U2 pin 1.
-// A single 1 ms arm edge is invisible on a meter and already over before
-// Motor Lab's first diagnostics poll.
-export async function probeArmClock({ hz = 100, durationMs = 4000, clamp = false } = {}) {
-  if (isMock()) {
-    return {
-      ok: true,
-      data: {
-        cycles: Math.max(1, Math.floor(durationMs / 10)),
-        hz,
-        clamp: !!clamp,
-        armed: true,
-        armed_at_cycle: 1,
-        latch_state_start: 1,
-        latch_state_end: 0,
-      },
-    };
-  }
-  const resp = await postV1('/motors/arm-clock-probe', {
-    hz,
-    duration_ms: durationMs,
-    clamp: clamp ? 1 : 0,
-  });
-  return resp.json();
-}
-
 export function command(name, zone) {
   return postV1('/commands', { command: name, zone: zone || undefined }, { key: 'command', value: name, zone: zone || undefined });
 }

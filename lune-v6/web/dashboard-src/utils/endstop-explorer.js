@@ -18,7 +18,7 @@
 // =============================================================================
 
 export const TICK_MS = 10;
-const BLANKING_MS = 250;              // Rev32TachoQualifier::BLANKING_MS
+const BLANKING_MS = 250;              // Rev33TachoQualifier::BLANKING_MS
 const DETECT_START_MS = 650;          // motion_decision_ms_(): 250 + 2 x 200
 const BASELINE_SEARCH_START_MS = 400;
 const BASELINE_STABLE_MS = 300;
@@ -27,7 +27,7 @@ const BASELINE_FLOOR_MA = 8;
 const BASELINE_CEILING_MA = 32;
 const ENDSTOP_HIGH_MS = 6 * TICK_MS;  // ENDSTOP_HIGH_TICKS
 const OPEN_ARM_FALLBACK_MS = 8000;
-const FRAME_MS = 6.4;                 // REV32_DMA_FRAME_BYTES at 10 kHz/channel
+const FRAME_MS = 6.4;                 // REV33_DMA_FRAME_BYTES at 10 kHz/channel
 const TRAILING_HISTORY = 48;          // TrailingStepDetector::HISTORY
 
 // The close stroke's mechanical boundary: 40 s / 3120 counts puts the plunger
