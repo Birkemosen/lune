@@ -32,6 +32,14 @@ shared/contracts/        Cross-product contracts (e.g. room physics)
 docs/                    Cross-device notes
 ```
 
+Related repositories:
+
+- [`Birkemosen/lune-coordinator`](https://github.com/Birkemosen/lune-coordinator) —
+  Lune Touch / Mini, the whole-house coordinator.
+- [`Birkemosen/lune-design-system`](https://github.com/Birkemosen/lune-design-system) —
+  shared UI tokens and CSS. The dashboard build expects it as a sibling checkout at
+  `../lune-design-system`.
+
 ## Dashboard (Design System 2)
 
 Static HTML/CSS with radio navigation; a thin binder paints live `/api/v1` data.

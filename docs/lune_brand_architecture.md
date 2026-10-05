@@ -1,6 +1,6 @@
 # Birkemosen Product Architecture
 
-Moved to the private Lune Touch / Mini repository:
+Moved to the Lune Touch / Mini repository:
 
 [`Birkemosen/lune-coordinator`](https://github.com/Birkemosen/lune-coordinator)
 → `docs/lune_brand_architecture.md`

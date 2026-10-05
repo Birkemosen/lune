@@ -13,11 +13,11 @@ docs/            Cross-device notes; brand architecture lives in lune-coordinato
 shared/          Shared contracts/design notes; no shared runtime dashboard code
 ```
 
-Lune Touch / Lune Mini coordinator code lives in the private repository
+Lune Touch / Lune Mini coordinator code lives in the repository
 `Birkemosen/lune-coordinator`. Product brand architecture is owned there
 (`docs/lune_brand_architecture.md`).
 
-Lune Design System code lives in the private repository
+Lune Design System code lives in the repository
 `Birkemosen/lune-design-system`. The shared design system and components is owned there.
 Every change to UI etc. must conform into Lune Design System.
 
@@ -108,7 +108,7 @@ When changing persisted config structs, increment the relevant version in
 
 ## Lune Touch / Mini
 
-Coordinator-owned code lives in the private `Birkemosen/lune-coordinator` repository.
+Coordinator-owned code lives in the `Birkemosen/lune-coordinator` repository.
 It owns forecast fetch/cache, wind/solar/thermal-lead decisions, whole-house learning,
 zone prioritization, and command ledgers.
 

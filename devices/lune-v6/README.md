@@ -116,7 +116,7 @@ esphome config devices/lune-v6/configurations/lune-ble.yaml
 
 ## Documentation
 
-- Brand architecture (private): `Birkemosen/lune-coordinator` → `docs/lune_brand_architecture.md`
+- Brand architecture: [`Birkemosen/lune-coordinator`](https://github.com/Birkemosen/lune-coordinator) → `docs/lune_brand_architecture.md`
   (stub: [../../docs/lune_brand_architecture.md](../../docs/lune_brand_architecture.md))
 - [../../docs/lune_touch_build_plan.md](../../docs/lune_touch_build_plan.md)
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
