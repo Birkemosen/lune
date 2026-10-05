@@ -1327,7 +1327,7 @@ YYYY-MM-DD — TASK-ID — STATUS
     `devices/lune-touch/tests/odin_plan/test_odin_plan.cpp`,
     `devices/lune-touch/docs/odin_plan_ingestion.md`, `devices/lune-touch/docs/api_v1.md`,
     `docs/lune_heating_control_implementation_plan.md`.
-  - Checks: Read-only `GET http://192.168.20.54/dashboard/odin` → PASS (HTTP 200,
+  - Checks: Read-only `GET http://192.168.1.54/dashboard/odin` → PASS (HTTP 200,
     direct JSON); `make -C devices/lune-touch test-odin-plan` → PASS;
     `make -C devices/lune-touch test-coordinator` → PASS; `make test` → PASS;
     `make -C devices/lune-touch build` → PASS (ESP32-S3, RAM 40.3%, OTA 22.5%);
@@ -1373,7 +1373,7 @@ YYYY-MM-DD — TASK-ID — STATUS
     commands. Provenance, freshness, and the current plan point are exposed through
     `GET /forecast`.
   - Files: `devices/lune-touch/components/lune_touch_coordinator/odin_plan.h`, `devices/lune-touch/components/lune_touch_coordinator/lune_touch_coordinator.h`, `devices/lune-touch/components/lune_touch_coordinator/lune_touch_coordinator.cpp`, `devices/lune-touch/tests/odin_plan/test_odin_plan.cpp`, `devices/lune-touch/Makefile`, `devices/lune-touch/docs/odin_plan_ingestion.md`, `devices/lune-touch/docs/api_v1.md`, `docs/lune_heating_control_implementation_plan.md`.
-  - Checks: `make -C devices/lune-touch test-odin-plan` → PASS; `make -C devices/lune-touch test-coordinator` → PASS; read-only `GET http://192.168.20.6/api/debug` → PASS (48-hour plan observed); `make test` → PASS; `make -C devices/lune-touch build` → PASS (ESP32-S3, OTA 22.5%); `make -C devices/lune-touch ota-size-check` → PASS; `git diff --check` → PASS. No device was deployed.
+  - Checks: `make -C devices/lune-touch test-odin-plan` → PASS; `make -C devices/lune-touch test-coordinator` → PASS; read-only `GET http://192.168.1.6/api/debug` → PASS (48-hour plan observed); `make test` → PASS; `make -C devices/lune-touch build` → PASS (ESP32-S3, OTA 22.5%); `make -C devices/lune-touch ota-size-check` → PASS; `git diff --check` → PASS. No device was deployed.
   - Notes/follow-up: The debug response has no documented raw operation-mode mapping, so no
     mode inference or active valve distribution is implemented. P5.3 remains blocked on that
     contract; P5.2 remains blocked on an Asgard target endpoint.
