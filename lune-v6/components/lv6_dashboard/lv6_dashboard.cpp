@@ -15,6 +15,13 @@
 #ifdef USE_LOGGER
 #include "esphome/components/logger/logger.h"
 #endif
+#include "esphome/components/wifi/wifi_component.h"
+#ifdef USE_LUNE_WIFI
+#include "esphome/components/lune_wifi/lune_wifi.h"
+#endif
+#ifdef USE_CAPTIVE_PORTAL
+#include "esphome/components/captive_portal/captive_portal.h"
+#endif
 #include <algorithm>
 #include <cctype>
 #include <cmath>
@@ -1272,6 +1279,13 @@ static constexpr size_t V1_PREFIX_LEN = sizeof(V1_PREFIX) - 1;
 bool LV6Dashboard::canHandle(AsyncWebServerRequest *request) const {
   char url_buf[AsyncWebServerRequest::URL_BUF_SIZE];
   auto url = request->url_to(url_buf);
+#ifdef USE_CAPTIVE_PORTAL
+  // In the fallback AP the stock captive portal (network list + password form)
+  // must win "/"; it is registered after this handler.
+  if (url == "/" && captive_portal::global_captive_portal != nullptr &&
+      captive_portal::global_captive_portal->is_active())
+    return false;
+#endif
   if (url == "/" || url == "/dashboard" || url == "/dashboard/" || is_dashboard_js_url(url.c_str()) ||
       is_ui_css_url(url.c_str()) || is_lang_html_url(url.c_str(), "en") ||
       is_lang_html_url(url.c_str(), "da"))
@@ -3104,6 +3118,10 @@ void LV6Dashboard::handle_v1_(AsyncWebServerRequest *request, const char *path) 
     this->handle_settings_export_(request);
     return;
   }
+  if (strcmp(path, "/wifi") == 0 && request->method() != HTTP_POST) {
+    this->handle_wifi_(request);
+    return;
+  }
   if (strcmp(path, "/diagnostics") == 0) {
     this->handle_diagnostics_(request);
     return;
@@ -3171,6 +3189,15 @@ void LV6Dashboard::handle_v1_(AsyncWebServerRequest *request, const char *path) 
   }
   if (strcmp(path, "/authority/approve-proposal") == 0) {
     this->handle_authority_proposal_approval_(request);
+    return;
+  }
+  if (strcmp(path, "/wifi") == 0) {
+    // Network change from the web UI. Same CSRF gate as every local write;
+    // deliberately not a /settings/<type> key (never persisted in the config
+    // store, never part of a settings backup).
+    if (!this->authorize_write_(request))
+      return;
+    this->handle_wifi_write_(request, body);
     return;
   }
   if (strcmp(path, "/authority/revoke") == 0) {
@@ -3748,6 +3775,159 @@ void LV6Dashboard::handle_authority_proposal_approval_(AsyncWebServerRequest *re
                 approved.installation_id, approved.coordinator_id, approved.shared_key);
   send_text_(request, 200, "application/json", response, false, "no-store");
   authority_proposal_shared_key_[0] = '\0';
+}
+
+// Like json_get_str(), but decodes JSON escapes (\" \\ \uXXXX …) so a
+// password may contain quotes and backslashes. False when the field is
+// missing, malformed, or longer than out_len - 1 bytes.
+static bool json_get_str_decoded(const char *body, const char *field, char *out, size_t out_len) {
+  if (body == nullptr || out_len == 0)
+    return false;
+  char pat[48];
+  snprintf(pat, sizeof(pat), "\"%s\"", field);
+  const char *p = strstr(body, pat);
+  if (!p) return false;
+  p += strlen(pat);
+  while (*p == ' ') p++;
+  if (*p != ':') return false;
+  p++;
+  while (*p == ' ') p++;
+  if (*p != '"') return false;
+  p++;
+  size_t o = 0;
+  auto put = [&](char c) {
+    if (o + 1 >= out_len)
+      return false;
+    out[o++] = c;
+    return true;
+  };
+  for (; *p != '\0' && *p != '"'; p++) {
+    char c = *p;
+    if (c != '\\') {
+      if (!put(c)) return false;
+      continue;
+    }
+    c = *++p;
+    switch (c) {
+      case '"': case '\\': case '/': if (!put(c)) return false; break;
+      case 'b': if (!put('\b')) return false; break;
+      case 'f': if (!put('\f')) return false; break;
+      case 'n': if (!put('\n')) return false; break;
+      case 'r': if (!put('\r')) return false; break;
+      case 't': if (!put('\t')) return false; break;
+      case 'u': {
+        unsigned cp = 0;
+        for (int i = 0; i < 4; i++) {
+          const char h = *++p;
+          if (!std::isxdigit(static_cast<unsigned char>(h))) return false;
+          cp = cp * 16 + static_cast<unsigned>(std::isdigit(static_cast<unsigned char>(h)) ? h - '0'
+                                                                                          : (std::tolower(h) - 'a' + 10));
+        }
+        // BMP only (no surrogate pairs): SSIDs/passphrases are ASCII in practice.
+        if (cp < 0x80) {
+          if (!put(static_cast<char>(cp))) return false;
+        } else if (cp < 0x800) {
+          if (!put(static_cast<char>(0xC0 | (cp >> 6))) || !put(static_cast<char>(0x80 | (cp & 0x3F)))) return false;
+        } else {
+          if (!put(static_cast<char>(0xE0 | (cp >> 12))) || !put(static_cast<char>(0x80 | ((cp >> 6) & 0x3F))) ||
+              !put(static_cast<char>(0x80 | (cp & 0x3F))))
+            return false;
+        }
+        break;
+      }
+      default:
+        return false;
+    }
+  }
+  if (*p != '"') return false;
+  out[o] = '\0';
+  return true;
+}
+
+// GET /api/v1/wifi — connected network and the state of the last runtime
+// switch. Never includes a password.
+void LV6Dashboard::handle_wifi_(AsyncWebServerRequest *request) {
+  auto *wifi = wifi::global_wifi_component;
+  const bool connected = wifi != nullptr && wifi->is_connected();
+  char ssid[wifi::SSID_BUFFER_SIZE]{};
+  if (connected)
+    wifi->wifi_ssid_to(ssid);
+  const char *switch_label = "none";
+  std::string target_ssid;
+#ifdef USE_LUNE_WIFI
+  if (auto *lw = lune_wifi::global_lune_wifi) {
+    switch_label = lw->result_label();
+    target_ssid = lw->target_ssid();
+  }
+#endif
+  char buf[256];
+  size_t off = static_cast<size_t>(
+      snprintf(buf, sizeof(buf), "{\"ok\":true,\"version\":\"v1\",\"data\":{\"ssid\":\""));
+  append_json_escaped(buf, sizeof(buf), off, ssid);
+  off += static_cast<size_t>(snprintf(buf + off, sizeof(buf) - off,
+                                      "\",\"connected\":%s,\"ap_active\":%s,\"switch\":\"%s\",\"target_ssid\":\"",
+                                      connected ? "true" : "false",
+                                      wifi != nullptr && wifi->is_ap_active() ? "true" : "false", switch_label));
+  append_json_escaped(buf, sizeof(buf), off, target_ssid.c_str());
+  if (off < sizeof(buf) - 4)
+    snprintf(buf + off, sizeof(buf) - off, "\"}}");
+  send_text_(request, 200, "application/json", buf, false, "no-store");
+}
+
+// POST /api/v1/wifi — ssid (required, <= 32 bytes) and password (<= 64 bytes,
+// may be empty for an open network). Replies with the current state before the
+// switch runs, because the switch drops this connection.
+void LV6Dashboard::handle_wifi_write_(AsyncWebServerRequest *request, const char *body) {
+#ifdef USE_LUNE_WIFI
+  auto *lw = lune_wifi::global_lune_wifi;
+  if (lw == nullptr) {
+    this->send_v1_(request, 501, "unsupported", "Runtime WiFi is not in this build");
+    return;
+  }
+  // Form-encoded (the dashboard) first, JSON body as fallback.
+  char ssid[wifi::SSID_BUFFER_SIZE]{};
+  char password[65]{};
+  std::string arg = request->arg("ssid");
+  if (!arg.empty()) {
+    if (arg.size() >= sizeof(ssid)) {
+      this->send_v1_(request, 400, "invalid_ssid", "SSID must be 1..32 bytes");
+      return;
+    }
+    memcpy(ssid, arg.c_str(), arg.size() + 1);
+    arg = request->arg("password");
+    if (arg.size() >= sizeof(password)) {
+      this->send_v1_(request, 400, "invalid_password", "Password must be at most 64 bytes");
+      return;
+    }
+    memcpy(password, arg.c_str(), arg.size() + 1);
+  } else if (body != nullptr && body[0] != '\0') {
+    if (!json_get_str_decoded(body, "ssid", ssid, sizeof(ssid))) {
+      this->send_v1_(request, 400, "invalid_ssid", "SSID must be 1..32 bytes");
+      return;
+    }
+    if (strstr(body, "\"password\"") != nullptr &&
+        !json_get_str_decoded(body, "password", password, sizeof(password))) {
+      this->send_v1_(request, 400, "invalid_password", "Password must be at most 64 bytes");
+      return;
+    }
+  }
+  if (ssid[0] == '\0') {
+    this->send_v1_(request, 400, "invalid_ssid", "SSID is required");
+    return;
+  }
+  if (lw->result() == lune_wifi::SwitchResult::PENDING) {
+    this->send_v1_(request, 409, "busy", "A WiFi change is already running");
+    return;
+  }
+  // WiFi calls belong on the main loop; this runs on the httpd task.
+  std::string s_ssid(ssid), s_password(password);
+  this->defer([lw, s_ssid, s_password]() { lw->request_switch(s_ssid, s_password); });
+  ESP_LOGI(TAG, "WiFi change to '%s' requested from web UI", ssid);
+  this->handle_wifi_(request);
+#else
+  (void) body;
+  this->send_v1_(request, 501, "unsupported", "Runtime WiFi is not in this build");
+#endif
 }
 
 void LV6Dashboard::handle_authority_revoke_(AsyncWebServerRequest *request) {

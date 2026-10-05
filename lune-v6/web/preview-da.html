@@ -1295,8 +1295,8 @@
   .fc-legend .ldhw  { height: 10px; border-radius: 2px 2px 0 0; background: color-mix(in srgb, var(--info) 70%, transparent); }
   .fc-legend .lleg  { height: 10px; border-radius: 2px 2px 0 0; background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--info) 75%, transparent) 0 3px, color-mix(in srgb, var(--info) 35%, transparent) 3px 6px); }
   .fc-legend .llift { border-top: 3px solid var(--violet); border-radius: var(--r-pill); }
-  .fc-legend .lch   { height: 10px; border-radius: var(--r-pill); background: var(--accent); }
-  .fc-legend .lins  { height: 10px; border-radius: var(--r-pill); background: var(--warn); }
+  .fc-legend .lch   { height: 10px; border-radius: var(--r-pill); background: repeating-linear-gradient(135deg, var(--accent-ink) 0 3px, color-mix(in srgb, var(--accent) 25%, transparent) 3px 6px); }
+  .fc-legend .lins  { height: 10px; border-radius: var(--r-pill); background: repeating-linear-gradient(135deg, var(--warn) 0 3px, color-mix(in srgb, var(--warn) 25%, transparent) 3px 6px); }
 
   /* Plan (Lune Touch): 24 t frem fra nu. Venstre kolonne = spornavn, højre = tidsakse
      (--a/--b = fra/til i timer fra nu). Øverste spor: Odin — planlagt varme som søjler
@@ -1350,8 +1350,15 @@
   .plan-lift { bottom: -6px; height: 3px; background: var(--violet); }
   .plan-seg { top: 3px; bottom: 3px; }
   .plan-seg[data-kind="preload"] { background: color-mix(in srgb, var(--accent) 30%, transparent); }
-  .plan-seg[data-kind="charge"] { background: var(--accent); }
-  .plan-seg[data-kind="charge"][data-insufficient] { background: var(--warn); }
+  /* Opladning er skraveret, så den ikke ligner Odins massive rumvarme-søjler. */
+  .plan-seg[data-kind="charge"] {
+    background: repeating-linear-gradient(135deg, var(--accent-ink) 0 3px,
+                                          color-mix(in srgb, var(--accent) 25%, transparent) 3px 6px);
+  }
+  .plan-seg[data-kind="charge"][data-insufficient] {
+    background: repeating-linear-gradient(135deg, var(--warn) 0 3px,
+                                          color-mix(in srgb, var(--warn) 25%, transparent) 3px 6px);
+  }
   .plan-x { grid-column: 2; position: relative; height: 1.4em; font-size: var(--fs-xs); color: var(--faint); }
   .plan-x span { position: absolute; top: 0; transform: translateX(-50%); white-space: nowrap; }
   .plan-x span:first-child { transform: none; }
@@ -1428,8 +1435,7 @@
     .fc-icons:not([data-hourly]) .ic:nth-child(even) { display: none; }   /* ikon hver 6. time */
     .fc.fc--dual { grid-template-columns: 26px minmax(0, 1fr) 34px; }
     .fc-dirs > :nth-child(even) { visibility: hidden; }
-    .fc-x span:not(.d):not(:first-child) { visibility: hidden; }  /* kun ugedage */
-    .fc-x span:nth-child(3), .fc-x span:nth-child(7), .fc-x span:nth-child(11) { visibility: visible; }
+    :is(.fc-x, .plan-x) span.m { visibility: hidden; }  /* 3-timers mærker kun på bred skærm */
   }
 
   /* Signaturforklaring i panelhovedet */
@@ -2786,6 +2792,18 @@
             <div class="field row"><label for="device_location">Placering</label><input class="input" id="device_location" name="device_location" value="Stueetage manifold" maxlength="64" autocomplete="off"></div>
             <footer class="panel-foot"><span class="save-status" id="ss-device" aria-live="polite"></span><button type="reset" class="btn">Fortryd</button><button class="btn primary" type="submit">Gem enhedsidentitet</button></footer>
           </form>
+          <form class="panel c6" data-save="wifi">
+            <header class="panel-head"><h3>Wifi</h3><button class="help-btn" type="button" popovertarget="help-wifi" style="anchor-name:--a-help-wifi" aria-label="Hjælp: Wifi">?</button></header>
+            <div id="help-wifi" popover class="help-pop" style="position-anchor:--a-help-wifi"><p>Det wifi, V6 bruger. Virker også efter et skift af adgangskode: kan V6 ikke nå nettet, åbner den efter 5 minutter opsætningsnettet “Lune V6 Setup”; forbind til det og åbn http://192.168.4.1.</p><a href="https://github.com/Birkemosen/lune/blob/main/lune-v6/docs/Manual.md#wifi" target="_blank" rel="noopener noreferrer">Læs mere</a></div>
+            <dl class="kv">
+              <div><dt>Netværk</dt><dd data-bind="wifi.current">—</dd></div>
+              <div><dt>Status</dt><dd data-bind="wifi.status">—</dd></div>
+            </dl>
+            <div class="field row"><label for="wifi_ssid">Netværksnavn (SSID)</label><input class="input" id="wifi_ssid" name="ssid" maxlength="32" autocomplete="off" spellcheck="false"></div>
+            <div class="field row"><label for="wifi_password">Adgangskode</label><input class="input" type="password" id="wifi_password" name="password" maxlength="64" autocomplete="new-password"></div>
+            <p class="hint">Forbinder det nye net ikke inden for 30 sekunder, går V6 tilbage til det nuværende. Indstillingen overlever firmwareopdateringer.</p>
+            <footer class="panel-foot"><span class="save-status" id="ss-wifi" aria-live="polite"></span><button type="reset" class="btn">Fortryd</button><button class="btn primary" type="submit">Skift netværk</button></footer>
+          </form>
           </div>
         </section>
 
@@ -3384,7 +3402,7 @@
 </div>
 
 <!-- Strenge til binderen: statusser og beskeder der skrives ved runtime -->
-<script type="application/json" id="i18n">{"zdash.follows":"følger {z}","zdash.primary":"primær i gruppe {g}","zdash.memberNote":"{m} følger {p}. Ret målet dér.","common.open":"Åbn {x}","cz.memberStrong":"Grupperet med {p}.","cz.member":"Mål og tidsplan styres fra {p}; følere og gulv indstilles her.","state.calling":"Kalder varme","state.idle":"Hviler","state.fault":"Motorfejl","state.off":"Ikke i brug","state.learning":"Lærer","state.blocked":"Blokeret","tile.fault":"Fejl","tile.learning":"Lærer","tile.learningPct":"Lærer {pct} %","tile.blocked":"Blokeret","badge.calling":"Kalder","sys.dt":"ΔT {dt}°","sys.dtstate":"ΔT {dt}° · kalder","dash.sys.sub":"{zones} zoner · {calling} kalder varme · {faults} fejl","cz.learnPhase.home":"Homer til sæde","cz.learnPhase.open":"Åbner","cz.learnPhase.close":"Lukker","cz.learnPhase.pass":"{phase} · prøve {sample}/{need}","cz.bleAssign":"Tildel","cz.bleAssigned":"Zone {z}","cz.bleSeen":"Nærliggende sensorer","cz.bleSeenEmpty":"Ingen BTHome-sensorer i nærheden","cz.bleScanning":"Scanner…","common.days":"dage","common.hours":"timer","common.minutes":"min","common.none":"Ingen","common.learned":"Lært","common.needsLearning":"Kræver læring","common.notLearned":"Ikke lært","common.undo":"Fortryd","common.on":"Til","rt.savedOk":"Gemt","rt.saveFailed":"Kunne ikke gemme. Tjek forbindelsen til enheden.","rt.saving":"Gemmer…","rt.unsaved.one":"{n} ændring ikke gemt","rt.unsaved.other":"{n} ændringer ikke gemt","rt.nothingToSave":"Ingen ændringer at gemme","rt.leaveUnsaved":"Du har ugemte ændringer.","rt.autoSaving":"Gemmer…","rt.autoSaved":"Gemt","rt.autoFailed":"Ikke gemt – prøv igen","rt.retry":"Prøv igen","rt.secondsAgo":"{v} s siden","rt.minutesAgo":"{v} min siden","rt.offline":"Offline","device.copyDiag":"Kopiér diagnostik","device.copied":"Kopieret","device.sample":"Stueetage manifold","alert.zoneFault":"{zone} har motorfejl","bal.adaptive":"Adaptiv","bal.static":"Statisk","dev.online":"Online","dev.offline":"Offline","zdash.preload":"målet hæves {offset} °C.","zdash.preloadUntil":"målet hæves {offset} °C · {remaining} tilbage.","src.ble":"BLE-sensor","src.probe":"Lokal probe","csys.touchWaiting":"Afventer","csys.touchWaitingBody":"Tilføj denne manifold i Lune Touch. Dens identitet vises her automatisk.","csys.touchApprove":"Godkend Lune Touch","csys.touchApproved":"Godkendt","csys.touchPending":"Forbinder","csys.touchError":"Ingen forbindelse","csys.touchErrorBody":"Kunne ikke nå Lune Touch. Tjek netværket, og prøv igen eller frakobl.","csys.touchCancel":"Annullér","csys.touchRetry":"Prøv igen","csys.touchControls":"Styrer denne V6","common.copy":"Kopiér","device.this":"denne enhed","zchart.expected":"Forventet kl. {time}","zchart.at":"Kl. {time}","zchart.noForecast":"Ingen fremskrivning endnu","zchart.faultStrong":"Fremskrivningen antager, at motorfejlen fortsætter.","csys.touchLeaseLost":"Lease udløbet – V6 styrer lokalt. Touch' midlertidige ændringer er ryddet.","tile.charging":"Lune Touch lader gulvet op","_dec":",","_lang":"da"}</script>
+<script type="application/json" id="i18n">{"zdash.follows":"følger {z}","zdash.primary":"primær i gruppe {g}","zdash.memberNote":"{m} følger {p}. Ret målet dér.","common.open":"Åbn {x}","cz.memberStrong":"Grupperet med {p}.","cz.member":"Mål og tidsplan styres fra {p}; følere og gulv indstilles her.","state.calling":"Kalder varme","state.idle":"Hviler","state.fault":"Motorfejl","state.off":"Ikke i brug","state.learning":"Lærer","state.blocked":"Blokeret","tile.fault":"Fejl","tile.learning":"Lærer","tile.learningPct":"Lærer {pct} %","tile.blocked":"Blokeret","badge.calling":"Kalder","sys.dt":"ΔT {dt}°","sys.dtstate":"ΔT {dt}° · kalder","dash.sys.sub":"{zones} zoner · {calling} kalder varme · {faults} fejl","cz.learnPhase.home":"Homer til sæde","cz.learnPhase.open":"Åbner","cz.learnPhase.close":"Lukker","cz.learnPhase.pass":"{phase} · prøve {sample}/{need}","cz.bleAssign":"Tildel","cz.bleAssigned":"Zone {z}","cz.bleSeen":"Nærliggende sensorer","cz.bleSeenEmpty":"Ingen BTHome-sensorer i nærheden","cz.bleScanning":"Scanner…","common.days":"dage","common.hours":"timer","common.minutes":"min","common.none":"Ingen","common.learned":"Lært","common.needsLearning":"Kræver læring","common.notLearned":"Ikke lært","common.undo":"Fortryd","common.on":"Til","rt.savedOk":"Gemt","rt.saveFailed":"Kunne ikke gemme. Tjek forbindelsen til enheden.","rt.saving":"Gemmer…","rt.unsaved.one":"{n} ændring ikke gemt","rt.unsaved.other":"{n} ændringer ikke gemt","rt.nothingToSave":"Ingen ændringer at gemme","rt.leaveUnsaved":"Du har ugemte ændringer.","rt.autoSaving":"Gemmer…","rt.autoSaved":"Gemt","rt.autoFailed":"Ikke gemt – prøv igen","rt.retry":"Prøv igen","rt.secondsAgo":"{v} s siden","rt.minutesAgo":"{v} min siden","rt.offline":"Offline","device.copyDiag":"Kopiér diagnostik","device.copied":"Kopieret","device.sample":"Stueetage manifold","alert.zoneFault":"{zone} har motorfejl","bal.adaptive":"Adaptiv","bal.static":"Statisk","dev.online":"Online","dev.offline":"Offline","zdash.preload":"målet hæves {offset} °C.","zdash.preloadUntil":"målet hæves {offset} °C · {remaining} tilbage.","src.ble":"BLE-sensor","src.probe":"Lokal probe","csys.touchWaiting":"Afventer","csys.touchWaitingBody":"Tilføj denne manifold i Lune Touch. Dens identitet vises her automatisk.","csys.touchApprove":"Godkend Lune Touch","csys.touchApproved":"Godkendt","csys.touchPending":"Forbinder","csys.touchError":"Ingen forbindelse","csys.touchErrorBody":"Kunne ikke nå Lune Touch. Tjek netværket, og prøv igen eller frakobl.","csys.touchCancel":"Annullér","csys.touchRetry":"Prøv igen","csys.touchControls":"Styrer denne V6","common.copy":"Kopiér","device.this":"denne enhed","zchart.expected":"Forventet kl. {time}","zchart.at":"Kl. {time}","zchart.noForecast":"Ingen fremskrivning endnu","zchart.faultStrong":"Fremskrivningen antager, at motorfejlen fortsætter.","csys.touchLeaseLost":"Lease udløbet – V6 styrer lokalt. Touch' midlertidige ændringer er ryddet.","tile.charging":"Lune Touch lader gulvet op","wifi.connectedTo":"Forbundet","wifi.notConnected":"Ikke forbundet","wifi.apActive":"Opsætningsnettet “Lune V6 Setup” er tændt","wifi.sent":"Skifter netværk … siden kan miste forbindelsen et øjeblik.","wifi.needSsid":"Skriv netværksnavnet","wifi.busy":"Et netværksskift er allerede i gang","wifi.switch.pending":"Skifter til {ssid} …","wifi.switch.connected":"Forbundet til {ssid}","wifi.switch.reverted":"{ssid} forbandt ikke – tilbage på det forrige net","wifi.switch.failed":"{ssid} forbandt ikke","_dec":",","_lang":"da"}</script>
 
 <!-- Progressive enhancement: +/−, luk enhedsmenu, hjælp-popover nær ?, filnavn, submit-hook -->
 <script>

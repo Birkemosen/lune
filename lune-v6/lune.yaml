@@ -117,6 +117,7 @@ external_components:
       - lv6_ble_time_beacon
       - lv6_bthome_bridge
       - lv6_ble_demand
+      - lune_wifi
 
 # =============================================================================
 # Logger

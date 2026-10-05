@@ -72,6 +72,8 @@ legacy bookmarks that redirect to `/`.
   - `GET /api/v1/logs/download` — the same log ring as a single `text/plain`
     attachment for bug reports. See "Maintenance endpoints".
   - `GET /api/v1/ble-scan` — discovered BTHome sensors
+  - `GET /api/v1/wifi` / `POST /api/v1/wifi` — connected network and runtime network
+    change (rolls back if the new network does not connect). See "WiFi" below.
   - `POST /api/v1/room-temperatures` — EXTERNAL room-temp ingest by `sensor_id` (V6 maps to zone)
   - `GET /api/v1/settings/export[?include_learned=0|1]` — configuration backup as a
     downloadable JSON document. See "Maintenance endpoints".
@@ -551,6 +553,30 @@ Returns dashboard-editable settings currently backed by config store and control
 }
 ```
 
+### `GET /api/v1/wifi`
+
+Connected network and the state of the last runtime network change. A password
+is never returned.
+
+```json
+{
+  "ok": true,
+  "version": "v1",
+  "data": {
+    "ssid": "MyWiFi",
+    "connected": true,
+    "ap_active": false,
+    "switch": "none",
+    "target_ssid": ""
+  }
+}
+```
+
+- `ssid` — connected network, `""` while not connected.
+- `ap_active` — the fallback setup network ("Lune V6 Setup") is on.
+- `switch` — `none` | `pending` | `connected` | `reverted` | `failed` for the last
+  `POST /wifi` since boot; `target_ssid` is the network it asked for.
+
 ## Write Endpoints
 
 ### `POST /api/v1/room-temperatures`
@@ -747,6 +773,32 @@ Heating-mode keys (global):
 
 Weather exposure and room/manifold identity are owned by Lune Touch and have no
 V6 settings routes.
+
+### `POST /api/v1/wifi`
+
+Switches the device to another WiFi network. Requires `X-Lune-CSRF` like every
+local write; deliberately not a `/settings/<type>` key, so credentials are never
+part of a settings backup.
+
+URL-encoded form body (a JSON body with the same fields is also accepted):
+
+- `ssid` — required, 1–32 bytes
+- `password` — at most 64 bytes; empty for an open network
+
+The response is the `GET /wifi` document, sent **before** the switch starts
+because the switch drops the connection. The device then connects to the new
+network; if it is not connected within 30 s it goes back to the previous network
+(`switch: "reverted"`), or reports `failed` when there was nothing to go back to.
+Poll `GET /wifi` while `switch` is `pending`. A successful change is stored in
+ESPHome's fixed WiFi preference slot (firmware has no compiled-in network), so it
+survives firmware updates.
+
+Errors: `400 invalid_ssid` / `invalid_password` (missing or too long),
+`409 busy` (a change is already running), `501 unsupported` (build without
+`lune_wifi`).
+
+While the fallback setup network is active, `GET /` serves ESPHome's captive
+portal (network list + password form) instead of the dashboard.
 
 ## Maintenance Endpoints
 

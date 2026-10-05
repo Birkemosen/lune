@@ -44,9 +44,10 @@ jobs:
           ./.venv313/bin/pip install -r requirements.txt
 
       # secrets.yaml is gitignored (secrets.yaml.example documents the keys), and
-      # the release build must not contain real credentials anyway: the release
-      # entrypoint removes the station block, so these placeholders only satisfy
-      # `!secret` resolution at config load. api_key must still be a valid
+      # the release build must not contain real credentials anyway: no package
+      # compiles in a station block and the release entrypoint removes the
+      # lune_wifi seed, so these placeholders only satisfy `!secret` resolution
+      # at config load. api_key must still be a valid
       # 32-byte base64 encryption key.
       - name: Write placeholder secrets.yaml
         run: |

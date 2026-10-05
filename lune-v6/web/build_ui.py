@@ -542,6 +542,18 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
             {row("device_location",T("device.place"),f'<input class="input" id="device_location" name="device_location" value="{T("device.sample")}" maxlength="64" autocomplete="off">')}
             {foot_save("device",T("device.saveIdentity"))}
           </form>
+          <form class="panel c6" data-save="wifi">
+            <header class="panel-head"><h3>{T("wifi.title")}</h3>{help_btn("help-wifi",T("wifi.title"))}</header>
+            {help_pop("help-wifi","help.wifi","lune-v6/docs/Manual.md#wifi")}
+            <dl class="kv">
+              <div><dt>{T("wifi.current")}</dt><dd data-bind="wifi.current">—</dd></div>
+              <div><dt>{T("wifi.status")}</dt><dd data-bind="wifi.status">—</dd></div>
+            </dl>
+            {row("wifi_ssid",T("wifi.ssid"),'<input class="input" id="wifi_ssid" name="ssid" maxlength="32" autocomplete="off" spellcheck="false">')}
+            {row("wifi_password",T("wifi.password"),'<input class="input" type="password" id="wifi_password" name="password" maxlength="64" autocomplete="new-password">')}
+            <p class="hint">{T("wifi.hint")}</p>
+            {foot_save("wifi",T("wifi.save"))}
+          </form>
           </div>
         </section>
 
@@ -758,7 +770,9 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
              "csys.touchCancel","csys.touchRetry","csys.touchControls","common.copy","device.copied",
              "rt.secondsAgo","rt.minutesAgo","device.this",
              "zchart.expected","zchart.at","zchart.noForecast","zchart.faultStrong",
-             "csys.touchLeaseLost","tile.charging")
+             "csys.touchLeaseLost","tile.charging",
+             "wifi.connectedTo","wifi.notConnected","wifi.apActive","wifi.sent","wifi.needSsid","wifi.busy",
+             "wifi.switch.pending","wifi.switch.connected","wifi.switch.reverted","wifi.switch.failed")
     rt={k:T(k) for k in rt_keys}
     rt["_dec"]=T.meta("_dec"); rt["_lang"]=cur
     rt_json=json.dumps(rt,ensure_ascii=False,separators=(",",":"))

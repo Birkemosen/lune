@@ -1,7 +1,9 @@
+# No STA ssid/password in the firmware: ESPHome then keeps saved credentials
+# under a fixed key that survives OTA. They are set from the web UI
+# (Connections → WiFi), the fallback AP's captive portal or improv_serial.
+# lune_wifi seeds them once from secrets.yaml on a device that has none yet,
+# so upgrading from a build with compiled-in credentials keeps the network.
 wifi:
-  ssid: !secret wifi_ssid
-  password: !secret wifi_password
-
   # Scan first and pick the strongest BSSID. `fast_connect` skips that scan and
   # was kept for a previous board's saved UniFi association; on a new board it
   # associated with the weakest AP first (Auth Expired / Association Expired).
@@ -17,3 +19,7 @@ wifi:
     ap_timeout: 5min
 
 captive_portal:
+
+lune_wifi:
+  seed_ssid: !secret wifi_ssid
+  seed_password: !secret wifi_password
