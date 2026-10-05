@@ -8,7 +8,7 @@
 # credentials across an OTA and falls back to the setup AP when they fail.
 #
 # Used by configurations/lune-v6-release.yaml, which also `!remove`s the
-# station block inherited from packages/network/wifi.yaml.
+# lune_wifi seed (`!secret` credentials) inherited from packages/network/wifi.yaml.
 # =============================================================================
 
 wifi:

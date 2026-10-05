@@ -95,6 +95,18 @@ NTP. Automatic display sync is typically once per day.
 press once to enter setup (`SEt`), then press twice rapidly. Bluetooth must be
 on (hold ~5 s to toggle if needed).
 
+<a id="wifi"></a>
+### WiFi
+
+Shows the network V6 is on and lets you move it to another one (for example
+after changing the router password). Enter the network name and password and
+press **Change network**. If the new network does not connect within 30 seconds,
+V6 goes back to the current one. The setting survives firmware updates.
+
+If V6 cannot reach its network at all, it opens the setup network
+**Lune V6 Setup** after 5 minutes. Join it and open http://192.168.4.1 to pick a
+network and enter its password.
+
 ---
 
 ## Configuration › Maintain

@@ -48,7 +48,8 @@ function queryUrl(path, params) {
 // POST to a /api/v1 write endpoint. ESPHome's ESP-IDF server consumes
 // URL-encoded form bodies; query params remain as a compatibility fallback.
 // mockBody carries the legacy {key, value, zone?} action shape consumed by core/mock.js.
-function postV1(path, params, mockBody) {
+// opts.noQueryFallback keeps secrets (WiFi password) out of the URL on a 400.
+function postV1(path, params, mockBody, opts) {
   beginPendingWrite();
 
   if (isMock()) {
@@ -71,7 +72,7 @@ function postV1(path, params, mockBody) {
     }),
     body: body.toString(),
   }).then(async resp => {
-    if (!resp.ok && [400, 404, 415].includes(resp.status)) {
+    if (!resp.ok && !(opts && opts.noQueryFallback) && [400, 404, 415].includes(resp.status)) {
       resp = await fetch(queryUrl(path, params), {
         method: 'POST',
         headers: writeHeaders(),
@@ -84,7 +85,9 @@ function postV1(path, params, mockBody) {
       const detail = `POST ${path} failed (HTTP ${resp.status})`;
       console.warn('API call failed: ' + detail);
       addActivity(detail);
-      throw new Error(detail);
+      const err = new Error(detail);
+      err.status = resp.status;
+      throw err;
     }
     return resp;
   }).catch(err => {
@@ -329,6 +332,34 @@ export function revokeTouchConnection() {
     setEntity(gkey.authorityConfigured, { state: 'off', value: false });
     return response;
   });
+}
+
+// ---- WiFi ----
+
+let mockWifi = { ssid: 'Hjemme', connected: true, ap_active: false, switch: 'none', target_ssid: '' };
+
+/** GET /wifi → {ssid, connected, ap_active, switch, target_ssid}. Never carries a password. */
+export async function fetchWifi() {
+  if (isMock()) return Object.assign({}, mockWifi);
+  const response = await fetch(BASE + '/wifi', { cache: 'no-store' });
+  if (!response.ok) throw new Error('WiFi fetch failed: ' + response.status);
+  const json = await response.json();
+  return json && json.data ? json.data : json;
+}
+
+/** Ask V6 to switch network. Resolves with the pre-switch /wifi state; the switch then drops the page's connection. */
+export async function changeWifi(ssid, password) {
+  if (isMock()) {
+    const target = String(ssid);
+    mockWifi = Object.assign({}, mockWifi, { switch: 'pending', target_ssid: target });
+    setTimeout(() => {
+      mockWifi = { ssid: target, connected: true, ap_active: false, switch: 'connected', target_ssid: target };
+    }, 1500);
+    return Object.assign({}, mockWifi);
+  }
+  const response = await postV1('/wifi', { ssid, password: password || '' }, null, { noQueryFallback: true });
+  const json = await response.json().catch(() => null);
+  return json && json.data ? json.data : json;
 }
 
 export function applyZoneName(zone, value) {

@@ -322,6 +322,8 @@ class LV6Dashboard : public Component, public AsyncWebHandler {
   void handle_authority_proposal_(AsyncWebServerRequest *request, const char *body);
   void handle_authority_proposal_approval_(AsyncWebServerRequest *request);
   void handle_authority_revoke_(AsyncWebServerRequest *request);
+  void handle_wifi_(AsyncWebServerRequest *request);
+  void handle_wifi_write_(AsyncWebServerRequest *request, const char *body);
   /// zone 0 = house window (/absorb-window); 1..6 = per-zone slab charge
   /// (/zones/{z}/absorb-arm|absorb-disarm, forced_action "arm"/"disarm").
   void handle_absorb_window_(AsyncWebServerRequest *request, const char *body,

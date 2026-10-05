@@ -16,7 +16,7 @@ import {
   exportSettings, importSettings, saveSettingsBackup, fetchLatestRelease,
   firmwareCheck, firmwareInstall, uploadFirmware, downloadDeviceLogs,
   setManualMode, emergencyStopMotors, fetchPhysicsAlerts, fetchBleScan,
-  resetMotorFault, resetMotorAndRelearn, calibrateAllMotors,
+  resetMotorFault, resetMotorAndRelearn, calibrateAllMotors, fetchWifi, changeWifi,
 } from '../dashboard-src/core/api.js';
 import { projectTemperature, PROJ_HORIZON } from './projection.js';
 
@@ -1511,6 +1511,42 @@ async function autosaveConfigSwitch_(input) {
   acceptSwitchSnap_(input);
 }
 
+// ---- WiFi (Connections) ----
+
+function applyWifi(w) {
+  if (!w) return;
+  setBind('wifi.current', w.connected && w.ssid ? escapeHtml(w.ssid) : '—');
+  const sw = w.switch;
+  const status = (sw && sw !== 'none')
+    ? t(`wifi.switch.${sw}`, { ssid: w.target_ssid || '' })
+    : (w.connected ? t('wifi.connectedTo') : (w.ap_active ? t('wifi.apActive') : t('wifi.notConnected')));
+  setBind('wifi.status', escapeHtml(status));
+  const ssidEl = document.getElementById('wifi_ssid');
+  if (ssidEl && !formIsLocked(ssidEl) && !ssidEl.value && w.ssid) {
+    ssidEl.value = w.ssid;
+    const form = ssidEl.closest('form.panel[data-save]');
+    if (form && typeof form.luneResnap === 'function') form.luneResnap();
+  }
+}
+
+function loadWifi() {
+  return fetchWifi().then(applyWifi).catch(() => { /* wifi status is non-fatal */ });
+}
+
+let wifiFollowT = 0;
+
+// Follow a switch until it settles; the page may drop while the radio reconnects.
+function followWifiSwitch() {
+  clearInterval(wifiFollowT);
+  let tries = 0;
+  wifiFollowT = setInterval(() => {
+    fetchWifi().then((w) => {
+      applyWifi(w);
+      if (!w || w.switch !== 'pending' || ++tries > 30) clearInterval(wifiFollowT);
+    }).catch(() => { if (++tries > 30) clearInterval(wifiFollowT); });
+  }, 2000);
+}
+
 async function handleSave(detail) {
   const { key: saveKey, data } = detail || {};
   if (!saveKey) return;
@@ -1577,6 +1613,25 @@ async function handleSave(detail) {
       if (form.hp_overheat != null) await setGlobalNumber('hp_overheat_margin_c', form.hp_overheat);
       if (form.hp_base != null) await setGlobalNumber('hp_base_pct', form.hp_base);
       if (form.hp_trim != null) await setGlobalNumber('hp_trim_floor_pct', form.hp_trim);
+    } else if (saveKey === 'wifi') {
+      const ssid = String(form.ssid || '').trim();
+      if (!ssid) {
+        if (formEl && typeof formEl.luneSaved === 'function') formEl.luneSaved(false, t('wifi.needSsid'));
+        return;
+      }
+      try {
+        applyWifi(await changeWifi(ssid, form.password || ''));
+      } catch (err) {
+        if (err && err.status === 409) {
+          if (formEl && typeof formEl.luneSaved === 'function') formEl.luneSaved(false, t('wifi.busy'));
+          return;
+        }
+        throw err;
+      }
+      const pwEl = document.getElementById('wifi_password');
+      if (pwEl) pwEl.value = '';
+      setBind('wifi.status', escapeHtml(t('wifi.sent')));
+      followWifiSwitch();
     } else if (saveKey === 'ble_clock') {
       if (action === 'sync') await command('ble_clock_sync_now');
       else {
@@ -1926,9 +1981,12 @@ function boot() {
     if (!el || !el.classList || !el.classList.contains('state')) return;
     clearTimeout(presenceT);
     presenceT = setTimeout(() => refreshDashboard(), 200);
+    // Configuration → manifold shows the WiFi panel; refresh its status there.
+    if (el.id === 'm-conf' || el.id === 's-sys') loadWifi();
   });
 
   connect();
+  loadWifi();
 }
 
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);

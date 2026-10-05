@@ -6,9 +6,11 @@
 # host's WiFi credentials, and must not override credentials a user already
 # provisioned on the device.
 #
-# packages/network/wifi-release.yaml supplies the AP + captive portal, and the
-# `!remove` block below drops the `!secret`-backed station block that
-# packages/network/wifi.yaml contributes through the shared base.
+# packages/network/wifi-release.yaml supplies the AP + captive portal. Neither
+# WiFi package compiles in a station ssid/password; the `!remove` block below
+# drops the `!secret`-backed lune_wifi seed that packages/network/wifi.yaml
+# contributes through the shared base, so the image carries no credentials and
+# lune_wifi only provides runtime network switching from the web UI.
 #
 # Build:  make -C lune-v6 release-firmware VERSION=v1.2.3
 # =============================================================================
@@ -22,6 +24,6 @@ packages:
   ble:          !include ../packages/hardware/ble.yaml
   wifi_release: !include ../packages/network/wifi-release.yaml
 
-wifi:
-  ssid: !remove
-  password: !remove
+lune_wifi:
+  seed_ssid: !remove
+  seed_password: !remove
