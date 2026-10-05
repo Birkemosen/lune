@@ -7,7 +7,7 @@ Quick map:
 
 ```text
 lune-v6/       Lune V6 ESPHome firmware and local dashboard
-Lune Touch / Mini       Private repository: Birkemosen/lune-coordinator
+Lune Touch / Mini       Repository: Birkemosen/lune-coordinator
 docs/                  Cross-device notes; brand architecture → lune-coordinator
 shared/                Shared contracts/design notes only
 ```
