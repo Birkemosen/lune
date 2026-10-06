@@ -2,6 +2,12 @@
  * Lune V6 LDS2 binder — live data + form saves for the static HTML shell.
  * Navigation/theme stay pure CSS; this file only paints values and posts /api/v1.
  */
+// Order matters: the legacy-hash shim runs before lune-forms.js reads the hash.
+import './legacy-hash.js';
+// Lune Design System: dirty/save, autosave, sheets, tabs, deep links (js/lune-forms.js,
+// resolved by esbuild --alias:lds-forms=… in the Makefile; one copy for all languages).
+import 'lds-forms';
+import './page.js';
 import { connect, refreshDashboard } from '../dashboard-src/core/sse.js';
 import {
   ev, es, isEntityOn, getDeviceLog, getDashboardValue, subscribeDashboard,
@@ -156,12 +162,12 @@ function zoneLevel(z) {
   if (st === 'fault' || st === 'blocked' || st === 'off') return 0;
   if (st === 'learning') {
     const pct = zoneLearnPct(z);
-    return Math.max(1, Math.min(5, Math.ceil(Math.max(pct, 1) / 20)));
+    return Math.max(1, Math.min(10, Math.ceil(Math.max(pct, 1) / 10)));
   }
   const valve = toNum(ev(key.valve(z)));
-  // Closed valve or no reading → unlit; orange means heat (DESIGN.md 5.2).
+  // Closed valve or no reading → unlit. 10 segments of 10 % (DESIGN.md 5.2).
   if (!Number.isFinite(valve) || valve <= 0) return 0;
-  return Math.max(1, Math.min(5, Math.ceil(valve / 20)));
+  return Math.max(1, Math.min(10, Math.ceil(valve / 10)));
 }
 
 function setText(sel, html) {
@@ -172,6 +178,19 @@ function setText(sel, html) {
 
 function setBind(path, html) {
   setText(`[data-bind="${path}"]`, html);
+}
+
+/** Zone tile in the strip (opens the zone sheet). */
+function zoneTile(z) {
+  return document.querySelector(`.strip .tile[popovertarget="sheet-z${z}"]`);
+}
+
+function setBar(path, pct) {
+  document.querySelectorAll(`[data-bind-bar="${path}"]`).forEach((el) => {
+    const v = Number.isFinite(pct) ? Math.max(0, Math.min(100, pct)) : 0;
+    el.style.setProperty('--v', `${v}%`);
+    if (el.hasAttribute('aria-valuenow')) el.setAttribute('aria-valuenow', String(Math.round(v)));
+  });
 }
 
 function setShow(path, on) {
@@ -404,24 +423,29 @@ function paintGroups(g) {
     const isMember = r !== z;
     const isPrimary = !isMember && !!g.members[z];
     const role = isPrimary ? 'primary' : (isMember ? 'member' : '');
-    const tile = document.querySelector(`label.tile[for="s-z${z}"]`);
+    const tile = zoneTile(z);
     if (tile) {
       if (role) tile.dataset.group = role; else delete tile.dataset.group;
       const id = tile.querySelector('.tile-id');
       if (id) id.textContent = isPrimary ? g.label[z] : `Z${z}`;
     }
-    const cid = document.querySelector(`.comfort label[for="s-z${z}"] .id`);
+    const cid = document.querySelector(`.comfort [popovertarget="sheet-z${z}"] .id`);
     if (cid) cid.textContent = isPrimary ? g.label[z] : `Z${z}`;
     setShow(`z${z}.member`, isMember);
     if (isMember) {
       setBind(`z${z}.memberNote`, t('zdash.memberNote', { m: `Z${z}`, p: `Z${r}` }));
       setBind(`z${z}.openPrimary`, t('common.open', { x: g.label[r] }));
-      document.querySelectorAll(`[data-bind="z${z}.openPrimary"]`).forEach((el) => { el.htmlFor = `s-z${r}`; });
+      document.querySelectorAll(`[data-bind="z${z}.openPrimary"]`).forEach((el) => { el.setAttribute('popovertarget', `sheet-z${r}`); });
       setBind(`z${z}.memberStrong`, t('cz.memberStrong', { p: `Z${r}` }));
       setBind(`z${z}.memberBody`, t('cz.member', { p: `Z${r}` }));
     }
-    // A member follows its primary's target: lock the climate control.
-    document.querySelectorAll(`#v-dash-z${z} .climate :is(button, input)`).forEach((el) => { el.disabled = isMember; });
+    setBind(`z${z}.mergeVal`, isMember ? `Z${r}` : (isPrimary ? g.label[z] : t('common.none')));
+    // A member follows its primary's target: lock the climate control and the target stepper.
+    const lock = [...document.querySelectorAll(`#sheet-z${z} .climate :is(button, input)`)];
+    const st = document.getElementById(`z${z}_target_s`);
+    const stepper = st && st.closest('.stepper');
+    if (stepper) lock.push(...stepper.querySelectorAll('button, input'));
+    lock.forEach((el) => { el.disabled = isMember; });
   }
 }
 
@@ -437,7 +461,7 @@ function paintStrip() {
     const st = zoneState(z);
     if (st === 'calling') calling += 1;
     if (st === 'fault') faults += 1;
-    const tile = document.querySelector(`label.tile[for="s-z${z}"]`);
+    const tile = zoneTile(z);
     const needsLearn = zoneNeedsLearning(z);
     if (tile) {
       tile.dataset.state = st;
@@ -463,7 +487,6 @@ function paintStrip() {
       const label = `Z${z} ${name}`;
       if (o.textContent !== label) o.textContent = label;
     });
-    setBind(`z${z}.title`, `${z} ${name}`);
     setBind(`z${z}.temp`, st === 'fault' ? t('tile.fault')
       : st === 'blocked' ? t('tile.blocked')
       : st === 'learning' ? zoneLearnShort(z)
@@ -474,16 +497,6 @@ function paintStrip() {
       : st === 'learning' ? 'state.learning'
       : st === 'off' ? 'state.off'
       : 'state.idle';
-    const badgeText = st === 'learning' ? zoneLearnShort(z) : t(badgeKey);
-    setBind(`z${z}.badge`, badgeText);
-    const badgeEl = document.querySelector(`#v-dash-z${z} [data-bind="z${z}.badge"]`);
-    if (badgeEl) {
-      badgeEl.className = st === 'calling' ? 'badge hot'
-        : st === 'fault' ? 'badge bad'
-        : st === 'blocked' ? 'badge warn'
-        : st === 'learning' ? 'badge violet'
-        : 'badge';
-    }
     const groupSub = groups.root[z] !== z ? ` · ${t('zdash.follows', { z: `Z${groups.root[z]}` })}`
       : (groups.members[z] ? ` · ${t('zdash.primary', { g: groups.label[z] })}` : '');
     setBind(`z${z}.sub`, (st === 'learning' ? zoneLearnLong(z) : t(badgeKey)) + groupSub);
@@ -503,14 +516,13 @@ function paintStrip() {
     setBind(`z${z}.motor`, motorLearnedLabel(z));
     const preheat = toNum(ev(key.preheatAdvance(z)));
     setBind(`z${z}.preheat`, Number.isFinite(preheat) ? `${num(preheat, 2)} °C` : '—');
-    const offsetDd = document.querySelector(`#v-dash-z${z} [data-bind="z${z}.offset"]`);
     const offsetHtml = Number.isFinite(offset) ? `${formatOffset(offset)} °C` : '—';
     setBind(`z${z}.offset`, offsetHtml);
-    if (offsetDd) offsetDd.className = preloadOn ? 'c-info' : '';
+    document.querySelectorAll(`[data-bind="z${z}.offset"]`).forEach((dd) => { dd.className = preloadOn ? 'c-info' : ''; });
     const srcHtml = `<span class="c-info">${tempSourceLabel(es(key.tempSource(z)))}</span>`;
     setBind(`z${z}.tempFrom`, srcHtml);
     paintMotorConf(z, st);
-    const comfort = document.querySelector(`.comfort label[for="s-z${z}"]`);
+    const comfort = document.querySelector(`.comfort [popovertarget="sheet-z${z}"]`);
     if (comfort) comfort.dataset.state = st;
     if (st === 'fault') {
       setBind(`z${z}.comfort`, `<b class="bad">${t('state.fault')}</b>`);
@@ -524,23 +536,25 @@ function paintStrip() {
       const warn = Number.isFinite(temp) && Number.isFinite(sp) && sp - temp > 0.5;
       setBind(`z${z}.comfort`, `<b class="${warn ? 'c-warn' : ''}">${deg(temp)}</b> / ${deg(sp)}`);
     }
-    const now = document.querySelector(`#v-dash-z${z} .climate .now`);
+    paintDevChip(z, st);
+    const now = document.querySelector(`#sheet-z${z} .climate .now`);
     if (now) {
       const nowT = toNum(ev(key.temp(z)));
       now.innerHTML = Number.isFinite(nowT) ? `${num(nowT)}<small>°C</small>` : '—';
     }
     const opening = toNum(ev(key.valve(z)));
     setBind(`z${z}.flow`, withUnit(opening, '%', 0));
+    // Tile: opening as number next to the 10-segment bar; learning shows its own %.
+    setBind(`z${z}.valve`, st === 'learning' ? `${zoneLearnPct(z)} %`
+      : (st === 'fault' || st === 'blocked' || st === 'off') ? '0 %'
+      : (Number.isFinite(opening) ? `${Math.round(opening)} %` : '—'));
     const zoneProbe = parseProbeIndex(es(key.probe(z)));
     if (zoneProbe) {
       setBind(`z${z}.return`, withUnit(toNum(ev(key.probeTemp(zoneProbe))), '°C'));
     } else {
       setBind(`z${z}.return`, '—');
     }
-    const bar = document.querySelector(`#v-dash-z${z} .bar`);
-    if (bar && Number.isFinite(opening)) {
-      bar.style.setProperty('--v', `${Math.max(0, Math.min(100, opening))}%`);
-    }
+    if (Number.isFinite(opening)) setBar(`z${z}.opening`, opening);
     const prior = toNum(ev(key.balancePrior(z)));
     const learned = toNum(ev(key.balanceLearned(z)));
     const effective = toNum(ev(key.balanceEffective(z)));
@@ -573,12 +587,11 @@ function paintStrip() {
     const pt = toNum(ev(key.probeTemp(p)));
     setBind(`probe.${p}`, Number.isFinite(pt) ? `${num(pt)} <small>°C</small>` : '—');
   }
-  const mBar = document.querySelector('#v-dash-sys .bar');
-  if (mBar) {
-    const pct = Number.isFinite(openingPct) ? Math.max(0, Math.min(100, openingPct)) : 0;
-    mBar.style.setProperty('--v', `${pct}%`);
-    mBar.setAttribute('aria-valuenow', String(pct));
-  }
+  setBar('manifold.opening', openingPct);
+  setBind('manifold.status', escapeHtml(t('sheet.manifoldStatus', {
+    flow: deg(flow), ret: deg(ret), dt: Number.isFinite(dt) ? `${num(dt)} K` : '—',
+    open: Number.isFinite(openingPct) ? `${openingPct} %` : '—',
+  })));
   setBind('dash.sys.sub', t('dash.sys.sub', { zones: 6, calling, faults }));
   setShow('dash.alert', faults > 0);
   if (firstFault) {
@@ -586,11 +599,11 @@ function paintStrip() {
     setBind('dash.alertTitle', t('alert.zoneFault', { zone: `Z${firstFault} ${fname}` }));
     const openBtn = document.querySelector('[data-bind-for="dash.alertZone"]');
     if (openBtn) {
-      openBtn.setAttribute('for', `s-z${firstFault}`);
+      openBtn.setAttribute('popovertarget', `sheet-z${firstFault}`);
       openBtn.textContent = t('common.open', { x: `Z${firstFault}` });
     }
   }
-  const heatBadge = document.querySelector('#v-dash-sys [data-bind="heat.badge"]');
+  const heatBadge = document.querySelector('[data-bind="heat.badge"]');
   if (heatBadge) {
     heatBadge.textContent = calling > 0 ? t('badge.calling') : t('state.idle');
     heatBadge.className = calling > 0 ? 'badge hot' : 'badge';
@@ -598,14 +611,30 @@ function paintStrip() {
   const balMode = String(es(gkey.balancingMode) || '').toLowerCase();
   const balAdaptive = balMode.includes('adapt');
   setBind('bal.mode', balAdaptive ? t('bal.adaptive') : t('bal.static'));
-  const balBadge = document.querySelector('#v-dash-sys [data-bind="bal.mode"]');
+  const balBadge = document.querySelector('[data-bind="bal.mode"]');
   if (balBadge) balBadge.className = balAdaptive ? 'badge violet' : 'badge';
   const live = !!getDashboardValue('live');
-  const devBadge = document.querySelector('#v-dash-sys [data-bind="dev.badge"]');
+  const devBadge = document.querySelector('[data-bind="dev.badge"]');
   if (devBadge) {
     devBadge.textContent = live ? t('dev.online') : t('dev.offline');
     devBadge.className = live ? 'badge ok' : 'badge warn';
   }
+}
+
+/** Deviation from target as a 5-step chip on the tile (scale-cold-warm, DESIGN.md 5.2). */
+function paintDevChip(z, st) {
+  const chip = document.querySelector(`[data-bind="z${z}.dev"]`);
+  if (!chip) return;
+  const temp = toNum(ev(key.temp(z)));
+  const sp = toNum(ev(key.effectiveSetpoint(z)) ?? ev(key.setpoint(z)));
+  const show = Number.isFinite(temp) && Number.isFinite(sp)
+    && st !== 'fault' && st !== 'blocked' && st !== 'learning' && st !== 'off';
+  chip.hidden = !show;
+  if (!show) return;
+  const d = temp - sp;
+  chip.dataset.dev = String(d <= -1 ? 1 : d <= -0.3 ? 2 : d < 0.3 ? 3 : d < 1 ? 4 : 5);
+  const sign = d > 0.05 ? '+' : d < -0.05 ? '−' : '±';
+  chip.textContent = `${sign}${num(Math.abs(d))}°`;
 }
 
 function paintMotorConf(z, st) {
@@ -614,7 +643,7 @@ function paintMotorConf(z, st) {
   const openF = toNum(ev(key.motorOpenFactor(z)));
   const closeF = toNum(ev(key.motorCloseFactor(z)));
   const stage = zoneMotorStage(z);
-  const badge = document.querySelector(`#v-conf-z${z} [data-bind="z${z}.motorBadge"]`);
+  const badge = document.querySelector(`[data-bind="z${z}.motorBadge"]`);
   if (badge) {
     if (stage === 'learning') {
       badge.textContent = zoneLearnShort(z);
@@ -645,10 +674,10 @@ function paintMotorConf(z, st) {
   const faultLabel = (!faultRaw || faultRaw.toLowerCase() === 'none')
     ? t('common.none')
     : faultRaw.replace(/_/g, ' ');
-  const faultEl = document.querySelector(`#v-conf-z${z} [data-bind="z${z}.lastFault"]`);
+  const faultEl = document.querySelector(`[data-bind="z${z}.lastFault"]`);
   if (faultEl) {
     faultEl.textContent = faultLabel;
-    faultEl.className = st === 'fault' ? 'bad' : st === 'blocked' ? 'c-warn' : '';
+    faultEl.className = st === 'fault' ? 'c-bad' : st === 'blocked' ? 'c-warn' : '';
   }
   const learning = stage === 'learning';
   setShow(`z${z}.learnBar`, learning);
@@ -804,7 +833,7 @@ function paintTouch() {
   // Under a lease only Touch arms absorb (V6 auto-detection is off).
   setShow('absorb.touchNote', leased);
   const pending = isEntityOn(gkey.authorityProposalPending);
-  const form = document.querySelector('form.panel[data-save="connections"], form.panel[data-save="touch"]');
+  const form = document.querySelector('form[data-save="connections"]');
   let pair = 'unpaired';
   if (pending) pair = 'pending';
   else if (configured) pair = 'approved';
@@ -826,7 +855,7 @@ function paintTouch() {
     badgeEl.classList.toggle('bad', pair === 'error');
   }
   setBind('touch.status', pending
-    ? `${es(gkey.authorityProposalName) || 'Lune Touch'} is ready to connect`
+    ? escapeHtml(t('csys.touchReady', { name: es(gkey.authorityProposalName) || 'Lune Touch' }))
     : configured
       ? (leased ? t('csys.touchControls') : t('csys.touchLeaseLost'))
       : t('csys.touchWaitingBody'));
@@ -894,7 +923,7 @@ function paintSparks() {
     const html = seriesToSparkSvg(temps, sps);
     svg.innerHTML = html;
     // No temperature → no sparkline (never a flat line); see DESIGN.md 5.9.
-    const row = svg.closest('label');
+    const row = svg.closest('.comfort > *');
     if (row) row.toggleAttribute('data-empty', !html);
   }
   paintTrend();
@@ -931,8 +960,8 @@ function seriesToSparkSvg(temps, sps) {
 }
 
 function paintTrend() {
-  const svg = document.querySelector('[data-bind-trend="manifold"]');
-  if (!svg) return;
+  const svgs = document.querySelectorAll('[data-bind-trend="manifold"]');
+  if (!svgs.length) return;
   const hist = getDashboardValue('zoneStateHistory');
   const entries = hist && Array.isArray(hist.entries) ? hist.entries : [];
   const flows = [];
@@ -953,13 +982,13 @@ function paintTrend() {
     flows.push(...hf);
     rets.push(...hr);
   }
-  const wrap = svg.closest('.trend-wrap');
   const empty = flows.length < 2 && rets.length < 2;
-  if (wrap) wrap.toggleAttribute('data-empty', empty);
-  if (empty) {
-    svg.innerHTML = '';
-    return;
-  }
+  svgs.forEach((svg) => {
+    const wrap = svg.closest('.trend-wrap');
+    if (wrap) wrap.toggleAttribute('data-empty', empty);
+    if (empty) svg.innerHTML = '';
+  });
+  if (empty) return;
   const vals = flows.concat(rets).filter((v) => Number.isFinite(v));
   let lo = Math.min(...vals) - 1;
   let hi = Math.max(...vals) + 1;
@@ -974,7 +1003,8 @@ function paintTrend() {
   const band = pf && pr
     ? `<polygon class="dt" points="${pf} ${pr.split(' ').reverse().join(' ')}"/>`
     : '';
-  svg.innerHTML = `${band}${pf ? `<polyline class="f" points="${pf}"/>` : ''}${pr ? `<polyline class="r" points="${pr}"/>` : ''}`;
+  const html = `${band}${pf ? `<polyline class="f" points="${pf}"/>` : ''}${pr ? `<polyline class="r" points="${pr}"/>` : ''}`;
+  svgs.forEach((svg) => { svg.innerHTML = html; });
 }
 
 /**
@@ -1010,10 +1040,10 @@ function zchartClockAt(k, past) {
 }
 
 function ensureZchartScrub(plot) {
-  let scrub = plot.querySelector('.zchart-scrub');
+  let scrub = plot.querySelector('.zc-scrub');
   if (!scrub) {
     scrub = document.createElement('span');
-    scrub.className = 'zchart-scrub';
+    scrub.className = 'zc-scrub';
     scrub.hidden = true;
     scrub.setAttribute('aria-hidden', 'true');
     plot.appendChild(scrub);
@@ -1033,7 +1063,7 @@ function restoreZchartMetric(data) {
 
 function clearZchartScrub(plot) {
   if (!plot) return;
-  const scrub = plot.querySelector('.zchart-scrub');
+  const scrub = plot.querySelector('.zc-scrub');
   if (scrub) scrub.hidden = true;
   plot.removeAttribute('data-scrubbing');
   const svg = plot.querySelector('[data-bind-zchart]');
@@ -1074,12 +1104,12 @@ function scrubZchart(plot, clientX) {
 
 function initZchartScrub() {
   document.addEventListener('pointermove', (e) => {
-    const plot = e.target && e.target.closest && e.target.closest('.zchart-plot');
+    const plot = e.target && e.target.closest && e.target.closest('.zc-plot');
     if (!plot) return;
     scrubZchart(plot, e.clientX);
   });
   document.addEventListener('pointerout', (e) => {
-    const plot = e.target && e.target.closest && e.target.closest('.zchart-plot');
+    const plot = e.target && e.target.closest && e.target.closest('.zc-plot');
     if (!plot) return;
     const next = e.relatedTarget;
     if (next && plot.contains(next)) return;
@@ -1120,7 +1150,7 @@ function paintZcharts() {
     const hasProj = !!proj;
     const expectedTime = formatClock(new Date(Date.now() + 6 * 3600 * 1000));
     const expectedVal = hasProj ? num(proj.mid[proj.mid.length - 1], 1) : '—';
-    const plot = svg.closest('.zchart-plot');
+    const plot = svg.closest('.zc-plot');
     const scrubbing = plot && plot.hasAttribute('data-scrubbing');
     if (!scrubbing) {
       setShow(`z${z}.expected`, hasProj);
@@ -1212,19 +1242,19 @@ function paintZcharts() {
         hiPts.push(`${X(xi)},${Y(proj.hi[k])}`);
         loPts.push(`${X(xi)},${Y(proj.lo[k])}`);
       }
-      band = `<polygon class="pb" points="${hiPts.join(' ')} ${loPts.reverse().join(' ')}"/>`;
-      projLine = `<polyline class="pj" points="${midPts.join(' ')}"/>`;
+      band = `<polygon class="band" points="${hiPts.join(' ')} ${loPts.reverse().join(' ')}"/>`;
+      projLine = `<polyline class="fc" points="${midPts.join(' ')}"/>`;
     }
 
     const gl = [0.25, 0.5, 0.75].map((f) => {
       const y = (Hh * (1 - f)).toFixed(1);
       return `<line class="gl" x1="0" x2="${W}" y1="${y}" y2="${y}"/>`;
     }).join('');
-    svg.innerHTML = `${gl}${band}`
-      + (spPts.length ? `<polyline class="g" points="${spPts.join(' ')}"/>` : '')
+    // .zc (LDS 2.3): future is shaded, target is a dashed step line, projection dashed.
+    svg.innerHTML = `${gl}<rect class="future" x="${nowX.toFixed(1)}" y="0" width="${(W - nowX).toFixed(1)}" height="${Hh}"/>${band}`
+      + (spPts.length ? `<polyline class="sp" points="${spPts.join(' ')}"/>` : '')
       + (tempPts.length ? `<polyline class="t" points="${tempPts.join(' ')}"/>` : '')
       + projLine
-      + `<rect class="past" x="0" y="0" width="${nowX.toFixed(1)}" height="${Hh}"/>`
       + `<line class="now" x1="${nowX.toFixed(1)}" x2="${nowX.toFixed(1)}" y1="0" y2="${Hh}"/>`;
 
     const yHi = num(hi, 1);
@@ -1232,8 +1262,8 @@ function paintZcharts() {
     const yLo = num(lo, 1);
     setBind(`z${z}.zchartY`, `<span>${yHi}</span><span>${yMid}</span><span>${yLo}</span>`);
 
-    const wrap = svg.closest('.zchart');
-    if (wrap) wrap.style.setProperty('--now', `${((nowX / W) * 100).toFixed(2)}%`);
+    const wrap = svg.closest('.zc');
+    if (wrap) wrap.closest('.sub')?.setAttribute('data-state', fault ? 'fault' : '');
 
     svg._zchart = {
       z,
@@ -1265,13 +1295,15 @@ function formIsLocked(el) {
 function saveFormEl(detail) {
   if (detail && detail.form) return detail.form;
   const key = detail && detail.key;
-  return key ? document.querySelector(`form.panel[data-save="${key}"]`) : null;
+  return key ? document.querySelector(`form[data-save="${key}"]`) : null;
 }
 
 function resnapCleanForms() {
-  document.querySelectorAll('form.panel[data-save]').forEach((form) => {
+  document.querySelectorAll('form[data-save]').forEach((form) => {
     if (typeof form.luneResnap !== 'function') return;
     if (form.hasAttribute('data-dirty') || form.dataset.state === 'saving' || form.dataset.state === 'error' || form.dataset.state === 'saved') return;
+    // lune-forms.js (LDS ≥ 2.3.1) makes the painted values the form defaults here,
+    // so Undo / closing a sheet returns to the device values, not build-time samples.
     form.luneResnap();
   });
 }
@@ -1364,6 +1396,7 @@ function paintFormsFromState() {
     absorb.checked = isEntityOn(gkey.preheatAbsorbEnabled) || isEntityOn(gkey.simplePreheatEnabled);
   }
   paintNum('ph_band', gkey.preheatAbsorbBandC, 1);
+  for (const [name, entity] of MOTOR_LIMITS) paintNum(name, gkey[entity], 2);
   paintNum('ph_delta', gkey.preheatDetectDeltaC, 1);
   for (let z = 1; z <= 6; z++) {
     const name = document.getElementById(`z${z}_name`);
@@ -1375,11 +1408,10 @@ function paintFormsFromState() {
     }
     const en = document.querySelector(`input[name="z${z}_enabled"]`);
     if (en && !formIsLocked(en)) en.checked = isEntityOn(key.enabled(z));
-    const tgt = document.querySelector(`input[name="z${z}_target"]`);
-    if (tgt && !formIsLocked(tgt)) {
-      const sp = toNum(ev(key.baseSetpoint(z)) ?? ev(key.setpoint(z)));
-      if (Number.isFinite(sp)) tgt.value = sp.toFixed(1);
-    }
+    const sp = toNum(ev(key.baseSetpoint(z)) ?? ev(key.setpoint(z)));
+    document.querySelectorAll(`input[name="z${z}_target"]`).forEach((tgt) => {
+      if (!formIsLocked(tgt) && Number.isFinite(sp)) tgt.value = sp.toFixed(1);
+    });
     const bleMac = document.getElementById(`z${z}_ble`);
     if (bleMac && !formIsLocked(bleMac)) bleMac.value = es(key.ble(z)) || '';
     const srcState = String(es(key.tempSource(z)) || '').toLowerCase();
@@ -1481,7 +1513,7 @@ async function ensureMotorsReady_() {
 
 /** Accept a switch value into the form dirty snapshot so Save stays clean for it. */
 function acceptSwitchSnap_(input) {
-  const form = input.closest && input.closest('form.panel[data-save]');
+  const form = input.closest && input.closest('form[data-save]');
   if (!form || !form._snap) return;
   const key = `${input.name}:${input.value || 'on'}`;
   form._snap[key] = input.checked;
@@ -1525,7 +1557,7 @@ function applyWifi(w) {
   const ssidEl = document.getElementById('wifi_ssid');
   if (ssidEl && !formIsLocked(ssidEl) && !ssidEl.value && w.ssid) {
     ssidEl.value = w.ssid;
-    const form = ssidEl.closest('form.panel[data-save]');
+    const form = ssidEl.closest('form[data-save]');
     if (form && typeof form.luneResnap === 'function') form.luneResnap();
   }
 }
@@ -1548,12 +1580,103 @@ function followWifiSwitch() {
   }, 2000);
 }
 
+/** System › Manifold og motorer › Avanceret: form field → firmware /settings/number key and state entity. */
+const MOTOR_LIMITS = [
+  ['m_cthr', 'closeThresholdMultiplier', 'close_threshold_multiplier'],
+  ['m_cslope', 'closeSlopeThreshold', 'close_slope_threshold'],
+  ['m_cfloor', 'closeSlopeCurrentFactor', 'close_slope_current_factor'],
+  ['m_othr', 'openThresholdMultiplier', 'open_threshold_multiplier'],
+  ['m_oslope', 'openSlopeThreshold', 'open_slope_threshold'],
+  ['m_ofloor', 'openSlopeCurrentFactor', 'open_slope_current_factor'],
+  ['m_ripple', 'openRippleLimitFactor', 'open_ripple_limit_factor'],
+];
+
+/** True when a data-patch save changed one of these fields (or the form is not a patch). */
+function touched(detail, names) {
+  const changed = detail && detail.changed;
+  if (!changed) return true;
+  return names.some((n) => Object.prototype.hasOwnProperty.call(changed, n));
+}
+
+async function saveHeating_(form) {
+  await setGlobalSelect('heating_mode', form.heat_mode === 'heat_pump' ? 'heat_pump' : 'normal');
+  if (form.heat_min_open != null) await setGlobalNumber('min_zone_flow_pct', form.heat_min_open);
+  if (form.hp_overheat != null) await setGlobalNumber('hp_overheat_margin_c', form.hp_overheat);
+  if (form.hp_base != null) await setGlobalNumber('hp_base_pct', form.hp_base);
+  // After base: the firmware keeps demand ≥ base.
+  if (form.hp_demand != null) await setGlobalNumber('hp_demand_pct', form.hp_demand);
+  if (form.hp_trim != null) await setGlobalNumber('hp_trim_floor_pct', form.hp_trim);
+}
+
+async function saveZoneRoom_(z, form) {
+  await setEnabled(z, !!form[`z${z}_enabled`]);
+  if (form[`z${z}_name`] != null) await applyZoneName(z, form[`z${z}_name`]);
+  if (form[`z${z}_src`]) {
+    await setZoneSelect(z, 'zone_temp_source', tempSourceSelectValue(form[`z${z}_src`]));
+  }
+  if (form[`z${z}_ble`] != null) await setZoneText(z, 'zone_ble_mac', form[`z${z}_ble`]);
+  // Two-probe layout: zone returns stay unassigned. Do not write the HTML
+  // default (Probe N) that sits in the hidden select.
+  if (probeLayoutMode() === '8') {
+    await setZoneSelect(z, 'zone_probe', probeSelectValue(form[`z${z}_ret`]));
+  } else {
+    await setZoneSelect(z, 'zone_probe', 'None');
+  }
+  // "Group with": the sync edge is the source of truth; V6 rebuilds groups
+  // from it atomically. "" (None) must be sent too, or ungrouping is lost.
+  const merge = form[`z${z}_merge`];
+  if (merge != null) await setZoneSelect(z, 'zone_sync_to', merge ? `Zone ${Number(merge)}` : 'None');
+  const area = parseNum(form[`z${z}_area`]);
+  if (Number.isFinite(area) && area > 0) {
+    // settings/number is the proven write path; physics JSON also updated
+    // once handleBody captures application/json on the device.
+    await setZoneNumber(z, 'zone_area_m2', area);
+    await postZonePhysics(z, { area_m2: area });
+  }
+}
+
+async function saveZoneFloor_(z, form, data) {
+  const walls = data.getAll(`z${z}_wall`);
+  let mask = 0;
+  if (walls.includes('n')) mask |= 1;
+  if (walls.includes('e')) mask |= 2;
+  if (walls.includes('s')) mask |= 4;
+  if (walls.includes('w')) mask |= 8;
+  const thick = parseNum(form[`z${z}_thick`]);
+  const spacing = parseNum(form[`z${z}_spacing`]);
+  const physics = {
+    exterior_walls: mask,
+    slab_type: form[`z${z}_slab`] || 'unset',
+    covering: form[`z${z}_covering`] || 'unset',
+  };
+  if (Number.isFinite(thick) && thick > 0) physics.active_thickness_cm = thick;
+  if (Number.isFinite(spacing) && spacing > 0) physics.pipe_spacing_mm = spacing;
+  const pipe = form[`z${z}_pipe`];
+  if (pipe) physics.pipe_type = pipe;
+  await postZonePhysics(z, physics);
+  if (Number.isFinite(spacing) && spacing > 0) {
+    await setZoneNumber(z, 'zone_pipe_spacing_mm', spacing);
+  }
+  if (pipe) await setZoneSelect(z, 'zone_pipe_type', pipe);
+  // Weather exposure is store-only on V6 (Touch owns control); keep UI values.
+  const wind = parseNum(form[`z${z}_wind`]);
+  const solar = parseNum(form[`z${z}_solar`]);
+  const forecast = { exterior_walls: mask };
+  if (Number.isFinite(wind)) forecast.wind_exposure = wind;
+  if (Number.isFinite(solar)) forecast.solar_gain = solar;
+  await postForecastProfile(z, forecast);
+  await fetchPhysicsAlerts();
+}
+
 async function handleSave(detail) {
   const { key: saveKey, data } = detail || {};
   if (!saveKey) return;
   const formEl = saveFormEl(detail);
   const form = fd(data);
   const action = form.action;
+  // An action button (reset, scan, sync …) in a form with unsaved edits must not
+  // count those edits as saved: keep the form dirty and only report errors.
+  const keepDirty = !!action && !!formEl && formEl.hasAttribute('data-dirty');
   try {
     if (saveKey === 'device') {
       await setGlobalText('device_display_name', String(form.device_display_name || '').trim() || 'Lune V6');
@@ -1571,6 +1694,13 @@ async function handleSave(detail) {
         await ensureMotorsReady_();
         await calibrateAllMotors();
       } else {
+        // Return-probe layout first: 8 probes resets flow/return to 1/2 and zones to 3–8.
+        if (touched(detail, ['return_probe_mode'])) {
+          const mode = form.return_probe_mode === '8' ? '8' : '2';
+          if (mode === '8') await applyEightProbeDefaults();
+          else await applyTwoProbeLayout();
+          setProbeLayoutUi(mode, { force: true });
+        }
         await setGlobalSelect('manifold_type', form.manifold_type === 'no' ? 'normally_open' : 'normally_closed');
         if (form.probe_flow != null || form.probe_return != null) {
           await applyManifoldProbes_(form.probe_flow, form.probe_return);
@@ -1588,34 +1718,28 @@ async function handleSave(detail) {
         } else if (form.m_runtime != null) {
           await setGlobalNumber('hmip_runtime_limit_seconds', form.m_runtime);
         }
+        // End-stop limits: each write reloads the motor config, so only send what changed.
+        for (const [name, , settingKey] of MOTOR_LIMITS) {
+          const v = parseNum(form[name]);
+          if (touched(detail, [name]) && Number.isFinite(v)) await setGlobalNumber(settingKey, v);
+        }
         if (form.m_relmov != null) await setGlobalNumber('relearn_after_movements', form.m_relmov);
         if (form.m_relh != null) await setGlobalNumber('relearn_after_hours', form.m_relh);
         if (form.m_minsamp != null) await setGlobalNumber('learned_factor_min_samples', form.m_minsamp);
         if (form.m_maxdev != null) await setGlobalNumber('learned_factor_max_deviation_pct', Number(form.m_maxdev) * 100);
       }
-    } else if (saveKey === 'return_probes') {
-      const mode = form.return_probe_mode === '8' ? '8' : '2';
-      if (mode === '8') await applyEightProbeDefaults();
-      else await applyTwoProbeLayout();
-      setProbeLayoutUi(mode, { force: true });
     } else if (saveKey === 'regulation') {
+      // Manifold sheet › Settings: heating mode + balancing + preheat in one form.
       if (action === 'reset_balancing') {
         await command('reset_balancing');
       } else {
+        await saveHeating_(form);
         // Checkbox absent when off — always write both absorb flags.
         await setGlobalSelect('preheat_absorb_enabled', form.preheat_enabled ? 'on' : 'off');
         await setGlobalSelect('simple_preheat_enabled', form.preheat_enabled ? 'on' : 'off');
         if (form.ph_band != null) await setGlobalNumber('preheat_absorb_band_c', parseNum(form.ph_band));
         if (form.ph_delta != null) await setGlobalNumber('preheat_detect_delta_c', parseNum(form.ph_delta));
       }
-    } else if (saveKey === 'heating') {
-      await setGlobalSelect('heating_mode', form.heat_mode === 'heat_pump' ? 'heat_pump' : 'normal');
-      if (form.heat_min_open != null) await setGlobalNumber('min_zone_flow_pct', form.heat_min_open);
-      if (form.hp_overheat != null) await setGlobalNumber('hp_overheat_margin_c', form.hp_overheat);
-      if (form.hp_base != null) await setGlobalNumber('hp_base_pct', form.hp_base);
-      // After base: the firmware keeps demand ≥ base.
-      if (form.hp_demand != null) await setGlobalNumber('hp_demand_pct', form.hp_demand);
-      if (form.hp_trim != null) await setGlobalNumber('hp_trim_floor_pct', form.hp_trim);
     } else if (saveKey === 'wifi') {
       const ssid = String(form.ssid || '').trim();
       if (!ssid) {
@@ -1696,71 +1820,25 @@ async function handleSave(detail) {
     } else if (/^zone\/(\d+)\/recovery$/.test(saveKey)) {
       const z = Number(RegExp.$1);
       await resetMotorFault(z);
-    } else if (/^zone\/(\d+)\/room$/.test(saveKey)) {
-      const z = Number(RegExp.$1);
-      await setEnabled(z, !!form[`z${z}_enabled`]);
-      if (form[`z${z}_name`] != null) await applyZoneName(z, form[`z${z}_name`]);
-      if (form[`z${z}_src`]) {
-        await setZoneSelect(z, 'zone_temp_source', tempSourceSelectValue(form[`z${z}_src`]));
-      }
-      if (form[`z${z}_ble`] != null) await setZoneText(z, 'zone_ble_mac', form[`z${z}_ble`]);
-      // Two-probe layout: zone returns stay unassigned. Do not write the HTML
-      // default (Probe N) that sits in the hidden select.
-      if (probeLayoutMode() === '8') {
-        await setZoneSelect(z, 'zone_probe', probeSelectValue(form[`z${z}_ret`]));
-      } else {
-        await setZoneSelect(z, 'zone_probe', 'None');
-      }
-      // "Group with": the sync edge is the source of truth; V6 rebuilds groups
-      // from it atomically. "" (None) must be sent too, or ungrouping is lost.
-      const merge = form[`z${z}_merge`];
-      if (merge != null) await setZoneSelect(z, 'zone_sync_to', merge ? `Zone ${Number(merge)}` : 'None');
-      const area = parseNum(form[`z${z}_area`]);
-      if (Number.isFinite(area) && area > 0) {
-        // settings/number is the proven write path; physics JSON also updated
-        // once handleBody captures application/json on the device.
-        await setZoneNumber(z, 'zone_area_m2', area);
-        await postZonePhysics(z, { area_m2: area });
-      }
-    } else if (/^zone\/(\d+)\/floor$/.test(saveKey)) {
-      const z = Number(RegExp.$1);
-      const walls = data.getAll(`z${z}_wall`);
-      let mask = 0;
-      if (walls.includes('n')) mask |= 1;
-      if (walls.includes('e')) mask |= 2;
-      if (walls.includes('s')) mask |= 4;
-      if (walls.includes('w')) mask |= 8;
-      const thick = parseNum(form[`z${z}_thick`]);
-      const spacing = parseNum(form[`z${z}_spacing`]);
-      const physics = {
-        exterior_walls: mask,
-        slab_type: form[`z${z}_slab`] || 'unset',
-        covering: form[`z${z}_covering`] || 'unset',
-      };
-      if (Number.isFinite(thick) && thick > 0) physics.active_thickness_cm = thick;
-      if (Number.isFinite(spacing) && spacing > 0) physics.pipe_spacing_mm = spacing;
-      const pipe = form[`z${z}_pipe`];
-      if (pipe) physics.pipe_type = pipe;
-      await postZonePhysics(z, physics);
-      if (Number.isFinite(spacing) && spacing > 0) {
-        await setZoneNumber(z, 'zone_pipe_spacing_mm', spacing);
-      }
-      if (pipe) await setZoneSelect(z, 'zone_pipe_type', pipe);
-      // Weather exposure is store-only on V6 (Touch owns control); keep UI values.
-      const wind = parseNum(form[`z${z}_wind`]);
-      const solar = parseNum(form[`z${z}_solar`]);
-      const forecast = { exterior_walls: mask };
-      if (Number.isFinite(wind)) forecast.wind_exposure = wind;
-      if (Number.isFinite(solar)) forecast.solar_gain = solar;
-      await postForecastProfile(z, forecast);
-      await fetchPhysicsAlerts();
-    } else if (/^zone\/(\d+)\/motor$/.test(saveKey)) {
+    } else if (/^zone\/(\d+)$/.test(saveKey)) {
+      // Zone sheet › Settings (data-patch): write only the parts that changed.
       const z = Number(RegExp.$1);
       if (action === 'reset_fault') await resetMotorFault(z);
-      if (action === 'reset_relearn') {
+      else if (action === 'reset_relearn') {
         await ensureMotorsReady_();
         await resetMotorAndRelearn(z);
+      } else {
+        const f = (n) => `z${z}_${n}`;
+        if (touched(detail, [f('target')]) && form[f('target')] != null) await setSetpoint(z, form[f('target')]);
+        if (touched(detail, ['enabled', 'name', 'src', 'ble', 'ret', 'merge', 'area'].map(f))) await saveZoneRoom_(z, form);
+        if (touched(detail, ['wall', 'spacing', 'pipe', 'slab', 'covering', 'thick', 'lead', 'wind', 'solar'].map(f))) {
+          await saveZoneFloor_(z, form, data);
+        }
       }
+    }
+    if (keepDirty) {
+      paintAll();
+      return;
     }
     if (formEl) {
       // Unlock so paintAll can write the accepted server values, then snap those.
@@ -1984,8 +2062,8 @@ function boot() {
     if (!el || !el.classList || !el.classList.contains('state')) return;
     clearTimeout(presenceT);
     presenceT = setTimeout(() => refreshDashboard(), 200);
-    // Configuration → manifold shows the WiFi panel; refresh its status there.
-    if (el.id === 'm-conf' || el.id === 's-sys') loadWifi();
+    // System › Connections shows the WiFi status; refresh it there.
+    if (el.id === 'm-sys' || el.id === 'c-connections') loadWifi();
   });
 
   connect();

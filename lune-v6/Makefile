@@ -42,6 +42,7 @@ DESIGN_DIR ?= $(firstword $(wildcard \
 ))
 LDS_DIR ?= $(DESIGN_DIR)
 LDS_CONSUMER ?= $(ROOT_ABS)
+LDS_OUT ?= $(ROOT_ABS)/.cache/lds
 
 .PHONY: help check ensure-secrets-link config compile build build-verify bump-build prepare-release release release-deploy release-firmware release-bundle upload deploy ota logs discover monitor erase erase-nvs clean dashboard dashboard-tooling dashboard-build dashboard-reference-traces dashboard-watch design-tokens design-verify test test-dashboard test-ripple test-rev31-logic test-rev33-logic test-safety-limits test-stall-model test-stroke-learning test-balance test-authority-lease test-preheat-policy test-preheat-absorb test-absorb-command test-probe-mapping test-thermal-model test-group-model test-flow-allocator test-control-summary test-hydraulic-policy test-hydraulic-diagnostics test-commissioning-schema test-request-guard test-ble-time-beacon test-settings-backup test-control-mode
 
@@ -428,9 +429,10 @@ design-tokens:
 	  echo "Lune Design System checkout not found at $(LDS_DIR)"; \
 	  exit 1; \
 	fi
-	mkdir -p $(WEB_DIST)
-	$(PYTHON) $(LDS_DIR)/tools/lds_build.py $(LDS_DIR)/config/v6.json
-	cp $(LDS_DIR)/dist/v6/lune-ui.css $(WEB_DIST)/lune-ui.css
+	mkdir -p $(WEB_DIST) $(LDS_OUT)
+	@# Build into this repo (--out), never into the design-system checkout's tracked dist/.
+	$(PYTHON) $(LDS_DIR)/tools/lds_build.py $(LDS_DIR)/config/v6.json --out $(LDS_OUT)
+	cp $(LDS_OUT)/v6/lune-ui.css $(WEB_DIST)/lune-ui.css
 
 design-verify:
 	@if [ ! -f "$(LDS_DIR)/tools/lds_build.py" ]; then \
@@ -456,6 +458,7 @@ dashboard-build: design-tokens
 	--loader:.css=text \
 	--define:DEBUG=false \
 	--define:LV6_DASHBOARD_LANG=\"$(DASHBOARD_COMPILED_LANG)\" \
+	--alias:lds-forms=$(LDS_DIR)/js/lune-forms.js \
 	--outfile=$(BINDER_OUT_FILE)
 	@# Keep legacy path so firmware YAML that still points at dashboard.js builds
 	cp $(BINDER_OUT_FILE) $(DASHBOARD_OUT_FILE)

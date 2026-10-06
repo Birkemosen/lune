@@ -39,6 +39,16 @@ as a sibling of this repo.
 
 ## Architecture
 
-- Navigation is radio inputs + CSS (`m-dash`/`m-conf` × `s-sys`/`s-z1`…`s-z6`).
-- JS only paints `[data-bind*]` and handles `lune:save` → `/api/v1`.
+- Information architecture follows LDS 2.3 (DESIGN.md 15): **Hjem** (`#m-home`,
+  `#v-home-sys`), one **sheet** per zone and one for the manifold (native `popover`,
+  tabs Overview · History · Settings) and **System** (`#m-sys`, `#v-sys`, categories
+  Device · Manifold and motors · Connections · Firmware and backup · Service, Motor lab
+  only on dev firmware). Where every old field went: [`MAPPING.md`](MAPPING.md).
+- Navigation is radio inputs, `popover` and `<details>` — no JS needed to move around.
+  Deep links: `#z3`, `#z3/settings`, `#system/connections` (slugs from i18n `hash.*`);
+  old `#s-z3` / `#s-sys` links from Lune Touch are rewritten by the binder.
+- JS (`ui/binder.js`) paints `[data-bind*]`, handles `lune:save` → `/api/v1`, and bundles
+  the design system's `js/lune-forms.js` (dirty/save, autosave, sheets, deep links).
+- `python3 check_fields.py` checks that every old field/action/data-bind
+  (`conf_fields.txt`) still exists and that settings groups stay within DESIGN.md 15.5.
 - Firmware serves `/`, `/en/`, `/da/`, `/lune-ui.css`, `/binder.js`.

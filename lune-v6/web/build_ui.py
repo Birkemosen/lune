@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Lune V6 web-UI — referenceimplementering af Lune Design System 2.
-Bygger dashboardet med build-time i18n oven på dist/v6/lune-ui.css.
+Lune V6 web-UI — Lune Design System 2.3 (Hjem / ark / System, DESIGN.md 15).
+Bygger siden med build-time i18n oven på dist/v6/lune-ui.css.
 
     python build_ui.py                       # standard: --langs en,da
     python build_ui.py --langs de,en         # vælg sprog ved compile
@@ -12,6 +12,12 @@ Output (i --out, standard ./dist):
     <lang>/index.html(.gz)        én færdigoversat side pr. sprog
     web_ui.h                      gzip-bytes som C-arrays + sprogtabel til firmwaren
 
+Struktur:
+    Hjem    (#m-home, #v-home-sys)  statuslinje, fejl, Varme nu, Komfort pr. zone
+    Ark     (.sheet popover)        manifold + én pr. zone: Overblik · Historik · Indstillinger
+    System  (#m-sys, #v-sys)        Enhed · Manifold og motorer · Forbindelser ·
+                                    Firmware og backup · Service (+ Motorlab i dev-firmware)
+
 Første sprog i listen er standard/fallback. Mangler en nøgle i et katalog,
 bruges engelsk (eller første sprog), og buildet advarer. Med ét sprog
 udelades sprogvælgeren helt.
@@ -20,7 +26,7 @@ Sprogskift kræver ingen JavaScript: vælgeren er almindelige links til
 /en/ og /da/. Firmwaren serverer "/" ud fra cookie → Accept-Language →
 standardsprog (se lune_ui_pick() i web_ui.h).
 """
-import argparse, gzip, json, math, os, random, sys, pathlib
+import argparse, gzip, json, math, os, sys, pathlib
 
 ROOT = pathlib.Path(__file__).parent
 LDS_ROOT = next((c for c in (
@@ -58,84 +64,48 @@ Z = [
  (6,"Soveværelse",17.8,19.0,"fault",0,22.1,None,"n","ble",14.0,200,"ALUPEX 16mm"),
 ]
 PIPES=["PEX 12mm","PEX 14mm","PEX 16mm","PEX 17mm","PEX 18mm","PEX 20mm","ALUPEX 16mm","ALUPEX 20mm","Unknown"]
-def level(z): return 0 if z[4] in ("fault","off") else max(1, math.ceil(z[5]/20))
+def level(z): return 0 if z[4] in ("fault","off") else max(1, math.ceil(z[5]/10))   # 10 segmenter á 10 %
 def tid(z): return "Z4–5" if z[7]=="primary" else f"Z{z[0]}"
 def rid(z): return "Z5" if z[7]=="member" else tid(z)
-
-def history(z):
-    random.seed(z[0]*7)
-    i,n,t,tg,st=z[:5]; tgt=[]; tmp=[]; cur=tg-0.6
-    for k in range(48):
-        h=(k/2+10)%24; night=(h>=22 or h<6)
-        g=tg-(1.5 if (night and i in (2,6)) else 0.5 if night else 0)
-        tgt.append(g); cur+=(g-cur)*0.18+random.uniform(-.08,.08)
-        if st=="fault" and k>=42: cur-=0.28
-        tmp.append(cur)
-    d=t-tmp[-1]
-    for j in range(8): tmp[-8+j]+=d*(j+1)/8
-    return tgt,tmp
-
-def forecast_data():
-    random.seed(11); temp=[]; wind=[]
-    for h in range(73):
-        hod=h%24; day=min(h//24,2)
-        t=[11.5,12.5,10.5][day]+[4.5,3.0,2.5][day]*math.sin((hod-9)/24*2*math.pi)+random.uniform(-.25,.25)
-        w=4.5+1.5*math.sin(h/9)+random.uniform(-.4,.4)
-        if 18<=h<=32: w+=5.5*math.sin((h-18)/14*math.pi)
-        if h>52: w-=1.5
-        temp.append(t); wind.append(max(.5,w))
-    return temp,wind
-def cond(h):
-    hod=h%24
-    if 21<=h<=29: return "rain"
-    if h in (44,47,50): return "cloud"
-    if hod<6 or hod>=20: return "moon"
-    if hod in (9,12,15) and h<24: return "sun"
-    if hod in (12,15): return "partly"
-    return "cloud"
 
 # ---------------------------------------------------------------- render ---
 def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, binder_src="/binder.js", mock=False):
     ST={k:T(f"state.{k}") for k in ("calling","idle","fault","off")}
     H=T.meta("_h")
 
-    def stepper(name,val,mn,mx,step,unit,label,dec=1):
-        return (f'<div class="stepper"><button type="button" data-step="-1" aria-label="{T("common.decrease",x=label.lower())}">−</button>'
-                f'<span class="value"><input type="number" inputmode="decimal" id="{name}" name="{name}" value="{val:.{dec}f}" min="{mn}" max="{mx}" step="{step}"><span class="unit">{unit}</span></span>'
-                f'<button type="button" data-step="1" aria-label="{T("common.increase",x=label.lower())}">+</button></div>')
-    def switch(name,t,sub,on):
-        return f'<label class="switch"><span class="switch-text"><b>{t}</b>{f"<small>{sub}</small>" if sub else ""}</span><input type="checkbox" role="switch" name="{name}"{" checked" if on else ""}></label>'
+    # ---- byggesten
+    def stepper(name,val,mn,mx,step,unit,label,dec=1,disabled=False,field=None):
+        d=" disabled" if disabled else ""
+        return (f'<div class="stepper"><button type="button" data-step="-1" aria-label="{T("common.decrease",x=label.lower())}"{d}>−</button>'
+                f'<span class="value"><input type="number" inputmode="decimal" id="{name}" name="{field or name}" value="{val:.{dec}f}" min="{mn}" max="{mx}" step="{step}"{d}><span class="unit">{unit}</span></span>'
+                f'<button type="button" data-step="1" aria-label="{T("common.increase",x=label.lower())}"{d}>+</button></div>')
     def seg(name,opts,sel,label):
         return f'<div class="seg" role="radiogroup" aria-label="{label}">'+"".join(f'<label><input type="radio" name="{name}" value="{v}"{" checked" if v==sel else ""}><span>{t}</span></label>' for v,t in opts)+'</div>'
-    def row(id_,label,control): return f'<div class="field row"><label for="{id_}">{label}</label>{control}</div>'
-    def rstep(id_,label,*a,**k): return row(id_,label,stepper(id_,*a,label=label,**k))
     def probes(sel,name,include_none=True):
         none = f'<option value=""{"" if sel else " selected"}>{T("common.none")}</option>' if include_none else ""
         opts = "".join(f'<option value="{k}"{" selected" if k==sel else ""}>{T("csys.probe",n=k)}</option>' for k in range(1,9))
         return f'<select class="select" id="{name}" name="{name}">{none}{opts}</select>'
     def file_input(name, accept):
-        return (f'<label class="input file" for="{name}">'
+        return (f'<label class="input file w-lg" for="{name}">'
                 f'<input class="sr-only" id="{name}" name="{name}" type="file" accept="{accept}">'
                 f'<span class="file-pick">{T("common.chooseFile")}</span>'
                 f'<span class="file-name" data-empty="{T("common.noFile")}">{T("common.noFile")}</span></label>')
-    def metric(label,val,unit,bind="",cls=""):
+    def metric(label,val,unit,bind="",cls="",attrs=""):
         b=f' data-bind="{bind}"' if bind else ""
         c=f' {cls}' if cls else ""
         u=f' <small>{unit}</small>' if unit else ""
-        return f'<div class="metric{c}"><dt>{label}</dt><dd{b}>{val}{u}</dd></div>'
-    def title(z): return f"{tid(z)} {z[1]}"
+        return f'<div class="metric{c}"{attrs}><dt>{label}</dt><dd{b}>{val}{u}</dd></div>'
     def help_btn(hid, topic):
         return f'<button class="help-btn" type="button" popovertarget="{hid}" style="anchor-name:--a-{hid}" aria-label="{T("help.aria", topic=topic)}">?</button>'
     def help_pop(hid, body_key, more=""):
         link=(f'<a href="https://github.com/Birkemosen/lune/blob/main/{more}" '
               f'target="_blank" rel="noopener noreferrer">{T("help.readMore")}</a>') if more else ""
         return f'<div id="{hid}" popover class="help-pop" style="position-anchor:--a-{hid}"><p>{T(body_key)}</p>{link}</div>'
-    def confirm_pop(pid, trigger_key, title_key, note_key, value, confirm_key, attrs="", style_extra="", **kw):
-        """Bekræftelses-popover inde i formularen. Trigger slutter med …; submit sender name=action."""
-        style=f' style="{style_extra}"' if style_extra else ""
+    def confirm_pop(pid, trigger_key, title_key, note_key, value, confirm_key, attrs="", **kw):
+        """Bekræftelses-popover (LDS 5.16) inde i formularen. Trigger slutter med …; submit sender name=action."""
         attr=f" {attrs}" if attrs else ""
         return (
-            f'<button class="btn danger" type="button" popovertarget="{pid}"{style}{attr}>{T(trigger_key, **kw)}</button>'
+            f'<button class="btn danger" type="button" popovertarget="{pid}"{attr}>{T(trigger_key, **kw)}</button>'
             f'<div id="{pid}" popover class="confirm-pop" role="alertdialog" aria-labelledby="{pid}-t" aria-describedby="{pid}-d">'
             f'<p class="confirm-title" id="{pid}-t">{T(title_key, **kw)}</p>'
             f'<p id="{pid}-d">{T(note_key, **kw)}</p>'
@@ -144,25 +114,65 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
             f'<button class="btn danger-solid" type="submit" name="action" value="{value}" popovertarget="{pid}" popovertargetaction="hide">{T(confirm_key, **kw)}</button>'
             f'</div></div>'
         )
-    def ss_id(key): return "ss-" + key.replace("/", "-")
-    def foot_save(key, primary, left=""):
-        status=f'<span class="save-status" id="{ss_id(key)}" aria-live="polite"></span>'
-        undo=f'<button type="reset" class="btn">{T("common.undo")}</button>'
-        btn=f'<button class="btn primary" type="submit">{primary}</button>'
-        if left:
-            return f'<footer class="panel-foot"><div class="foot-start">{left}{status}</div>{undo}{btn}</footer>'
-        return f'<footer class="panel-foot">{status}{undo}{btn}</footer>'
 
-    # ---- strimmel
+    # ---- grupperede lister, ark og gem-bjælke (DESIGN.md 15.5, 15.9)
+    def lab(id_,text): return f'<label for="{id_}">{text}</label>'
+    def span(text): return f'<span>{text}</span>'
+    def srow(label,control,hint="",cls="",attrs=""):
+        h=f"<small>{hint}</small>" if hint else ""
+        return f'<div class="setting{(" "+cls) if cls else ""}"{attrs}><div class="setting-label">{label}{h}</div><div class="setting-control">{control}</div></div>'
+    def sread(label,bind,val="—",cls=""):
+        return srow(span(label),f'<span class="setting-value{(" "+cls) if cls else ""}" data-bind="{bind}">{val}</span>')
+    def sstep(id_,label,*a,hint="",**k): return srow(lab(id_,label),stepper(id_,*a,label=label,**k),hint)
+    def sswitch(name,t,sub,on):
+        return (f'<label class="setting switch"><span class="setting-label"><b>{t}</b>{f"<small>{sub}</small>" if sub else ""}</span>'
+                f'<input type="checkbox" role="switch" name="{name}"{" checked" if on else ""}></label>')
+    def h4(title,help=""): return f'<h4>{title}{" "+help if help else ""}</h4>'
+    def group(title,rows,extra="",pre="",help="",cls=""):
+        return f'<section class="setting-group{(" "+cls) if cls else ""}">{h4(title,help)}{pre}<div class="setting-list">{rows}</div>{extra}</section>'
+    def ggroup(title,sw,rows,extra="",pre="",help=""):
+        return f'<section class="setting-group">{h4(title,help)}{pre}<div class="setting-list gated">{sw}<div class="gated-body">{rows}</div></div>{extra}</section>'
+    def subpage(label,value,body,attrs=""):
+        return (f'<details class="subpage"{attrs}><summary class="setting"><span class="sub-back">{T("common.back")}</span>'
+                f'<span class="setting-label"><span>{label}</span></span><span class="setting-control">{value}</span></summary>'
+                f'<div class="subpage-body">{body}</div></details>')
+    def savebar(key,label):
+        return (f'<footer class="savebar"><span class="save-status" id="ss-{key.replace("/","-")}" aria-live="polite"></span>'
+                f'<button type="reset" class="btn">{T("common.undo")}</button><button class="btn primary" type="submit">{label}</button></footer>')
+    def sheet(sid,hashv,icon,head,status,overview,history,settings):
+        tabs=[("o","overview"),("h","history"),("s","settings")]
+        radios="".join(f'<input class="state tab" type="radio" name="tab-{sid}" id="t-{sid}-{k}" value="{v}" data-hash="{T("hash."+v)}" aria-label="{T("tab."+v)}"{" checked" if k=="o" else ""}>' for k,v in tabs)
+        labels="".join(f'<label for="t-{sid}-{k}" data-tab="{v}">{T("tab."+v)}</label>' for k,v in tabs)
+        return f'''
+  <div id="sheet-{sid}" popover class="sheet" role="dialog" aria-labelledby="sheet-{sid}-t" data-hash="{hashv}">
+    {radios}
+    <header class="sheet-head">
+      <span class="chip-icon" aria-hidden="true">{icon}</span>
+      <div><h2 id="sheet-{sid}-t">{head}</h2><p>{status}</p></div>
+      <button class="sheet-close" type="button" popovertarget="sheet-{sid}" popovertargetaction="hide" aria-label="{T("sheet.close")}">×</button>
+      <nav class="tabs" aria-label="{T("sheet.tabs")}">{labels}</nav>
+    </header>
+    <div class="sheet-body">
+      <section class="tab-panel" data-tab="overview">{overview}</section>
+      <section class="tab-panel" data-tab="history">{history}</section>
+      <section class="tab-panel" data-tab="settings">{settings}</section>
+    </div>
+  </div>'''
+    I_ROOM='<svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M4 12h8V4"/></svg>'
+    I_MANI='<svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h16M4 17h16"/><path d="M8 7v10M16 7v10"/></svg>'
+
+    # ---- strimmel: felterne åbner arkene (DESIGN.md 15.2)
     tiles="".join(f'''
-          <label class="tile" for="s-z{z[0]}" data-state="{z[4]}" data-level="{level(z)}"{f' data-group="{z[7]}"' if z[7] else ''}>
-            <span class="lvl" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>
+          <button class="tile" type="button" popovertarget="sheet-z{z[0]}" data-state="{z[4]}" data-level="{level(z)}"{f' data-group="{z[7]}"' if z[7] else ''}>
+            <span class="lvl" aria-hidden="true">{"<i></i>"*10}</span>
+            <span class="tile-pct" data-bind="z{z[0]}.valve">{0 if z[4] in ("fault","off") else z[5]} %</span>
             <span class="tile-id">{tid(z)}</span>
             <span class="tile-name" data-bind="z{z[0]}.name">{z[1]}</span>
-            <span class="tile-val" data-bind="z{z[0]}.temp">{T("tile.fault") if z[4]=="fault" else T("tile.learning") if z[4]=="learning" else T.num(z[2])+"°"}</span>
-          </label>''' for z in Z)
+            <span class="tile-dev" data-bind="z{z[0]}.dev" hidden></span>
+            <span class="tile-val" data-bind="z{z[0]}.temp">{T("tile.fault") if z[4]=="fault" else T.num(z[2])+"°"}</span>
+          </button>''' for z in Z)
     strip=f'''<nav class="strip" aria-label="{T("strip.label")}">
-          <label class="tile tile-sys" for="s-sys" title="{T("scope.manifold")}">
+          <button class="tile tile-sys" type="button" popovertarget="sheet-manifold" title="{T("scope.manifold")}">
             <span class="tile-id">{T("scope.manifold")}</span>
             <span class="temps">
               <span class="temp flow">
@@ -174,100 +184,48 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
                 <span class="tile-val" data-bind="strip.return">{T.num(29.8)}°</span>
               </span>
             </span>
-          </label>{tiles}
+          </button>{tiles}
         </nav>'''
 
-    # ---- grafer
-    def spark(z):
-        tgt,tmp=history(z)
-        lo=min(min(tgt),min(tmp)); hi=max(max(tgt),max(tmp)); mid=(lo+hi)/2; span=max(hi-lo+.6,3.0)
-        lo,hi=mid-span/2,mid+span/2; W,Hh=240,40
-        X=lambda k: round(k*W/47,1); Y=lambda v: round(Hh-(v-lo)/(hi-lo)*Hh,1)
-        tp=" ".join(f"{X(k)},{Y(v)}" for k,v in enumerate(tmp)); gp=[]
-        for k,v in enumerate(tgt):
-            if k and v!=tgt[k-1]: gp.append(f"{X(k)},{Y(tgt[k-1])}")
-            gp.append(f"{X(k)},{Y(v)}")
-        return f'<svg class="spark" viewBox="0 0 {W} {Hh}" preserveAspectRatio="none" aria-hidden="true" data-bind-spark="z{z[0]}"><polygon class="a" points="{tp} {" ".join(reversed(gp))}"/><polyline class="g" points="{" ".join(gp)}"/><polyline class="t" points="{tp}"/></svg>'
-    def trend():
-        random.seed(3); W,Hh=240,80; f=[];r=[]; cf=33; cr=29
-        for k in range(48):
-            h=(k/2+10)%24; night=(h>=22 or h<6)
-            cf+=((36.5 if night else 33.5)-cf)*0.2+random.uniform(-.3,.3); cr+=((30.5 if night else 29.2)-cr)*0.2+random.uniform(-.2,.2)
-            f.append(cf); r.append(cr)
-        X=lambda k: round(k*W/47,1); Y=lambda v: round(Hh-(v-26)/13*Hh,1)
-        pf=" ".join(f"{X(k)},{Y(v)}" for k,v in enumerate(f)); pr=" ".join(f"{X(k)},{Y(v)}" for k,v in enumerate(r))
-        return f'<svg class="trend" viewBox="0 0 {W} {Hh}" preserveAspectRatio="none" role="img" aria-label="{T("trend.aria")}" data-bind-trend="manifold"><polygon class="dt" points="{pf} {" ".join(reversed(pr.split()))}"/><polyline class="f" points="{pf}"/><polyline class="r" points="{pr}"/></svg>'
-
-    def forecast_panel():
-        temp,wind=forecast_data(); W=720; X=lambda h: round(h*W/72,1)
-        Yt=lambda v: round(100-(v-6)/14*100,1); Yw=lambda v: round(60-v/14*60,1)
-        tp=" ".join(f"{X(h)},{Yt(v)}" for h,v in enumerate(temp)); wp=" ".join(f"{X(h)},{Yw(v)}" for h,v in enumerate(wind))
-        NOW=14; now=X(NOW); p0,p1=X(20),X(31)
-        gl=lambda ys: "".join(f'<line class="gl" x1="0" x2="{W}" y1="{y}" y2="{y}"/>' for y in ys)
-        days="".join(f'<line class="day" x1="{X(d)}" x2="{X(d)}" y1="0" y2="100%"/>' for d in (24,48))
-        thr=Yw(8)
-        icons="".join(f'<svg class="ic {cond(h)}"><use href="#i-{cond(h)}"/></svg>' for h in range(0,72,3))
-        dn=T.meta("_days"); labels=[dn[0],"06","12","18",dn[1],"06","12","18",dn[2],"06","12","18",""]
-        xl="".join(f'<span{" class=d" if l in dn else ""}>{l}</span>' for l in labels)
-        return f'''        <section class="panel">
-          <header class="panel-head"><h3>{T("fc.title")}</h3><p>{T("fc.sub",model="DMI HARMONIE",time="14:05")}</p><span class="badge info">{T("fc.badge",v=T.num(0.4))}</span></header>
-          <dl class="metrics">
-            {metric(T("fc.now"),T.num(13.4),"°C","forecast.temp")}
-            <div class="metric"><dt>{T("fc.wind")}</dt><dd class="c-info" data-bind="forecast.wind">6 <small>m/s</small> <svg class="dir" viewBox="0 0 16 16" style="--deg:296deg" aria-label="{T("fc.windFrom",dir=T.meta("_dir_ese"))}"><path d="M8 2v12M8 2l-4 4M8 2l4 4"/></svg><small>{T.meta("_dir_ese")}</small></dd></div>
-            {metric(T("fc.windMax"),"11","m/s","forecast.windmax")}
-            {metric(T("fc.tempMin"),T.num(6.8),"°C","forecast.tmin")}
-          </dl>
-          <p class="msg info"><span><b>{T("fc.msgStrong")}</b> {T("fc.msg")}</span></p>
-          <div class="fc" style="--now:{NOW/72*100:.3f}%">
-            <div class="fc-icons" aria-hidden="true">{icons}</div>
-            <div class="fc-y"><span>20°</span><span>13°</span><span>6°</span></div>
-            <div class="fc-plot fc-temp" role="img" aria-label="{T("fc.tempAria")}">
-              <span class="fc-now">{T("fc.now")}</span>
-              <svg viewBox="0 0 {W} 100" preserveAspectRatio="none" data-bind-fc="temp">{gl((0,50,100))}{days}<rect class="pre" x="{p0}" y="0" width="{p1-p0}" height="100"/><polyline class="tl" points="{tp}"/><rect class="past" x="0" y="0" width="{now}" height="100"/><line class="now" x1="{now}" x2="{now}" y1="0" y2="100"/></svg>
-            </div>
-            <div class="fc-y"><span>14</span><span>7</span><span>0</span></div>
-            <div class="fc-plot fc-wind" role="img" aria-label="{T("fc.windAria")}">
-              <svg viewBox="0 0 {W} 60" preserveAspectRatio="none" data-bind-fc="wind">{gl((0,30,60))}{days}<rect class="pre" x="{p0}" y="0" width="{p1-p0}" height="60"/><polygon class="wa" points="0,60 {wp} {W},60"/><polyline class="wl" points="{wp}"/><line class="thr" x1="0" x2="{W}" y1="{thr}" y2="{thr}"/><rect class="past" x="0" y="0" width="{now}" height="60"/><line class="now" x1="{now}" x2="{now}" y1="0" y2="60"/></svg>
-            </div>
-            <div class="fc-x" aria-hidden="true">{xl}</div>
-          </div>
-          <div class="fc-legend" aria-hidden="true"><span><i class="lt"></i>{T("fc.lTemp")}</span><span><i class="lw"></i>{T("fc.lWind")}</span><span><i class="lthr"></i>{T("fc.lThr")}</span><span><i class="lpre"></i>{T("fc.lPre")}</span></div>
-        </section>'''
-
-    # ---- dashboard: manifold
-    comfort="".join(f'''
-            <label for="s-z{z[0]}" data-state="{z[4]}">
-              <span class="id">{rid(z)}</span>
-              <span class="name" data-bind="z{z[0]}.name">{z[1]}</span>
-              <span class="val" data-bind="z{z[0]}.comfort">—</span>
-              <svg class="spark" viewBox="0 0 240 40" preserveAspectRatio="none" aria-hidden="true" data-bind-spark="z{z[0]}"></svg>
-            </label>''' for z in Z)
-    bal="".join(f'<tr data-bind-row="bal.z{z[0]}"><td data-bind="bal.z{z[0]}.id">{rid(z)}</td><td class="num" data-bind="bal.z{z[0]}.prior">—</td><td class="num c-violet" data-bind="bal.z{z[0]}.learned">—</td><td class="num" data-bind="bal.z{z[0]}.effective">—</td></tr>' for z in Z)
-    dash_sys=f'''
-      <section class="view" id="v-dash-sys" aria-labelledby="h-dash-sys">
-        <header class="view-head"><h2 id="h-dash-sys">{T("scope.manifold")}</h2><p data-bind="dash.sys.sub">{T("dash.sys.sub",zones=6,calling=0,faults=0)}</p></header>
-
-        <div class="panel alert" data-bind-show="dash.alert" hidden>
-          <div class="panel-head"><h3 data-bind="dash.alertTitle">{T("alert.zoneFault",zone="—")}</h3></div>
-          <p class="note">{T("alert.zoneFaultBody")}</p>
-          <div class="panel-foot" style="justify-content:flex-start"><label class="btn" data-bind-for="dash.alertZone" for="s-z1">{T("common.open",x="—")}</label></div>
-        </div>
-
-        <section class="panel c5">
-          <header class="panel-head"><h3>{T("heat.title")}</h3><span class="badge" data-bind="heat.badge">{T("state.idle")}</span></header>
-          <dl class="metrics">
+    def manifold_metrics():
+        return f'''<dl class="metrics">
             {metric(T("m.supply"),T.num(34.2),"°C","manifold.flow")}
             {metric(T("m.return"),T.num(29.8),"°C","manifold.return")}
             {metric(T("m.dt"),T.num(4.4),"K","manifold.dt")}
             {metric(T("m.opening"),"32","%","manifold.opening")}
           </dl>
-          <div class="bar" style="--v:0%" role="meter" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100" aria-label="{T("m.openingAria")}"><i></i></div>
-          <div class="sub trend-wrap">
+          <div class="bar" style="--v:0%" role="meter" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100" aria-label="{T("m.openingAria")}" data-bind-bar="manifold.opening"><i></i></div>'''
+    def trend_block():
+        return f'''<div class="sub trend-wrap">
             <h4>{T("trend.title")} <span class="legend"><i class="lf"></i>{T("m.supply")}<i class="lr"></i>{T("m.return")}</span></h4>
             <p class="empty">{T("trend.empty")}</p>
             <svg class="trend" viewBox="0 0 240 80" preserveAspectRatio="none" role="img" aria-label="{T("trend.aria")}" data-bind-trend="manifold"></svg>
             <div class="axis" aria-hidden="true"><span>−24 {H}</span><span>−12 {H}</span><span>{T("trend.now")}</span></div>
-          </div>
+          </div>'''
+
+    # ---- Hjem (DESIGN.md 15.7): statuslinje, fejl, Varme nu, Komfort pr. zone. Ingen gem-knapper.
+    comfort="".join(f'''
+            <button type="button" popovertarget="sheet-z{z[0]}" data-state="{z[4]}">
+              <span class="id">{rid(z)}</span>
+              <span class="name" data-bind="z{z[0]}.name">{z[1]}</span>
+              <span class="val" data-bind="z{z[0]}.comfort">—</span>
+              <svg class="spark" viewBox="0 0 240 40" preserveAspectRatio="none" aria-hidden="true" data-bind-spark="z{z[0]}"></svg>
+            </button>''' for z in Z)
+    home=f'''
+      <section class="view" id="v-home-sys" aria-labelledby="h-home">
+        <header class="view-head"><h2 id="h-home">{T("scope.manifold")}</h2><p data-bind="dash.sys.sub">{T("dash.sys.sub",zones=6,calling=0,faults=0)}</p></header>
+
+        <div class="panel alert" data-bind-show="dash.alert" hidden>
+          <div class="panel-head"><h3 data-bind="dash.alertTitle">{T("alert.zoneFault",zone="—")}</h3></div>
+          <p class="note">{T("alert.zoneFaultBody")}</p>
+          <div class="panel-foot" style="justify-content:flex-start"><button class="btn" type="button" data-bind-for="dash.alertZone" popovertarget="sheet-z1">{T("common.open",x="—")}</button></div>
+        </div>
+
+        <section class="panel c5">
+          <header class="panel-head"><h3>{T("heat.title")}</h3><span class="badge" data-bind="heat.badge">{T("state.idle")}</span></header>
+          {manifold_metrics()}
+          {trend_block()}
+          <footer class="panel-foot"><button class="btn" type="button" popovertarget="sheet-manifold">{T("home.openManifold")}</button></footer>
         </section>
 
         <section class="panel c7">
@@ -275,54 +233,61 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
           <div class="comfort">{comfort}
           </div>
         </section>
-
-
-        <section class="panel c6">
-          <header class="panel-head"><h3>{T("bal.title")}</h3><span class="badge violet" data-bind="bal.mode">{T("bal.adaptive")}</span></header>
-          <div class="table-wrap"><table class="table">
-            <thead><tr><th>{T("bal.zone")}</th><th class="num">{T("bal.prior")}</th><th class="num">{T("bal.learned")}</th><th class="num">{T("bal.effective")}</th></tr></thead>
-            <tbody>{bal}</tbody>
-          </table></div>
-        </section>
-
-        <section class="panel c6">
-          <header class="panel-head"><h3>{T("dev.title")}</h3><span class="badge" data-bind="dev.badge">{T("dev.online")}</span></header>
-          <dl class="metrics">
-            {metric("Wi-Fi","−58","dBm","wifi.rssi")}
-            {metric(T("dev.uptime"),f'6 <small>{T("common.days")}</small> 4 <small>{T("common.hours")}</small> 12 <small>{T("common.minutes")}</small>',"","sys.uptime")}
-          </dl>
-          <pre class="log" data-bind="log" aria-live="polite" lang="en"></pre>
-        </section>
       </section>'''
 
-    # ---- dashboard: zone
-    def dash_zone(z):
+    # ---- zone-ark (DESIGN.md 15.3)
+    WL=T.meta("_walls"); WF=T.meta("_walls_full")
+    def compass(i,walls):
+        return f'<div class="compass inline" role="group" aria-label="{T("cz.walls")}"><i class="c"></i>'+"".join(f'<label data-wall="{k}"><input type="checkbox" name="z{i}_wall" value="{k}"{" checked" if k in walls else ""} aria-label="{WF[k]}"><span>{WL[k]}</span></label>' for k in "nesw")+'</div>'
+    # Zonegrafen: 48 halvtimer bagud + 12 frem; "nu" er punkt 47 af 60 (binderen tegner .zc-plot).
+    xpos=[0, round(23/59*100,2), round(47/59*100,2), 100]
+    def zone_chart(i):
+        xl=[f"−24 {H}",f"−12 {H}",T("zchart.now"),f"+6 {H}"]
+        xlab="".join(f'<span style="left:{p}%"{" class=n" if j==2 else ""}>{l}</span>' for j,(l,p) in enumerate(zip(xl,xpos)))
+        return f'''
+        <section class="sub" aria-labelledby="zc-h-{i}">
+          <h4 id="zc-h-{i}">{T("zchart.sub")}</h4>
+          <dl class="metrics">
+            <div class="metric" data-bind-show="z{i}.expected" hidden>
+              <dt data-bind="z{i}.expectedLabel">{T("zchart.expected",time="—")}</dt>
+              <dd><span data-bind="z{i}.expected">—</span> <small>°C</small></dd>
+            </div>
+          </dl>
+          <div class="zc">
+            <div class="zc-y" aria-hidden="true" data-bind="z{i}.zchartY"><span>—</span><span>—</span><span>—</span></div>
+            <div class="zc-plot" role="img" aria-label="{T("zchart.aria")}">
+              <svg viewBox="0 0 300 100" preserveAspectRatio="none" data-bind-zchart="z{i}"></svg>
+              <span class="zc-scrub" hidden aria-hidden="true"></span>
+            </div>
+            <div class="zc-x" aria-hidden="true">{xlab}</div>
+          </div>
+          <div class="fc-legend" aria-hidden="true">
+            <span><i class="lt"></i>{T("zchart.lTemp")}</span>
+            <span><i class="lsp"></i>{T("zchart.lTarget")}</span>
+            <span><i class="lfc"></i>{T("zchart.lForecast")}</span>
+          </div>
+          <p class="note" data-bind="z{i}.zchartNote">{T("zchart.noForecast")}</p>
+          <p class="hint">{T("zchart.projHint")}</p>
+        </section>'''
+    def zone_sheet(z):
         i,n,t,tg,st,fl,ret,grp,walls,src,area,sp,pipe=z
+        zid=f"Z{i}"
+        ta=T("zdash.targetAria")
         member=grp=="member"
-        sub=ST[st]+(" · "+T("zdash.follows",z="Z4") if member else " · "+T("zdash.primary",g="Z4–5") if grp=="primary" else "")
-        alert=f'''
+        dis=' disabled' if member else ''
+        status=f'{tid(z)} · <span data-bind="z{i}.sub">{ST[st]}</span>'
+        # Overblik: fejl, gruppe, mål (autogem), åbning og retur, detaljer
+        overview=f'''
         <form class="panel alert" data-save="zone/{i}/recovery" data-bind-show="z{i}.fault" hidden>
           <div class="panel-head"><h3>{T("zdash.faultTitle")}</h3></div>
           <p class="note">{T("zdash.faultBody")}</p>
           <div class="panel-foot" style="justify-content:flex-start"><button class="btn primary" type="submit" name="action" value="reset_fault">{T("common.resetFault")}</button></div>
-        </form>'''
-        dis=' disabled' if member else ''
-        badge_cls={"calling":"badge hot","idle":"badge","fault":"badge bad","blocked":"badge warn","learning":"badge violet","off":"badge"}.get(st,"badge")
-        badge=f'<span class="{badge_cls}" data-bind="z{i}.badge">{ST.get(st,ST["idle"])}</span>'
-        pre=f'<p class="msg info" data-bind-show="z{i}.preload" hidden><span><b>{T("zdash.preloadStrong")}</b> <span data-bind="z{i}.preload">{T("zdash.preload",offset="+0,0")}</span></span></p>'
-        # Group membership is painted by the binder from select-zone_N_sync_to.
-        foot=(f'<footer class="panel-foot" data-bind-show="z{i}.member" hidden><span class="note" data-bind="z{i}.memberNote"></span>'
-              f'<label class="btn" for="s-z{i}" data-bind="z{i}.openPrimary"></label></footer>')
-        ta=T("zdash.targetAria")
-        return f'''
-      <section class="view" id="v-dash-z{i}" aria-labelledby="h-dash-z{i}">
-        <header class="view-head"><h2 id="h-dash-z{i}"><span data-bind="z{i}.title">{title(z)}</span></h2><p data-bind="z{i}.sub">{sub}</p></header>{alert}
-
-        <form class="panel c5" data-save="zone/{i}/target">
-          <header class="panel-head"><h3>{T("zdash.comfort")}</h3>{badge}</header>
-          {pre}
-          <!-- Current temperature is in the zone tile; the panel holds the target and the live details. -->
+        </form>
+        <p class="msg violet" data-bind-show="z{i}.member" hidden><span data-bind="z{i}.memberNote"></span></p>
+        <div class="actions" data-bind-show="z{i}.member" hidden><button class="btn" type="button" popovertarget="sheet-z{i}" data-bind="z{i}.openPrimary"></button></div>
+        <form data-save="zone/{i}/target">
           <div class="climate">
+            <div class="now">{T.num(t)}<small>°C</small></div>
             <div class="target">
               <button type="button" data-step="-1" aria-label="{T("common.decrease",x=ta)}"{dis}>−</button>
               <label class="value"><small>{T("zdash.target")}</small><input type="number" inputmode="decimal" name="z{i}_target" value="{tg:.1f}" min="16" max="28" step="0.5"{dis}></label>
@@ -330,423 +295,262 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
             </div>
           </div>
           <p class="autosave" aria-live="polite"></p>
-          <dl class="kv">
-            <div><dt>{T("zdash.opening")}</dt><dd data-bind="z{i}.flow">—</dd></div>
-            <div class="zone-ret"><dt>{T("m.return")}</dt><dd data-bind="z{i}.return">—</dd></div>
-            <div><dt>{T("zdash.motor")}</dt><dd data-bind="z{i}.motor">—</dd></div>
-            <div><dt>{T("zdash.preheatAdv")}</dt><dd data-bind="z{i}.preheat">—</dd></div>
-            <div><dt>{T("zdash.offsetNow")}</dt><dd data-bind="z{i}.offset">—</dd></div>
-            <div><dt>{T("zdash.tempFrom")}</dt><dd data-bind="z{i}.tempFrom">—</dd></div>
-          </dl>
-          {foot}
         </form>
-
-        <section class="panel c7">
-          <header class="panel-head"><h3>{T("zchart.title")}</h3><p>{T("zchart.sub")}</p></header>
-          <dl class="metrics">
-            <div data-bind-show="z{i}.expected" hidden>
-              <dt data-bind="z{i}.expectedLabel">{T("zchart.expected",time="—")}</dt>
-              <dd><span data-bind="z{i}.expected">—</span><small>°C</small></dd>
-            </div>
-          </dl>
-          <div class="zchart" style="--now:80%">
-            <div class="zchart-y" data-bind="z{i}.zchartY"><span>—</span><span>—</span><span>—</span></div>
-            <div class="zchart-plot">
-              <svg viewBox="0 0 300 100" preserveAspectRatio="none" role="img" aria-label="{T("zchart.aria")}" data-bind-zchart="z{i}"></svg>
-              <span class="zchart-now">{T("zchart.now")}</span>
-              <span class="zchart-scrub" hidden aria-hidden="true"></span>
-            </div>
-            <div class="zchart-x" data-bind="z{i}.zchartX"><span>−24h</span><span>−12h</span><span>{T("zchart.now")}</span><span>+6h</span></div>
-          </div>
-          <p class="zchart-legend" aria-hidden="true">
-            <span><i class="lt"></i>{T("zchart.lTemp")}</span>
-            <span><i class="lg"></i>{T("zchart.lTarget")}</span>
-            <span><i class="lp"></i>{T("zchart.lForecast")}</span>
-          </p>
-          <p class="note" data-bind="z{i}.zchartNote">{T("zchart.noForecast")}</p>
-          <p class="hint">{T("zchart.projHint")}</p>
-        </section>
-      </section>'''
-
-    # ---- konfiguration: manifold
-    # Zone names are user data: the binder fills them in (data-zone-opt).
-    zone_opts="".join(f'<option value="{z[0]}" data-zone-opt="{z[0]}">Z{z[0]}</option>' for z in Z)
-    def sect_h(sid, key, badge=""):
-        b=f' <span class="badge">{badge}</span>' if badge else ''
-        return (f'<h2 class="section-h" id="sec-{sid}-h">{T(key)}{b}'
-                f'<i class="section-h-dot" aria-hidden="true"></i>'
-                f'<i class="section-h-line" aria-hidden="true"></i></h2>')
-    def sect_sum(sid, key, n):
-        badge=T("sections.panels.one",n=n) if n==1 else T("sections.panels.other",n=n)
-        return (f'<summary class="section-h">{T(key)} <span class="badge">{badge}</span>'
-                f'<i class="section-h-dot" aria-hidden="true"></i>'
-                f'<i class="section-h-line" aria-hidden="true"></i></summary>')
-    def sect_nav(items):
-        if len(items)<3: return ""
-        links="".join(f'<a href="#sec-{sid}">{T(key)}</a>' for sid,key in items)
-        return f'<nav class="section-nav" aria-label="{T("sections.label")}">{links}</nav>'
-    def sect(key): return f'<header class="section-head"><span>{T(key)}</span></header>'
-    nav_items=[("manifold","sect.manifold"),("regulation","sect.regulation"),
-               ("connect","sect.connect"),("service","sect.service")]
-    conf_sys=f'''
-      <section class="view" id="v-conf-sys" aria-labelledby="h-conf-sys">
-        <header class="view-head"><h2 id="h-conf-sys">{T("scope.manifold")}</h2><p>{T("csys.sub")}</p></header>
-        {sect_nav(nav_items)}
-
-        <section class="section" id="sec-manifold" aria-labelledby="sec-manifold-h">
-          {sect_h("manifold","sect.manifold")}
-          <div class="section-grid">
-        <form class="panel c6" data-save="manifold">
-          <header class="panel-head"><h3>{T("csys.mm")}</h3>{help_btn("help-manifold",T("csys.mm"))}</header>
-          {help_pop("help-manifold","help.manifold","lune-v6/docs/Manual.md#manifold")}
-          <div class="sub">
-            <h4>{T("csys.manifold")}</h4>
-            <div class="field"><span class="label">{T("csys.valveType")}</span>{seg("manifold_type",[("no",T("csys.no")),("nc",T("csys.nc"))],"nc",T("csys.valveType"))}</div>
-            {row("probe_flow",T("csys.supplyProbe"),probes(1,"probe_flow",include_none=False))}
-            {row("probe_return",T("csys.returnProbe"),probes(2,"probe_return",include_none=False))}
-          </div>
-          <div class="sub">
-            <h4>{T("csys.motors")}</h4>
-            {switch("motor_drivers",T("csys.drivers"),T("csys.driversSub"),True)}
-            {row("motor_type",T("csys.motorType"),'<select class="select" id="motor_type" name="motor_type"><option>Generic</option><option selected>HmIP VdMot</option></select>')}
-            {rstep("m_runtime",T("csys.maxRun"),38,5,40,1,"s",dec=0)}
-            {confirm_pop("confirm-relearn-all","csys.relearnAll","csys.relearnAllTitle","csys.relearnAllNote","relearn_all","csys.relearnAllConfirm")}
-          </div>
-          <details class="more">
-            <summary>{T("csys.limits")}</summary>
-            <p class="msg violet"><span>{T("csys.limitsMsg")}</span></p>
-            <div class="subs">
-              <div class="sub">
-                <h4>{T("csys.closeStop")}</h4>
-                {rstep("m_cthr",T("csys.threshold"),180,50,500,10,"mA",dec=0)}
-                {rstep("m_cslope",T("csys.slope"),12,1,50,1,"",dec=0)}
-                {rstep("m_cfloor",T("csys.slopeFloor"),4,0,20,1,"",dec=0)}
-              </div>
-              <div class="sub">
-                <h4>{T("csys.openStop")}</h4>
-                {rstep("m_othr",T("csys.threshold"),160,50,500,10,"mA",dec=0)}
-                {rstep("m_oslope",T("csys.slope"),10,1,50,1,"",dec=0)}
-                {rstep("m_ofloor",T("csys.slopeFloor"),4,0,20,1,"",dec=0)}
-                {rstep("m_ripple",T("csys.ripple"),600,100,2000,50,"",dec=0)}
-              </div>
-              <div class="sub">
-                <h4>{T("csys.relearn")}</h4>
-                {rstep("m_relmov",T("csys.afterMoves"),200,10,2000,10,"",dec=0)}
-                {rstep("m_relh",T("csys.afterHours"),168,1,720,1,H,dec=0)}
-                {rstep("m_minsamp",T("csys.minSamples"),3,1,20,1,"",dec=0)}
-                {rstep("m_maxdev",T("csys.maxDev"),0.15,0.01,1,0.01,"",dec=2)}
-              </div>
-            </div>
-          </details>
-          {foot_save("manifold",T("csys.saveManifold"))}
-        </form>
-        <form class="panel c6" data-save="return_probes">
-          <header class="panel-head"><h3>{T("csys.returnProbes")}</h3>{help_btn("help-return-probes",T("csys.returnProbes"))}</header>
-          {help_pop("help-return-probes","help.returnProbes","lune-v6/docs/Manual.md#return-probes")}
-          <div class="field"><span class="label">{T("csys.probeMode")}</span>{seg("return_probe_mode",[("2",T("csys.probeMode2")),("8",T("csys.probeMode8"))],"2",T("csys.probeMode"))}</div>
-          <p class="note">{T("csys.returnProbesNote")}</p>
-          <div class="sub">
-            <h4>{T("csys.probeLive")}</h4>
-            <dl class="metrics">
-              {"".join(f'<div class="metric" data-probe="{n}"><dt>{T("csys.probe",n=n)}</dt><dd data-bind="probe.{n}">— <small>°C</small></dd></div>' for n in range(1,9))}
-            </dl>
-          </div>
-          {foot_save("return_probes",T("csys.saveReturnProbes"))}
-        </form>
-          </div>
-        </section>
-
-        <section class="section" id="sec-regulation" aria-labelledby="sec-regulation-h">
-          {sect_h("regulation","sect.regulation")}
-          <div class="section-grid">
-        <form class="panel c6" data-save="regulation">
-          <header class="panel-head"><h3>{T("csys.regulation")}</h3>{help_btn("help-regulation",T("csys.regulation"))}</header>
-          {help_pop("help-regulation","help.regulation","lune-v6/docs/Manual.md#regulation")}
-          <div class="sub">
-            <h4>{T("csys.balancing")} <span class="badge violet" style="margin-left:6px">{T("csys.learningBadge")}</span></h4>
-            <div class="field"><span class="label">{T("csys.mode")}</span>{seg("bal_mode",[("static",T("csys.static")),("adaptive",T("csys.adaptive"))],"adaptive",T("csys.mode"))}</div>
-            {rstep("bal_interval",T("csys.interval"),300,60,3600,60,"s",dec=0)}
-            {rstep("bal_step",T("csys.step"),0.02,0.01,0.2,0.01,"",dec=2)}
-            {rstep("bal_min",T("csys.minFactor"),0.3,0.1,1,0.05,"",dec=2)}
-            {rstep("bal_max",T("csys.maxFactor"),1.5,1,3,0.05,"",dec=2)}
-          </div>
-          <div class="sub gated">
-            <h4>{T("csys.preheat")}</h4>
-            {switch("preheat_enabled",T("csys.absorb"),T("csys.absorbSub"),False)}
-            <p class="hint" data-bind-show="absorb.touchNote" hidden>{T("csys.absorbTouch")}</p>
-            <div class="gated-body sub">
-              {rstep("ph_band",T("csys.band"),0.5,0.1,5,0.1,"°C")}
-              {rstep("ph_delta",T("csys.delta"),0.3,0.1,10,0.1,"°C")}
-            </div>
-          </div>
-          {foot_save("regulation",T("csys.saveReg"),left=confirm_pop("confirm-reset-bal","csys.resetBal","csys.resetBalTitle","csys.resetBalNote","reset_balancing","csys.resetBalConfirm"))}
-        </form>
-        <form class="panel c6" data-save="heating">
-          <header class="panel-head"><h3>{T("csys.heating")}</h3>{help_btn("help-heating",T("csys.heating"))}</header>
-          {help_pop("help-heating","help.heating","lune-v6/docs/Manual.md#heating")}
-          <div class="field"><span class="label">{T("csys.heatMode")}</span>{seg("heat_mode",[("normal",T("csys.heatNormal")),("heat_pump",T("csys.heatPump"))],"heat_pump",T("csys.heatMode"))}</div>
-          {rstep("heat_min_open",T("csys.minOpening"),0,0,100,1,"%",dec=0)}
-          <div class="sub hp-limits">
-            <h4>{T("csys.heatPumpLimits")}</h4>
-            {rstep("hp_demand",T("csys.hpDemand"),80,30,100,1,"%",dec=0)}
-            {rstep("hp_base",T("csys.hpBase"),60,30,100,1,"%",dec=0)}
-            {rstep("hp_overheat",T("csys.hpOverheat"),1.0,0.3,3.0,0.1,"°C")}
-            {rstep("hp_trim",T("csys.hpTrim"),35,0,100,1,"%",dec=0)}
-          </div>
-          {foot_save("heating",T("csys.saveHeating"))}
-        </form>
-          </div>
-        </section>
-
-        <section class="section" id="sec-connect" aria-labelledby="sec-connect-h">
-          {sect_h("connect","sect.connect")}
-          <div class="section-grid">
-        <form class="panel c6" data-save="connections" data-state="unpaired">
-          <header class="panel-head"><h3>{T("csys.touch")}</h3>{help_btn("help-connections",T("csys.touch"))}<span class="badge" data-bind="touch.badge">{T("csys.touchWaiting")}</span></header>
-          {help_pop("help-connections","help.connections","lune-v6/docs/Manual.md#touch")}
-          <p class="msg bad" data-show-when="error"><span>{T("csys.touchErrorBody")}</span></p>
-          <p class="note" data-show-when="unpaired pending approved" data-bind="touch.status">{T("csys.touchWaitingBody")}</p>
-          <dl class="kv" data-show-when="approved pending error" data-bind-show="touch.identity">
-            <div><dt>{T("csys.touchName")}</dt><dd data-bind="touch.name">—</dd></div>
-            <div><dt>{T("csys.touchDelivers")}</dt><dd>{T("csys.touchDeliversValue")}</dd></div>
-          </dl>
-          <p class="hint" data-show-when="approved pending error">{T("csys.touchDeliversHint")}</p>
-          <details class="more" data-show-when="approved pending error" data-bind-show="touch.identity">
-            <summary>{T("csys.touchIds")}</summary>
-            <dl class="kv">
-              <div><dt>{T("csys.touchInstall")}</dt><dd class="id-row"><code class="mono" id="touch-install" data-bind="touch.install">—</code><button type="button" class="btn copy" data-copy="#touch-install">{T("common.copy")}</button></dd></div>
-              <div><dt>{T("csys.touchCoord")}</dt><dd class="id-row"><code class="mono" id="touch-coord" data-bind="touch.coord">—</code><button type="button" class="btn copy" data-copy="#touch-coord">{T("common.copy")}</button></dd></div>
-            </dl>
-          </details>
-          <div class="actions">
-            {confirm_pop("confirm-touch","csys.touchRevoke","csys.touchRevokeTitle","csys.touchRevokeNote","revoke","csys.touchRevokeConfirm",attrs='data-show-when="approved error"',style_extra="margin-right:auto")}
-            <button class="btn" type="submit" name="action" value="retry" data-show-when="error">{T("csys.touchRetry")}</button>
-            <button class="btn" type="submit" name="action" value="cancel" data-show-when="pending">{T("csys.touchCancel")}</button>
-            <button class="btn primary" type="submit" name="action" value="approve" data-show-when="unpaired">{T("csys.touchApprove")}</button>
-          </div>
-        </form>
-          <form class="panel c6" data-save="ble_clock">
-            <header class="panel-head"><h3>{T("csys.bleClock")}</h3>{help_btn("help-ble-clock",T("csys.bleClock"))}</header>
-            {help_pop("help-ble-clock","help.bleClock","lune-v6/docs/Manual.md#ble-clock")}
-            {switch("ble_clock_enabled",T("csys.bleClockEnable"),T("csys.bleClockSub"),False)}
-            <dl class="kv">
-              <div><dt>{T("csys.bleClockLastSync")}</dt><dd data-bind="ble.lastSync">—</dd></div>
-            </dl>
-            <div class="actions">
-              <button class="btn" type="submit" name="action" value="sync">{T("csys.bleClockSync")}</button>
-            </div>
-          </form>
-          <form class="panel c6" data-save="device">
-            <header class="panel-head"><h3>{T("device.identity")}</h3>{help_btn("help-device-identity",T("device.identity"))}</header>
-            {help_pop("help-device-identity","help.deviceIdentity","lune-v6/docs/Manual.md#device-identity")}
-            {row("device_display_name",T("device.name"),'<input class="input" id="device_display_name" name="device_display_name" value="Lune V6" maxlength="32" autocomplete="off">')}
-            {row("device_location",T("device.place"),f'<input class="input" id="device_location" name="device_location" value="{T("device.sample")}" maxlength="64" autocomplete="off">')}
-            {foot_save("device",T("device.saveIdentity"))}
-          </form>
-          <form class="panel c6" data-save="wifi">
-            <header class="panel-head"><h3>{T("wifi.title")}</h3>{help_btn("help-wifi",T("wifi.title"))}</header>
-            {help_pop("help-wifi","help.wifi","lune-v6/docs/Manual.md#wifi")}
-            <dl class="kv">
-              <div><dt>{T("wifi.current")}</dt><dd data-bind="wifi.current">—</dd></div>
-              <div><dt>{T("wifi.status")}</dt><dd data-bind="wifi.status">—</dd></div>
-            </dl>
-            {row("wifi_ssid",T("wifi.ssid"),'<input class="input" id="wifi_ssid" name="ssid" maxlength="32" autocomplete="off" spellcheck="false">')}
-            {row("wifi_password",T("wifi.password"),'<input class="input" type="password" id="wifi_password" name="password" maxlength="64" autocomplete="new-password">')}
-            <p class="hint">{T("wifi.hint")}</p>
-            {foot_save("wifi",T("wifi.save"))}
-          </form>
-          </div>
-        </section>
-
-        <details class="section" id="sec-service">
-          {sect_sum("service","sect.service",6)}
-          <div class="section-grid">
-        <form class="panel c6" data-save="firmware">
-          <header class="panel-head"><h3>{T("csys.firmware")}</h3>{help_btn("help-firmware",T("csys.firmware"))}</header>
-          {help_pop("help-firmware","help.firmware","lune-v6/docs/Manual.md#firmware")}
-          <dl class="kv">
-            <div><dt>{T("csys.fwInstalled")}</dt><dd data-bind="fw.installed">—</dd></div>
-            <div><dt>{T("csys.fwLatest")}</dt><dd data-bind="fw.latest">—</dd></div>
-          </dl>
-          <div class="actions">
-            <button class="btn" type="submit" name="action" value="check">{T("csys.fwCheck")}</button>
-            <button class="btn" type="submit" name="action" value="install">{T("csys.fwInstall")}</button>
-          </div>
-          <div class="field"><label for="ota_file">{T("csys.fwUpload")}</label>{file_input("ota_file",".bin,.ota.bin")}</div>
-          <footer class="panel-foot"><button class="btn primary" type="submit" name="action" value="upload">{T("csys.fwUploadBtn")}</button></footer>
-        </form>
-        <form class="panel c6" data-save="backup">
-          <header class="panel-head"><h3>{T("csys.backup")}</h3>{help_btn("help-backup",T("csys.backup"))}</header>
-          {help_pop("help-backup","help.backup","lune-v6/docs/Manual.md#backup")}
-          <p class="note">{T("csys.backupNote")}</p>
-          <label class="switch"><span class="switch-text"><b>{T("csys.backupLearned")}</b><small>{T("csys.backupLearnedSub")}</small></span><input type="checkbox" role="switch" name="include_learned"></label>
-          <div class="field"><label for="backup_file">{T("csys.backupImport")}</label>{file_input("backup_file","application/json,.json")}</div>
-          <footer class="panel-foot">
-            <button class="btn" type="submit" name="action" value="export">{T("csys.backupExport")}</button>
-            <button class="btn primary" type="submit" name="action" value="import">{T("csys.backupImportBtn")}</button>
-          </footer>
-        </form>
-        <form class="panel c6" data-save="service">
-          <header class="panel-head"><h3>{T("csys.manual")}</h3>{help_btn("help-manual",T("csys.manual"))}</header>
-          {help_pop("help-manual","help.manual","lune-v6/docs/Manual.md#manual")}
-          <div class="sub gated">
-            <p class="msg warn"><span>{T("csys.manualMsg")}</span></p>
-            {switch("manual_mode",T("csys.manualMode"),"",False)}
-            <div class="gated-body sub">
-              {row("man_zone",T("csys.motor"),f'<select class="select" id="man_zone" name="man_zone">{zone_opts}</select>')}
-              <div class="sub">
-                <h4>{T("csys.manualTargetHead")}</h4>
-                {rstep("man_target",T("csys.motorTarget"),50,0,100,5,"%",dec=0)}
-                <div class="actions"><button class="btn" type="submit" name="action" value="stop">{T("csys.stop")}</button><button class="btn" type="submit" name="action" value="move">{T("csys.move")}</button></div>
-              </div>
-              <div class="sub">
-                <h4>{T("csys.manualTimedHead")}</h4>
-                <div class="field row"><span class="label">{T("csys.manualDir")}</span>{seg("man_dir",[("open",T("csys.manualOpen")),("close",T("csys.manualClose"))],"open",T("csys.manualDir"))}</div>
-                {rstep("man_seconds",T("csys.manualSeconds"),10,1,45,1,"s",dec=0)}
-                <div class="actions"><button class="btn" type="submit" name="action" value="stop">{T("csys.stop")}</button><button class="btn primary" type="submit" name="action" value="timed">{T("csys.manualRun")}</button></div>
-              </div>
-            </div>
-          </div>
-        </form>
-        <form class="panel c6" data-save="service">
-          <header class="panel-head"><h3>{T("csys.health")}</h3>{help_btn("help-health",T("csys.health"))}</header>
-          {help_pop("help-health","help.health","lune-v6/docs/Manual.md#health")}
-          <dl class="metrics">
-            {metric("CPU0","—","%","diag.cpu0")}
-            {metric("CPU1","—","%","diag.cpu1")}
-            {metric(T("csys.heap"),"—","kB","diag.heap")}
-            {metric("PSRAM","—","kB","diag.psram")}
-          </dl>
-          <div class="actions">
-            <button class="btn" type="submit" name="action" value="dump_tasks">{T("csys.tasks")}</button>
-            <button class="btn" type="submit" name="action" value="i2c_scan">{T("csys.i2cScan")}</button>
-            <button class="btn" type="submit" name="action" value="dump_ow">{T("csys.dumpOw")}</button>
-          </div>
-          <pre class="log" data-bind="diag.i2c" aria-live="polite" lang="en"></pre>
-        </form>
-        <form class="panel c6" data-save="service">
-          <header class="panel-head"><h3>{T("csys.logs")}</h3>{help_btn("help-logs",T("csys.logs"))}</header>
-          {help_pop("help-logs","help.logs","lune-v6/docs/Manual.md#logs")}
-          <div class="actions">
-            <button class="btn" type="submit" name="action" value="logs_pause">{T("csys.logsPause")}</button>
-            <button class="btn" type="submit" name="action" value="logs_clear">{T("csys.logsClear")}</button>
-            <button class="btn" type="submit" name="action" value="logs_download">{T("csys.logsDownload")}</button>
-          </div>
-          <pre class="log" data-bind="log" aria-live="polite" lang="en"></pre>
-        </form>
-        <form class="panel c6" data-save="service">
-          <header class="panel-head"><h3>{T("csys.device")}</h3>{help_btn("help-device-actions",T("csys.device"))}</header>
-          {help_pop("help-device-actions","help.deviceActions","lune-v6/docs/Manual.md#device-actions")}
-          <div class="actions">
-            {confirm_pop("confirm-probes","csys.resetProbes","csys.resetProbesTitle","csys.resetProbesNote","reset_probe_map","csys.resetProbesConfirm")}
-            {confirm_pop("confirm-restart","csys.restart","csys.restartTitle","csys.restartNote","restart","csys.restartConfirm")}
-          </div>
-        </form>
-          </div>
-        </details>
-      </section>'''
-
-    # ---- konfiguration: zone
-    WL=T.meta("_walls"); WF=T.meta("_walls_full")
-    def compass(i,walls):
-        return f'<div class="compass" role="group" aria-label="{T("cz.walls")}"><i class="c"></i>'+"".join(f'<label data-wall="{k}"><input type="checkbox" name="z{i}_wall" value="{k}"{" checked" if k in walls else ""} aria-label="{WF[k]}"><span>{WL[k]}</span></label>' for k in "nesw")+'</div>'
-    def conf_zone(z):
-        i,n,t,tg,st,fl,ret,grp,walls,src,area,sp,pipe=z
+        <p class="msg info" data-bind-show="z{i}.preload" hidden><span><b>{T("zdash.preloadStrong")}</b> <span data-bind="z{i}.preload">{T("zdash.preload",offset="+0,0")}</span></span></p>
+        <dl class="metrics">
+          {metric(T("zdash.opening"),"—","",f"z{i}.flow")}
+          {metric(T("m.return"),"—","",f"z{i}.return",cls="zone-ret")}
+        </dl>
+        <div class="bar" style="--v:0%" aria-hidden="true" data-bind-bar="z{i}.opening"><i></i></div>
+        <dl class="kv">
+          <div><dt>{T("zdash.motor")}</dt><dd data-bind="z{i}.motor">—</dd></div>
+          <div><dt>{T("zdash.preheatAdv")}</dt><dd data-bind="z{i}.preheat">—</dd></div>
+          <div><dt>{T("zdash.offsetNow")}</dt><dd data-bind="z{i}.offset">—</dd></div>
+          <div><dt>{T("zdash.tempFrom")}</dt><dd data-bind="z{i}.tempFrom">—</dd></div>
+        </dl>'''
+        # Indstillinger: én formular, én gem-bjælke. data-patch: binderen skriver kun de ændrede dele.
         merge=f'<option value="">{T("common.none")}</option>'+"".join(f'<option value="{y[0]}" data-zone-opt="{y[0]}">Z{y[0]}</option>' for y in Z if y[0]!=i)
         pipes="".join(f'<option{" selected" if p==pipe else ""}>{p}</option>' for p in PIPES)
-        fault=st=="fault"
-        member=f'<p class="msg violet" data-bind-show="z{i}.member" hidden><span><b data-bind="z{i}.memberStrong"></b> <span data-bind="z{i}.memberBody"></span></span></p>'
-        zid=f"Z{i}"
-        return f'''
-      <section class="view" id="v-conf-z{i}" aria-labelledby="h-conf-z{i}">
-        <header class="view-head"><h2 id="h-conf-z{i}"><span data-bind="z{i}.title">{title(z)}</span></h2><p>{T("cz.sub")}</p></header>
-
-        <form class="panel c6" data-save="zone/{i}/room">
-          <header class="panel-head"><h3>{T("cz.roomSensors")}</h3>{help_btn("help-zone-room",T("cz.roomSensors"))}</header>
-          <div class="subs cols-2">
-            <div class="sub">
-              <h4>{T("cz.room")}</h4>
-              {member}
-              {switch(f"z{i}_enabled",T("cz.enabled"),"",st!="off")}
-              {row(f"z{i}_name",T("cz.name"),f'<input class="input" id="z{i}_name" name="z{i}_name" value="{n}" maxlength="24">')}
-              {rstep(f"z{i}_area",T("cz.area"),area,0,200,0.5,"m²")}
-              {row(f"z{i}_merge",f'{T("cz.group")}<span class="hint">{T("cz.groupHint")}</span>',f'<select class="select" id="z{i}_merge" name="z{i}_merge">{merge}</select>')}
-            </div>
-            <div class="sub">
-              <h4>{T("cz.sensors")}</h4>
-              <div class="field row"><span class="label">{T("cz.tempFrom")}</span>{seg(f"z{i}_src",[("probe",T("cz.probe")),("ble",T("cz.ble"))],src,T("cz.tempFrom"))}</div>
-              <div class="field row">
-                <label for="z{i}_ble">{T("cz.bleMac")}<span class="hint">{T("cz.bleHint").replace("&","&amp;")}</span></label>
-                <div class="pair wide-first">
-                  <input class="input" id="z{i}_ble" name="z{i}_ble" placeholder="AA:BB:CC:DD:EE:FF" pattern="^([0-9A-Fa-f]{{2}}:){{5}}[0-9A-Fa-f]{{2}}$" autocomplete="off" spellcheck="false">
-                  <button type="button" class="btn" data-action="ble-scan" data-zone="{i}">{T("cz.scan")}</button>
-                </div>
-              </div>
-              <div hidden data-ble-seen-row="{i}">
+        slab=f'<select class="select" id="z{i}_slab" name="z{i}_slab"><option value="unset">{T("cz.slabUnset")}</option><option value="cast_concrete">{T("cz.slabConcrete")}</option><option value="screed">{T("cz.slabScreed")}</option><option value="dry_plates">{T("cz.slabDry")}</option><option value="timber_joists">{T("cz.slabTimber")}</option></select>'
+        cover=f'<select class="select" id="z{i}_covering" name="z{i}_covering"><option value="unset">{T("cz.coverUnset")}</option><option value="tile_stone">{T("cz.coverTile")}</option><option value="vinyl_linoleum">{T("cz.coverVinyl")}</option><option value="parquet_laminate">{T("cz.coverParquet")}</option><option value="carpet">{T("cz.coverCarpet")}</option></select>'
+        ble_seen=f'''<div hidden data-ble-seen-row="{i}">
                 <p class="note" data-ble-seen-status="{i}" aria-live="polite"></p>
-                <div class="table-wrap">
-                  <table class="table" aria-label="{T("cz.bleSeen")}">
-                    <thead>
-                      <tr>
-                        <th>{T("cz.bleSeenSensor")}</th>
-                        <th class="num">{T("cz.bleSeenTemp")}</th>
-                        <th class="num">{T("cz.bleSeenRssi")}</th>
-                        <th></th>
-                      </tr>
-                    </thead>
-                    <tbody data-ble-seen="{i}"></tbody>
-                  </table>
-                </div>
-              </div>
-              {row(f"z{i}_ret",T("cz.returnSensor"),probes(None,f"z{i}_ret")).replace('class="field row"','class="field row zone-ret"',1)}
+                <div class="table-wrap"><table class="table" aria-label="{T("cz.bleSeen")}">
+                  <thead><tr><th>{T("cz.bleSeenSensor")}</th><th class="num">{T("cz.bleSeenTemp")}</th><th class="num">{T("cz.bleSeenRssi")}</th><th></th></tr></thead>
+                  <tbody data-ble-seen="{i}"></tbody>
+                </table></div>
+              </div>'''
+        motor_body=group(T("cz.motor"),
+            sread(T("cz.ripples"),f"z{i}.ripples")+sread(T("cz.factors"),f"z{i}.factors")+
+            sread(T("zdash.preheatAdv"),f"z{i}.preheat")+sread(T("cz.lastFault"),f"z{i}.lastFault"),
+            f'''<div data-bind-show="z{i}.learnBar" hidden>
+              <p class="hint" data-bind="z{i}.learnPhase"></p>
+              <div class="bar violet" style="--v:0%" data-bind-bar="z{i}.learn" role="meter" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="{T("cz.learnProgress")}"><i></i></div>
             </div>
-          </div>
-          {foot_save(f"zone/{i}/room",T("cz.saveRoom"))}
-        </form>
+            <div class="actions" data-bind-show="z{i}.fault" hidden><button class="btn primary" type="submit" name="action" value="reset_fault">{T("common.resetFault")}</button></div>''',
+            help=help_btn("help-zone-motor",T("cz.motor")))
+        group_body=group(T("zs.grouping"),srow(lab(f"z{i}_merge",T("cz.group")),f'<select class="select" id="z{i}_merge" name="z{i}_merge">{merge}</select>',T("cz.groupHint")))
+        settings=f'''
+        <form data-save="zone/{i}" data-patch>
+          <p class="msg violet" data-bind-show="z{i}.member" hidden><span><b data-bind="z{i}.memberStrong"></b> <span data-bind="z{i}.memberBody"></span></span></p>
+          {group(T("zs.comfort"),
+                 sswitch(f"z{i}_enabled",T("cz.enabled"),"",st!="off")+
+                 srow(lab(f"z{i}_target_s",T("legend.target")),stepper(f"z{i}_target_s",tg,16,28,0.5,"°C",ta,disabled=member,field=f"z{i}_target"),T("zs.targetHint")))}
+          {group(T("cz.room"),
+                 srow(lab(f"z{i}_name",T("cz.name")),f'<input class="input w-sm" id="z{i}_name" name="z{i}_name" value="{n}" maxlength="24">')+
+                 sstep(f"z{i}_area",T("cz.area"),area,0,200,0.5,"m²")+
+                 srow(span(T("cz.tempFrom")),seg(f"z{i}_src",[("probe",T("cz.probe")),("ble",T("cz.ble"))],src,T("cz.tempFrom")))+
+                 srow(lab(f"z{i}_ble",T("cz.bleMac")),f'<input class="input w-md" id="z{i}_ble" name="z{i}_ble" placeholder="AA:BB:CC:DD:EE:FF" pattern="^([0-9A-Fa-f]{{2}}:){{5}}[0-9A-Fa-f]{{2}}$" autocomplete="off" spellcheck="false"><button type="button" class="btn" data-action="ble-scan" data-zone="{i}">{T("cz.scan")}</button>',T("cz.bleHint").replace("&","&amp;"))+
+                 srow(lab(f"z{i}_ret",T("cz.returnSensor")),probes(None,f"z{i}_ret"),cls="zone-ret"),
+                 ble_seen, help=help_btn("help-zone-room",T("cz.roomSensors")))}
+          {group(T("zs.floor"),
+                 sstep(f"z{i}_spacing",T("cz.spacing"),sp,50,300,25,"mm",dec=0)+
+                 srow(lab(f"z{i}_pipe",T("cz.pipeType")),f'<select class="select" id="z{i}_pipe" name="z{i}_pipe">{pipes}</select>')+
+                 srow(lab(f"z{i}_slab",T("cz.slab")),slab)+
+                 srow(lab(f"z{i}_covering",T("cz.covering")),cover)+
+                 sstep(f"z{i}_thick",T("cz.thickness"),0,0,15,0.5,"cm"),
+                 help=help_btn("help-zone-floor",T("cz.floorWeather")))}
+          {group(T("zs.weather"),
+                 srow(span(T("cz.walls")),compass(i,walls),T("zs.wallsHint"))+
+                 sstep(f"z{i}_wind",T("cz.wind"),1.0 if walls else 0.0,0,2,0.1,"×")+
+                 sstep(f"z{i}_solar",T("cz.solar"),0.6 if "s" in walls else 0.2,0,2,0.1,"×"))}
+          {group(T("zs.advanced"),
+                 subpage(T("zs.motorCal"),f'<span class="badge" data-bind="z{i}.motorBadge">—</span>',motor_body)+
+                 subpage(T("zs.grouping"),f'<span class="muted" data-bind="z{i}.mergeVal">{T("common.none")}</span>',group_body))}
+          <div class="actions">{confirm_pop(f"confirm-relearn-z{i}","cz.relearn","cz.relearnTitle","cz.relearnNote","reset_relearn","cz.relearnConfirm",z=zid)}</div>
+          {savebar(f"zone/{i}",T("cz.saveZone"))}
+        </form>'''
+        return sheet(f"z{i}",f"z{i}",I_ROOM,f'<span data-bind="z{i}.name">{n}</span>',status,overview,zone_chart(i),settings)
 
-        <form class="panel c6" data-save="zone/{i}/floor">
-          <header class="panel-head"><h3>{T("cz.floorWeather")}</h3>{help_btn("help-zone-floor",T("cz.floorWeather"))}</header>
-          <div class="subs cols-2">
-            <div class="sub">
-              <h4>{T("cz.floorPipes")}</h4>
-              {rstep(f"z{i}_spacing",T("cz.spacing"),sp,50,300,25,"mm",dec=0)}
-              {row(f"z{i}_pipe",T("cz.pipeType"),f'<select class="select" id="z{i}_pipe" name="z{i}_pipe">{pipes}</select>')}
-              {row(f"z{i}_slab",T("cz.slab"),f'<select class="select" id="z{i}_slab" name="z{i}_slab"><option value="unset">{T("cz.slabUnset")}</option><option value="cast_concrete">{T("cz.slabConcrete")}</option><option value="screed">{T("cz.slabScreed")}</option><option value="dry_plates">{T("cz.slabDry")}</option><option value="timber_joists">{T("cz.slabTimber")}</option></select>')}
-              {row(f"z{i}_covering",T("cz.covering"),f'<select class="select" id="z{i}_covering" name="z{i}_covering"><option value="unset">{T("cz.coverUnset")}</option><option value="tile_stone">{T("cz.coverTile")}</option><option value="vinyl_linoleum">{T("cz.coverVinyl")}</option><option value="parquet_laminate">{T("cz.coverParquet")}</option><option value="carpet">{T("cz.coverCarpet")}</option></select>')}
-              {rstep(f"z{i}_thick",T("cz.thickness"),0,0,15,0.5,"cm")}
-              {rstep(f"z{i}_lead",T("cz.lead"),3.0,0,12,0.5,H)}
-            </div>
-            <div class="sub">
-              <h4>{T("cz.weather")}</h4>
-              <div class="field row"><span class="label">{T("cz.walls")}</span>{compass(i,walls)}</div>
-              {rstep(f"z{i}_wind",T("cz.wind"),1.0 if walls else 0.0,0,2,0.1,"×")}
-              {rstep(f"z{i}_solar",T("cz.solar"),0.6 if "s" in walls else 0.2,0,2,0.1,"×")}
-            </div>
-          </div>
-          {foot_save(f"zone/{i}/floor",T("cz.saveFloor"))}
-        </form>
+    # ---- manifold-ark: målinger, balancering og reguleringen (alt der hører til manifolden)
+    def manifold_sheet():
+        bal="".join(f'<tr data-bind-row="bal.z{z[0]}"><td data-bind="bal.z{z[0]}.id">{rid(z)}</td><td class="num" data-bind="bal.z{z[0]}.prior">—</td><td class="num c-violet" data-bind="bal.z{z[0]}.learned">—</td><td class="num" data-bind="bal.z{z[0]}.effective">—</td></tr>' for z in Z)
+        overview=f'''
+          {manifold_metrics()}
+          <div class="sub"><h4>{T("bal.title")} <span class="badge violet" data-bind="bal.mode">{T("bal.adaptive")}</span></h4>
+            <div class="table-wrap"><table class="table">
+              <thead><tr><th>{T("bal.zone")}</th><th class="num">{T("bal.prior")}</th><th class="num">{T("bal.learned")}</th><th class="num">{T("bal.effective")}</th></tr></thead>
+              <tbody>{bal}</tbody>
+            </table></div></div>
+          <div class="sub"><h4>{T("csys.probeLive")}</h4>
+            <dl class="metrics">
+              {"".join(metric(T("csys.probe",n=k),"—","°C",f"probe.{k}",attrs=f' data-probe="{k}"') for k in range(1,9))}
+            </dl></div>'''
+        settings=f'''
+        <form data-save="regulation">
+          {group(T("csys.heating"),
+                 srow(span(T("csys.heatMode")),seg("heat_mode",[("normal",T("csys.heatNormal")),("heat_pump",T("csys.heatPump"))],"heat_pump",T("csys.heatMode")))+
+                 sstep("heat_min_open",T("csys.minOpening"),0,0,100,1,"%",dec=0),
+                 help=help_btn("help-heating",T("csys.heating")))}
+          {group(T("csys.heatPumpLimits"),
+                 sstep("hp_demand",T("csys.hpDemand"),80,30,100,1,"%",dec=0)+
+                 sstep("hp_base",T("csys.hpBase"),60,30,100,1,"%",dec=0)+
+                 sstep("hp_overheat",T("csys.hpOverheat"),1.0,0.3,3.0,0.1,"°C")+
+                 sstep("hp_trim",T("csys.hpTrim"),35,0,100,1,"%",dec=0),cls="hp-limits")}
+          {ggroup(T("csys.preheat"),sswitch("preheat_enabled",T("csys.absorb"),T("csys.absorbSub"),False),
+                  sstep("ph_band",T("csys.band"),0.5,0.1,5,0.1,"°C")+sstep("ph_delta",T("csys.delta"),0.3,0.1,10,0.1,"°C"),
+                  extra=f'<p class="note" data-bind-show="absorb.touchNote" hidden>{T("csys.absorbTouch")}</p>',
+                  help=help_btn("help-regulation",T("csys.regulation")))}
+          <div class="actions">{confirm_pop("confirm-reset-bal","csys.resetBal","csys.resetBalTitle","csys.resetBalNote","reset_balancing","csys.resetBalConfirm")}</div>
+          {savebar("regulation",T("csys.saveReg"))}
+        </form>'''
+        status=f'<span data-bind="manifold.status">—</span>'
+        return sheet("manifold",T("hash.manifold"),I_MANI,T("sheet.manifold"),status,overview,trend_block(),settings)
 
-        <form class="panel" data-save="zone/{i}/motor">
-          <header class="panel-head"><h3>{T("cz.motor")}</h3>{help_btn("help-zone-motor",T("cz.motor"))}<span class="badge" data-bind="z{i}.motorBadge">—</span></header>
-          <div class="subs cols-2">
-            <dl class="kv"><div><dt>{T("cz.ripples")}</dt><dd data-bind="z{i}.ripples">—</dd></div><div><dt>{T("cz.factors")}</dt><dd data-bind="z{i}.factors">—</dd></div></dl>
-            <dl class="kv"><div><dt>{T("zdash.preheatAdv")}</dt><dd data-bind="z{i}.preheat">—</dd></div><div><dt>{T("cz.lastFault")}</dt><dd data-bind="z{i}.lastFault">—</dd></div></dl>
-          </div>
-          <div data-bind-show="z{i}.learnBar" hidden>
-            <p class="hint" data-bind="z{i}.learnPhase"></p>
-            <div class="bar violet" style="--v:0%" data-bind-bar="z{i}.learn" role="meter" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="{T("cz.learnProgress")}"><i></i></div>
-          </div>
-          <footer class="panel-foot">
-            <button class="btn primary" type="submit" name="action" value="reset_fault" data-bind-show="z{i}.fault"{"" if fault else " hidden"}>{T("common.resetFault")}</button>
-            {confirm_pop(f"confirm-relearn-z{i}","cz.relearn","cz.relearnTitle","cz.relearnNote","reset_relearn","cz.relearnConfirm",z=zid)}
-          </footer>
-        </form>
+    # ---- System (DESIGN.md 15.4): én kategori ad gangen, én gem-bjælke pr. kategori
+    zone_opts="".join(f'<option value="{z[0]}" data-zone-opt="{z[0]}">Z{z[0]}</option>' for z in Z)
+    def syscat(cat,title,body,attrs=""):
+        return (f'<section class="sys-cat" data-cat="{cat}" aria-labelledby="h-c-{cat}"{attrs}><label class="sys-back" for="c-none">{T("sys.title")}</label>'
+                f'<header><div><small>{T("sys.title")}</small><h2 id="h-c-{cat}">{title}</h2></div></header>{body}</section>')
+    CATS=[("device",T("cat.device"),'<path d="M4 11l8-7 8 7v9H4z"/>'),
+          ("manifold",T("csys.mm"),'<path d="M4 7h16M4 12h16M4 17h16"/>'),
+          ("connections",T("cat.connections"),'<path d="M9 15l6-6M7 13l-2 2a3 3 0 0 0 4 4l2-2M17 11l2-2a3 3 0 0 0-4-4l-2 2"/>'),
+          ("firmware",T("cat.firmware"),'<path d="M12 4v10M8 10l4 4 4-4M5 19h14"/>'),
+          ("service",T("csys.service"),'<path d="M14 6a4 4 0 0 0-5 5l-5 5 3 3 5-5a4 4 0 0 0 5-5l-2 2-3-3z"/>'),
+          ("motorlab",T("cat.motorlab"),'<circle cx="12" cy="12" r="7"/><path d="M12 8v4l3 2"/>')]
+    DEV_ONLY={"motorlab"}   # vises af binderen, når firmwaren er et dev-build
+    cats=[]
+    cats.append(syscat("device",T("cat.device"),f'''
+      <form data-save="device">
+        {group(T("device.identity"),
+               srow(lab("device_display_name",T("device.name")),'<input class="input w-md" id="device_display_name" name="device_display_name" value="Lune V6" maxlength="32" autocomplete="off">')+
+               srow(lab("device_location",T("device.place")),f'<input class="input w-md" id="device_location" name="device_location" value="{T("device.sample")}" maxlength="64" autocomplete="off">'),
+               help=help_btn("help-device-identity",T("device.identity")))}
+        {savebar("device",T("device.saveIdentity"))}
+      </form>
+      <form data-save="ble_clock">
+        {group(T("csys.bleClock"),
+               sswitch("ble_clock_enabled",T("csys.bleClockEnable"),T("csys.bleClockSub"),False)+
+               sread(T("csys.bleClockLastSync"),"ble.lastSync")+
+               srow(span(T("csys.bleClockSync")),f'<button class="btn" type="submit" name="action" value="sync">{T("csys.bleClockSync")}</button>'),
+               help=help_btn("help-ble-clock",T("csys.bleClock")))}
+      </form>'''))
+    cats.append(syscat("manifold",T("csys.mm"),f'''
+      <form data-save="manifold" data-patch>
+        {group(T("csys.manifold"),
+               srow(span(T("csys.valveType")),seg("manifold_type",[("no",T("csys.no")),("nc",T("csys.nc"))],"nc",T("csys.valveType")))+
+               srow(lab("probe_flow",T("csys.supplyProbe")),probes(1,"probe_flow",include_none=False))+
+               srow(lab("probe_return",T("csys.returnProbe")),probes(2,"probe_return",include_none=False))+
+               srow(span(T("csys.probeMode")),seg("return_probe_mode",[("2",T("csys.probeMode2")),("8",T("csys.probeMode8"))],"2",T("csys.probeMode"))),
+               f'<p class="note">{T("csys.returnProbesNote")}</p>',
+               help=help_btn("help-manifold",T("csys.mm")))}
+        {ggroup(T("csys.motors"),sswitch("motor_drivers",T("csys.drivers"),T("csys.driversSub"),True),
+                srow(lab("motor_type",T("csys.motorType")),'<select class="select" id="motor_type" name="motor_type"><option>Generic</option><option selected>HmIP VdMot</option></select>')+
+                sstep("m_runtime",T("csys.maxRun"),38,5,40,1,"s",dec=0))}
+        {group(T("zs.advanced"),
+               subpage(T("csys.closeStop"),"",group(T("csys.closeStop"),
+                   sstep("m_cthr",T("csys.threshold"),1.45,1.05,2.5,0.05,"×",dec=2)+sstep("m_cslope",T("csys.slope"),0.6,0,50,0.05,"mA/s",dec=2)+sstep("m_cfloor",T("csys.slopeFloor"),1.3,1,5,0.05,"×",dec=2)))+
+               subpage(T("csys.openStop"),"",group(T("csys.openStop"),
+                   sstep("m_othr",T("csys.threshold"),1.7,1.05,2.5,0.05,"×",dec=2)+sstep("m_oslope",T("csys.slope"),0.15,0,50,0.05,"mA/s",dec=2)+sstep("m_ofloor",T("csys.slopeFloor"),1.3,1,5,0.05,"×",dec=2)+sstep("m_ripple",T("csys.ripple"),1.1,0,5,0.05,"×",dec=2,hint=T("csys.rippleHint"))))+
+               subpage(T("csys.relearn"),"",group(T("csys.relearn"),
+                   sstep("m_relmov",T("csys.afterMoves"),200,10,2000,10,"",dec=0)+sstep("m_relh",T("csys.afterHours"),168,1,720,1,H,dec=0)+sstep("m_minsamp",T("csys.minSamples"),3,1,20,1,"",dec=0)+sstep("m_maxdev",T("csys.maxDev"),0.15,0.01,1,0.01,"",dec=2))),
+               f'<p class="note">{T("csys.limitsMsg")}</p>')}
+        <div class="actions">{confirm_pop("confirm-relearn-all","csys.relearnAll","csys.relearnAllTitle","csys.relearnAllNote","relearn_all","csys.relearnAllConfirm")}</div>
+        {savebar("manifold",T("csys.saveManifold"))}
+      </form>'''))
+    copy_row=lambda key,bid,bind: srow(span(T(key)),f'<code class="mono" id="{bid}" data-bind="{bind}">—</code><button type="button" class="btn copy" data-copy="#{bid}">{T("common.copy")}</button>')
+    cats.append(syscat("connections",T("cat.connections"),f'''
+      <form data-save="connections" data-state="unpaired">
+        {group(T("csys.touch"),
+               srow(span(T("conn.state")),f'<span class="badge" data-bind="touch.badge">{T("csys.touchWaiting")}</span>')+
+               srow(span(T("csys.touchName")),'<span data-bind="touch.name">—</span>',attrs=' data-show-when="approved pending error"')+
+               srow(span(T("csys.touchDelivers")),f'<span>{T("csys.touchDeliversValue")}</span>',T("csys.touchDeliversHint"))+
+               subpage(T("csys.touchIds"),"",group(T("csys.touchIds"),copy_row("csys.touchInstall","touch-install","touch.install")+copy_row("csys.touchCoord","touch-coord","touch.coord")),
+                       attrs=' data-show-when="approved pending error" data-bind-show="touch.identity"'),
+               pre=f'<p class="msg bad" data-show-when="error"><span>{T("csys.touchErrorBody")}</span></p><p class="note" data-show-when="unpaired pending approved" data-bind="touch.status">{T("csys.touchWaitingBody")}</p>',
+               help=help_btn("help-connections",T("csys.touch")))}
+        <div class="actions">
+          <button class="btn primary" type="submit" name="action" value="approve" data-show-when="unpaired">{T("csys.touchApprove")}</button>
+          <button class="btn" type="submit" name="action" value="cancel" data-show-when="pending">{T("csys.touchCancel")}</button>
+          <button class="btn" type="submit" name="action" value="retry" data-show-when="error">{T("csys.touchRetry")}</button>
+          {confirm_pop("confirm-touch","csys.touchRevoke","csys.touchRevokeTitle","csys.touchRevokeNote","revoke","csys.touchRevokeConfirm",attrs='data-show-when="approved error"')}
+        </div>
+      </form>
+      <form data-save="wifi">
+        {group(T("wifi.title"),
+               sread(T("wifi.current"),"wifi.current")+sread(T("wifi.status"),"wifi.status")+
+               srow(lab("wifi_ssid",T("wifi.ssid")),'<input class="input w-md" id="wifi_ssid" name="ssid" maxlength="32" autocomplete="off" spellcheck="false">')+
+               srow(lab("wifi_password",T("wifi.password")),'<input class="input w-md" type="password" id="wifi_password" name="password" maxlength="64" autocomplete="new-password">'),
+               f'<p class="note">{T("wifi.hint")}</p>',
+               help=help_btn("help-wifi",T("wifi.title")))}
+        {savebar("wifi",T("wifi.save"))}
+      </form>
+      <section class="setting-group">{h4(T("csys.helpIngest"))}<p class="note">{T("csys.helpIngestBody")}</p></section>'''))
+    cats.append(syscat("firmware",T("cat.firmware"),f'''
+      <form data-save="firmware">
+        {group(T("csys.firmware"),
+               sread(T("csys.fwInstalled"),"fw.installed")+sread(T("csys.fwLatest"),"fw.latest")+
+               srow(span(T("csys.fwUpdate")),f'<button class="btn" type="submit" name="action" value="check">{T("csys.fwCheck")}</button><button class="btn" type="submit" name="action" value="install">{T("csys.fwInstall")}</button>')+
+               srow(lab("ota_file",T("csys.fwUpload")),file_input("ota_file",".bin,.ota.bin"),cls="stack"),
+               help=help_btn("help-firmware",T("csys.firmware")))}
+        <div class="actions"><button class="btn" type="submit" name="action" value="upload">{T("csys.fwUploadBtn")}</button></div>
+      </form>
+      <form data-save="backup">
+        {group(T("csys.backup"),
+               sswitch("include_learned",T("csys.backupLearned"),T("csys.backupLearnedSub"),False)+
+               srow(span(T("csys.backupExport")),f'<button class="btn" type="submit" name="action" value="export">{T("csys.backupExport")}</button>')+
+               srow(lab("backup_file",T("csys.backupImport")),file_input("backup_file","application/json,.json"),cls="stack"),
+               f'<p class="note">{T("csys.backupNote")}</p>',
+               help=help_btn("help-backup",T("csys.backup")))}
+        <div class="actions">{confirm_pop("confirm-import","csys.backupImportAsk","csys.backupImportTitle","csys.backupImportNote","import","csys.backupImportConfirm")}</div>
+      </form>'''))
+    cats.append(syscat("service",T("csys.service"),f'''
+      <form data-save="service">
+        {group(T("svc.diag"),
+               sread("Wi-Fi","wifi.rssi","— <small>dBm</small>")+sread(T("dev.uptime"),"sys.uptime")+
+               srow(span(T("conn.state")),f'<span class="badge" data-bind="dev.badge">{T("dev.online")}</span>')+
+               srow(span(T("csys.health")),f'<button class="btn" type="submit" name="action" value="dump_tasks">{T("csys.tasks")}</button><button class="btn" type="submit" name="action" value="i2c_scan">{T("csys.i2cScan")}</button><button class="btn" type="submit" name="action" value="dump_ow">{T("csys.dumpOw")}</button>'),
+               f'''<dl class="metrics">
+                 {metric("CPU0","—","%","diag.cpu0")}{metric("CPU1","—","%","diag.cpu1")}{metric(T("csys.heap"),"—","kB","diag.heap")}{metric("PSRAM","—","kB","diag.psram")}
+               </dl>
+               <pre class="log" data-bind="diag.i2c" aria-live="polite" lang="en"></pre>''',
+               help=help_btn("help-health",T("csys.health")))}
+        {group(T("csys.logs"),
+               srow(span(T("csys.logs")),f'<button class="btn" type="submit" name="action" value="logs_pause">{T("csys.logsPause")}</button><button class="btn" type="submit" name="action" value="logs_clear">{T("csys.logsClear")}</button><button class="btn" type="submit" name="action" value="logs_download">{T("csys.logsDownload")}</button>'),
+               '<pre class="log" data-bind="log" aria-live="polite" lang="en"></pre>',
+               help=help_btn("help-logs",T("csys.logs")))}
+        {ggroup(T("csys.manual"),sswitch("manual_mode",T("csys.manualMode"),T("csys.manualSub"),False),
+                srow(lab("man_zone",T("csys.motor")),f'<select class="select" id="man_zone" name="man_zone">{zone_opts}</select>')+
+                sstep("man_target",T("csys.motorTarget"),50,0,100,5,"%",dec=0)+
+                srow(span(T("csys.manualTargetHead")),f'<button class="btn" type="submit" name="action" value="stop">{T("csys.stop")}</button><button class="btn" type="submit" name="action" value="move">{T("csys.move")}</button>')+
+                subpage(T("csys.manualTimedHead"),"",group(T("csys.manualTimedHead"),
+                    srow(span(T("csys.manualDir")),seg("man_dir",[("open",T("csys.manualOpen")),("close",T("csys.manualClose"))],"open",T("csys.manualDir")))+
+                    sstep("man_seconds",T("csys.manualSeconds"),10,1,45,1,"s",dec=0)+
+                    srow(span(T("csys.manualRun")),f'<button class="btn" type="submit" name="action" value="stop">{T("csys.stop")}</button><button class="btn" type="submit" name="action" value="timed">{T("csys.manualRun")}</button>'))),
+                pre=f'<p class="msg warn"><span>{T("csys.manualMsg")}</span></p>',
+                help=help_btn("help-manual",T("csys.manual")))}
+        <div class="actions">
+          {confirm_pop("confirm-probes","csys.resetProbes","csys.resetProbesTitle","csys.resetProbesNote","reset_probe_map","csys.resetProbesConfirm")}
+          {confirm_pop("confirm-restart","csys.restart","csys.restartTitle","csys.restartNote","restart","csys.restartConfirm")}
+        </div>
+      </form>'''))
+    cats.append(syscat("motorlab",T("cat.motorlab"),f'''
+      <p class="msg warn"><span>{T("csys.motorLabMsg")}</span></p>
+      <div class="actions"><button class="btn" type="button" data-action="motorlab-estop">{T("csys.motorLabEstop")}</button></div>''',attrs=" data-dev-only hidden"))
+    dev_attr=lambda c: " data-dev-only hidden" if c in DEV_ONLY else ""
+    sys_radios=f'<input class="state" type="radio" name="syscat" id="c-none" checked aria-label="{T("sys.cats")}">'+"".join(
+        f'<input class="state" type="radio" name="syscat" id="c-{c}" data-hash="{T("hash."+c)}" aria-label="{t}">' for c,t,_ in CATS)
+    sys_nav="".join(f'<label for="c-{c}"{dev_attr(c)}><svg viewBox="0 0 24 24" aria-hidden="true">{ic}</svg>{t}</label>' for c,t,ic in CATS)
+    sys_view=f'''
+      <section class="view" id="v-sys" aria-labelledby="h-sys">
+        <h2 class="sr-only" id="h-sys">{T("sys.title")}</h2>
+        {sys_radios}
+        <div class="sys">
+          <nav class="sys-nav" aria-label="{T("sys.cats")}">{sys_nav}</nav>
+          <div class="sys-main">{"".join(cats)}</div>
+        </div>
       </section>'''
 
-    views=dash_sys+"".join(dash_zone(z) for z in Z)+conf_sys+"".join(conf_zone(z) for z in Z)
-    views+=help_pop("help-zone-room","help.zoneRoom","lune-v6/docs/Manual.md#zone-room")
-    views+=help_pop("help-zone-floor","help.zoneFloor","lune-v6/docs/Manual.md#zone-floor")
-    views+=help_pop("help-zone-motor","help.zoneMotor","lune-v6/docs/Manual.md#zone-motor")
+    views=home+sys_view
+    sheets=manifold_sheet()+"".join(zone_sheet(z) for z in Z)
+    helps="".join(help_pop(h,k,f"lune-v6/docs/Manual.md#{a}") for h,k,a in (
+        ("help-zone-room","help.zoneRoom","zone-room"),("help-zone-floor","help.zoneFloor","zone-floor"),
+        ("help-zone-motor","help.zoneMotor","zone-motor"),("help-heating","help.heating","heating"),
+        ("help-regulation","help.regulation","regulation"),("help-device-identity","help.deviceIdentity","device-identity"),
+        ("help-ble-clock","help.bleClock","ble-clock"),("help-manifold","help.manifold","manifold"),
+        ("help-connections","help.connections","touch"),("help-wifi","help.wifi","wifi"),
+        ("help-firmware","help.firmware","firmware"),("help-backup","help.backup","backup"),
+        ("help-health","help.health","health"),("help-logs","help.logs","logs"),("help-manual","help.manual","manual")))
 
     # ---- sprogvælger (kun hvis >1 sprog)
     cur=T.meta("_lang")
@@ -757,37 +561,28 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
         langnav=""
 
     # Dynamiske strenge til binderen (statusser, relative tider, gem-beskeder)
-    rt_keys=("zdash.follows","zdash.primary","zdash.memberNote","common.open","cz.memberStrong","cz.member","state.calling","state.idle","state.fault","state.off","state.learning","state.blocked","tile.fault","tile.learning","tile.learningPct","tile.blocked","badge.calling","sys.dt","sys.dtstate","dash.sys.sub",
+    # Kun nøgler, som binderen (main.js) og lune-forms.js faktisk slår op.
+    rt_keys=("zdash.follows","zdash.primary","zdash.memberNote","common.open","cz.memberStrong","cz.member",
+             "state.calling","state.idle","state.fault","state.off","state.learning","state.blocked",
+             "tile.fault","tile.learningPct","tile.blocked","tile.charging","badge.calling","dash.sys.sub","sheet.manifoldStatus",
              "cz.learnPhase.home","cz.learnPhase.open","cz.learnPhase.close","cz.learnPhase.pass",
-             "cz.bleAssign","cz.bleAssigned","cz.bleSeen","cz.bleSeenEmpty","cz.bleScanning",
-             "common.days","common.hours","common.minutes","common.open","common.none","common.learned","common.needsLearning","common.notLearned","common.undo","common.on",
+             "cz.bleAssign","cz.bleAssigned","cz.bleSeen","cz.bleSeenEmpty","cz.bleScanning","cz.scan",
+             "common.days","common.hours","common.minutes","common.none","common.learned","common.notLearned",
              "rt.savedOk","rt.saveFailed","rt.saving","rt.unsaved.one","rt.unsaved.other","rt.nothingToSave","rt.leaveUnsaved",
-             "rt.autoSaving","rt.autoSaved","rt.autoFailed","rt.retry","rt.secondsAgo","rt.minutesAgo","rt.offline",
-             "device.copyDiag","device.copied","device.sample",
-             "alert.zoneFault","bal.adaptive","bal.static","dev.online","dev.offline",
+             "rt.autoSaving","rt.autoSaved","rt.autoFailed","rt.retry","rt.secondsAgo","rt.minutesAgo",
+             "device.copied","device.this","alert.zoneFault","bal.adaptive","bal.static","dev.online","dev.offline",
              "zdash.preload","zdash.preloadUntil","src.ble","src.probe",
-             "csys.touchWaiting","csys.touchWaitingBody","csys.touchApprove",
-             "csys.touchApproved","csys.touchPending","csys.touchError","csys.touchErrorBody",
-             "csys.touchCancel","csys.touchRetry","csys.touchControls","common.copy","device.copied",
-             "rt.secondsAgo","rt.minutesAgo","device.this",
+             "csys.touchWaiting","csys.touchWaitingBody","csys.touchApproved","csys.touchPending","csys.touchControls","csys.touchReady","csys.touchLeaseLost",
              "zchart.expected","zchart.at","zchart.noForecast","zchart.faultStrong",
-             "csys.touchLeaseLost","tile.charging",
              "wifi.connectedTo","wifi.notConnected","wifi.apActive","wifi.sent","wifi.needSsid","wifi.busy",
              "wifi.switch.pending","wifi.switch.connected","wifi.switch.reverted","wifi.switch.failed")
     rt={k:T(k) for k in rt_keys}
     rt["_dec"]=T.meta("_dec"); rt["_lang"]=cur
     rt_json=json.dumps(rt,ensure_ascii=False,separators=(",",":"))
-    forms_path = (LDS_ROOT / "js" / "lune-forms.js") if LDS_ROOT else (ROOT.parents[1] / "lune-design-system" / "js" / "lune-forms.js")
-    forms_js = forms_path.read_text(encoding="utf-8")
-    import re as _re
-    forms_js = "\n".join(ln for ln in forms_js.splitlines() if ln.strip() and not ln.lstrip().startswith("/*") and not ln.lstrip().startswith("*"))
-    forms_js = _re.sub(r"\s+", " ", forms_js)
-    forms_js = _re.sub(r"\s*([{}();,:<>!=+\-*/?&|])\s*", r"\1", forms_js)
-    forms_js = forms_js.replace("}function", "}\nfunction").replace("})();", "})();")
 
     LOGO='<svg class="logo" viewBox="0 0 32 32" aria-hidden="true"><circle cx="16" cy="16" r="15" fill="var(--fg)"/><path d="M10 22V12M14 22V10M18 22V13M22 22V11" stroke="var(--accent)" stroke-width="2.4" stroke-linecap="round"/></svg>'
-    I_DASH='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 14a8 8 0 0 1 16 0"/><path d="M12 14l4-4"/><circle cx="12" cy="14" r="1.2"/></svg>'
-    I_CONF='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></svg>'
+    I_HOME='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11l8-7 8 7v9h-5v-6H9v6H4z"/></svg>'
+    I_SYS='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></svg>'
     css_tag=f"<style>\n{inline_css}\n</style>" if inline_css else f'<link rel="stylesheet" href="{css_href}">'
     others="".join(f'<link rel="alternate" hreflang="{c.meta("_lang")}" href="{lang_urls[c.meta("_lang")]}">' for c in langs if c.meta("_lang")!=cur) if len(langs)>1 else ""
 
@@ -805,23 +600,14 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
 </head>
 <body>
 
-<!-- TILSTAND — før .app. Rækkefølge: tilstand → omfang → tema -->
-<input class="state" type="radio" name="mode" id="m-dash" checked aria-label="{T("mode.dash")}">
-<input class="state" type="radio" name="mode" id="m-conf" aria-label="{T("mode.conf")}">
+<!-- TILSTAND — før .app. Rækkefølge: tilstand → omfang → tema (DESIGN.md 15.9) -->
+<input class="state" type="radio" name="mode" id="m-home" checked aria-label="{T("nav.home")}">
+<input class="state" type="radio" name="mode" id="m-sys" data-hash="{T("hash.system")}" aria-label="{T("nav.system")}">
 <input class="state" type="radio" name="scope" id="s-sys" checked aria-label="{T("scope.manifold")}">
-{"".join(f'<input class="state" type="radio" name="scope" id="s-z{k}" aria-label="{T("scope.zone",n=k)}">' + chr(10) for k in range(1,7))}<input class="state" type="checkbox" id="theme" aria-label="{T("theme.toggle")}">
-
-<svg width="0" height="0" style="position:absolute" aria-hidden="true">
-  <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2.5M12 19.5V22M2 12h2.5M19.5 12H22M4.9 4.9l1.8 1.8M17.3 17.3l1.8 1.8M4.9 19.1l1.8-1.8M17.3 6.7l1.8-1.8"/></symbol>
-  <symbol id="i-moon" viewBox="0 0 24 24"><path d="M19 14.5A7.5 7.5 0 1 1 9.5 5a6 6 0 0 0 9.5 9.5z"/></symbol>
-  <symbol id="i-cloud" viewBox="0 0 24 24"><path d="M7 18h10a4 4 0 0 0 0-8 5.5 5.5 0 0 0-10.6 1.5A3.3 3.3 0 0 0 7 18z"/></symbol>
-  <symbol id="i-partly" viewBox="0 0 24 24"><path d="M8 5V3.5M3.5 8H2M4.6 4.6l-1-1M11.4 4.6l1-1"/><path d="M5.4 10.4A3.5 3.5 0 0 1 11 6.6"/><path d="M9 19h8a3.5 3.5 0 0 0 0-7 4.8 4.8 0 0 0-9.2 1.3A2.9 2.9 0 0 0 9 19z"/></symbol>
-  <symbol id="i-rain" viewBox="0 0 24 24"><path d="M7 14h10a4 4 0 0 0 0-8 5.5 5.5 0 0 0-10.6 1.5A3.3 3.3 0 0 0 7 14z"/><path d="M8 17l-1 3M12 17l-1 3M16 17l-1 3"/></symbol>
-</svg>
+<input class="state" type="checkbox" id="theme" aria-label="{T("theme.toggle")}">
 
 <div class="app" data-probe-layout="2">
-  <div class="top">
-    <div class="wrap">
+  <div class="navbar-wrap wrap">
       <header class="header">
         <details class="device">
           <summary>{LOGO}<span class="name"><b data-bind="device.header.name">Lune V6</b><small data-bind="device.about.place">{T("device.sample")}</small></span><span class="caret" aria-hidden="true"></span></summary>
@@ -835,7 +621,7 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
                 <div><dt>{T("device.mac")}</dt><dd data-bind="device.about.mac">—</dd></div>
                 <div><dt>{T("device.firmware")}</dt><dd data-bind="device.about.firmware">—</dd></div>
                 <div><dt>{T("device.esphome")}</dt><dd data-bind="device.about.esphome">—</dd></div>
-                <div><dt>{T("device.uptime")}</dt><dd data-bind="device.about.uptime">6 <small>{T("common.days")}</small> 4 <small>{T("common.hours")}</small> 12 <small>{T("common.minutes")}</small></dd></div>
+                <div><dt>{T("device.uptime")}</dt><dd data-bind="device.about.uptime">—</dd></div>
               </dl>
               <button type="button" class="btn" data-action="copy-diag">{T("device.copyDiag")}</button>
             </section>
@@ -845,9 +631,9 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
           </div>
         </details>
 
-        <nav class="mode" aria-label="{T("mode.label")}">
-          <label for="m-dash">{I_DASH}{T("mode.dash")}</label>
-          <label for="m-conf">{I_CONF}{T("mode.conf")}</label>
+        <nav class="mode" aria-label="{T("nav.label")}">
+          <label for="m-home">{I_HOME}{T("nav.home")}</label>
+          <label for="m-sys">{I_SYS}{T("nav.system")}</label>
         </nav>
 
         <div class="tools">
@@ -859,90 +645,23 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
           </label>
         </div>
       </header>
-
+  </div>
+  <div class="top">
+    <div class="wrap">
       {strip}
     </div>
   </div>
 
   <main class="content wrap">{views}
   </main>
+{sheets}
+{helps}
 </div>
 
 <!-- Strenge til binderen: statusser og beskeder der skrives ved runtime -->
 <script type="application/json" id="i18n">{rt_json}</script>
 
-<!-- Progressive enhancement: +/−, luk enhedsmenu, hjælp-popover nær ?, filnavn, submit-hook -->
-<script>
-(function(){{
-var helpBtn=null;
-function placeHelp(pop, btn){{
-  if(!pop||!btn||window.matchMedia('(max-width:599.98px)').matches) return;
-  var r=btn.getBoundingClientRect(), gap=8;
-  pop.style.position='fixed';
-  pop.style.inset='unset';
-  pop.style.right='auto';
-  pop.style.bottom='auto';
-  pop.style.margin='0';
-  // Mål efter layout i top-lag
-  pop.style.top='0px';
-  pop.style.left='0px';
-  var w=pop.offsetWidth||280, h=pop.offsetHeight||120;
-  var left=Math.min(Math.max(8, r.left), Math.max(8, window.innerWidth-w-8));
-  var top=r.bottom+gap;
-  if(top+h>window.innerHeight-8) top=Math.max(8, r.top-h-gap);
-  pop.style.top=top+'px';
-  pop.style.left=left+'px';
-}}
-document.addEventListener('pointerdown',function(e){{
-  var h=e.target.closest&&e.target.closest('.help-btn');
-  if(h) helpBtn=h;
-}}, true);
-document.addEventListener('beforetoggle',function(e){{
-  if(e.newState!=='open'||!e.target.classList||!e.target.classList.contains('help-pop')) return;
-  var id=e.target.id;
-  var btn=(helpBtn&&helpBtn.getAttribute('popovertarget')===id)?helpBtn:null;
-  if(!btn&&document.activeElement&&document.activeElement.getAttribute&&document.activeElement.getAttribute('popovertarget')===id)
-    btn=document.activeElement;
-  if(!btn) btn=document.querySelector('[popovertarget="'+id+'"]');
-  if(btn){{ helpBtn=btn; placeHelp(e.target, btn); }}
-}}, true);
-document.addEventListener('toggle',function(e){{
-  if(e.newState!=='open'||!e.target.classList||!e.target.classList.contains('help-pop')) return;
-  var id=e.target.id;
-  var btn=(helpBtn&&helpBtn.getAttribute('popovertarget')===id)?helpBtn:document.querySelector('[popovertarget="'+id+'"]');
-  if(btn) placeHelp(e.target, btn);
-}}, true);
-document.addEventListener('click',function(e){{
-  var h=e.target.closest&&e.target.closest('.help-btn');
-  if(h){{
-    helpBtn=h;
-    var id=h.getAttribute('popovertarget');
-    var pop=id&&document.getElementById(id);
-    if(pop) requestAnimationFrame(function(){{ if(pop.matches(':popover-open')) placeHelp(pop,h); }});
-  }}
-  var b=e.target.closest('[data-step]');
-  if(b&&!b.disabled){{var i=b.parentNode.querySelector('input');b.dataset.step>0?i.stepUp():i.stepDown();i.dispatchEvent(new Event('change',{{bubbles:true}}));}}
-  var d=document.querySelector('.device[open]');if(d&&!d.contains(e.target))d.open=false;
-}});
-document.addEventListener('change',function(e){{
-  var inp=e.target; if(!inp||inp.type!=='file') return;
-  var lab=inp.closest('label.file'); if(!lab) return;
-  var name=lab.querySelector('.file-name'); if(!name) return;
-  name.textContent=(inp.files&&inp.files[0])?inp.files[0].name:(name.dataset.empty||'');
-}});
-/* Preview uden binder: simuler API-svar (fejler hvis data-save indeholder /fail) */
-document.addEventListener('lune:save',function(e){{
-  if(window.LV6_DASHBOARD_CONFIG) return;
-  var d=e.detail||{{}}, f=d.form||document.querySelector('form.panel[data-save="'+d.key+'"]');
-  if(!f||!f.luneSaved) return;
-  var fail=String(d.key||'').indexOf('fail')>=0;
-  setTimeout(function(){{ f.luneSaved(!fail); }}, d.auto?400:700);
-}});
-}})();
-</script>
-<script>
-/*__LUNE_FORMS__*/
-</script>
+<!-- JavaScript: /binder.js (live data, gem, lune-forms.js fra LDS og +/−, hjælp, filnavn) -->
 '''
     if include_binder:
         mock_boot = '<script>window.LV6_DASHBOARD_CONFIG={mock:true};</script>\n' if mock else ''
@@ -952,7 +671,7 @@ document.addEventListener('lune:save',function(e){{
     return (page + f'''{binder_tag}
 </body>
 </html>
-''').replace("/*__LUNE_FORMS__*/", forms_js)
+''')
 
 # ---------------------------------------------------------------- C-header -
 def c_array(name, data):
