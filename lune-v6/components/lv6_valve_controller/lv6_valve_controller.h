@@ -281,7 +281,9 @@ class Lv6ValveController : public esphome::Component {
 
   /// Enable or disable all motor drivers (nSLEEP control).
   /// When disabled, all motors are put to sleep and commands are rejected.
-  void set_drivers_enabled(bool enabled);
+  /// `persist` = false for temporary safety cuts (OTA) that must not change the
+  /// user's armed-across-reboot preference.
+  void set_drivers_enabled(bool enabled, bool persist = true);
   bool are_drivers_enabled() const { return drivers_enabled_.load(std::memory_order_acquire); }
   /// Manual mode (zone controller): automatic learning and relearn wait.
   /// Explicit requests (Reset and relearn, Relearn all) still run.

@@ -93,6 +93,7 @@ lv6::DeviceConfig make_known_config() {
   cfg.control.hp_overheat_margin_c = 1.2f;
   cfg.control.hp_base_pct = 55.0f;
   cfg.control.hp_trim_floor_pct = 12.0f;
+  cfg.control.hp_demand_pct = 85.0f;
 
   cfg.balancing.secondary_flow_commissioning_enabled = true;
   cfg.balancing.secondary_min_total_opening_pct = 45.0f;
@@ -221,6 +222,7 @@ int main() {
   expect_near(restored.control.hp_overheat_margin_c, 1.2f, "hp overheat margin round-trips");
   expect_near(restored.control.hp_base_pct, 55.0f, "hp base opening round-trips");
   expect_near(restored.control.hp_trim_floor_pct, 12.0f, "hp trim floor round-trips");
+  expect_near(restored.control.hp_demand_pct, 85.0f, "hp demand opening round-trips");
   expect(!restored.control.simple_preheat_enabled, "simple preheat flag round-trips");
   expect_near(restored.control.preheat_absorb_band_c, 1.5f, "preheat absorb band round-trips");
 

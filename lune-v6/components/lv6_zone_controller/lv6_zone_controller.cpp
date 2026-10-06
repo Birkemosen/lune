@@ -927,6 +927,19 @@ void Lv6ZoneController::set_hp_base_pct(float pct) {
   cfg.control.hp_base_pct = pct;
   if (cfg.control.hp_trim_floor_pct > pct)
     cfg.control.hp_trim_floor_pct = pct;
+  if (cfg.control.hp_demand_pct < pct)
+    cfg.control.hp_demand_pct = pct;
+  config_store_->update_control(cfg.control);
+}
+
+void Lv6ZoneController::set_hp_demand_pct(float pct) {
+  if (!config_store_ || std::isnan(pct))
+    return;
+  auto cfg = config_store_->get_config();
+  pct = std::clamp(pct, cfg.control.hp_base_pct, 100.0f);
+  if (std::fabs(cfg.control.hp_demand_pct - pct) < 0.01f)
+    return;
+  cfg.control.hp_demand_pct = pct;
   config_store_->update_control(cfg.control);
 }
 
@@ -1256,6 +1269,8 @@ void Lv6ZoneController::run_cycle_() {
     loop_share_pct_.fill(0.0f);
   }
 
+  // Heat-pump overheat rule compares each room with the manifold supply.
+  const float manifold_flow_c = read_manifold_flow_();
   for (uint8_t i = 0; i < NUM_ZONES; i++) {
     if (!cfg.zones[i].enabled) {
       target_positions[i] = 0.0f;
@@ -1302,7 +1317,8 @@ void Lv6ZoneController::run_cycle_() {
         effective_mode, state, flow_alloc_.opening_pct[i], raw_algo,
         cfg.control.maintenance_base_pct, cfg.control.hp_base_pct, cfg.control.hp_trim_floor_pct,
         cfg.control.hp_overheat_margin_c, temp, setpoint, cfg.zones[i].max_opening_pct,
-        zone_absorbing_(i), absorb_band);
+        zone_absorbing_(i), absorb_band, cfg.control.hp_demand_pct, cfg.control.comfort_band_c,
+        manifold_flow_c);
     bool was_overheated = (state == ZoneState::OVERHEATED);
 
     position = apply_hydraulic_balance_(i, position);

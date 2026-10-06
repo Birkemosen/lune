@@ -52,13 +52,23 @@ algorithm notes.
 ### Heating mode
 
 **Normal** vs **Heat pump**, plus an optional minimum total opening across
-accepting loops (0 disables). Heat-pump limits only apply in heat-pump mode:
+accepting loops (0 disables; normal mode only). Heat-pump openings only apply in
+heat-pump mode, where every loop keeps flow so the heat pump can hold the lowest
+flow temperature:
 
-- **Base opening** — satisfied valve position that keeps floors warm (default
-  60 %)
-- **Overheat margin** — °C above setpoint before a zone soft-closes (default
-  1.0 °C)
-- **Trim floor** — soft-trim floor between setpoint and overheat (default 15 %)
+- **Opening when calling** — a room below setpoint − comfort band opens at least
+  this far; the flow allocator may open it further (default 80 %). Between that
+  and setpoint the opening ramps down to the base opening.
+- **Base opening** — valve position at setpoint (default 60 %)
+- **Overheat margin** — °C above setpoint over which the opening trims from base
+  to the trim floor (default 1.0 °C)
+- **Trim floor** — opening held above setpoint + margin (default 15 %; 30–40 %
+  keeps more flow). A zone only closes once it is past setpoint + comfort band +
+  margin **and** the manifold supply (flow probe) is more than 1 °C warmer than
+  the room — cooler water cannot heat it, so it keeps flowing.
+
+All openings are for the hardest loop; the hydraulic balance scales each loop by
+its resistance (area, pipe spacing, pipe type, supply length).
 
 Default local mode is heat pump.
 

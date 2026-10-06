@@ -602,6 +602,7 @@ void LV6Dashboard::update_snapshot_() {
     s.hp_overheat_margin_c = ctrl_cfg.hp_overheat_margin_c;
     s.hp_base_pct = ctrl_cfg.hp_base_pct;
     s.hp_trim_floor_pct = ctrl_cfg.hp_trim_floor_pct;
+    s.hp_demand_pct = ctrl_cfg.hp_demand_pct;
     s.preheat_absorbing = this->zone_controller_ && this->zone_controller_->is_preheat_absorbing();
     s.absorb_mode = this->zone_controller_ ? this->zone_controller_->absorb_mode_code() : 0;
     if (this->zone_controller_) {
@@ -1862,6 +1863,8 @@ void LV6Dashboard::handle_state_(AsyncWebServerRequest *request) {
   if (!append( "\"number-hp_base_pct\":{\"value\":%s},", num_buf)) return;
   format_float_token(num_buf, sizeof(num_buf), snap->hp_trim_floor_pct, 0);
   if (!append( "\"number-hp_trim_floor_pct\":{\"value\":%s},", num_buf)) return;
+  format_float_token(num_buf, sizeof(num_buf), snap->hp_demand_pct, 0);
+  if (!append( "\"number-hp_demand_pct\":{\"value\":%s},", num_buf)) return;
   if (snap->heat_demand.critical_zone >= 0)
     if (!append( "\"sensor-heat_demand_critical_zone\":{\"value\":%d},",
             snap->heat_demand.critical_zone + 1)) return;
@@ -2450,20 +2453,21 @@ void LV6Dashboard::handle_settings_(AsyncWebServerRequest *request) {
   };
 
   char preheat_band[24], preheat_delta[24], min_flow[24];
-  char hp_margin[24], hp_base[24], hp_trim[24];
+  char hp_margin[24], hp_base[24], hp_trim[24], hp_demand[24];
   format_float_token(preheat_band, sizeof(preheat_band), snap->preheat_absorb_band_c, 1);
   format_float_token(preheat_delta, sizeof(preheat_delta), snap->preheat_detect_delta_c, 1);
   format_float_token(min_flow, sizeof(min_flow), snap->min_zone_flow_pct, 1);
   format_float_token(hp_margin, sizeof(hp_margin), snap->hp_overheat_margin_c, 1);
   format_float_token(hp_base, sizeof(hp_base), snap->hp_base_pct, 0);
   format_float_token(hp_trim, sizeof(hp_trim), snap->hp_trim_floor_pct, 0);
+  format_float_token(hp_demand, sizeof(hp_demand), snap->hp_demand_pct, 0);
 
   appendf(buf, BUF_SIZE, off,
           "{\"ok\":true,\"version\":\"v1\",\"data\":{\"control\":{"
           "\"simple_preheat_enabled\":%s,\"preheat_absorb_enabled\":%s,"
           "\"preheat_absorb_band_c\":%s,\"preheat_detect_delta_c\":%s,"
           "\"heating_mode\":\"%s\",\"hp_overheat_margin_c\":%s,"
-          "\"hp_base_pct\":%s,\"hp_trim_floor_pct\":%s},"
+          "\"hp_base_pct\":%s,\"hp_trim_floor_pct\":%s,\"hp_demand_pct\":%s},"
           "\"minimum_flow\":{\"enabled\":%s,\"min_zone_flow_pct\":%s},"
           "\"ble_clock_sync\":{\"enabled\":%s,\"interval_min\":%u,\"last_ok_s\":%lu,"
           "\"last_error\":\"%s\",\"advertising\":%s},"
@@ -2475,7 +2479,7 @@ void LV6Dashboard::handle_settings_(AsyncWebServerRequest *request) {
           snap->simple_preheat_enabled ? "true" : "false",
           snap->preheat_absorb_enabled ? "true" : "false",
           preheat_band, preheat_delta,
-          lv6::heating_profile_to_string(snap->heating_mode), hp_margin, hp_base, hp_trim,
+          lv6::heating_profile_to_string(snap->heating_mode), hp_margin, hp_base, hp_trim, hp_demand,
           snap->minimum_flow_always ? "true" : "false", min_flow,
           snap->ble_clock_sync_enabled ? "true" : "false",
           static_cast<unsigned>(snap->ble_clock_sync_interval_min),
@@ -3045,7 +3049,8 @@ void LV6Dashboard::prepare_motors_for_ota_() {
   if (this->valve_controller_ == nullptr)
     return;
   // Cut drive first: a reboot mid-flash must not leave an H-bridge energised.
-  this->valve_controller_->set_drivers_enabled(false);
+  // Not persisted: storing "off" here left valves frozen after every OTA.
+  this->valve_controller_->set_drivers_enabled(false, /*persist=*/false);
   const uint32_t deadline = millis() + 5000;
   while (this->valve_controller_->is_motor_busy() || this->valve_controller_->is_calibrating()) {
     if (static_cast<int32_t>(millis() - deadline) >= 0) {
@@ -4325,6 +4330,9 @@ void LV6Dashboard::dispatch_set_(const DashboardAction &act) {
 
   } else if (strcmp(key, "hp_trim_floor_pct") == 0 && has_num && this->zone_controller_) {
     this->zone_controller_->set_hp_trim_floor_pct(num_val);
+
+  } else if (strcmp(key, "hp_demand_pct") == 0 && has_num && this->zone_controller_) {
+    this->zone_controller_->set_hp_demand_pct(num_val);
 
   // ---- preheat_absorb_band_c ----
   } else if (strcmp(key, "preheat_absorb_band_c") == 0 && has_num && this->config_store_) {

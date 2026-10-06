@@ -392,7 +392,7 @@ void Lv6ValveController::loop() {
 // Public API (thread-safe)
 // =============================================================================
 
-void Lv6ValveController::set_drivers_enabled(bool enabled) {
+void Lv6ValveController::set_drivers_enabled(bool enabled, bool persist) {
   if (!enabled) {
     for (uint8_t z = 0; z < NUM_ZONES; z++)
       position_confident_[z] = false;
@@ -413,7 +413,7 @@ void Lv6ValveController::set_drivers_enabled(bool enabled) {
       // it; on revisions with a latch this is a no-op.
       gpio_backend_->set_drive_permit(false);
       drivers_enabled_ = false;
-      if (config_store_)
+      if (config_store_ && persist)
         config_store_->set_drivers_enabled_pref(false);
       ESP_LOGI(TAG, "%s motor path DISABLED", gpio_backend_->backend_name());
       return;
@@ -430,7 +430,7 @@ void Lv6ValveController::set_drivers_enabled(bool enabled) {
     }
     gpio_backend_->coast();
     drivers_enabled_ = true;
-    if (config_store_)
+    if (config_store_ && persist)
       config_store_->set_drivers_enabled_pref(true);
     ESP_LOGI(TAG, "%s motor path ENABLED (decoder remains inhibited until a move)",
              gpio_backend_->backend_name());
@@ -475,7 +475,7 @@ void Lv6ValveController::set_drivers_enabled(bool enabled) {
     }
   }
 
-  if (config_store_)
+  if (config_store_ && persist)
     config_store_->set_drivers_enabled_pref(enabled);
 
   ESP_LOGI(TAG, "Motor drivers %s", enabled ? "ENABLED" : "DISABLED");

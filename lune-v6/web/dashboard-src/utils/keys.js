@@ -124,6 +124,7 @@ export const gkey = {
   hpOverheatMarginC: 'number-hp_overheat_margin_c',
   hpBasePct: 'number-hp_base_pct',
   hpTrimFloorPct: 'number-hp_trim_floor_pct',
+  hpDemandPct: 'number-hp_demand_pct',
   heatDemandRecommendation: 'text-heat_demand_recommendation',
   heatDemandCriticalZone: 'sensor-heat_demand_critical_zone',
   heatDemandSaturatedS: 'sensor-heat_demand_saturated_s',

@@ -59,54 +59,85 @@ inline ZoneState classify(HeatingProfile mode, float temp, float setpoint,
   return ZoneState::DEMAND;
 }
 
+/// Below this many °C above the room, manifold flow cannot heat a zone. An
+/// overheated heat-pump zone then keeps its floor opening: closing it would
+/// only cut flow (the heat pump runs hotter for everyone) without protecting
+/// the room — the water may even carry its surplus to colder zones.
+static constexpr float HP_COOL_FLOW_MARGIN_C = 1.0f;
+
 /// Map classified state to a raw valve opening (before hydraulic balance).
 ///
 /// `allocator_opening_pct` is the flow-allocator share (heat-pump DEMAND only);
 /// `raw_algorithm_pct` is tanh/linear/PID (+ demand boost) for Normal DEMAND and
 /// as a fallback when the allocator share is near zero.
+///
+/// Heat-pump mode follows one continuous curve so floors always see flow and
+/// the heat pump can stay at the lowest flow temperature:
+///   below setpoint − band     ≥ hp_demand_pct (allocator may give more)
+///   setpoint − band → sp      hp_demand_pct → hp_base_pct
+///   setpoint → sp + margin    hp_base_pct → hp_trim_floor_pct
+///   sp + margin → overheated  hp_trim_floor_pct (held)
+///   overheated                0, unless the flow is no warmer than the room
+/// NaN for hp_demand_pct / flow_temp_c keeps the previous behaviour (demand
+/// floor = base; overheated closes).
 inline float position_for_state(HeatingProfile mode, ZoneState state,
                                 float allocator_opening_pct, float raw_algorithm_pct,
                                 float maintenance_base_pct, float hp_base_pct,
                                 float hp_trim_floor_pct, float hp_overheat_margin_c,
                                 float temp, float setpoint, float max_opening_pct,
-                                bool absorbing, float absorb_band_c) {
+                                bool absorbing, float absorb_band_c,
+                                float hp_demand_pct = NAN, float comfort_band_c = 0.5f,
+                                float flow_temp_c = NAN) {
+  const bool hp = mode == HeatingProfile::HEAT_PUMP;
+  const float demand_pct =
+      std::isnan(hp_demand_pct) ? hp_base_pct : std::max(hp_demand_pct, hp_base_pct);
+  const float floor_pct = std::min(hp_trim_floor_pct, hp_base_pct);
   switch (state) {
     case ZoneState::OVERHEATED:
+      if (hp && !std::isnan(flow_temp_c) && !std::isnan(temp) &&
+          flow_temp_c <= temp + HP_COOL_FLOW_MARGIN_C)
+        return std::clamp(floor_pct, 0.0f, max_opening_pct);
       return 0.0f;
     case ZoneState::UNKNOWN:
       return maintenance_base_pct;
     case ZoneState::DEMAND: {
       float position = 0.0f;
-      if (mode == HeatingProfile::HEAT_PUMP && allocator_opening_pct > 1.0f)
+      if (hp && allocator_opening_pct > 1.0f)
         position = allocator_opening_pct;
       else
         position = raw_algorithm_pct;
-      // Heat pump: a zone below setpoint never opens less than a satisfied
-      // zone holds (the base opening). The allocator decides how much MORE.
-      if (mode == HeatingProfile::HEAT_PUMP)
-        position = std::max(position, hp_base_pct);
+      // Heat pump: a zone that needs heat never opens less than the demand
+      // opening. The allocator decides how much MORE.
+      if (hp)
+        position = std::max(position, demand_pct);
       return std::clamp(position, 0.0f, max_opening_pct);
     }
     case ZoneState::SATISFIED: {
-      if (mode == HeatingProfile::NORMAL)
+      if (!hp)
         return maintenance_base_pct;
 
-      // Heat pump: hold base, soft-trim between setpoint and overheat margin.
       float base = hp_base_pct;
       if (absorbing && allocator_opening_pct > 0.0f)
         base = std::max(base, allocator_opening_pct * 0.5f);
 
-      const float margin = std::max(0.1f, hp_overheat_margin_c + absorb_band_c);
+      if (temp < setpoint) {
+        // Below setpoint but inside the comfort band: lean toward the demand
+        // opening the colder the room is.
+        const float band = std::max(0.1f, comfort_band_c);
+        const float t = std::clamp((setpoint - temp) / band, 0.0f, 1.0f);
+        const float target = std::max(base, demand_pct);
+        return std::clamp(base + t * (target - base), 0.0f, max_opening_pct);
+      }
       if (!(temp > setpoint))
         return std::clamp(base, 0.0f, max_opening_pct);
 
+      const float margin = std::max(0.1f, hp_overheat_margin_c + absorb_band_c);
+      const float zone_floor = std::min(floor_pct, base);
       const float excess = temp - setpoint;
       if (excess >= margin)
-        return 0.0f;
+        return std::clamp(zone_floor, 0.0f, max_opening_pct);  // held until OVERHEATED
       const float t = excess / margin;  // 0 at setpoint → 1 at margin
-      const float floor_pct = std::min(hp_trim_floor_pct, base);
-      const float trimmed = base + t * (floor_pct - base);
-      return std::clamp(trimmed, 0.0f, max_opening_pct);
+      return std::clamp(base + t * (zone_floor - base), 0.0f, max_opening_pct);
     }
     default:
       return maintenance_base_pct;
