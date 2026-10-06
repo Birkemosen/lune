@@ -30,29 +30,43 @@ test -f "$ui/en/index.html"
 test -f "$ui/da/index.html"
 test -f "$web/preview.html"
 test -f "$web/preview-da.html"
-grep -qF 'id="v-dash-sys"' "$web/preview.html"
+grep -qF 'id="v-home-sys"' "$web/preview.html"
 grep -qF 'LV6_DASHBOARD_CONFIG' "$web/preview.html"
 grep -qF 'ui/binder.js' "$web/preview.html"
 grep -qF 'mock:true' "$web/preview.html"
 
-# Shell contract: radio state before .app, view ids, no sidebar
-grep -qF 'id="m-dash"' "$ui/en/index.html"
-grep -qF 'id="m-conf"' "$ui/en/index.html"
+# Shell contract (LDS 2.3, DESIGN.md 15): Home / sheets / System, radio state before .app
+grep -qF 'id="m-home"' "$ui/en/index.html"
+grep -qF 'id="m-sys"' "$ui/en/index.html"
 grep -qF 'id="s-sys"' "$ui/en/index.html"
-grep -qF 'id="v-dash-sys"' "$ui/en/index.html"
-grep -qF 'id="v-conf-sys"' "$ui/en/index.html"
-grep -qF 'id="v-dash-z1"' "$ui/en/index.html"
-grep -qF 'id="v-conf-z6"' "$ui/en/index.html"
+grep -qF 'id="v-home-sys"' "$ui/en/index.html"
+grep -qF 'id="v-sys"' "$ui/en/index.html"
+grep -qF 'id="sheet-manifold"' "$ui/en/index.html"
+grep -qF 'id="sheet-z1"' "$ui/en/index.html"
+grep -qF 'id="sheet-z6"' "$ui/en/index.html"
+grep -qF 'popovertarget="sheet-z3"' "$ui/en/index.html"
+grep -qF 'class="savebar"' "$ui/en/index.html"
+grep -qF 'id="c-device"' "$ui/en/index.html"
+grep -qF 'id="c-service"' "$ui/en/index.html"
 grep -qF 'class="state"' "$ui/en/index.html"
+! grep -qF 'id="m-dash"' "$ui/en/index.html"
+! grep -qF 'id="m-conf"' "$ui/en/index.html"
+! grep -qF 'id="v-dash-' "$ui/en/index.html"
+! grep -qF 'id="v-conf-' "$ui/en/index.html"
 grep -qF '/binder.js' "$ui/en/index.html"
 grep -qF '/lune-ui.css' "$ui/en/index.html"
 ! grep -qF 'side-panel' "$ui/en/index.html"
 ! grep -qF 'fonts.googleapis.com' "$ui/en/index.html"
 ! grep -qF 'Montserrat' "$ui/en/index.html"
 
-# Feature-parity panels on conf-sys
-grep -qF 'data-save="touch"' "$ui/en/index.html"
-grep -qF 'data-save="heating"' "$ui/en/index.html"
+# Feature parity: forms on System and in the sheets
+grep -qF 'data-save="connections"' "$ui/en/index.html"
+grep -qF 'data-save="wifi"' "$ui/en/index.html"
+grep -qF 'data-save="device"' "$ui/en/index.html"
+grep -qF 'data-save="manifold"' "$ui/en/index.html"
+grep -qF 'data-save="regulation"' "$ui/en/index.html"
+grep -qF 'data-save="zone/1"' "$ui/en/index.html"
+grep -qF 'data-save="zone/1/target"' "$ui/en/index.html"
 grep -qF 'data-save="ble_clock"' "$ui/en/index.html"
 grep -qF 'data-save="firmware"' "$ui/en/index.html"
 grep -qF 'data-save="backup"' "$ui/en/index.html"
@@ -65,7 +79,21 @@ grep -qF 'External room temperatures' "$ui/en/index.html"
 
 # Danish page exists and differs
 grep -qF 'lang="da"' "$ui/da/index.html"
-grep -qF 'Konfiguration' "$ui/da/index.html"
+grep -qF 'Hjem' "$ui/da/index.html"
+grep -qF 'Indstillinger' "$ui/da/index.html"
+
+# lune-forms.js (LDS) is bundled into the binder, not inlined in the page
+grep -qF 'luneSaved' "$ui/binder.js"
+grep -qF 'syscat' "$ui/binder.js"
+! grep -qF 'luneSaved' "$ui/en/index.html"
+if command -v node >/dev/null 2>&1; then
+  # Binder unit tests
+  node "$web/binder-src/projection.test.js" >/dev/null
+fi
+
+# Every old field/action and every data-bind key still exists; group limits (DESIGN.md 15.5)
+python3 "$web/check_fields.py" "$ui/en/index.html"
+python3 "$web/check_fields.py" "$ui/da/index.html"
 
 # Binder hooks
 grep -qF "lune:save" "$binder"

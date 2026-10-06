@@ -11,4 +11,5 @@ artifacts:
   - kind: html
     note: Built by lune-v6/web/build_ui.py into lune-v6/web/ui/{en,da}/
   - kind: binder
-    note: Built by esbuild from lune-v6/web/binder-src into lune-v6/web/ui/binder.js
+    note: Built by esbuild from lune-v6/web/binder-src into lune-v6/web/ui/binder.js;
+      bundles js/lune-forms.js from the design system (esbuild --alias:lds-forms).
