@@ -927,7 +927,32 @@ void Lv6ConfigStore::load_config_() {
   bool had_all_sections = true;
   xSemaphoreTake(mutex_, portMAX_DELAY);
   had_all_sections &= load_section(handle, KEY_SYSTEM, SYSTEM_CONFIG_VERSION, config_.system);
-  had_all_sections &= load_section(handle, KEY_CONTROL, CONTROL_CONFIG_VERSION, config_.control);
+  if (!load_section(handle, KEY_CONTROL, CONTROL_CONFIG_VERSION, config_.control)) {
+    // v2 had no hp_demand_pct: keep every stored control setting and add the
+    // new field at its default instead of resetting the whole section.
+    ControlConfigV2 v2{};
+    if (load_section(handle, KEY_CONTROL, 2, v2)) {
+      ControlConfig c{};
+      c.comfort_band_c = v2.comfort_band_c;
+      c.maintenance_base_pct = v2.maintenance_base_pct;
+      c.demand_boost_pct = v2.demand_boost_pct;
+      c.boost_factor = v2.boost_factor;
+      c.min_movement_pct = v2.min_movement_pct;
+      c.tanh_steepness = v2.tanh_steepness;
+      c.simple_preheat_enabled = v2.simple_preheat_enabled;
+      c.preheat_absorb_enabled = v2.preheat_absorb_enabled;
+      c.preheat_absorb_band_c = v2.preheat_absorb_band_c;
+      c.preheat_detect_delta_c = v2.preheat_detect_delta_c;
+      c.mode = v2.mode;
+      c.hp_overheat_margin_c = v2.hp_overheat_margin_c;
+      c.hp_base_pct = v2.hp_base_pct;
+      c.hp_trim_floor_pct = v2.hp_trim_floor_pct;
+      c.hp_demand_pct = std::max(c.hp_demand_pct, c.hp_base_pct);
+      config_.control = c;
+      ESP_LOGI(TAG, "Control section migrated v2 -> v%" PRIu32, CONTROL_CONFIG_VERSION);
+    }
+    had_all_sections = false;  // rewrite at the current version on the next commit
+  }
   {
     // Stale probes blobs are reset to ProbeConfig{} inside load_section. An
     // *absent* section still falls back to the main blob — rewrite the pre-v2

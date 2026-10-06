@@ -161,6 +161,7 @@ function seed() {
   setEntity(gkey.hpOverheatMarginC, { value: 1.0 });
   setEntity(gkey.hpBasePct, { value: 60 });
   setEntity(gkey.hpTrimFloorPct, { value: 15 });
+  setEntity(gkey.hpDemandPct, { value: 80 });
   setEntity(gkey.heatDemandRecommendation, { state: 'hold' });
   setEntity(gkey.heatDemandCriticalZone, { value: 1 });
   setEntity(gkey.heatDemandSaturatedS, { value: 0 });
@@ -723,6 +724,7 @@ export function handleMockPost(body) {
     hp_overheat_margin_c: gkey.hpOverheatMarginC,
     hp_base_pct: gkey.hpBasePct,
     hp_trim_floor_pct: gkey.hpTrimFloorPct,
+    hp_demand_pct: gkey.hpDemandPct,
     ble_clock_sync_interval_min: gkey.bleClockSyncIntervalMin
   };
 
@@ -789,6 +791,7 @@ export function mockSettingsExport(includeLearned) {
       hp_overheat_margin_c: ev(gkey.hpOverheatMarginC),
       hp_base_pct: ev(gkey.hpBasePct),
       hp_trim_floor_pct: ev(gkey.hpTrimFloorPct),
+      hp_demand_pct: ev(gkey.hpDemandPct),
       simple_preheat_enabled: es(gkey.simplePreheatEnabled) === 'on',
       ble_clock_sync_enabled: es(gkey.bleClockSyncEnabled) === 'on',
       ble_clock_sync_interval_min: ev(gkey.bleClockSyncIntervalMin),

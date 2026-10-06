@@ -488,9 +488,10 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
           {rstep("heat_min_open",T("csys.minOpening"),0,0,100,1,"%",dec=0)}
           <div class="sub hp-limits">
             <h4>{T("csys.heatPumpLimits")}</h4>
+            {rstep("hp_demand",T("csys.hpDemand"),80,30,100,1,"%",dec=0)}
             {rstep("hp_base",T("csys.hpBase"),60,30,100,1,"%",dec=0)}
             {rstep("hp_overheat",T("csys.hpOverheat"),1.0,0.3,3.0,0.1,"°C")}
-            {rstep("hp_trim",T("csys.hpTrim"),15,0,100,1,"%",dec=0)}
+            {rstep("hp_trim",T("csys.hpTrim"),35,0,100,1,"%",dec=0)}
           </div>
           {foot_save("heating",T("csys.saveHeating"))}
         </form>

@@ -281,7 +281,30 @@ struct ControlConfig {
   HeatingProfile mode = HeatingProfile::HEAT_PUMP;
   float hp_overheat_margin_c = 1.0f;  ///< °C above setpoint before a heat-pump zone closes
   float hp_base_pct = 60.0f;          ///< Satisfied opening in heat-pump mode (keeps floors open)
-  float hp_trim_floor_pct = 15.0f;    ///< Soft-trim floor between setpoint and overheat margin
+  float hp_trim_floor_pct = 15.0f;    ///< Opening held from setpoint + margin until overheated
+  /// Opening for a zone below setpoint − comfort band in heat-pump mode; zones
+  /// between that and setpoint ramp from here down to hp_base_pct. Keeps rooms
+  /// that need heat ahead of satisfied ones without closing anyone.
+  float hp_demand_pct = 80.0f;
+};
+
+/// ControlConfig as stored by CONTROL_CONFIG_VERSION 2 (before hp_demand_pct).
+/// Read once on upgrade so user settings survive the layout change.
+struct ControlConfigV2 {
+  float comfort_band_c;
+  float maintenance_base_pct;
+  float demand_boost_pct;
+  float boost_factor;
+  float min_movement_pct;
+  float tanh_steepness;
+  bool simple_preheat_enabled;
+  bool preheat_absorb_enabled;
+  float preheat_absorb_band_c;
+  float preheat_detect_delta_c;
+  HeatingProfile mode;
+  float hp_overheat_margin_c;
+  float hp_base_pct;
+  float hp_trim_floor_pct;
 };
 
 struct ProbeConfig {
@@ -394,7 +417,7 @@ static constexpr uint32_t GROUPS_CONFIG_VERSION = 1;
 /// v5 adds user-facing display_name and location for the dashboard device menu.
 static constexpr uint32_t SYSTEM_CONFIG_VERSION = 5;
 /// v2 adds heating mode + heat-pump base/margin/trim; drops unused min_valve_opening_pct.
-static constexpr uint32_t CONTROL_CONFIG_VERSION = 2;
+static constexpr uint32_t CONTROL_CONFIG_VERSION = 3;
 /// v2 moves defaults to P1 flow / P2 manifold return with zone return probes
 /// unassigned (return-temperature mode off until the user enables it). Layout
 /// is unchanged; the bump replaces stored v1 values that still carried the

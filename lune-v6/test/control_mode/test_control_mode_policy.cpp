@@ -86,7 +86,11 @@ static void test_heat_pump_base_trim_cutoff() {
   float at_margin = position_for_state(HeatingProfile::HEAT_PUMP, ZoneState::SATISFIED, 0.0f, 0.0f,
                                        15.0f, base, floor, margin, sp + margin, sp, max_open, false,
                                        0.0f);
-  expect_near(at_margin, 0.0f, 0.01f, "HP: at margin edge closes");
+  expect_near(at_margin, floor, 0.01f, "HP: at margin edge holds the trim floor");
+  float past_margin = position_for_state(HeatingProfile::HEAT_PUMP, ZoneState::SATISFIED, 0.0f, 0.0f,
+                                         15.0f, base, floor, margin, sp + margin + 0.3f, sp, max_open,
+                                         false, 0.0f);
+  expect_near(past_margin, floor, 0.01f, "HP: floor held until OVERHEATED (keeps flow)");
 
   expect(classify(HeatingProfile::HEAT_PUMP, sp + band + margin + 0.1f, sp, band, margin, 0.0f, 0.0f,
                   latched) == ZoneState::OVERHEATED,
@@ -95,6 +99,38 @@ static void test_heat_pump_base_trim_cutoff() {
   float closed = position_for_state(HeatingProfile::HEAT_PUMP, ZoneState::OVERHEATED, 0.0f, 0.0f,
                                     15.0f, base, floor, margin, 30.0f, sp, max_open, false, 0.0f);
   expect_near(closed, 0.0f, 0.01f, "HP: OVERHEATED → 0%");
+}
+
+static void test_heat_pump_demand_curve_and_cool_flow() {
+  const float sp = 22.0f, band = 0.5f, margin = 1.0f, max_open = 90.0f;
+  const float demand = 80.0f, base = 60.0f, floor = 35.0f;
+  auto pos = [&](ZoneState st, float temp, float alloc, float flow) {
+    return position_for_state(HeatingProfile::HEAT_PUMP, st, alloc, 0.0f, 15.0f, base, floor, margin,
+                              temp, sp, max_open, false, 0.0f, demand, band, flow);
+  };
+  expect_near(pos(ZoneState::DEMAND, 21.0f, 0.0f, NAN), demand, 0.01f,
+              "HP DEMAND opens at least the demand opening");
+  expect_near(pos(ZoneState::DEMAND, 21.0f, 88.0f, NAN), 88.0f, 0.01f,
+              "HP DEMAND keeps a larger allocator share");
+  expect_near(pos(ZoneState::SATISFIED, sp - band, 0.0f, NAN), demand, 0.01f,
+              "HP: band edge below setpoint = demand opening");
+  expect_near(pos(ZoneState::SATISFIED, sp - band / 2.0f, 0.0f, NAN), (demand + base) / 2.0f, 0.01f,
+              "HP: halfway into the band ramps between demand and base");
+  expect_near(pos(ZoneState::SATISFIED, sp, 0.0f, NAN), base, 0.01f, "HP: at setpoint = base");
+  expect_near(pos(ZoneState::SATISFIED, sp + margin, 0.0f, NAN), floor, 0.01f,
+              "HP: setpoint + margin = trim floor");
+  expect_near(pos(ZoneState::OVERHEATED, 24.0f, 0.0f, 24.5f), floor, 0.01f,
+              "HP OVERHEATED keeps the floor while supply ≤ room + 1 °C");
+  expect_near(pos(ZoneState::OVERHEATED, 24.0f, 0.0f, 26.0f), 0.0f, 0.01f,
+              "HP OVERHEATED closes when supply is warmer than the room");
+  expect_near(pos(ZoneState::OVERHEATED, 24.0f, 0.0f, NAN), 0.0f, 0.01f,
+              "HP OVERHEATED closes when supply temperature is unknown");
+  expect_near(position_for_state(HeatingProfile::NORMAL, ZoneState::OVERHEATED, 0.0f, 0.0f, 15.0f, base,
+                                 floor, margin, 24.0f, sp, max_open, false, 0.0f, demand, band, 22.0f),
+              0.0f, 0.01f, "Normal OVERHEATED closes regardless of supply");
+  expect_near(position_for_state(HeatingProfile::HEAT_PUMP, ZoneState::DEMAND, 0.0f, 0.0f, 15.0f, 70.0f,
+                                 floor, margin, 21.0f, sp, max_open, false, 0.0f, 60.0f, band, NAN),
+              70.0f, 0.01f, "HP DEMAND never below base even if demand < base");
 }
 
 static void test_heat_pump_absorb_extends_margin() {
@@ -203,6 +239,7 @@ int main() {
   test_resolve_mode();
   test_normal_latch();
   test_heat_pump_base_trim_cutoff();
+  test_heat_pump_demand_curve_and_cool_flow();
   test_heat_pump_absorb_extends_margin();
   test_normal_position_closes();
   test_heat_demand();
