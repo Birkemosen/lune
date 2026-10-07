@@ -9,11 +9,51 @@ Lune Touch: motors, endstops, temperature freshness, and command clamps run on
 the device. Touch may send setpoints and weather preload; it never chooses the
 zone for room temperatures.
 
+<!-- toc -->
+**[Dashboard and navigation](#dashboard-and-navigation)**
+
+**[Configuration › Setup](#configuration--setup)**
+
+- [Manifold and motors](#manifold-and-motors)
+- [Regulation](#regulation)
+- [Heating mode](#heating-mode)
+- [Return probes](#return-probes)
+
+**[Configuration › Connections](#configuration--connections)**
+
+- [Lune Touch](#lune-touch)
+- [BLE clock](#ble-clock)
+- [WiFi](#wifi)
+
+**[Configuration › Maintain](#configuration--maintain)**
+
+- [Firmware](#firmware)
+- [Backup](#backup)
+
+**[Configuration › Service](#configuration--service)**
+
+- [Manual motor control](#manual-motor-control)
+- [Runtime health](#runtime-health)
+- [Device logs](#device-logs)
+- [Device actions](#device-actions)
+- [Motor lab (dev builds)](#motor-lab-dev-builds)
+
+**[Zone configuration](#zone-configuration)**
+
+- [Room and sensors](#room-and-sensors)
+- [Floor and weather](#floor-and-weather)
+- [Motor](#motor)
+
+**[External room temperatures (ingest)](#external-room-temperatures-ingest)**
+
+**[Safety principles](#safety-principles)**
+<!-- /toc -->
+
 ---
 
 ## Dashboard and navigation
 
-- **Device menu** (logo): identity (name, location, IP, MAC, firmware, ESPHome,
+- <a id="device-identity"></a>**Device menu** (logo): identity (name, location, IP, MAC, firmware, ESPHome,
   uptime) and **Copy diagnostics**. Other Lune devices on the LAN are listed
   below. No restart / OTA / reset here.
 - **Mode pill**: Dashboard | Configuration.
