@@ -533,8 +533,8 @@ function paintStrip() {
     } else {
       const temp = toNum(ev(key.temp(z)));
       const sp = toNum(ev(key.effectiveSetpoint(z)) ?? ev(key.setpoint(z)));
-      const warn = Number.isFinite(temp) && Number.isFinite(sp) && sp - temp > 0.5;
-      setBind(`z${z}.comfort`, `<b class="${warn ? 'c-warn' : ''}">${deg(temp)}</b> / ${deg(sp)}`);
+      // Temperature stays neutral (LDS 5.9); the zone tile's chip shows the distance to target.
+      setBind(`z${z}.comfort`, `<b>${deg(temp)}</b> / ${deg(sp)}`);
     }
     paintDevChip(z, st);
     const now = document.querySelector(`#sheet-z${z} .climate .now`);

@@ -1330,7 +1330,7 @@ void Lv6ValveController::execute_move_(uint8_t zone, float target_pct) {
   if (config_store_)
     min_move = config_store_->get_config().control.min_movement_pct;
 
-  if (std::fabs(diff) < min_move)
+  if (skip_small_move(diff, min_move, target_pct, rehoming_, position_confident_[zone]))
     return;
 
   // --- Anti-drift re-home ----------------------------------------------------

@@ -414,4 +414,15 @@ constexpr CapLadder sanitize_cap_ladder(CapLadder c, float rail_trip_ma) {
   return c;
 }
 
+/// A move smaller than min_move is skipped as noise — except a move to the seat
+/// that must establish the datum (re-homing, or the position is not confident).
+/// Skipping that one left a valve that believed it was at 0 % but had never
+/// confirmed the seat stuck forever: the re-home did nothing, confidence stayed
+/// false, and every open was refused as "unknown position".
+inline bool skip_small_move(float diff_pct, float min_move_pct, float target_pct,
+                            bool rehoming, bool position_confident) {
+  const bool must_seat = target_pct <= 0.01f && (rehoming || !position_confident);
+  return !must_seat && (diff_pct < 0.0f ? -diff_pct : diff_pct) < min_move_pct;
+}
+
 }  // namespace lv6

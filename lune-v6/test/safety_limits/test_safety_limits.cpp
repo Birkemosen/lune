@@ -322,9 +322,23 @@ void test_sanitize_rejects_a_reordered_ladder_wholesale() {
   assert(zf.seat_frames >= 1 && zf.min_valid_samples >= 1);
 }
 
+void test_rehome_to_the_seat_is_never_skipped() {
+  // Ordinary small moves are noise.
+  assert(skip_small_move(2.0f, 5.0f, 42.0f, false, true));
+  assert(!skip_small_move(12.0f, 5.0f, 42.0f, false, true));
+  // Believed at 0 %, re-homing to 0 %: must still drive to the seat.
+  assert(!skip_small_move(0.0f, 5.0f, 0.0f, true, false));
+  assert(!skip_small_move(0.0f, 5.0f, 0.0f, true, true));
+  // Not confident, plain close to 0 %: also drives to the seat.
+  assert(!skip_small_move(0.0f, 5.0f, 0.0f, false, false));
+  // Confident and already at 0 %: nothing to do.
+  assert(skip_small_move(0.0f, 5.0f, 0.0f, false, true));
+}
+
 }  // namespace
 
 int main() {
+  test_rehome_to_the_seat_is_never_skipped();
   test_close_ceiling_never_exceeds_destruction();
   test_travel_scaling_tightens_a_partial_move();
   test_untrusted_position_is_identical_to_a_full_stroke();
