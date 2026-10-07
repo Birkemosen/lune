@@ -13,13 +13,13 @@ the device.
 > | Firmware | `v1.0.0` development builds; no public release yet |
 > | Hardware | Rev 3.3 is the only supported board |
 > | Valve control | Endstop detection, working-range learning and motor fault handling in place |
-> | Dashboard | Local web UI (EN/DA) with zones, settings, Motor Lab, firmware update and backup |
+> | Web UI | Local web UI (EN/DA): Home, a sheet per zone and the manifold, and System (connections, firmware, backup, service, Motor Lab) |
 > | Integration | `/api/v1` with Touch authority lease, Asgard heat-pump coordination and external room temperatures |
 > | Implementation plan | Phases 0–8 complete; phase 9 (staged field rollout and outcome measurement) in progress |
 >
 > Expect breaking changes to the API and persisted settings until `v1.0.0` is tagged.
 
-![Lune V6 dashboard — light and dark](docs/shots/lune-v6-dashboard-split.png)
+![Lune V6 web UI — Home, light and dark](docs/shots/lune-v6-home-split.png)
 
 ## Layout
 
@@ -39,12 +39,13 @@ Related repositories:
 - [`Birkemosen/lune-coordinator`](https://github.com/Birkemosen/lune-coordinator) —
   Lune Touch / Mini, the whole-house coordinator.
 - [`Birkemosen/lune-design-system`](https://github.com/Birkemosen/lune-design-system) —
-  shared UI tokens and CSS. The dashboard build expects it as a sibling checkout at
+  shared UI tokens and CSS. The web UI build expects it as a sibling checkout at
   `../lune-design-system`.
 
-## Dashboard (Design System 2)
+## Web UI (Lune Design System)
 
-Static HTML/CSS with radio navigation; a thin binder paints live `/api/v1` data.
+Home / sheets / System on the Lune design system: static HTML/CSS with radio navigation;
+a thin binder paints live `/api/v1` data.
 No ESPHome entity REST from the UI.
 
 ```text
