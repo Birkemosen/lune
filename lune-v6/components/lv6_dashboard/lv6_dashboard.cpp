@@ -9,6 +9,9 @@
 #include "esphome/components/lv6_ble_time_beacon/lv6_ble_time_beacon.h"
 #include "esphome/components/nimble_hub/nimble_hub.h"
 #include "settings_backup.h"
+#ifdef USE_ESP32_CRASH_HANDLER
+#include "esphome/components/esp32/crash_handler.h"
+#endif
 
 #include "esphome/core/log.h"
 #include "esphome/core/version.h"
@@ -1126,6 +1129,16 @@ void LV6Dashboard::setup() {
   // The callback runs on arbitrary tasks; it must stay non-blocking (see on_log_).
   if (logger::global_logger != nullptr)
     logger::global_logger->add_log_callback(this, &LV6Dashboard::on_log_static_);
+#ifdef USE_ESP32_CRASH_HANDLER
+  // The logger printed the previous boot's crash before this callback existed;
+  // print it again so the lines land in crash_lines_ (and the log ring).
+  if (esp32::crash_handler_has_data()) {
+    this->crash_lines_ = static_cast<char (*)[CRASH_LINE_LEN]>(
+        alloc_scratch(static_cast<size_t>(CRASH_LINES) * CRASH_LINE_LEN));
+    if (this->crash_lines_ != nullptr)
+      esp32::crash_handler_log();
+  }
+#endif
 #endif
 
   // Prime snapshot so the first GET doesn't return 503.
@@ -2657,6 +2670,23 @@ void LV6Dashboard::handle_diagnostics_(AsyncWebServerRequest *request) {
             bad_zone_tok, action);
   }
 
+  // "last_crash": the crash handler's lines from the previous boot, or null. The buffer
+  // lives in PSRAM and only exists when there was a crash (internal RAM is tight).
+  constexpr size_t CRASH_JSON_SIZE = CRASH_LINES * (CRASH_LINE_LEN + 4) + 16;
+  static char *crash_buf = nullptr;
+  const char *crash_json = "null";
+  if (this->crash_line_count_ > 0) {
+    if (crash_buf == nullptr)
+      crash_buf = static_cast<char *>(alloc_scratch(CRASH_JSON_SIZE));
+    if (crash_buf != nullptr) {
+      size_t co = static_cast<size_t>(std::snprintf(crash_buf, CRASH_JSON_SIZE, "{\"log\":["));
+      for (uint8_t i = 0; i < this->crash_line_count_ && co + CRASH_LINE_LEN + 8 < CRASH_JSON_SIZE; i++)
+        co += static_cast<size_t>(std::snprintf(crash_buf + co, CRASH_JSON_SIZE - co, "%s\"%s\"", i ? "," : "",
+                                                this->crash_lines_[i]));
+      std::snprintf(crash_buf + co, CRASH_JSON_SIZE - co, "]}");
+      crash_json = crash_buf;
+    }
+  }
   const int written = snprintf(this->json_buf_, JSON_BUF_SIZE,
            "{\"ok\":true,\"version\":\"v1\",\"data\":{\"heap\":{\"internal_kb\":%lu,"
            "\"dma_kb\":%lu,\"largest_internal_kb\":%lu,\"min_internal_kb\":%lu,"
@@ -2692,7 +2722,7 @@ void LV6Dashboard::handle_diagnostics_(AsyncWebServerRequest *request) {
            "\"cap_stall_ma\":%.1f,\"cap_circuit_ma\":%.1f},"
            "\"authority\":{\"state\":\"%s\",\"reason\":\"%s\",\"lease_remaining_s\":%lu,\"generation\":%lu,\"v6_write_allowed\":%s},"
            "\"firmware\":{\"update\":{\"current\":\"%s\",\"latest\":\"%s\",\"available\":%s,"
-           "\"status\":\"%s\"}},\"reset_reason\":\"%s\","
+           "\"status\":\"%s\"}},\"last_crash\":%s,\"reset_reason\":\"%s\","
            "%s,\"logs_endpoint\":\"/api/v1/logs\","
            "\"logs_download_endpoint\":\"/api/v1/logs/download\"}}",
            static_cast<unsigned long>(snap->free_internal_kb),
@@ -2767,7 +2797,7 @@ void LV6Dashboard::handle_diagnostics_(AsyncWebServerRequest *request) {
            snap->authority_v6_write_allowed ? "true" : "false",
            snap->firmware_update_current, snap->firmware_update_latest,
            snap->firmware_update_available ? "true" : "false",
-           snap->firmware_update_status, snap->reset_reason, extras_json);
+           snap->firmware_update_status, crash_json, snap->reset_reason, extras_json);
   // snprintf truncates silently, which would emit structurally invalid JSON and
   // present to the dashboard as a parse error with no clue where it came from.
   if (written < 0 || static_cast<size_t>(written) >= JSON_BUF_SIZE) {
@@ -4679,6 +4709,28 @@ void LV6Dashboard::on_log_static_(void *self, uint8_t level, const char *tag,
 void LV6Dashboard::on_log_(uint8_t level, const char *tag, const char *message,
                            size_t message_len) {
   this->logs_.on_log(level, tag, message, message_len);
+  if (this->crash_lines_ != nullptr && tag != nullptr && std::strcmp(tag, "esp32.crash") == 0 &&
+      this->crash_line_count_ < CRASH_LINES) {
+    // Keep the text after the "[E][esp32.crash:NNN]: " prefix.
+    const char *text = message;
+    size_t len = message_len;
+    const char *colon = static_cast<const char *>(std::memchr(message, ']', message_len));
+    if (colon != nullptr && colon + 1 < message + message_len) {
+      const char *p = static_cast<const char *>(std::memchr(colon + 1, ':', message + message_len - colon - 1));
+      if (p != nullptr && p + 2 <= message + message_len) {
+        text = p + 2;
+        len = static_cast<size_t>(message + message_len - text);
+      }
+    }
+    char *dst = this->crash_lines_[this->crash_line_count_++];
+    size_t n = 0;
+    for (size_t i = 0; i < len && n + 1 < CRASH_LINE_LEN; i++) {
+      const char ch = text[i];
+      if (ch == '"' || ch == '\\') dst[n++] = '\'';            // JSON-safe without escaping
+      else if (static_cast<unsigned char>(ch) >= 0x20) dst[n++] = ch;
+    }
+    dst[n] = '\0';
+  }
 }
 
 namespace {

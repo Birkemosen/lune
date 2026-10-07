@@ -458,6 +458,14 @@ class LV6Dashboard : public Component, public AsyncWebHandler {
                              const char *message, size_t message_len);
   void on_log_(uint8_t level, const char *tag, const char *message, size_t message_len);
   SmartLogBuffer logs_{};
+  // Lines ESPHome's crash handler logs on boot ("*** CRASH DETECTED ON PREVIOUS BOOT ***",
+  // reason, PC, backtrace, addr2line hint). Kept for the whole uptime so they survive
+  // the log ring and are served in /api/v1/diagnostics as "last_crash".
+  // Allocated in PSRAM only when there is a crash to report (internal RAM is tight).
+  static constexpr uint8_t CRASH_LINES = 24;
+  static constexpr uint16_t CRASH_LINE_LEN = 160;
+  char (*crash_lines_)[CRASH_LINE_LEN]{nullptr};
+  uint8_t crash_line_count_{0};
 
   // Raw POST body for application/json (ESP-IDF web_server delivers it via
   // handleBody, not as arg("plain") like the Arduino AsyncWebServer did).
