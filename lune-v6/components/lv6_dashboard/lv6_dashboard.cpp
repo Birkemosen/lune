@@ -4557,7 +4557,8 @@ void LV6Dashboard::sample_history_() {
 
 void LV6Dashboard::handle_history_(AsyncWebServerRequest *request) {
   // Copy history data under lock.
-  auto *ring_copy = static_cast<HistoryEntry *>(malloc(sizeof(HistoryEntry) * HISTORY_SLOTS));
+  // ~11 KiB: PSRAM first — internal heap rarely has a block that large.
+  auto *ring_copy = static_cast<HistoryEntry *>(alloc_scratch(sizeof(HistoryEntry) * HISTORY_SLOTS));
   if (!ring_copy) {
     httpd_req_t *req_err = *request;
     httpd_resp_set_status(req_err, "503 Service Unavailable");
