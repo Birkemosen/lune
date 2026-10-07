@@ -31,7 +31,7 @@ python3 -m http.server 8765 -d lune-v6/web
 ```
 
 Product screenshot used in the root README:
-[`docs/shots/lune-v6-dashboard-split.png`](../../docs/shots/lune-v6-dashboard-split.png)
+[`docs/shots/lune-v6-home-split.png`](../../docs/shots/lune-v6-home-split.png)
 (light / dark split).
 
 Requires a checkout of [`lune-design-system`](https://github.com/Birkemosen/lune-design-system)
