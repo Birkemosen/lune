@@ -1338,7 +1338,8 @@ function paintFormsFromState() {
   const retProbe = es(gkey.manifoldReturnProbe);
   const mType = es(gkey.manifoldType);
   if (mType) {
-    const radio = document.querySelector(`input[name="manifold_type"][value="${mType === 'normally_open' || mType === 'no' ? 'no' : 'nc'}"]`);
+    // The firmware select reports its option label ("NO (Normally Open)"), not a key.
+    const radio = document.querySelector(`input[name="manifold_type"][value="${/^no\b|normally.open/i.test(String(mType)) ? 'no' : 'nc'}"]`);
     if (radio && !formIsLocked(radio)) radio.checked = true;
   }
   const pf = document.getElementById('probe_flow');
@@ -1701,11 +1702,15 @@ async function handleSave(detail) {
           else await applyTwoProbeLayout();
           setProbeLayoutUi(mode, { force: true });
         }
-        await setGlobalSelect('manifold_type', form.manifold_type === 'no' ? 'normally_open' : 'normally_closed');
+        // Only when changed: a stale radio must never overwrite the valve type (it inverts every valve).
+        if (touched(detail, ['manifold_type']) && (form.manifold_type === 'no' || form.manifold_type === 'nc')) {
+          await setGlobalSelect('manifold_type', form.manifold_type === 'no' ? 'NO' : 'NC');
+        }
         if (form.probe_flow != null || form.probe_return != null) {
           await applyManifoldProbes_(form.probe_flow, form.probe_return);
         }
-        await setDriversEnabled(!!form.motor_drivers);
+        // motor_drivers is a switch and saves on toggle (autosaveConfigSwitch_); writing it here
+        // persisted "off" whenever the form was saved while drivers were briefly off after an OTA.
         if (form.motor_type) {
           const profile = String(form.motor_type).toLowerCase().includes('hmip') ? 'hmip_vdmot' : 'generic';
           await setGlobalSelect('motor_profile_default', profile);

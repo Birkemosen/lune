@@ -4337,9 +4337,19 @@ void LV6Dashboard::dispatch_set_(const DashboardAction &act) {
 
   // ---- manifold_type ----
   } else if (strcmp(key, "manifold_type") == 0 && has_str && this->valve_controller_) {
-    lv6::ManifoldType mt = lv6::ManifoldType::NC;
-    if (strcasecmp(str_val, "NO (Normally Open)") == 0 || strcasecmp(str_val, "NO") == 0)
+    // Accept the select label, the short form and the UI's key. Anything else is
+    // ignored: defaulting to NC silently inverted every valve on an NO manifold.
+    lv6::ManifoldType mt;
+    if (strcasecmp(str_val, "NO (Normally Open)") == 0 || strcasecmp(str_val, "NO") == 0 ||
+        strcasecmp(str_val, "normally_open") == 0) {
       mt = lv6::ManifoldType::NO;
+    } else if (strcasecmp(str_val, "NC (Normally Closed)") == 0 || strcasecmp(str_val, "NC") == 0 ||
+               strcasecmp(str_val, "normally_closed") == 0) {
+      mt = lv6::ManifoldType::NC;
+    } else {
+      ESP_LOGW(TAG, "Ignoring unknown manifold_type '%s'", str_val);
+      return;
+    }
     this->valve_controller_->set_manifold_type(mt);
 
   // ---- preheat_absorb_enabled ----
