@@ -2,6 +2,57 @@
 
 This document defines the dedicated dashboard API contract for Lune V6.
 
+<!-- toc -->
+**[Scope](#scope)**
+
+**[Current Implementation Status](#current-implementation-status)**
+
+**[Touch command authentication](#touch-command-authentication)**
+
+**[Response Envelope](#response-envelope)**
+
+**[Read Endpoints](#read-endpoints)**
+
+- [`GET /api/v1/overview`](#get-apiv1overview)
+- [`GET /api/v1/zones`](#get-apiv1zones)
+- [`GET /api/v1/groups`](#get-apiv1groups)
+- [`POST /api/v1/zones/{zone}/physics`](#post-apiv1zoneszonephysics)
+- [`POST /api/v1/zones/{zone}/ua-learned`](#post-apiv1zoneszoneua-learned)
+- [`POST /api/v1/physics/house`](#post-apiv1physicshouse)
+- [`GET /api/v1/zones/{zone}`](#get-apiv1zoneszone)
+- [`GET /api/v1/diagnostics`](#get-apiv1diagnostics)
+- [`GET /api/v1/motor-trace.csv`](#get-apiv1motor-tracecsv)
+- [`GET /api/v1/settings`](#get-apiv1settings)
+- [`GET /api/v1/wifi`](#get-apiv1wifi)
+
+**[Write Endpoints](#write-endpoints)**
+
+- [`POST /api/v1/room-temperatures`](#post-apiv1room-temperatures)
+- [`POST /api/v1/zones/{zone}/setpoint`](#post-apiv1zoneszonesetpoint)
+- [`POST /api/v1/zones/{zone}/enabled`](#post-apiv1zoneszoneenabled)
+- [`POST /api/v1/zones/{zone}/setpoint-command`](#post-apiv1zoneszonesetpoint-command)
+- [`POST /api/v1/absorb-window`](#post-apiv1absorb-window)
+- [`POST /api/v1/commands`](#post-apiv1commands)
+- [`POST /api/v1/settings`](#post-apiv1settings)
+- [`POST /api/v1/wifi`](#post-apiv1wifi)
+
+**[Maintenance Endpoints](#maintenance-endpoints)**
+
+- [`GET /api/v1/settings/export`](#get-apiv1settingsexport)
+- [`POST /api/v1/settings/import`](#post-apiv1settingsimport)
+- [`GET /api/v1/logs/download`](#get-apiv1logsdownload)
+
+**[Firmware Updates](#firmware-updates)**
+
+**[SSE Endpoint](#sse-endpoint)**
+
+- [`GET /api/v1/events`](#get-apiv1events)
+
+**[HTTP Status Codes](#http-status-codes)**
+
+**[Migration Constraints](#migration-constraints)**
+<!-- /toc -->
+
 The cross-product v1 envelope, compatibility rules, and fixtures are in
 [`shared/contracts/lune_api_v1.md`](../../../shared/contracts/lune_api_v1.md).
 

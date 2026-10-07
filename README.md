@@ -4,6 +4,8 @@ Local 6-zone hydronic manifold controller (ESP32-S3 / ESPHome). Safe without a
 coordinator: motors, endstops, temperature freshness, and command clamps run on
 the device.
 
+**Documentation:** [docs/README.md](docs/README.md) — index of all V6 documentation, with links to Lune Touch and the design system.
+
 > **Status (October 2026): pre-release, in field validation.**
 >
 > | Area | State |
