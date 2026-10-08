@@ -212,6 +212,12 @@ class Lv6ZoneController : public esphome::Component {
   /// Last arm end: "" | "disarm" | "expired" (display / ledger).
   const char *absorb_arm_end_reason() const { return absorb_arm_end_reason_; }
   float get_loop_share_pct(uint8_t zone) const;
+
+  /// Touch's house-wide balance: multiplies this board's own balance factor so a
+  /// manifold with low-resistance loops cannot take another manifold's flow.
+  /// RAM only; reverts to 1.0 when the TTL lapses (Touch gone or feature off).
+  void set_house_balance(uint8_t zone, float factor, uint32_t ttl_ms);
+  float get_house_balance(uint8_t zone) const;
   uint8_t get_absorb_capacity_rank(uint8_t zone) const;
   /// Relative Kv at opening percent for Motor lab / diagnostics.
   float get_relative_kv(uint8_t zone, float opening_pct) const;
@@ -279,6 +285,8 @@ class Lv6ZoneController : public esphome::Component {
   // Hydraulic balance
   std::array<float, NUM_ZONES> balance_factors_;
   bool balance_dirty_ = true;
+  std::array<float, NUM_ZONES> house_balance_{1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f};
+  std::array<uint32_t, NUM_ZONES> house_balance_until_ms_{};
 
   // Adaptive balancing accumulators (runtime only; adapt_i lives in ZoneConfig).
   // adapt_err_ema_[i] is a long-window EMA of the control error (setpoint−temp)
@@ -409,6 +417,8 @@ class Lv6ZoneController : public esphome::Component {
   // Reference loop length (m) for the resistance length_term — a standard
   // 15 m² room at 200 mm spacing (~75 m) maps to length_term ≈ 1.0.
   static constexpr float LENGTH_REF_M = 75.0f;
+  /// Floor for Touch's house balance: never throttle a loop below a fifth.
+  static constexpr float HOUSE_BALANCE_MIN = 0.2f;
 };
 
 }  // namespace lv6

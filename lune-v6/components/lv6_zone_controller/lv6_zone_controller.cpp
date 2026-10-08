@@ -2091,7 +2091,24 @@ void Lv6ZoneController::recalculate_dynamic_balance_factors_() {
 float Lv6ZoneController::apply_hydraulic_balance_(uint8_t zone, float raw_position) {
   if (balance_factors_[zone] <= 0.0f)
     return 0.0f;
-  return raw_position * balance_factors_[zone];
+  return raw_position * balance_factors_[zone] * get_house_balance(zone);
+}
+
+void Lv6ZoneController::set_house_balance(uint8_t zone, float factor, uint32_t ttl_ms) {
+  if (zone >= NUM_ZONES)
+    return;
+  house_balance_[zone] = std::clamp(factor, HOUSE_BALANCE_MIN, 1.0f);
+  // 0 means "no command"; nudge an exact wrap to 1 ms so it still expires.
+  const uint32_t until = esphome::millis() + ttl_ms;
+  house_balance_until_ms_[zone] = until == 0 ? 1 : until;
+}
+
+float Lv6ZoneController::get_house_balance(uint8_t zone) const {
+  if (zone >= NUM_ZONES || house_balance_until_ms_[zone] == 0)
+    return 1.0f;
+  if (static_cast<int32_t>(esphome::millis() - house_balance_until_ms_[zone]) >= 0)
+    return 1.0f;
+  return house_balance_[zone];
 }
 
 // =============================================================================
