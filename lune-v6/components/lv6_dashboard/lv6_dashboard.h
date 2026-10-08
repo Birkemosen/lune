@@ -130,6 +130,7 @@ struct DashboardSnapshot {
   char              absorb_reason[32]{};       ///< thermal_buffer | energy_cost | other | ""
   char              absorb_end_reason[16]{};   ///< "" | disarm | expired
   float             zone_loop_share_pct[6]{};
+  float             zone_house_balance[6]{};  ///< Touch house balance in effect (1.0 = none)
   uint8_t           zone_absorb_capacity_rank[6]{};
   float             zone_relative_kv[6]{};  ///< Kv at current commanded opening
   float             zone_static_factor[6]{};     ///< Resistance-aware static prior (0..1)

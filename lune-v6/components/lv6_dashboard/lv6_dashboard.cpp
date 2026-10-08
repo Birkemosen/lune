@@ -632,6 +632,7 @@ void LV6Dashboard::update_snapshot_() {
     for (uint8_t i = 0; i < lv6::NUM_ZONES; i++) {
       if (this->zone_controller_) {
         s.zone_loop_share_pct[i] = this->zone_controller_->get_loop_share_pct(i);
+        s.zone_house_balance[i] = this->zone_controller_->get_house_balance(i);
         s.zone_absorb_capacity_rank[i] = this->zone_controller_->get_absorb_capacity_rank(i);
         s.zone_relative_kv[i] =
             this->zone_controller_->get_relative_kv(i, s.zone_valve_pct[i]);
@@ -641,6 +642,7 @@ void LV6Dashboard::update_snapshot_() {
         s.zone_hydraulic_factor[i] = zs.hydraulic_factor;
       } else {
         s.zone_loop_share_pct[i] = NAN;
+        s.zone_house_balance[i] = 1.0f;
         s.zone_absorb_capacity_rank[i] = 0;
         s.zone_relative_kv[i] = NAN;
         s.zone_static_factor[i] = NAN;
@@ -2308,7 +2310,9 @@ void LV6Dashboard::handle_zones_(AsyncWebServerRequest *request) {
             "\"return_c\":%s,\"loop_share_pct\":%s,\"absorb_state\":\"%s\","
             "\"absorb_capacity_rank\":%s,\"max_offset_c\":%s,"
             "\"group_id\":\"%s\",\"group_role\":\"%s\","
-            "\"wind_exposure\":%.2f,\"solar_gain\":%.2f,\"warnings\":[",
+            "\"wind_exposure\":%.2f,\"solar_gain\":%.2f,"
+            "\"pipe_inner_mm\":%.0f,\"pipe_spacing_mm\":%.0f,\"supply_pipe_length_m\":%.1f,"
+            "\"house_balance\":%.2f,\"warnings\":[",
             snap->zones[i].area_m2, static_cast<unsigned>(snap->zones[i].exterior_walls & 0x0F),
             lv6::slab_type_to_string(snap->zones[i].slab_type), thick_tok,
             lv6::covering_type_to_string(snap->zones[i].covering), r_ov_tok, c_slab_m2, c_slab,
@@ -2318,7 +2322,9 @@ void LV6Dashboard::handle_zones_(AsyncWebServerRequest *request) {
             th.plausible ? ua : "null", th.plausible ? mass : "null",
             th.plausible && std::isfinite(th.tau_prior_h) ? tau : "null", return_c, share,
             absorb_state, rank, max_offset, group_id, lv6::group_role_to_string(role),
-            snap->zones[i].wind_exposure, snap->zones[i].solar_gain);
+            snap->zones[i].wind_exposure, snap->zones[i].solar_gain,
+            lv6::pipe_inner_diameter_mm(snap->zones[i].pipe_type), snap->zones[i].pipe_spacing_mm,
+            snap->zones[i].supply_pipe_length_m, snap->zone_house_balance[i]);
     bool fw = true;
     if (th.thickness_ignored) {
       appendf(buf, JSON_BUF_SIZE, off, "%s\"thickness_ignored\"", fw ? "" : ",");
@@ -3413,6 +3419,54 @@ void LV6Dashboard::handle_v1_(AsyncWebServerRequest *request, const char *path) 
              static_cast<unsigned>(zone), num, accepted_offset, effective_setpoint,
              static_cast<unsigned long>(this->coordinator_command_expires_at_ms_[zi]),
              static_cast<unsigned long>(ttl_s), clamp_applied ? "true" : "false");
+    send_text_(request, 200, "application/json", response, true, "no-cache");
+    return;
+
+  } else if ((zone = match_zone_route(path, "/zones", "house-balance")) != -1) {
+    // Touch's house-wide balance factor for this loop (see set_house_balance).
+    // Same authentication as setpoint-command: provisioned key, UTC timestamp, nonce.
+    if (zone == 0) {
+      this->send_v1_(request, 400, "invalid_zone", "Zone must be in range 1..6");
+      return;
+    }
+    if (!parse_num_param(request, body, "factor", &num) || !std::isfinite(num)) {
+      this->send_v1_(request, 400, "missing_param", "factor is required");
+      return;
+    }
+    if (this->config_store_ == nullptr || this->zone_controller_ == nullptr) {
+      this->send_v1_(request, 503, "controller_unavailable", "Zone controller unavailable");
+      return;
+    }
+    const auto auth_cfg = this->config_store_->get_authority_config();
+    const auto key_header = request->get_header("X-Lune-Authority-Key");
+    const char *provided_key = key_header.has_value() ? key_header->c_str() : "";
+    float auth_timestamp_s = 0.0f;
+    char auth_nonce[48]{};
+    parse_num_param(request, body, "auth_timestamp_s", &auth_timestamp_s);
+    parse_text_param(request, body, "auth_nonce", "", auth_nonce, sizeof(auth_nonce));
+    if (!touch_auth::request_is_authenticated(auth_cfg.shared_key, provided_key,
+                                              ::time(nullptr), auth_timestamp_s, auth_nonce)) {
+      this->send_v1_(request, 403, "touch_auth_failed",
+                     "Touch command requires provisioned key, valid UTC timestamp, and nonce");
+      return;
+    }
+    if (request_guard_.check(0, data_revision_, auth_nonce, millis()) == request_guard::Decision::DUPLICATE) {
+      this->send_v1_(request, 409, "replayed_nonce", "Touch command nonce was already used");
+      return;
+    }
+    float ttl_s = 900.0f;
+    parse_num_param(request, body, "ttl_s", &ttl_s);
+    if (!std::isfinite(ttl_s))
+      ttl_s = 900.0f;
+    ttl_s = std::clamp(ttl_s, 60.0f, 7200.0f);
+    const uint8_t zi = static_cast<uint8_t>(zone - 1);
+    this->zone_controller_->set_house_balance(zi, num, static_cast<uint32_t>(ttl_s * 1000.0f));
+    char response[192];
+    snprintf(response, sizeof(response),
+             "{\"ok\":true,\"version\":\"v1\",\"data\":{\"zone\":%u,\"house_balance\":%.2f,"
+             "\"ttl_s\":%lu}}",
+             static_cast<unsigned>(zone), this->zone_controller_->get_house_balance(zi),
+             static_cast<unsigned long>(ttl_s));
     send_text_(request, 200, "application/json", response, true, "no-cache");
     return;
 
