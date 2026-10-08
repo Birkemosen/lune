@@ -49,13 +49,14 @@ class Cat:
             raise KeyError(f"Mangler i18n-nøgle: {k}")
         return s.format(**kw) if kw else s
     def num(self, x, dec=1):
+        if x is None: return "—"
         return f"{x:.{dec}f}".replace(".", self.d["_dec"])
     def meta(self, k): return self.d[k]
 
 # ---------------------------------------------------------------- data -----
-# Eksempeldata til preview. I firmwaren erstattes værdierne af binderen
-# (data-bind*) eller ved server-side rendering.
-Z = [
+# Eksempeldata til preview/mock. Enhedens side bygges med neutral_zones():
+# ellers ses navne og tal herfra, indtil binderen har hentet /state.
+Z_SAMPLE = [
  (1,"Josephine",21.4,22.0,"calling",62,29.1,None,"sw","ble",12.0,150,"PEX 16mm"),
  (2,"Laura",20.8,21.0,"idle",18,28.2,None,"ne","ble",11.0,150,"PEX 16mm"),
  (3,"Toilet",22.6,22.0,"idle",6,28.9,None,"","probe",4.5,100,"PEX 16mm"),
@@ -64,13 +65,18 @@ Z = [
  (6,"Soveværelse",17.8,19.0,"fault",0,22.1,None,"n","ble",14.0,200,"ALUPEX 16mm"),
 ]
 PIPES=["PEX 12mm","PEX 14mm","PEX 16mm","PEX 17mm","PEX 18mm","PEX 20mm","ALUPEX 16mm","ALUPEX 20mm","Unknown"]
-def level(z): return 0 if z[4] in ("fault","off") else max(1, math.ceil(z[5]/10))   # 10 segmenter á 10 %
+def neutral_zones():
+    # Manglende værdier er «—» (aldrig 0); formularfelter får gyldige startværdier.
+    return [(i,"—",None,21.0,"",None,None,None,"","ble",0.0,150,"PEX 16mm") for i in range(1,7)]
+def level(z): return 0 if z[4] in ("fault","off") or z[5] is None else max(1, math.ceil(z[5]/10))   # 10 segmenter á 10 %
 def tid(z): return "Z4–5" if z[7]=="primary" else f"Z{z[0]}"
 def rid(z): return "Z5" if z[7]=="member" else tid(z)
 
 # ---------------------------------------------------------------- render ---
 def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, binder_src="/binder.js", mock=False):
     ST={k:T(f"state.{k}") for k in ("calling","idle","fault","off")}
+    ST[""]="—"
+    Z=Z_SAMPLE if mock else neutral_zones()
     H=T.meta("_h")
 
     # ---- byggesten
@@ -165,11 +171,11 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
     tiles="".join(f'''
           <button class="tile" type="button" popovertarget="sheet-z{z[0]}" data-state="{z[4]}" data-level="{level(z)}"{f' data-group="{z[7]}"' if z[7] else ''}>
             <span class="lvl" aria-hidden="true">{"<i></i>"*10}</span>
-            <span class="tile-pct" data-bind="z{z[0]}.valve">{0 if z[4] in ("fault","off") else z[5]} %</span>
+            <span class="tile-pct" data-bind="z{z[0]}.valve">{"—" if z[5] is None else f"{0 if z[4] in ('fault','off') else z[5]} %"}</span>
             <span class="tile-id">{tid(z)}</span>
             <span class="tile-name" data-bind="z{z[0]}.name">{z[1]}</span>
             <span class="tile-dev" data-bind="z{z[0]}.dev" hidden></span>
-            <span class="tile-val" data-bind="z{z[0]}.temp">{T("tile.fault") if z[4]=="fault" else T.num(z[2])+"°"}</span>
+            <span class="tile-val" data-bind="z{z[0]}.temp">{T("tile.fault") if z[4]=="fault" else "—" if z[2] is None else T.num(z[2])+"°"}</span>
           </button>''' for z in Z)
     strip=f'''<nav class="strip" aria-label="{T("strip.label")}">
           <button class="tile tile-sys" type="button" popovertarget="sheet-manifold" title="{T("scope.manifold")}">
@@ -177,11 +183,11 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
             <span class="temps">
               <span class="temp flow">
                 <span class="temp-lab" title="{T("m.supply")}">{T("m.supplyShort")}</span>
-                <span class="tile-val" data-bind="strip.flow">{T.num(34.2)}°</span>
+                <span class="tile-val" data-bind="strip.flow">{T.num(34.2 if mock else None)}{"°" if mock else ""}</span>
               </span>
               <span class="temp ret">
                 <span class="temp-lab" title="{T("m.return")}">{T("m.returnShort")}</span>
-                <span class="tile-val" data-bind="strip.return">{T.num(29.8)}°</span>
+                <span class="tile-val" data-bind="strip.return">{T.num(29.8 if mock else None)}{"°" if mock else ""}</span>
               </span>
             </span>
           </button>{tiles}
@@ -189,10 +195,10 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
 
     def manifold_metrics():
         return f'''<dl class="metrics">
-            {metric(T("m.supply"),T.num(34.2),"°C","manifold.flow")}
-            {metric(T("m.return"),T.num(29.8),"°C","manifold.return")}
-            {metric(T("m.dt"),T.num(4.4),"K","manifold.dt")}
-            {metric(T("m.opening"),"32","%","manifold.opening")}
+            {metric(T("m.supply"),T.num(34.2 if mock else None),"°C","manifold.flow")}
+            {metric(T("m.return"),T.num(29.8 if mock else None),"°C","manifold.return")}
+            {metric(T("m.dt"),T.num(4.4 if mock else None),"K","manifold.dt")}
+            {metric(T("m.opening"),"32" if mock else "—","%","manifold.opening")}
           </dl>
           <div class="bar" style="--v:0%" role="meter" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100" aria-label="{T("m.openingAria")}" data-bind-bar="manifold.opening"><i></i></div>'''
     def trend_block():
@@ -213,7 +219,7 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
             </button>''' for z in Z)
     home=f'''
       <section class="view" id="v-home-sys" aria-labelledby="h-home">
-        <header class="view-head"><h2 id="h-home">{T("scope.manifold")}</h2><p data-bind="dash.sys.sub">{T("dash.sys.sub",zones=6,calling=0,faults=0)}</p></header>
+        <header class="view-head"><h2 id="h-home">{T("scope.manifold")}</h2><p data-bind="dash.sys.sub">{T("dash.sys.sub",zones=6,calling=0,faults=0) if mock else "—"}</p></header>
 
         <div class="panel alert" data-bind-show="dash.alert" hidden>
           <div class="panel-head"><h3 data-bind="dash.alertTitle">{T("alert.zoneFault",zone="—")}</h3></div>
