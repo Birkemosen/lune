@@ -332,6 +332,16 @@ class Lv6ValveController : public esphome::Component {
   /// hiccup could write a learned position - which is how a Motor Lab jog ended
   /// up able to record one.
   static constexpr uint32_t ENDPOINT_MIN_RIPPLES = 50;
+  /// Persisted positions (NVS "motpos"); NAN until the first write or restore.
+  float persisted_pos_[NUM_ZONES]{NAN, NAN, NAN, NAN, NAN, NAN};
+  void persist_positions_();
+  /// A close-to-seat drive that stops where the seat was expected (held position
+  /// x learned stroke, within this margin) is the seat (endpoint_logic.h, seated_start).
+  static constexpr uint32_t SEATED_START_MIN_RIPPLES = 120;
+  static constexpr float SEATED_START_STROKE_FRACTION = 0.08f;
+  static constexpr float SEATED_START_EXPECTED_FRACTION = 0.15f;
+  /// Extra travel (in % of stroke) allowed when driving into the seat.
+  static constexpr float SEAT_APPROACH_MARGIN_PCT = 15.0f;
   /// Weak load evidence for the opening direction: half the measured pin step,
   /// a sixth of the open stop's rise. Enough to show the motor is loaded without
   /// requiring the full trip.
