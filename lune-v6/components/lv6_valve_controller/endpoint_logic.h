@@ -236,6 +236,13 @@ struct EndpointEvidence {
   bool commanded_endpoint{false};
   StrokePhase phase{StrokePhase::FREE_TRAVEL};
   bool direction_is_open{false};
+  /// Closing toward the seat and the rotor stopped where the seat was expected:
+  /// the travel since the start matches the position the controller held
+  /// (position x learned stroke, within a margin). A re-home is a drive to the
+  /// endstop, whose window assumes a full stroke, and a valve on or near its
+  /// seat never leaves FREE_TRAVEL - without this a closed valve could never be
+  /// re-homed (2026-10-09: every zone BLOCKED, every open refused).
+  bool seated_start{false};
 };
 
 // The load-bearing pair is motion that has ceased while the motor is still
@@ -304,7 +311,7 @@ constexpr EndpointDecision classify_endpoint(const EndpointEvidence &e) {
     // CONTINUE: a mid-travel obstruction was invisible to the one path built to
     // see it.
     if (e.phase == StrokePhase::FREE_TRAVEL)
-      return EndpointDecision::JAM;
+      return e.seated_start ? EndpointDecision::ENDPOINT : EndpointDecision::JAM;
     return EndpointDecision::ENDPOINT;  // UNDER_LOAD or STOPPING
   }
 
@@ -329,10 +336,13 @@ constexpr EndpointDecision classify_endpoint(const EndpointEvidence &e) {
       return EndpointDecision::CONTINUE;
     // Closing: stopping under load before the plunger ever reached the pin is
     // something in the way, not the valve seat. The seat is only reachable
-    // through phases 2 and 3.
+    // through phases 2 and 3 - unless the move started on the seat: then the
+    // stop under load at once is the seat itself.
     if (e.phase == StrokePhase::FREE_TRAVEL)
-      return EndpointDecision::JAM;
-    if (e.commanded_endpoint && e.endpoint_window)
+      return e.commanded_endpoint && e.seated_start ? EndpointDecision::ENDPOINT : EndpointDecision::JAM;
+    // A seated start never travels the learned seating depth, so its window is
+    // never reached; the stop itself is the seat.
+    if (e.commanded_endpoint && (e.endpoint_window || e.seated_start))
       return EndpointDecision::ENDPOINT;
     return EndpointDecision::JAM;
   }

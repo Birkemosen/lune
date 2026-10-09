@@ -533,6 +533,29 @@ void Lv6ConfigStore::save_motor_telemetry(uint8_t motor, const MotorTelemetry &t
   nvs_close(handle);
 }
 
+void Lv6ConfigStore::save_motor_positions(const float *pos, size_t count) {
+  if (pos == nullptr || count == 0)
+    return;
+  nvs_handle_t handle;
+  if (nvs_open(NVS_NAMESPACE, NVS_READWRITE, &handle) != ESP_OK)
+    return;
+  nvs_set_blob(handle, KEY_MOTOR_POS, pos, count * sizeof(float));
+  nvs_commit(handle);
+  nvs_close(handle);
+}
+
+bool Lv6ConfigStore::load_motor_positions(float *pos, size_t count) {
+  if (pos == nullptr || count == 0)
+    return false;
+  nvs_handle_t handle;
+  if (nvs_open(NVS_NAMESPACE, NVS_READONLY, &handle) != ESP_OK)
+    return false;
+  size_t size = count * sizeof(float);
+  const esp_err_t err = nvs_get_blob(handle, KEY_MOTOR_POS, pos, &size);
+  nvs_close(handle);
+  return err == ESP_OK && size == count * sizeof(float);
+}
+
 bool Lv6ConfigStore::load_motor_telemetry(uint8_t motor, MotorTelemetry &telemetry) {
   if (motor >= NUM_ZONES)
     return false;

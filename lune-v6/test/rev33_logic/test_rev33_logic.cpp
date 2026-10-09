@@ -667,7 +667,43 @@ static void test_circuit_fault_never_becomes_an_endpoint() {
   assert(classify_endpoint(e) == EndpointDecision::OVERCURRENT);
 }
 
+// A valve already on its seat: re-homing toward the seat stops under load at
+// once, and the stroke tracker never leaves FREE_TRAVEL. That is the seat, not a
+// jam - otherwise a closed valve can never be re-homed (seen 2026-10-09: every
+// zone BLOCKED, every open refused). A mid-travel stop is still a jam.
+static void test_seated_start_closing_is_the_seat() {
+  EndpointEvidence e;
+  e.blanking_elapsed = true;
+  e.current_present = true;
+  e.load_evidence = true;
+  e.commutation_observed = true;
+  e.commutation_plateau = true;
+  e.endpoint_window = false;
+  e.commanded_endpoint = true;
+  e.phase = StrokePhase::FREE_TRAVEL;
+  e.direction_is_open = false;
+  assert(classify_endpoint(e) == EndpointDecision::JAM);
+  e.seated_start = true;
+  assert(classify_endpoint(e) == EndpointDecision::ENDPOINT);
+  // Past pin contact (UNDER_LOAD) the learned seating window is never reached
+  // from the seat either; the seated start still decides.
+  e.phase = StrokePhase::UNDER_LOAD;
+  assert(classify_endpoint(e) == EndpointDecision::ENDPOINT);
+  e.seated_start = false;
+  assert(classify_endpoint(e) == EndpointDecision::JAM);
+  e.seated_start = true;
+  e.phase = StrokePhase::FREE_TRAVEL;
+  // Not a commanded endpoint (a normal move): still a jam.
+  e.commanded_endpoint = false;
+  assert(classify_endpoint(e) == EndpointDecision::JAM);
+  // Without load evidence nothing is decided yet.
+  e.commanded_endpoint = true;
+  e.load_evidence = false;
+  assert(classify_endpoint(e) == EndpointDecision::CONTINUE);
+}
+
 int main() {
+  test_seated_start_closing_is_the_seat();
   test_address_map_matches_the_contract();
   test_superseded_formula_is_not_equivalent();
   test_selection_is_fail_safe();

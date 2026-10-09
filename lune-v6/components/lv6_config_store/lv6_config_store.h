@@ -63,6 +63,10 @@ class Lv6ConfigStore : public esphome::Component {
   // Motor telemetry persistence (calibration data)
   void save_motor_telemetry(uint8_t motor, const MotorTelemetry &telemetry);
   bool load_motor_telemetry(uint8_t motor, MotorTelemetry &telemetry);
+  /// Last known valve positions (all motors in one small blob), so a reboot
+  /// knows roughly where each motor stood relative to its endstop.
+  void save_motor_positions(const float *pos, size_t count);
+  bool load_motor_positions(float *pos, size_t count);
 
   /// User preference: keep motor drivers armed across reboot. Missing key →
   /// returns false from load (caller keeps boot default).
@@ -80,6 +84,7 @@ class Lv6ConfigStore : public esphome::Component {
   static constexpr const char *NVS_NAMESPACE_LEGACY = "hv6";
   static constexpr const char *KEY_CONFIG = "config";
   static constexpr const char *KEY_MOTOR_PFX = "mot";
+  static constexpr const char *KEY_MOTOR_POS = "motpos";
   static constexpr const char *KEY_SENSORS = "sensors";  // BLE pairing, survives main-blob resets
   static constexpr const char *KEY_ZONES = "zones";      // Zone config, survives main-blob resets
   // Remaining global-settings sections, each mirrored to its own durable key so

@@ -265,6 +265,25 @@ void Lv6ValveController::setup() {
     }
   }
 
+  // Last known positions. Restored as a hint only: the position stays
+  // unconfirmed, so the first move still re-homes, but the seat check knows
+  // where the seat should be instead of assuming the valve is closed.
+  if (config_store_) {
+    float pos[NUM_ZONES];
+    if (config_store_->load_motor_positions(pos, NUM_ZONES)) {
+      xSemaphoreTake(telemetry_mutex_, portMAX_DELAY);
+      for (uint8_t i = 0; i < NUM_ZONES; i++) {
+        if (std::isfinite(pos[i])) {
+          telemetry_[i].current_position_pct = std::clamp(pos[i], 0.0f, 100.0f);
+          persisted_pos_[i] = telemetry_[i].current_position_pct;
+        }
+      }
+      xSemaphoreGive(telemetry_mutex_);
+      ESP_LOGI(TAG, "Restored positions: %.0f %.0f %.0f %.0f %.0f %.0f %%", pos[0], pos[1], pos[2],
+               pos[3], pos[4], pos[5]);
+    }
+  }
+
   // Start motor FSM task on Core 1
   BaseType_t ok = xTaskCreatePinnedToCore(
       task_func_, "lv6_valve", STACK_SIZE, this, PRIORITY, &task_handle_, CORE);
@@ -603,7 +622,13 @@ MoveCeilingInputs Lv6ValveController::build_ceiling_inputs_(
     in.learned_stroke_counts = 0;
     in.position_confident = false;
   }
-  const float remaining = is_open ? (100.0f - pos_pct) : pos_pct;
+  float remaining = is_open ? (100.0f - pos_pct) : pos_pct;
+  // A drive into the seat also has to press the seat home (past pin contact)
+  // and absorb count drift from the open leg; the seat itself stops it, and the
+  // mechanical bootstrap ceiling below still caps it. Without this a valve held
+  // at 5.8 % overran a 265-count window and was blocked (2026-10-09).
+  if (drive_to_endstop && !is_open)
+    remaining += SEAT_APPROACH_MARGIN_PCT;
   in.remaining_fraction = std::clamp(remaining, 0.0f, 100.0f) / 100.0f;
 
   // The HmIP ceiling is the mechanical one; a GENERIC profile is not known to
@@ -1219,6 +1244,7 @@ void Lv6ValveController::run_() {
         uint8_t zone = static_cast<uint8_t>(calibration_request_);
         calibration_request_ = -1;
         run_calibration_(zone);
+        persist_positions_();
         // Advance to next pending zone in the queue
         if (calibration_pending_mask_ != 0) {
           for (uint8_t z = 0; z < NUM_ZONES; z++) {
@@ -1243,10 +1269,32 @@ void Lv6ValveController::process_command_queue_() {
   if (xQueueReceive(cmd_queue_, &cmd, 0) == pdTRUE) {
     if (cmd.timed_duration_ms > 0) {
       execute_timed_move_(cmd.zone, cmd.timed_duration_ms, cmd.timed_direction, cmd.override_drivers);
-          } else {
+    } else {
       execute_move_(cmd.zone, cmd.target_pct);
     }
+    if (!motor_turning_)
+      persist_positions_();
   }
+}
+
+void Lv6ValveController::persist_positions_() {
+  if (config_store_ == nullptr)
+    return;
+  float pos[NUM_ZONES];
+  xSemaphoreTake(telemetry_mutex_, portMAX_DELAY);
+  for (uint8_t i = 0; i < NUM_ZONES; i++)
+    pos[i] = telemetry_[i].current_position_pct;
+  xSemaphoreGive(telemetry_mutex_);
+  bool changed = false;
+  for (uint8_t i = 0; i < NUM_ZONES; i++) {
+    if (!std::isfinite(persisted_pos_[i]) || std::fabs(pos[i] - persisted_pos_[i]) >= 0.5f)
+      changed = true;
+  }
+  if (!changed)
+    return;
+  config_store_->save_motor_positions(pos, NUM_ZONES);
+  for (uint8_t i = 0; i < NUM_ZONES; i++)
+    persisted_pos_[i] = pos[i];
 }
 
 void Lv6ValveController::execute_timed_move_(uint8_t zone, uint16_t duration_ms, MotorDirection dir, bool override_drivers) {
@@ -3011,9 +3059,31 @@ void Lv6ValveController::detect_endstop_() {
     evidence.direction_is_open = current_dir_ == MotorDirection::OPEN;
     evidence.phase = stroke_.phase();
     evidence.endpoint_window = endpoint_window_reached_();
-
+    uint32_t seat_moved = 0, seat_expected = 0, seat_margin = 0;
+    float seat_pos = NAN;
+    if (current_dir_ == MotorDirection::CLOSE && evidence.commanded_endpoint && current_zone_ < NUM_ZONES) {
+      // Where should the seat be? The position held before this move, times the
+      // learned stroke. Pressing into a seat still turns the rotor a little
+      // (~0.8 s, 60-70 ripples on HmIP), hence the margin.
+      xSemaphoreTake(telemetry_mutex_, portMAX_DELAY);
+      seat_pos = telemetry_[current_zone_].current_position_pct;
+      const uint32_t stroke = telemetry_[current_zone_].learned_close_ripples;
+      xSemaphoreGive(telemetry_mutex_);
+      seat_expected = static_cast<uint32_t>(std::clamp(seat_pos, 0.0f, 100.0f) / 100.0f * stroke);
+      // Drift grows with distance (that is why there is a re-home), so does the margin.
+      seat_margin = std::max({SEATED_START_MIN_RIPPLES,
+                              static_cast<uint32_t>(stroke * SEATED_START_STROKE_FRACTION),
+                              static_cast<uint32_t>(seat_expected * SEATED_START_EXPECTED_FRACTION)});
+      seat_moved = live_ripple_count_.load(std::memory_order_relaxed);
+      evidence.seated_start = stroke > 0 && seat_moved + seat_margin >= seat_expected &&
+                              seat_moved <= seat_expected + seat_margin;
+    }
     const EndpointDecision decision = classify_endpoint(evidence);
     last_endpoint_decision_ = static_cast<uint8_t>(decision);
+    if (decision == EndpointDecision::JAM && evidence.commanded_endpoint && std::isfinite(seat_pos))
+      ESP_LOGW(TAG, "Motor %d seat check: held %.1f%%, moved %" PRIu32 " ripples, expected %" PRIu32
+                    " +/- %" PRIu32 ", phase %u, window %d", current_zone_ + 1, seat_pos, seat_moved,
+               seat_expected, seat_margin, static_cast<unsigned>(evidence.phase), evidence.endpoint_window);
     switch (decision) {
       case EndpointDecision::CONTINUE:
         return;
