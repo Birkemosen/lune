@@ -4,10 +4,13 @@
 #include <cstring>
 
 #include "esphome/core/application.h"
+#include "esphome/core/hal.h"
 #include "esphome/core/log.h"
 
 #ifdef USE_ESP32
+#include <esp_attr.h>
 #include <esp_heap_caps.h>
+#include <esp_system.h>
 #include "host/ble_gap.h"
 #include "host/ble_hs.h"
 #include "host/ble_hs_adv.h"
@@ -60,7 +63,55 @@ void NimbleHub::setup() {
 #endif
 }
 
-void NimbleHub::loop() { this->update_ads_rate_(); }
+void NimbleHub::loop() {
+  this->update_ads_rate_();
+  this->check_sync_watchdog_();
+}
+
+#ifdef USE_ESP32
+// Reboots made by the sync watchdog, kept across a software restart (not across power-off).
+// A reboot has fixed a NimBLE host that never started; the cap stops a reboot loop.
+static constexpr uint32_t BLE_REBOOT_MAGIC = 0x4c42524bUL;   // "LBRK"
+static constexpr uint8_t BLE_REBOOT_MAX = 3;
+RTC_NOINIT_ATTR static uint32_t s_ble_reboot_magic;
+RTC_NOINIT_ATTR static uint8_t s_ble_reboots;
+static uint8_t ble_reboots() { return s_ble_reboot_magic == BLE_REBOOT_MAGIC ? s_ble_reboots : 0; }
+static void set_ble_reboots(uint8_t n) { s_ble_reboot_magic = BLE_REBOOT_MAGIC; s_ble_reboots = n; }
+#endif
+
+void NimbleHub::check_sync_watchdog_() {
+#ifdef USE_ESP32
+  if (!this->enabled_ || this->synced_ || this->enabled_ms_ == 0)
+    return;
+  // 30 s, then 60, 120 … capped at 10 min between restarts.
+  uint32_t wait_ms = 30000UL;
+  for (uint8_t i = 0; i < this->sync_restarts_ && wait_ms < 600000UL; i++)
+    wait_ms *= 2;
+  if (esphome::millis() - this->enabled_ms_ < wait_ms)
+    return;
+  // Two stack restarts without a sync: the host task never started (nimble_port_stop
+  // rc=2). A clean reboot fixes that; valves hold position across it (~10 s).
+  if (this->sync_restarts_ >= 2 && ble_reboots() < BLE_REBOOT_MAX) {
+    set_ble_reboots(ble_reboots() + 1);
+    ESP_LOGE(TAG, "NimBLE still not synced after %u stack restarts; rebooting (%u/%u)",
+             static_cast<unsigned>(this->sync_restarts_), static_cast<unsigned>(ble_reboots()),
+             static_cast<unsigned>(BLE_REBOOT_MAX));
+    esphome::App.safe_reboot();
+    return;
+  }
+  const bool wanted_scan = this->want_scan_;
+  const bool was_continuous = this->continuous_scan_;
+  this->sync_restarts_++;
+  ESP_LOGW(TAG, "NimBLE did not sync within %lu s; restarting the BLE stack (%u)",
+           static_cast<unsigned long>(wait_ms / 1000), static_cast<unsigned>(this->sync_restarts_));
+  this->disable();
+  this->enable();
+  if (wanted_scan && this->enabled_) {
+    this->want_scan_ = true;   // started by on_sync_
+    this->continuous_scan_ = was_continuous;
+  }
+#endif
+}
 
 void NimbleHub::dump_config() {
   ESP_LOGCONFIG(TAG, "NimBLE hub:");
@@ -124,6 +175,9 @@ void NimbleHub::enable() {
     return;
   }
   this->enabled_ = true;
+  this->enabled_ms_ = esphome::millis();
+  if (this->enabled_ms_ == 0)
+    this->enabled_ms_ = 1;
   ESP_LOGI(TAG, "NimBLE enabled (free_heap=%u internal=%u)",
            static_cast<unsigned>(esp_get_free_heap_size()),
            static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_INTERNAL)));
@@ -201,6 +255,8 @@ void NimbleHub::on_sync_() {
     this->own_addr_type_ = 0;
   }
   this->synced_ = true;
+  this->sync_restarts_ = 0;
+  set_ble_reboots(0);
   ESP_LOGI(TAG, "NimBLE synced (free_heap=%u internal=%u)",
            static_cast<unsigned>(esp_get_free_heap_size()),
            static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_INTERNAL)));

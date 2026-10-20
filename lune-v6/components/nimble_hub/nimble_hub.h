@@ -53,6 +53,8 @@ class NimbleHub : public Component {
   }
   void stop_scan();
   bool scanning() const { return scanning_; }
+  /// A scan is requested but NimBLE has not synced yet (it starts on sync).
+  bool scan_pending() const { return want_scan_ && !synced_; }
 
   // Scan liveness (updated from the NimBLE host task; read from loop/HTTP).
   float ads_per_sec() const { return ads_per_sec_; }
@@ -83,6 +85,12 @@ class NimbleHub : public Component {
   void note_advertisement_();
   void update_ads_rate_();
   static uint16_t ms_to_units_(uint16_t ms);
+
+  // Sync watchdog: NimBLE now and then never syncs after a boot (seen after OTA);
+  // then the stack is restarted instead of waiting forever with no BLE sensors.
+  void check_sync_watchdog_();
+  uint32_t enabled_ms_{0};
+  uint8_t sync_restarts_{0};
 
   bool enable_on_boot_{false};
   bool enabled_{false};
