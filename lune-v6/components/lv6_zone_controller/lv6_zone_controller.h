@@ -188,6 +188,8 @@ class Lv6ZoneController : public esphome::Component {
   /// 1.0, drops the in-RAM error accumulators, and forces a balance rebuild on
   /// the next cycle. Persists the cleared multipliers to the durable zones blob.
   void reset_balancing();
+  /// Recompute balance factors on the next cycle (e.g. after a balancing mode change).
+  void request_balance_recalc() { balance_dirty_ = true; }
 
   void set_simple_preheat_enabled(bool enabled);
   bool is_simple_preheat_enabled() const;

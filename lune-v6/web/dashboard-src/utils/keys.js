@@ -119,6 +119,7 @@ export const gkey = {
   minZoneFlowPct: 'number-min_zone_flow_pct',
   heatingMode: 'select-heating_mode',
   balancingMode: 'select-balancing_mode',
+  driversOffReason: 'text_sensor-motor_drivers_off_reason',
   effectiveHeatingMode: 'text-effective_heating_mode',
   heatingModeSource: 'text-heating_mode_source',
   hpOverheatMarginC: 'number-hp_overheat_margin_c',

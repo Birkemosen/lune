@@ -88,6 +88,9 @@ struct DashboardSnapshot {
 
   // --- live runtime flags ---
   bool drivers_enabled;
+  const char *drivers_off_reason;   ///< "" while on; user / ota / fault / arm / boot
+  uint32_t drivers_off_age_s;
+  uint8_t drivers_recoveries;
 
   // --- system diagnostics (FreeRTOS runtime stats + heap) ---
   float    cpu0_pct{NAN};        // Core 0 load % (loop/web/API/WiFi/zone task)
