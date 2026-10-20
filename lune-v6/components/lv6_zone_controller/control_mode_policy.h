@@ -80,6 +80,12 @@ static constexpr float HP_COOL_FLOW_MARGIN_C = 1.0f;
 ///   overheated                0, unless the flow is no warmer than the room
 /// NaN for hp_demand_pct / flow_temp_c keeps the previous behaviour (demand
 /// floor = base; overheated closes).
+///
+/// hp_idle (Touch: the heat pump is not running and no block starts soon): the
+/// high openings only pay while the compressor runs, so a satisfied room uses
+/// the trim floor instead of the base opening. Rooms that need heat still open
+/// (the buffer's remaining heat goes to them), and the comfort band still leans
+/// toward the demand opening.
 inline float position_for_state(HeatingProfile mode, ZoneState state,
                                 float allocator_opening_pct, float raw_algorithm_pct,
                                 float maintenance_base_pct, float hp_base_pct,
@@ -87,7 +93,7 @@ inline float position_for_state(HeatingProfile mode, ZoneState state,
                                 float temp, float setpoint, float max_opening_pct,
                                 bool absorbing, float absorb_band_c,
                                 float hp_demand_pct = NAN, float comfort_band_c = 0.5f,
-                                float flow_temp_c = NAN) {
+                                float flow_temp_c = NAN, bool hp_idle = false) {
   const bool hp = mode == HeatingProfile::HEAT_PUMP;
   const float demand_pct =
       std::isnan(hp_demand_pct) ? hp_base_pct : std::max(hp_demand_pct, hp_base_pct);
@@ -116,7 +122,7 @@ inline float position_for_state(HeatingProfile mode, ZoneState state,
       if (!hp)
         return maintenance_base_pct;
 
-      float base = hp_base_pct;
+      float base = hp_idle ? floor_pct : hp_base_pct;
       if (absorbing && allocator_opening_pct > 0.0f)
         base = std::max(base, allocator_opening_pct * 0.5f);
 

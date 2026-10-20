@@ -219,6 +219,12 @@ class Lv6ZoneController : public esphome::Component {
   /// manifold with low-resistance loops cannot take another manifold's flow.
   /// RAM only; reverts to 1.0 when the TTL lapses (Touch gone or feature off).
   void set_house_balance(uint8_t zone, float factor, uint32_t ttl_ms);
+  /// Touch: what the heat pump is doing (see hp_phase_name). Expires after ttl_ms,
+  /// then V6 is back on its own curve (UNKNOWN).
+  enum class HpPhase : uint8_t { UNKNOWN = 0, RUNNING = 1, PRESTART = 2, IDLE = 3 };
+  void set_hp_phase(HpPhase phase, uint32_t ttl_ms);
+  HpPhase get_hp_phase() const;
+  static const char *hp_phase_name(HpPhase phase);
   float get_house_balance(uint8_t zone) const;
   uint8_t get_absorb_capacity_rank(uint8_t zone) const;
   /// Relative Kv at opening percent for Motor lab / diagnostics.
@@ -289,6 +295,8 @@ class Lv6ZoneController : public esphome::Component {
   bool balance_dirty_ = true;
   std::array<float, NUM_ZONES> house_balance_{1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f};
   std::array<uint32_t, NUM_ZONES> house_balance_until_ms_{};
+  HpPhase hp_phase_{HpPhase::UNKNOWN};
+  uint32_t hp_phase_until_ms_{0};
 
   // Adaptive balancing accumulators (runtime only; adapt_i lives in ZoneConfig).
   // adapt_err_ema_[i] is a long-window EMA of the control error (setpoint−temp)

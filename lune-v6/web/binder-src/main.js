@@ -588,6 +588,11 @@ function paintStrip() {
     setBind(`probe.${p}`, Number.isFinite(pt) ? `${num(pt)} <small>°C</small>` : '—');
   }
   setBar('manifold.opening', openingPct);
+  // Heat pump phase from Touch (valves follow the heat pump): one line, only when known.
+  const hpPhase = String(getDashboardValue('hpPhase') || 'unknown');
+  const hpKnown = ['running', 'prestart', 'idle'].includes(hpPhase);
+  setShow('manifold.hpPhase', hpKnown);
+  setText('manifold.hpPhaseText', hpKnown ? t(`hpPhase.${hpPhase}`) : '');
   setBind('manifold.status', escapeHtml(t('sheet.manifoldStatus', {
     flow: deg(flow), ret: deg(ret), dt: Number.isFinite(dt) ? `${num(dt)} K` : '—',
     open: Number.isFinite(openingPct) ? `${openingPct} %` : '—',

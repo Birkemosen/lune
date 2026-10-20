@@ -1318,7 +1318,7 @@ void Lv6ZoneController::run_cycle_() {
         cfg.control.maintenance_base_pct, cfg.control.hp_base_pct, cfg.control.hp_trim_floor_pct,
         cfg.control.hp_overheat_margin_c, temp, setpoint, cfg.zones[i].max_opening_pct,
         zone_absorbing_(i), absorb_band, cfg.control.hp_demand_pct, cfg.control.comfort_band_c,
-        manifold_flow_c);
+        manifold_flow_c, get_hp_phase() == HpPhase::IDLE);
     bool was_overheated = (state == ZoneState::OVERHEATED);
 
     position = apply_hydraulic_balance_(i, position);
@@ -2101,6 +2101,30 @@ void Lv6ZoneController::set_house_balance(uint8_t zone, float factor, uint32_t t
   // 0 means "no command"; nudge an exact wrap to 1 ms so it still expires.
   const uint32_t until = esphome::millis() + ttl_ms;
   house_balance_until_ms_[zone] = until == 0 ? 1 : until;
+}
+
+void Lv6ZoneController::set_hp_phase(HpPhase phase, uint32_t ttl_ms) {
+  if (phase != get_hp_phase())
+    ESP_LOGI(TAG, "Heat pump phase from Touch: %s (ttl %lu s)", hp_phase_name(phase),
+             static_cast<unsigned long>(ttl_ms / 1000));
+  hp_phase_ = phase;
+  const uint32_t until = esphome::millis() + ttl_ms;
+  hp_phase_until_ms_ = until == 0 ? 1 : until;
+}
+
+Lv6ZoneController::HpPhase Lv6ZoneController::get_hp_phase() const {
+  if (hp_phase_until_ms_ == 0 || static_cast<int32_t>(esphome::millis() - hp_phase_until_ms_) >= 0)
+    return HpPhase::UNKNOWN;
+  return hp_phase_;
+}
+
+const char *Lv6ZoneController::hp_phase_name(HpPhase phase) {
+  switch (phase) {
+    case HpPhase::RUNNING: return "running";
+    case HpPhase::PRESTART: return "prestart";
+    case HpPhase::IDLE: return "idle";
+    default: return "unknown";
+  }
 }
 
 float Lv6ZoneController::get_house_balance(uint8_t zone) const {

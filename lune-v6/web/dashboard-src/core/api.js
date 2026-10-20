@@ -517,6 +517,7 @@ export function fetchPhysicsAlerts() {
         }
       }
       setDashboardValue('zonePhysics', byZone);
+      setDashboardValue('hpPhase', json?.data?.hp_phase || 'unknown');
       setDashboardValue('physicsAlerts', alerts);
     })
     .catch(() => { /* physics alert poll is non-fatal */ });
