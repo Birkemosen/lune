@@ -59,6 +59,10 @@ void Lv6BleDemand::apply_demand_(bool want_on, uint32_t now_ms) {
       ESP_LOGI(TAG, "BLE demanded — enabling NimBLE hub");
       this->hub_->enable();
     }
+    // A scan already queued until NimBLE syncs starts by itself; asking again every
+    // loop flooded the log (~100 lines/s) while the stack never synced.
+    if (this->hub_->scan_pending())
+      return;
     if (!this->hub_->scanning() && !this->hub_->advertising()) {
       ESP_LOGI(TAG, "BLE demanded — starting scan");
       this->hub_->start_scan(true);
