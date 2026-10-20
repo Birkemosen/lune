@@ -269,6 +269,11 @@ class Lv6ValveController : public esphome::Component {
   void request_calibration(uint8_t zone);
   void request_calibration_all();
   bool reset_fault(uint8_t zone);
+  /// What the user sees on the actuator when resetting a fault (reset guide).
+  enum class PositionHint : uint8_t { UNKNOWN = 0, CLOSED = 1, OPEN = 2, MIDDLE = 3 };
+  /// Seed the zone's position from the user's look at the plunger: closed/open
+  /// are trusted (the next open can count from there), middle is a hint only.
+  void set_position_hint(uint8_t zone, PositionHint hint);
   bool reset_and_relearn(uint8_t zone);
   bool reset_learned_factors(uint8_t zone);
   void log_i2c_scan();
@@ -648,6 +653,19 @@ class Lv6ValveController : public esphome::Component {
   /// drivers off only if the net stays asserted with every bridge idle.
   void isolate_drive_fault_(const char *what);
   static constexpr uint32_t FAULT_SETTLE_MS = 100;
+  /// A fault net in the first moments of a move is breakaway inrush (the motor
+  /// tearing loose, often straight after a reversal), not a broken motor: the
+  /// zone gets BREAKAWAY_TRIES within an hour before it is blocked.
+  static constexpr uint32_t BREAKAWAY_MS = 200;
+  static constexpr uint8_t BREAKAWAY_TRIES = 3;
+  static constexpr uint32_t BREAKAWAY_WINDOW_MS = 60UL * 60UL * 1000UL;
+  uint8_t breakaway_count_[NUM_ZONES]{};
+  uint32_t breakaway_first_ms_[NUM_ZONES]{};
+  bool seat_early_logged_ = false;
+  bool move_aborted_ = false;   ///< set by a breakaway retry: the run did not move the valve
+  /// Pause between the re-home (seated) and the opening leg: lets the seat and
+  /// gear tension relax before the motor reverses.
+  static constexpr uint32_t REVERSAL_PAUSE_MS = 500;
   void maybe_recover_drivers_();
   std::atomic<bool> auto_learn_hold_{false};
   /// Set by manual mode during a learn; every calibration loop checks it, the

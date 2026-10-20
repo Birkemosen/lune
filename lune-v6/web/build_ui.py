@@ -291,8 +291,11 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
         # Overblik: fejl, gruppe, mål (autogem), åbning og retur, detaljer
         overview=f'''
         <form class="panel alert" data-save="zone/{i}/recovery" data-bind-show="z{i}.fault" hidden>
-          <div class="panel-head"><h3>{T("zdash.faultTitle")}</h3></div>
-          <p class="note">{T("zdash.faultBody")}</p>
+          <div class="panel-head"><h3 data-bind="z{i}.faultTitle">{T("zdash.faultTitle")}</h3></div>
+          <p class="note" data-bind="z{i}.faultBody">{T("zdash.faultBody")}</p>
+          <p class="note">{T("zdash.faultCheck")}</p>
+          {group(T("zdash.valveNow"), srow(span(T("zdash.valveNow")), seg(f"z{i}_valve_now", [("closed",T("zdash.valveClosed")),("middle",T("zdash.valveMiddle")),("open",T("zdash.valveOpen")),("unknown",T("zdash.valveUnknown"))], "unknown", T("zdash.valveNow"))),
+                 f'<p class="note">{T("zdash.valveNote")}</p>')}
           <div class="panel-foot" style="justify-content:flex-start"><button class="btn primary" type="submit" name="action" value="reset_fault">{T("common.resetFault")}</button></div>
         </form>
         <p class="msg violet" data-bind-show="z{i}.member" hidden><span data-bind="z{i}.memberNote"></span></p>
@@ -586,6 +589,7 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
              "rt.savedOk","rt.saveFailed","rt.saving","rt.unsaved.one","rt.unsaved.other","rt.nothingToSave","rt.leaveUnsaved",
              "rt.autoSaving","rt.autoSaved","rt.autoFailed","rt.retry","rt.secondsAgo","rt.minutesAgo",
              "device.copied","device.this","alert.zoneFault","bal.adaptive","bal.static",
+             "fault.blocked","fault.blocked.body","fault.mechanical_overrun","fault.mechanical_overrun.body","fault.unknown","fault.unknown.body","fault.open_circuit","fault.open_circuit.body","fault.overcurrent","fault.overcurrent.body","fault.thermal","fault.thermal.body","fault.timeout","fault.timeout.body","fault.stall","fault.stall.body",
              "alert.driversOffBody","drv.reason.fault","drv.reason.ota","drv.reason.arm","drv.reason.boot","drv.reason.user","dev.online","dev.offline",
              "zdash.preload","zdash.preloadUntil","src.ble","src.probe",
              "csys.touchWaiting","csys.touchWaitingBody","csys.touchApproved","csys.touchPending","csys.touchControls","csys.touchReady","csys.touchLeaseLost",

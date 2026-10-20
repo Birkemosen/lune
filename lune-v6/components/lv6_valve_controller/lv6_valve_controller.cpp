@@ -418,6 +418,11 @@ void Lv6ValveController::isolate_drive_fault_(const char *what) {
   // go off only when the net is still asserted with every bridge idle: that is
   // the board itself (short, thermal, rail), a critical fault.
   const uint8_t zone = current_zone_;
+  // Which net fired (0 = asserted): bridge fault, the 150 mA rail comparator, USB limit.
+  const int raw = rev33_backend_ ? rev33_backend_->fault_raw_level() : -1;
+  const int rail = rev33_backend_ ? rev33_backend_->rail_overcurrent_level() : -1;
+  const int usb = rev33_backend_ ? rev33_backend_->fault_usb_level() : -1;
+  const uint32_t ran_ms = motor_run_time_ms_;
   trigger_fault_(FaultCode::UNKNOWN_FAULT, what);   // stops the motor, drops the permit
   if (zone < NUM_ZONES) {
     xSemaphoreTake(telemetry_mutex_, portMAX_DELAY);
@@ -430,7 +435,28 @@ void Lv6ValveController::isolate_drive_fault_(const char *what) {
   vTaskDelay(pdMS_TO_TICKS(FAULT_SETTLE_MS));
   if (gpio_backend_->arm_latch()) {
     gpio_backend_->coast();
-    ESP_LOGW(TAG, "Motor %d blocked after '%s'; the other motors keep running", zone + 1, what);
+    const uint32_t now = static_cast<uint32_t>(esp_timer_get_time() / 1000);
+    if (zone < NUM_ZONES && ran_ms < BREAKAWAY_MS) {
+      if (breakaway_count_[zone] == 0 || now - breakaway_first_ms_[zone] > BREAKAWAY_WINDOW_MS) {
+        breakaway_count_[zone] = 0;
+        breakaway_first_ms_[zone] = now;
+      }
+      breakaway_count_[zone]++;
+      if (breakaway_count_[zone] < BREAKAWAY_TRIES) {
+        xSemaphoreTake(telemetry_mutex_, portMAX_DELAY);
+        telemetry_[zone].blocked = false;
+        telemetry_[zone].last_fault_code = FaultCode::NONE;
+        xSemaphoreGive(telemetry_mutex_);
+        current_fault_code_ = FaultCode::NONE;
+        move_aborted_ = true;   // the move did not happen: keep the old position
+        ESP_LOGW(TAG, "Motor %d breakaway fault after %" PRIu32 " ms (raw=%d rail=%d usb=%d, 0 = asserted); "
+                      "retrying later (%u/%u)", zone + 1, ran_ms, raw, rail, usb,
+                 static_cast<unsigned>(breakaway_count_[zone]), static_cast<unsigned>(BREAKAWAY_TRIES));
+        return;
+      }
+    }
+    ESP_LOGW(TAG, "Motor %d blocked after '%s' at %" PRIu32 " ms (raw=%d rail=%d usb=%d, 0 = asserted); "
+                  "the other motors keep running", zone + 1, what, ran_ms, raw, rail, usb);
     return;
   }
   drivers_enabled_ = false;
@@ -1116,6 +1142,29 @@ void Lv6ValveController::request_calibration_all() {
   ESP_LOGI(TAG, "request_calibration_all: queued zones mask=0x%02X", mask);
 }
 
+void Lv6ValveController::set_position_hint(uint8_t zone, PositionHint hint) {
+  if (zone >= NUM_ZONES || hint == PositionHint::UNKNOWN)
+    return;
+  float pct = 50.0f;
+  bool confident = false;
+  if (hint == PositionHint::CLOSED) {
+    pct = logical_to_actuator_pct_(0.0f);
+    confident = true;
+  } else if (hint == PositionHint::OPEN) {
+    pct = logical_to_actuator_pct_(100.0f);
+    confident = true;
+  }
+  xSemaphoreTake(telemetry_mutex_, portMAX_DELAY);
+  telemetry_[zone].current_position_pct = pct;
+  xSemaphoreGive(telemetry_mutex_);
+  position_confident_[zone] = confident;
+  breakaway_count_[zone] = 0;
+  ESP_LOGI(TAG, "Zone %d position from the reset guide: %s (%.0f %%, %s)", zone + 1,
+           hint == PositionHint::CLOSED ? "closed" : hint == PositionHint::OPEN ? "open" : "middle", pct,
+           confident ? "trusted" : "hint only");
+  persist_positions_();
+}
+
 bool Lv6ValveController::reset_fault(uint8_t zone) {
   if (zone >= NUM_ZONES)
     return false;
@@ -1488,6 +1537,7 @@ void Lv6ValveController::execute_move_(uint8_t zone, float target_pct) {
                     "refusing to open from an unknown position", zone + 1);
       return;
     }
+    vTaskDelay(pdMS_TO_TICKS(REVERSAL_PAUSE_MS));   // let the seat relax before reversing
     moves_since_rehome_[zone] = 0;
     last_rehome_ms_[zone] = static_cast<uint32_t>(esp_timer_get_time() / 1000);
 
@@ -1661,8 +1711,9 @@ void Lv6ValveController::execute_move_(uint8_t zone, float target_pct) {
   }
 
   // Update position
+  bool clear_stale_fault = false;
   xSemaphoreTake(telemetry_mutex_, portMAX_DELAY);
-  if (current_fault_code_ == FaultCode::NONE) {
+  if (current_fault_code_ == FaultCode::NONE && !move_aborted_) {
     if (drive_to_endstop) {
       if (endpoint_confirmed_) {
         // Endstop reached — position is definitively at the limit.
@@ -1682,8 +1733,17 @@ void Lv6ValveController::execute_move_(uint8_t zone, float target_pct) {
     } else {
       telemetry_[zone].current_position_pct = target_pct;
     }
+    // A clean move proves the motor works again: clear a fault restored from
+    // NVS (or left by an earlier retry), so the UI does not keep showing it.
+    if (!telemetry_[zone].blocked && (!drive_to_endstop || endpoint_confirmed_) &&
+        telemetry_[zone].last_fault_code != FaultCode::NONE) {
+      telemetry_[zone].last_fault_code = FaultCode::NONE;
+      clear_stale_fault = true;
+    }
   }
   xSemaphoreGive(telemetry_mutex_);
+  if (clear_stale_fault)
+    save_telemetry_(zone);
 }
 
 float Lv6ValveController::estimate_travel_time_ms_(uint8_t zone, float from_pct, float to_pct) {
@@ -1709,6 +1769,8 @@ float Lv6ValveController::estimate_travel_time_ms_(uint8_t zone, float from_pct,
 bool Lv6ValveController::start_motor_(uint8_t zone, MotorDirection dir, bool override_drivers) {
   if (zone >= NUM_ZONES || motor_turning_ || (!drivers_enabled_ && !override_drivers))
     return false;
+  move_aborted_ = false;
+  seat_early_logged_ = false;
 
   DRV8215 *driver = nullptr;
   if (!gpio_backend_enabled_) {
@@ -3148,8 +3210,17 @@ void Lv6ValveController::detect_endstop_() {
                               static_cast<uint32_t>(stroke * SEATED_START_STROKE_FRACTION),
                               static_cast<uint32_t>(seat_expected * SEATED_START_EXPECTED_FRACTION)});
       seat_moved = live_ripple_count_.load(std::memory_order_relaxed);
-      evidence.seated_start = stroke > 0 && seat_moved + seat_margin >= seat_expected &&
-                              seat_moved <= seat_expected + seat_margin;
+      // Stopping early is the seat too: the remembered position is only a hint
+      // (it can be off after a restart or an aborted run), and a closing drive
+      // cannot stop more open than the seat it is pressed against. Only running
+      // well past where the seat should be is suspicious.
+      evidence.seated_start = stroke > 0 && seat_moved <= seat_expected + seat_margin;
+      if (evidence.seated_start && seat_moved + seat_margin < seat_expected && !seat_early_logged_) {
+        seat_early_logged_ = true;
+        ESP_LOGW(TAG, "Motor %d seated %" PRIu32 " ripples early (held %.1f%%, expected %" PRIu32
+                      "): remembered position was off", current_zone_ + 1, seat_expected - seat_moved,
+                 seat_pos, seat_expected);
+      }
     }
     const EndpointDecision decision = classify_endpoint(evidence);
     last_endpoint_decision_ = static_cast<uint8_t>(decision);

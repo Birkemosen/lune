@@ -445,14 +445,17 @@ export function setManualMode(enabled) {
 }
 
 // Recovery/reset helpers
-export function resetMotorFault(zone) {
+export function resetMotorFault(zone, valveNow) {
   addActivity('Motor ' + zone + ' fault reset', zone);
   // Optimistic: ESPHome template sensors lag up to 10 s; live snapshot now
   // reads telemetry, but the next poll may still be a beat away.
   if (zone >= 1 && zone <= 6) {
     setEntity(key.motorLastFault(zone), { state: 'NONE' });
   }
-  return command('motor_reset_fault', zone);
+  // Reset guide: where the valve stands (closed / middle / open) seeds V6's position.
+  const position = ['closed', 'middle', 'open'].includes(valveNow) ? valveNow : undefined;
+  return postV1('/commands', { command: 'motor_reset_fault', zone, position },
+    { key: 'command', value: 'motor_reset_fault', zone });
 }
 
 export function resetMotorLearnedFactors(zone) {
