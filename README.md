@@ -168,6 +168,6 @@ you want to give something back, you can sponsor it through
 [GitHub Sponsors](https://github.com/sponsors/Birkemosen).
 
 Developing the Lune V6 board has cost around 8,000 kr (~$1,200) in parts, prototypes and
-test hardware. If you build a V6 and use it, a one-time contribution of about $60 per board
-is a fair way to share that cost. It is entirely voluntary, and sponsoring comes with no
-rewards or promises: Lune is built at its own pace.
+test hardware. If you build a V6 and use it, a one-time contribution of $20–60 per board is
+appreciated as a way to share that cost. It is entirely voluntary, and sponsoring comes with
+no rewards or promises: Lune is built at its own pace.
