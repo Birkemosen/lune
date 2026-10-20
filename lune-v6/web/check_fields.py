@@ -36,6 +36,7 @@ SAVE_KEYS = {
     r"zone/\d": r"/^zone\/(\d+)$/",
     r"zone/\d/target": r"/^zone\/(\d+)\/target$/",
     r"zone/\d/recovery": r"/^zone\/(\d+)\/recovery$/",
+    r"drivers-on": r"'drivers-on'",
 }
 
 

@@ -679,9 +679,16 @@ function paintMotorConf(z, st) {
     : '—';
   setBind(`z${z}.factors`, factors);
   const faultRaw = String(es(key.motorLastFault(z)) || '').trim();
-  const faultLabel = (!faultRaw || faultRaw.toLowerCase() === 'none')
+  // Firmware fault codes are never shown raw: each has a title and an explanation.
+  const faultCode = faultRaw.toLowerCase();
+  const knownFault = ['blocked', 'mechanical_overrun', 'unknown', 'open_circuit', 'overcurrent', 'thermal', 'timeout', 'stall'].includes(faultCode);
+  const faultLabel = (!faultRaw || faultCode === 'none')
     ? t('common.none')
-    : faultRaw.replace(/_/g, ' ');
+    : (knownFault ? t(`fault.${faultCode}`) : t('fault.unknown'));
+  if (faultRaw && faultCode !== 'none') {
+    setBind(`z${z}.faultTitle`, escapeHtml(knownFault ? t(`fault.${faultCode}`) : t('fault.unknown')));
+    setBind(`z${z}.faultBody`, escapeHtml(knownFault ? t(`fault.${faultCode}.body`) : t('fault.unknown.body')));
+  }
   const faultEl = document.querySelector(`[data-bind="z${z}.lastFault"]`);
   if (faultEl) {
     faultEl.textContent = faultLabel;
@@ -1839,7 +1846,7 @@ async function handleSave(detail) {
       if (v != null) await setSetpoint(z, v);
     } else if (/^zone\/(\d+)\/recovery$/.test(saveKey)) {
       const z = Number(RegExp.$1);
-      await resetMotorFault(z);
+      await resetMotorFault(z, form[`z${z}_valve_now`]);
     } else if (/^zone\/(\d+)$/.test(saveKey)) {
       // Zone sheet › Settings (data-patch): write only the parts that changed.
       const z = Number(RegExp.$1);

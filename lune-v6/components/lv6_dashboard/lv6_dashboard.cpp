@@ -3557,6 +3557,16 @@ void LV6Dashboard::handle_v1_(AsyncWebServerRequest *request, const char *path) 
       act.num_val = num;
       act.has_num = true;
     }
+    if (strcmp(cmd_buf, "motor_reset_fault") == 0) {
+      char pos[12];
+      parse_text_param(request, body, "position", "", pos, sizeof(pos));
+      const float code = strcmp(pos, "closed") == 0 ? 1.0f : strcmp(pos, "open") == 0 ? 2.0f
+                       : strcmp(pos, "middle") == 0 ? 3.0f : 0.0f;
+      if (code > 0.0f) {
+        act.num_val = code;
+        act.has_num = true;
+      }
+    }
     apply_zone(act, static_cast<int>(zone_num));
 
   } else if (strncmp(path, "/settings/", 10) == 0) {
@@ -4273,6 +4283,10 @@ void LV6Dashboard::dispatch_set_(const DashboardAction &act) {
       this->valve_controller_->request_stop(zi);
     } else if (strcmp(str_val, "motor_reset_fault") == 0 && zone_valid && this->valve_controller_) {
       this->valve_controller_->reset_fault(zi);
+      // Reset guide: the plunger position the user reported (num_val code).
+      if (has_num && num_val >= 1.0f && num_val <= 3.0f)
+        this->valve_controller_->set_position_hint(
+            zi, static_cast<lv6::Lv6ValveController::PositionHint>(static_cast<uint8_t>(num_val)));
     } else if (strcmp(str_val, "motor_reset_learned_factors") == 0 && zone_valid && this->valve_controller_) {
       this->valve_controller_->reset_learned_factors(zi);
     } else if (strcmp(str_val, "motor_reset_and_relearn") == 0 && zone_valid && this->valve_controller_) {
