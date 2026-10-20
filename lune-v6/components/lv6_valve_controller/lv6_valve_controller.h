@@ -244,6 +244,9 @@ class Lv6ValveController : public esphome::Component {
     rehome_inhibited_.store(inhibited, std::memory_order_relaxed);
   }
   bool request_timed_open(uint8_t zone, uint16_t duration_ms, bool override_drivers = false);
+  /// Reset guide: drive a blocked motor away from the direction it faulted in
+  /// (endstop detection armed). The zone stays blocked until the fault is reset.
+  bool request_back_off(uint8_t zone, uint16_t duration_ms);
   bool request_timed_close(uint8_t zone, uint16_t duration_ms, bool override_drivers = false);
   bool request_stop(uint8_t zone);
   float get_position(uint8_t zone) const;
@@ -662,6 +665,8 @@ class Lv6ValveController : public esphome::Component {
   uint8_t breakaway_count_[NUM_ZONES]{};
   uint32_t breakaway_first_ms_[NUM_ZONES]{};
   bool seat_early_logged_ = false;
+  MotorDirection fault_dir_[NUM_ZONES]{};   ///< direction of the run that faulted
+  bool back_off_allowed_[NUM_ZONES]{};      ///< one timed run away from the fault
   bool move_aborted_ = false;   ///< set by a breakaway retry: the run did not move the valve
   /// Pause between the re-home (seated) and the opening leg: lets the seat and
   /// gear tension relax before the motor reverses.

@@ -294,6 +294,10 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
           <div class="panel-head"><h3 data-bind="z{i}.faultTitle">{T("zdash.faultTitle")}</h3></div>
           <p class="note" data-bind="z{i}.faultBody">{T("zdash.faultBody")}</p>
           <p class="note">{T("zdash.faultCheck")}</p>
+          {group(T("zdash.backOff"), srow(span(T("zdash.backOffFor")), seg(f"z{i}_back_s", [("5","5 s"),("10","10 s"),("20","20 s")], "10", T("zdash.backOffFor"))),
+                 f'<p class="note">{T("zdash.backOffNote")}</p>'
+                 f'<div class="actions"><button class="btn" type="submit" name="action" value="back_off">{T("zdash.backOffBtn")}</button></div>'
+                 f'<p class="note" aria-live="polite" data-bind="z{i}.backOffSent"></p>')}
           {group(T("zdash.valveNow"), srow(span(T("zdash.valveNow")), seg(f"z{i}_valve_now", [("closed",T("zdash.valveClosed")),("middle",T("zdash.valveMiddle")),("open",T("zdash.valveOpen")),("unknown",T("zdash.valveUnknown"))], "unknown", T("zdash.valveNow"))),
                  f'<p class="note">{T("zdash.valveNote")}</p>')}
           <div class="panel-foot" style="justify-content:flex-start"><button class="btn primary" type="submit" name="action" value="reset_fault">{T("common.resetFault")}</button></div>

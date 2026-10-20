@@ -22,7 +22,7 @@ import {
   exportSettings, importSettings, saveSettingsBackup, fetchLatestRelease,
   firmwareCheck, firmwareInstall, uploadFirmware, downloadDeviceLogs,
   setManualMode, emergencyStopMotors, fetchPhysicsAlerts, fetchBleScan,
-  resetMotorFault, resetMotorAndRelearn, calibrateAllMotors, fetchWifi, changeWifi,
+  resetMotorFault, backOffMotor, resetMotorAndRelearn, calibrateAllMotors, fetchWifi, changeWifi,
 } from '../dashboard-src/core/api.js';
 import { projectTemperature, PROJ_HORIZON } from './projection.js';
 
@@ -1846,7 +1846,14 @@ async function handleSave(detail) {
       if (v != null) await setSetpoint(z, v);
     } else if (/^zone\/(\d+)\/recovery$/.test(saveKey)) {
       const z = Number(RegExp.$1);
-      await resetMotorFault(z, form[`z${z}_valve_now`]);
+      if (action === 'back_off') {
+        const s = [5, 10, 20].includes(Number(form[`z${z}_back_s`])) ? Number(form[`z${z}_back_s`]) : 10;
+        await backOffMotor(z, s);
+        setBind(`z${z}.backOffSent`, escapeHtml(t('zdash.backOffSent', { s })));
+      } else {
+        await resetMotorFault(z, form[`z${z}_valve_now`]);
+        setBind(`z${z}.backOffSent`, '');
+      }
     } else if (/^zone\/(\d+)$/.test(saveKey)) {
       // Zone sheet › Settings (data-patch): write only the parts that changed.
       const z = Number(RegExp.$1);

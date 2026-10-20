@@ -141,6 +141,13 @@ fully in its socket, and the valve pin can move. Then look at the valve and choo
 **The valve is**: *Closed*, *In between*, *Open* or *Not sure*. On a normally open (NO)
 manifold the valve is closed when the plunger is pressed down.
 
+**Did the motor run too far?** If the motor pushed the plunger past the seat (*found no end
+stop*) or got stuck, **Drive the motor back** runs it for 5, 10 or 20 s away from the
+direction it faulted in — after an overrun while closing, that brings the plunger back up.
+End-stop detection stays armed, and the zone stays blocked until you reset the fault. A
+blocked zone accepts no other motor runs. Watch the plunger move, then choose where the
+valve stands.
+
 The choice is used when you press **Reset fault**:
 
 - **Closed** or **Open** — V6 takes that as its known position. The next move runs from
@@ -156,7 +163,7 @@ after a restart) removes it.
 it opens from an unknown datum it re-homes towards closed. If the seat comes earlier than
 the remembered position says, V6 takes it as the seat (the log says *seated … early*); if a
 closing run passes the whole stroke without meeting the seat, the zone is blocked with
-**The motor found no end stop** — check that the actuator sits on the valve.
+**The motor found no end stop** — check that the actuator sits on the valve. That block survives a restart, so V6 does not push another full stroke on every boot.
 
 **Breakaway**: a motor that has stood still for a long time can draw a short current
 spike when it starts, most often right after reversing from the closed seat. V6 waits

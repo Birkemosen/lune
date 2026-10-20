@@ -445,6 +445,13 @@ export function setManualMode(enabled) {
 }
 
 // Recovery/reset helpers
+/** Reset guide: drive a blocked motor back, away from its fault (V6 picks the direction). */
+export function backOffMotor(zone, seconds) {
+  addActivity('Motor ' + zone + ' back-off ' + seconds + ' s', zone);
+  return postV1('/commands', { command: 'motor_back_off', zone, duration_ms: seconds * 1000 },
+    { key: 'command', value: 'motor_back_off', zone });
+}
+
 export function resetMotorFault(zone, valveNow) {
   addActivity('Motor ' + zone + ' fault reset', zone);
   // Optimistic: ESPHome template sensors lag up to 10 s; live snapshot now
