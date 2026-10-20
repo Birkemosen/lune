@@ -33,7 +33,7 @@ substitutions:
 
   # 1-Wire timing — slower polling improves DS18B20 bus stability with many probes
   onewire_update_interval: 10s
-  onewire_resolution_bits: "10"
+  onewire_resolution_bits: "12"
 
 esphome:
   name: ${device_name}
