@@ -3552,7 +3552,8 @@ void LV6Dashboard::handle_v1_(AsyncWebServerRequest *request, const char *path) 
     float zone_num = 0.0f;
     if (!parse_num_param(request, body, "zone", &zone_num))
       zone_num = 0.0f;
-    if ((strcmp(cmd_buf, "open_motor_timed") == 0 || strcmp(cmd_buf, "close_motor_timed") == 0) &&
+    if ((strcmp(cmd_buf, "open_motor_timed") == 0 || strcmp(cmd_buf, "close_motor_timed") == 0 ||
+         strcmp(cmd_buf, "motor_back_off") == 0) &&
         parse_num_param(request, body, "duration_ms", &num) && num > 0.0f) {
       act.num_val = num;
       act.has_num = true;
@@ -4279,6 +4280,12 @@ void LV6Dashboard::dispatch_set_(const DashboardAction &act) {
       if (has_num && num_val > 0.0f)
         hold_ms = static_cast<uint32_t>(std::clamp(num_val, 100.0f, 60000.0f));
       this->valve_controller_->request_timed_close(zi, static_cast<uint16_t>(hold_ms), true);
+    } else if (strcmp(str_val, "motor_back_off") == 0 && zone_valid && this->valve_controller_) {
+      // Reset guide: drive a blocked motor back, away from its fault (default 10 s).
+      uint32_t hold_ms = 10000u;
+      if (has_num && num_val > 0.0f)
+        hold_ms = static_cast<uint32_t>(std::clamp(num_val, 1000.0f, 30000.0f));
+      this->valve_controller_->request_back_off(zi, static_cast<uint16_t>(hold_ms));
     } else if (strcmp(str_val, "stop_motor") == 0 && zone_valid && this->valve_controller_) {
       this->valve_controller_->request_stop(zi);
     } else if (strcmp(str_val, "motor_reset_fault") == 0 && zone_valid && this->valve_controller_) {

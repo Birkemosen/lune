@@ -256,6 +256,13 @@ void Lv6ValveController::setup() {
         telemetry_[i].last_close_peak_ma = saved.last_close_peak_ma;
         telemetry_[i].last_learning_sample_valid = saved.last_learning_sample_valid;
         telemetry_[i].last_fault_code = saved.last_fault_code;
+        // An overrun stays blocked across a restart: re-homing again would push
+        // the plunger another full stroke. Reset it from the zone's fault panel.
+        if (saved.last_fault_code == FaultCode::MECHANICAL_OVERRUN) {
+          telemetry_[i].blocked = true;
+          fault_dir_[i] = MotorDirection::CLOSE;
+          ESP_LOGW(TAG, "Zone %d restored blocked (mechanical overrun); reset it in the zone", i + 1);
+        }
         // Seed per-direction means from the durable telemetry. A blob written by
         // a pre-v19 build (size mismatch) won't load at all, so these fields carry
         // their struct defaults; once loaded they hold the learned per-direction means.
@@ -952,6 +959,30 @@ bool Lv6ValveController::request_timed_open(uint8_t zone, uint16_t duration_ms, 
   return xQueueSend(cmd_queue_, &cmd, pdMS_TO_TICKS(100)) == pdTRUE;
 }
 
+bool Lv6ValveController::request_back_off(uint8_t zone, uint16_t duration_ms) {
+  if (zone >= NUM_ZONES)
+    return false;
+  if (calibrating_ || calibration_request_ >= 0 || calibration_pending_mask_ != 0) {
+    ESP_LOGW(TAG, "Calibration active/pending, rejecting back-off for zone %d", zone + 1);
+    return false;
+  }
+  xSemaphoreTake(telemetry_mutex_, portMAX_DELAY);
+  const bool blocked = telemetry_[zone].blocked;
+  xSemaphoreGive(telemetry_mutex_);
+  // Away from the fault; a zone that is not blocked backs off the plunger (open).
+  const MotorDirection dir = blocked && fault_dir_[zone] == MotorDirection::OPEN ? MotorDirection::CLOSE
+                                                                                 : MotorDirection::OPEN;
+  duration_ms = std::clamp<uint16_t>(duration_ms, 1000, 30000);
+  back_off_allowed_[zone] = true;
+  ESP_LOGI(TAG, "Motor %d back-off %s %" PRIu16 " ms requested", zone + 1,
+           dir == MotorDirection::OPEN ? "OPEN" : "CLOSE", duration_ms);
+  ValveCommand cmd = {zone, 0.0f, duration_ms, true, dir};
+  if (xQueueSend(cmd_queue_, &cmd, pdMS_TO_TICKS(100)) == pdTRUE)
+    return true;
+  back_off_allowed_[zone] = false;
+  return false;
+}
+
 bool Lv6ValveController::request_timed_close(uint8_t zone, uint16_t duration_ms, bool override_drivers) {
   if (zone >= NUM_ZONES)
     return false;
@@ -1435,9 +1466,16 @@ void Lv6ValveController::execute_timed_move_(uint8_t zone, uint16_t duration_ms,
   // `blocked` is honoured regardless of override: the dashboard passes
   // override_drivers on every jog, so a zone blocked by MECHANICAL_OVERRUN was
   // still joggable - straight back into whatever blocked it.
+  // The one exception is the reset guide's back-off: away from the fault only.
+  const bool back_off = back_off_allowed_[zone];
+  back_off_allowed_[zone] = false;
   if (telemetry_[zone].blocked) {
-    ESP_LOGW(TAG, "Zone %d blocked, refusing timed move", zone + 1);
-    return;
+    if (!back_off || dir == fault_dir_[zone]) {
+      ESP_LOGW(TAG, "Zone %d blocked, refusing timed move", zone + 1);
+      return;
+    }
+    ESP_LOGW(TAG, "Zone %d blocked: backing off %s for %" PRIu16 " ms", zone + 1,
+             dir == MotorDirection::OPEN ? "OPEN" : "CLOSE", duration_ms);
   }
 
   // Timed lab/jog requests must never exceed the profile mechanical ceiling.
@@ -3434,8 +3472,10 @@ void Lv6ValveController::detect_pin_engagement_() {
 void Lv6ValveController::trigger_fault_(FaultCode code, const char *reason) {
   // Any fault invalidates the stored position: the move did not end where it
   // was meant to, so travel scaling must fall back to a full stroke.
-  if (current_zone_ < NUM_ZONES)
+  if (current_zone_ < NUM_ZONES) {
     position_confident_[current_zone_] = false;
+    fault_dir_[current_zone_] = current_dir_;
+  }
   ESP_LOGE(TAG, "Motor %d FAULT: %s (%s)", current_zone_ + 1,
            fault_code_to_string(code), reason);
   current_fault_code_ = code;
@@ -3450,6 +3490,9 @@ void Lv6ValveController::trigger_fault_(FaultCode code, const char *reason) {
     xSemaphoreTake(telemetry_mutex_, portMAX_DELAY);
     telemetry_[current_zone_].blocked = true;
     xSemaphoreGive(telemetry_mutex_);
+    // Persist now: an overrun must still be blocked after a restart.
+    if (code == FaultCode::MECHANICAL_OVERRUN)
+      save_telemetry_(current_zone_);
   }
 
   stop_motor_(false);
