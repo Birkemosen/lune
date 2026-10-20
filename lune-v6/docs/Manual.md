@@ -202,6 +202,12 @@ flow temperature:
 All openings are for the hardest loop; the hydraulic balance scales each loop by
 its resistance (area, pipe spacing, pipe type, supply length).
 
+**From Lune Touch — the heat pump's phase** (Touch › Circulation › *Follow the heat pump*):
+while Touch says the heat pump is **idle**, a satisfied room uses the trim floor instead of
+the base opening (rooms below target still open to the opening when calling). **Running** and
+**starts soon** use the curve above. The manifold sheet shows the phase in one line; it
+expires after 15 minutes without a new message, and V6 is back on its own curve.
+
 Default local mode is heat pump.
 
 <a id="regulation"></a>

@@ -1,3 +1,4 @@
+#include <limits>
 #include "control_mode_policy.h"
 
 #include <cassert>
@@ -91,6 +92,26 @@ static void test_heat_pump_base_trim_cutoff() {
                                          15.0f, base, floor, margin, sp + margin + 0.3f, sp, max_open,
                                          false, 0.0f);
   expect_near(past_margin, floor, 0.01f, "HP: floor held until OVERHEATED (keeps flow)");
+
+  // Heat pump idle (Touch): a satisfied room drops to the trim floor; a room
+  // that needs heat still opens; the comfort band still leans toward demand.
+  const float nan = std::numeric_limits<float>::quiet_NaN();
+  float idle_hold = position_for_state(HeatingProfile::HEAT_PUMP, ZoneState::SATISFIED, 0.0f, 0.0f,
+                                       15.0f, base, floor, margin, sp, sp, max_open, false, 0.0f,
+                                       80.0f, band, nan, true);
+  expect_near(idle_hold, floor, 0.01f, "HP idle: at setpoint holds the trim floor");
+  float idle_cool = position_for_state(HeatingProfile::HEAT_PUMP, ZoneState::SATISFIED, 0.0f, 0.0f,
+                                       15.0f, base, floor, margin, sp - band, sp, max_open, false, 0.0f,
+                                       80.0f, band, nan, true);
+  expect_near(idle_cool, 80.0f, 0.01f, "HP idle: bottom of the band leans fully to demand");
+  float idle_demand = position_for_state(HeatingProfile::HEAT_PUMP, ZoneState::DEMAND, 0.0f, 0.0f,
+                                         15.0f, base, floor, margin, sp - 1.0f, sp, max_open, false, 0.0f,
+                                         80.0f, band, nan, true);
+  expect(idle_demand >= 80.0f - 0.01f, "HP idle: a room that needs heat still opens to demand");
+  float running_hold = position_for_state(HeatingProfile::HEAT_PUMP, ZoneState::SATISFIED, 0.0f, 0.0f,
+                                          15.0f, base, floor, margin, sp, sp, max_open, false, 0.0f,
+                                          80.0f, band, nan, false);
+  expect_near(running_hold, base, 0.01f, "HP running: at setpoint holds base (unchanged)");
 
   expect(classify(HeatingProfile::HEAT_PUMP, sp + band + margin + 0.1f, sp, band, margin, 0.0f, 0.0f,
                   latched) == ZoneState::OVERHEATED,

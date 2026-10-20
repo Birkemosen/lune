@@ -386,6 +386,7 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
         bal="".join(f'<tr data-bind-row="bal.z{z[0]}"><td data-bind="bal.z{z[0]}.id">{rid(z)}</td><td class="num" data-bind="bal.z{z[0]}.prior">—</td><td class="num c-violet" data-bind="bal.z{z[0]}.learned">—</td><td class="num" data-bind="bal.z{z[0]}.effective">—</td></tr>' for z in Z)
         overview=f'''
           {manifold_metrics()}
+          <p class="note" data-bind-show="manifold.hpPhase" hidden><span data-bind="manifold.hpPhaseText"></span></p>
           <div class="sub"><h4>{T("bal.title")} <span class="badge violet" data-bind="bal.mode">{T("bal.adaptive")}</span></h4>
             <div class="table-wrap"><table class="table">
               <thead><tr><th>{T("bal.zone")}</th><th class="num">{T("bal.prior")}</th><th class="num">{T("bal.learned")}</th><th class="num">{T("bal.effective")}</th></tr></thead>
@@ -586,7 +587,7 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
     # Kun nøgler, som binderen (main.js) og lune-forms.js faktisk slår op.
     rt_keys=("zdash.follows","zdash.primary","zdash.memberNote","common.open","cz.memberStrong","cz.member",
              "state.calling","state.idle","state.fault","state.off","state.learning","state.blocked",
-             "tile.fault","tile.learningPct","tile.blocked","tile.charging","badge.calling","dash.sys.sub","sheet.manifoldStatus",
+             "tile.fault","tile.learningPct","tile.blocked","tile.charging","badge.calling","dash.sys.sub","sheet.manifoldStatus","hpPhase.running","hpPhase.prestart","hpPhase.idle",
              "cz.learnPhase.home","cz.learnPhase.open","cz.learnPhase.close","cz.learnPhase.pass",
              "cz.bleAssign","cz.bleAssigned","cz.bleSeen","cz.bleSeenEmpty","cz.bleScanning","cz.scan",
              "common.days","common.hours","common.minutes","common.none","common.learned","common.notLearned",

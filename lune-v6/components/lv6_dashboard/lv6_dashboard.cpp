@@ -2200,8 +2200,10 @@ void LV6Dashboard::handle_zones_(AsyncWebServerRequest *request) {
 
   appendf(buf, JSON_BUF_SIZE, off,
           "{\"ok\":true,\"version\":\"v1\",\"data\":{\"node_id\":\"%s\","
-          "\"device_name\":\"%s\",\"device_location\":\"%s\",\"count\":%u,\"zones\":[",
-          node_id, name_esc, place_esc, static_cast<unsigned>(lv6::NUM_ZONES));
+          "\"device_name\":\"%s\",\"device_location\":\"%s\",\"count\":%u,\"hp_phase\":\"%s\",\"zones\":[",
+          node_id, name_esc, place_esc, static_cast<unsigned>(lv6::NUM_ZONES),
+          this->zone_controller_ ? lv6::Lv6ZoneController::hp_phase_name(this->zone_controller_->get_hp_phase())
+                                 : "unknown");
   for (uint8_t i = 0; i < lv6::NUM_ZONES && off + 1200 < JSON_BUF_SIZE; i++) {
     char temp[24], setpoint[24], valve[24], preload[24];
     format_float_token(temp, sizeof(temp), snap->zone_temp_c[i], 1);
@@ -3475,6 +3477,50 @@ void LV6Dashboard::handle_v1_(AsyncWebServerRequest *request, const char *path) 
              "{\"ok\":true,\"version\":\"v1\",\"data\":{\"zone\":%u,\"house_balance\":%.2f,"
              "\"ttl_s\":%lu}}",
              static_cast<unsigned>(zone), this->zone_controller_->get_house_balance(zi),
+             static_cast<unsigned long>(ttl_s));
+    send_text_(request, 200, "application/json", response, true, "no-cache");
+    return;
+
+  } else if (strcmp(path, "/heat-pump-phase") == 0) {
+    // Touch: is the heat pump running, about to start, or idle? While idle,
+    // satisfied rooms use the trim floor (control_mode_policy). Same
+    // authentication as house-balance; expires after ttl_s.
+    if (this->config_store_ == nullptr || this->zone_controller_ == nullptr) {
+      this->send_v1_(request, 503, "controller_unavailable", "Zone controller unavailable");
+      return;
+    }
+    const auto auth_cfg = this->config_store_->get_authority_config();
+    const auto key_header = request->get_header("X-Lune-Authority-Key");
+    const char *provided_key = key_header.has_value() ? key_header->c_str() : "";
+    float auth_timestamp_s = 0.0f;
+    char auth_nonce[48]{};
+    parse_num_param(request, body, "auth_timestamp_s", &auth_timestamp_s);
+    parse_text_param(request, body, "auth_nonce", "", auth_nonce, sizeof(auth_nonce));
+    if (!touch_auth::request_is_authenticated(auth_cfg.shared_key, provided_key,
+                                              ::time(nullptr), auth_timestamp_s, auth_nonce)) {
+      this->send_v1_(request, 403, "touch_auth_failed",
+                     "Touch command requires provisioned key, valid UTC timestamp, and nonce");
+      return;
+    }
+    if (request_guard_.check(0, data_revision_, auth_nonce, millis()) == request_guard::Decision::DUPLICATE) {
+      this->send_v1_(request, 409, "replayed_nonce", "Touch command nonce was already used");
+      return;
+    }
+    char phase_buf[16];
+    parse_text_param(request, body, "phase", "", phase_buf, sizeof(phase_buf));
+    using HpPhase = lv6::Lv6ZoneController::HpPhase;
+    const HpPhase phase = strcmp(phase_buf, "running") == 0 ? HpPhase::RUNNING
+                        : strcmp(phase_buf, "prestart") == 0 ? HpPhase::PRESTART
+                        : strcmp(phase_buf, "idle") == 0 ? HpPhase::IDLE : HpPhase::UNKNOWN;
+    float ttl_s = 900.0f;
+    parse_num_param(request, body, "ttl_s", &ttl_s);
+    if (!std::isfinite(ttl_s))
+      ttl_s = 900.0f;
+    ttl_s = std::clamp(ttl_s, 60.0f, 3600.0f);
+    this->zone_controller_->set_hp_phase(phase, static_cast<uint32_t>(ttl_s * 1000.0f));
+    char response[128];
+    snprintf(response, sizeof(response), "{\"ok\":true,\"version\":\"v1\",\"data\":{\"phase\":\"%s\",\"ttl_s\":%lu}}",
+             lv6::Lv6ZoneController::hp_phase_name(this->zone_controller_->get_hp_phase()),
              static_cast<unsigned long>(ttl_s));
     send_text_(request, 200, "application/json", response, true, "no-cache");
     return;
