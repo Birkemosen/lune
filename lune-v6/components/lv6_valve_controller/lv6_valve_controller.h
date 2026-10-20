@@ -285,6 +285,12 @@ class Lv6ValveController : public esphome::Component {
   /// user's armed-across-reboot preference.
   void set_drivers_enabled(bool enabled, bool persist = true);
   bool are_drivers_enabled() const { return drivers_enabled_.load(std::memory_order_acquire); }
+  /// Why the drivers are off ("" while on): "user", "ota", "fault", "arm".
+  const char *drivers_off_reason() const { return drivers_off_reason_; }
+  /// Seconds since the drivers went off (0 while on).
+  uint32_t drivers_off_age_s() const;
+  /// Automatic re-enables since the drivers last stayed on for an hour.
+  uint8_t drivers_recoveries() const { return drivers_recover_count_; }
   /// Manual mode (zone controller): automatic learning and relearn wait.
   /// Explicit requests (Reset and relearn, Relearn all) still run.
   void set_auto_learn_hold(bool hold) {
@@ -624,6 +630,25 @@ class Lv6ValveController : public esphome::Component {
   // Motor FSM state (atomic for cross-thread access)
   std::atomic<bool> motor_turning_{false};
   std::atomic<bool> drivers_enabled_{false};
+  // Drivers the user wants on (persisted preference) but that are off for
+  // another reason - a fault-net trip, a failed arm, an OTA that never
+  // rebooted - are re-armed with backoff. Before this they stayed off for days
+  // without anyone noticing (2026-10-09 .. 10-20, both boards).
+  std::atomic<bool> drivers_want_on_{false};
+  const char *drivers_off_reason_{"boot"};
+  uint32_t drivers_off_ms_{0};
+  uint32_t drivers_on_ms_{0};
+  uint32_t drivers_recover_next_ms_{0};
+  uint8_t drivers_recover_count_{0};
+  static constexpr uint32_t DRIVER_RECOVER_FIRST_MS = 60UL * 1000UL;
+  static constexpr uint32_t DRIVER_RECOVER_MAX_MS = 30UL * 60UL * 1000UL;
+  static constexpr uint32_t DRIVER_STABLE_MS = 60UL * 60UL * 1000UL;
+  void note_drivers_off_(const char *reason);
+  /// A fault net during a move: block that motor, keep the rest, and turn the
+  /// drivers off only if the net stays asserted with every bridge idle.
+  void isolate_drive_fault_(const char *what);
+  static constexpr uint32_t FAULT_SETTLE_MS = 100;
+  void maybe_recover_drivers_();
   std::atomic<bool> auto_learn_hold_{false};
   /// Set by manual mode during a learn; every calibration loop checks it, the
   /// motor stops at once and nothing from the aborted run is stored.

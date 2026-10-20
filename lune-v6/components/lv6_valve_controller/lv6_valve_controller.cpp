@@ -7,6 +7,7 @@
 // tick motor FSM cannot run in ESPHome's main loop (too slow, non-deterministic).
 // =============================================================================
 
+#include <cstring>
 #include "lv6_valve_controller.h"
 #include "esphome/core/log.h"
 #include "esphome/core/hal.h"
@@ -411,7 +412,74 @@ void Lv6ValveController::loop() {
 // Public API (thread-safe)
 // =============================================================================
 
+void Lv6ValveController::isolate_drive_fault_(const char *what) {
+  // Only one motor is ever driven, so a fault net that fires mid-move belongs
+  // to that motor. Stop and block it; the other five keep working. The drivers
+  // go off only when the net is still asserted with every bridge idle: that is
+  // the board itself (short, thermal, rail), a critical fault.
+  const uint8_t zone = current_zone_;
+  trigger_fault_(FaultCode::UNKNOWN_FAULT, what);   // stops the motor, drops the permit
+  if (zone < NUM_ZONES) {
+    xSemaphoreTake(telemetry_mutex_, portMAX_DELAY);
+    telemetry_[zone].blocked = true;               // until the fault is reset
+    xSemaphoreGive(telemetry_mutex_);
+  }
+  if (!gpio_backend_)
+    return;
+  gpio_backend_->coast();
+  vTaskDelay(pdMS_TO_TICKS(FAULT_SETTLE_MS));
+  if (gpio_backend_->arm_latch()) {
+    gpio_backend_->coast();
+    ESP_LOGW(TAG, "Motor %d blocked after '%s'; the other motors keep running", zone + 1, what);
+    return;
+  }
+  drivers_enabled_ = false;
+  note_drivers_off_("fault");
+  gpio_backend_->set_drive_permit(false);
+  ESP_LOGE(TAG, "Fault net still asserted with all motors idle after '%s': drivers off", what);
+}
+
+void Lv6ValveController::note_drivers_off_(const char *reason) {
+  const uint32_t now = static_cast<uint32_t>(esp_timer_get_time() / 1000);
+  drivers_off_reason_ = reason;
+  drivers_off_ms_ = now == 0 ? 1 : now;
+  // OTA normally reboots within a minute or two; only a failed one lands here.
+  const uint32_t first = std::strcmp(reason, "ota") == 0 ? 5UL * DRIVER_RECOVER_FIRST_MS : DRIVER_RECOVER_FIRST_MS;
+  uint32_t wait = first;
+  for (uint8_t i = 0; i < drivers_recover_count_ && wait < DRIVER_RECOVER_MAX_MS; i++)
+    wait *= 2;
+  drivers_recover_next_ms_ = now + std::min(wait, DRIVER_RECOVER_MAX_MS);
+}
+
+uint32_t Lv6ValveController::drivers_off_age_s() const {
+  if (drivers_enabled_ || drivers_off_ms_ == 0)
+    return 0;
+  return (static_cast<uint32_t>(esp_timer_get_time() / 1000) - drivers_off_ms_) / 1000u;
+}
+
+void Lv6ValveController::maybe_recover_drivers_() {
+  if (!drivers_want_on_.load(std::memory_order_acquire) || motor_turning_ || calibrating_)
+    return;
+  const uint32_t now = static_cast<uint32_t>(esp_timer_get_time() / 1000);
+  if (drivers_off_ms_ == 0)
+    note_drivers_off_("boot");   // wanted on but never armed: schedule a first try
+  if (static_cast<int32_t>(now - drivers_recover_next_ms_) < 0)
+    return;
+  const char *reason = drivers_off_reason_;
+  if (drivers_recover_count_ < 255)
+    drivers_recover_count_++;
+  set_drivers_enabled(true, /*persist=*/false);
+  if (drivers_enabled_)
+    ESP_LOGW(TAG, "Motor drivers re-enabled after '%s' (attempt %u)", reason,
+             static_cast<unsigned>(drivers_recover_count_));
+  else
+    ESP_LOGW(TAG, "Motor drivers still off after '%s' (attempt %u); retrying later", reason,
+             static_cast<unsigned>(drivers_recover_count_));
+}
+
 void Lv6ValveController::set_drivers_enabled(bool enabled, bool persist) {
+  if (persist)
+    drivers_want_on_.store(enabled, std::memory_order_release);
   if (!enabled) {
     for (uint8_t z = 0; z < NUM_ZONES; z++)
       position_confident_[z] = false;
@@ -432,6 +500,7 @@ void Lv6ValveController::set_drivers_enabled(bool enabled, bool persist) {
       // it; on revisions with a latch this is a no-op.
       gpio_backend_->set_drive_permit(false);
       drivers_enabled_ = false;
+      note_drivers_off_(persist ? "user" : "ota");
       if (config_store_ && persist)
         config_store_->set_drivers_enabled_pref(false);
       ESP_LOGI(TAG, "%s motor path DISABLED", gpio_backend_->backend_name());
@@ -442,6 +511,7 @@ void Lv6ValveController::set_drivers_enabled(bool enabled, bool persist) {
     const bool armed = gpio_backend_->arm_latch();
     if (!armed) {
       drivers_enabled_ = false;
+      note_drivers_off_("arm");
       ESP_LOGE(TAG, "%s motor enable rejected: %s",
                gpio_backend_->backend_name(),
                rev33_backend_ ? "fault net asserted" : "latch did not arm");
@@ -449,6 +519,9 @@ void Lv6ValveController::set_drivers_enabled(bool enabled, bool persist) {
     }
     gpio_backend_->coast();
     drivers_enabled_ = true;
+    drivers_off_reason_ = "";
+    drivers_off_ms_ = 0;
+    drivers_on_ms_ = static_cast<uint32_t>(esp_timer_get_time() / 1000);
     if (config_store_ && persist)
       config_store_->set_drivers_enabled_pref(true);
     ESP_LOGI(TAG, "%s motor path ENABLED (decoder remains inhibited until a move)",
@@ -1213,6 +1286,12 @@ void Lv6ValveController::run_() {
       }
     }
 
+    if (!drivers_enabled_)
+      maybe_recover_drivers_();
+    else if (drivers_recover_count_ > 0 &&
+             static_cast<uint32_t>(esp_timer_get_time() / 1000) - drivers_on_ms_ >= DRIVER_STABLE_MS)
+      drivers_recover_count_ = 0;   // stayed on for an hour: the backoff starts over
+
     if (!drivers_enabled_) {
       // Timed lab/manual moves set override_drivers so they can run while the
       // software switch is off. Leaving the queue untouched here swallowed
@@ -1917,12 +1996,8 @@ void Lv6ValveController::process_tick_() {
   // (DRV8215 stall threshold ~500mA is too high for these valve motors)
   if (!read_nfault_()) {
     if (gpio_backend_enabled_) {
-      trigger_fault_(FaultCode::UNKNOWN_FAULT,
-                     rev33_backend_ ? "hardware fault net asserted"
-                                    : "persistent hardware fault latch asserted");
-      drivers_enabled_ = false;
-      if (gpio_backend_)
-        gpio_backend_->set_drive_permit(false);
+      isolate_drive_fault_(rev33_backend_ ? "hardware fault net asserted"
+                                          : "persistent hardware fault latch asserted");
       return;
     }
     DRV8215 *driver = drivers_[current_zone_];
@@ -2062,9 +2137,7 @@ void Lv6ValveController::process_tick_() {
                                        std::memory_order_relaxed);
     if (rev33_backend_->fault_latched()) {
       drive_output_enabled_ = false;
-      trigger_fault_(FaultCode::UNKNOWN_FAULT,
-                     rev33_backend_ ? "hardware fault net asserted mid-move"
-                                    : "hardware fault latch asserted mid-move");
+      isolate_drive_fault_("hardware fault net asserted mid-move");
       return;
     }
 

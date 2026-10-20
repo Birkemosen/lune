@@ -227,6 +227,12 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
           <div class="panel-foot" style="justify-content:flex-start"><button class="btn" type="button" data-bind-for="dash.alertZone" popovertarget="sheet-z1">{T("common.open",x="—")}</button></div>
         </div>
 
+        <form class="panel alert" data-save="drivers-on" data-bind-show="dash.driversOff" hidden>
+          <div class="panel-head"><h3>{T("alert.driversOff")}</h3></div>
+          <p class="note" data-bind="dash.driversOffBody">{T("alert.driversOffBody",reason="—")}</p>
+          <div class="panel-foot" style="justify-content:flex-start"><button class="btn primary" type="submit">{T("alert.driversOn")}</button></div>
+        </form>
+
         <section class="panel c5">
           <header class="panel-head"><h3>{T("heat.title")}</h3><span class="badge" data-bind="heat.badge">{T("state.idle")}</span></header>
           {manifold_metrics()}
@@ -393,6 +399,9 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
                  sstep("hp_base",T("csys.hpBase"),60,30,100,1,"%",dec=0)+
                  sstep("hp_overheat",T("csys.hpOverheat"),1.0,0.3,3.0,0.1,"°C")+
                  sstep("hp_trim",T("csys.hpTrim"),35,0,100,1,"%",dec=0),cls="hp-limits")}
+          {group(T("bal.title"),
+                 srow(span(T("csys.balMode")),seg("balancing_mode",[("static",T("bal.static")),("adaptive",T("bal.adaptive"))],"static",T("csys.balMode"))),
+                 f'<p class="note">{T("csys.balModeNote")}</p>')}
           {ggroup(T("csys.preheat"),sswitch("preheat_enabled",T("csys.absorb"),T("csys.absorbSub"),False),
                   sstep("ph_band",T("csys.band"),0.5,0.1,5,0.1,"°C")+sstep("ph_delta",T("csys.delta"),0.3,0.1,10,0.1,"°C"),
                   extra=f'<p class="note" data-bind-show="absorb.touchNote" hidden>{T("csys.absorbTouch")}</p>',
@@ -576,7 +585,8 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
              "common.days","common.hours","common.minutes","common.none","common.learned","common.notLearned",
              "rt.savedOk","rt.saveFailed","rt.saving","rt.unsaved.one","rt.unsaved.other","rt.nothingToSave","rt.leaveUnsaved",
              "rt.autoSaving","rt.autoSaved","rt.autoFailed","rt.retry","rt.secondsAgo","rt.minutesAgo",
-             "device.copied","device.this","alert.zoneFault","bal.adaptive","bal.static","dev.online","dev.offline",
+             "device.copied","device.this","alert.zoneFault","bal.adaptive","bal.static",
+             "alert.driversOffBody","drv.reason.fault","drv.reason.ota","drv.reason.arm","drv.reason.boot","drv.reason.user","dev.online","dev.offline",
              "zdash.preload","zdash.preloadUntil","src.ble","src.probe",
              "csys.touchWaiting","csys.touchWaitingBody","csys.touchApproved","csys.touchPending","csys.touchControls","csys.touchReady","csys.touchLeaseLost",
              "zchart.expected","zchart.at","zchart.noForecast","zchart.faultStrong",

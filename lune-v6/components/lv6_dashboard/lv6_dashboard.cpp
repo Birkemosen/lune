@@ -561,6 +561,9 @@ void LV6Dashboard::update_snapshot_() {
   }
 
   s.drivers_enabled = this->valve_controller_ && this->valve_controller_->are_drivers_enabled();
+  s.drivers_off_reason = this->valve_controller_ ? this->valve_controller_->drivers_off_reason() : "";
+  s.drivers_off_age_s = this->valve_controller_ ? this->valve_controller_->drivers_off_age_s() : 0;
+  s.drivers_recoveries = this->valve_controller_ ? this->valve_controller_->drivers_recoveries() : 0;
 
   // Touch authority is local coordination state only; heat-source transport is
   // owned by Lune Touch. Expiry is checked here so stale leases stop gating
@@ -1841,8 +1844,10 @@ void LV6Dashboard::handle_state_(AsyncWebServerRequest *request) {
 
   // --- global config ---
   if (!append(
-      "\"switch-motor_drivers_enabled\":{\"state\":\"%s\"},",
-      snap->drivers_enabled ? "on" : "off")) return;
+      "\"switch-motor_drivers_enabled\":{\"state\":\"%s\"},"
+      "\"text_sensor-motor_drivers_off_reason\":{\"state\":\"%s\"},",
+      snap->drivers_enabled ? "on" : "off",
+      snap->drivers_enabled ? "" : snap->drivers_off_reason)) return;
 
   if (!append(
       "\"switch-simple_preheat_enabled\":{\"state\":\"%s\"},",
@@ -2703,6 +2708,7 @@ void LV6Dashboard::handle_diagnostics_(AsyncWebServerRequest *request) {
            "\"ble\":{\"enabled\":%s,\"scanning\":%s,\"demanded\":%s,"
            "\"ads_per_sec\":%s,\"last_adv_age_ms\":%lu},"
            "\"manifold\":{\"flow_c\":%s,\"flow_temp_c\":%s,\"return_c\":%s},\"drivers_enabled\":%s,"
+           "\"drivers_off\":{\"reason\":\"%s\",\"age_s\":%lu,\"recoveries\":%u},"
            "\"motor_safety\":{\"backend\":\"%s\",\"motor_busy\":%s,\"drive_on\":%s,"
            "\"latch_faulted\":%s,\"fault_code\":%u,\"current_ma\":%.1f,"
            "\"bemf_raw_a\":%u,\"bemf_raw_b\":%u,\"bemf_differential_raw\":%d,"
@@ -2748,6 +2754,9 @@ void LV6Dashboard::handle_diagnostics_(AsyncWebServerRequest *request) {
                                                    : snap->ble_last_adv_age_ms),
            flow, flow, ret,
            snap->drivers_enabled ? "true" : "false",
+           snap->drivers_enabled ? "" : snap->drivers_off_reason,
+           static_cast<unsigned long>(snap->drivers_off_age_s),
+           static_cast<unsigned>(snap->drivers_recoveries),
            motor_diag.backend,
            motor_diag.motor_busy ? "true" : "false",
            motor_diag.drive_on ? "true" : "false",
@@ -4456,6 +4465,22 @@ void LV6Dashboard::dispatch_set_(const DashboardAction &act) {
     }
 
   // ---- min_zone_flow_pct (secondary total, active only during commissioning) ----
+  } else if (strcmp(key, "balancing_mode") == 0 && has_str && this->config_store_) {
+    // static: the area/pipe prior only. adaptive: the prior plus an hourly
+    // per-zone correction learned from each room's long-term temperature error.
+    auto bal = this->config_store_->get_config().balancing;
+    if (strcasecmp(str_val, "adaptive") == 0)
+      bal.mode = lv6::BalanceMode::ADAPTIVE;
+    else if (strcasecmp(str_val, "static") == 0)
+      bal.mode = lv6::BalanceMode::STATIC;
+    else {
+      ESP_LOGW(TAG, "Ignoring unknown balancing_mode '%s'", str_val);
+      return;
+    }
+    this->config_store_->update_balancing(bal);
+    if (this->zone_controller_)
+      this->zone_controller_->request_balance_recalc();
+
   } else if (strcmp(key, "min_zone_flow_pct") == 0 && has_num && this->config_store_) {
     auto bal = this->config_store_->get_config().balancing;
     bal.secondary_min_total_opening_pct = std::max(0.0f, std::min(100.0f, num_val));

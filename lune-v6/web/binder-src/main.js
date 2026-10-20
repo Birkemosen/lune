@@ -594,6 +594,14 @@ function paintStrip() {
   })));
   setBind('dash.sys.sub', t('dash.sys.sub', { zones: 6, calling, faults }));
   setShow('dash.alert', faults > 0);
+  // Motors off: nothing moves, whatever the zones ask for. Say why (firmware reason key).
+  const driversOn = isEntityOn(gkey.drivers);
+  setShow('dash.driversOff', !driversOn);
+  if (!driversOn) {
+    const why = String(es(gkey.driversOffReason) || 'boot');
+    const reason = ['fault', 'ota', 'arm', 'boot', 'user'].includes(why) ? t(`drv.reason.${why}`) : t('drv.reason.boot');
+    setBind('dash.driversOffBody', escapeHtml(t('alert.driversOffBody', { reason })));
+  }
   if (firstFault) {
     const fname = es(key.name(firstFault)) || `Zone ${firstFault}`;
     setBind('dash.alertTitle', t('alert.zoneFault', { zone: `Z${firstFault} ${fname}` }));
@@ -1366,6 +1374,9 @@ function paintFormsFromState() {
   }
   syncRuntimeLimits();
   const heat = es(gkey.heatingMode) || 'heat_pump';
+  const balMode = String(es(gkey.balancingMode) || '').toLowerCase() === 'adaptive' ? 'adaptive' : 'static';
+  const balRadio = document.querySelector(`input[name="balancing_mode"][value="${balMode}"]`);
+  if (balRadio && !formIsLocked(balRadio)) balRadio.checked = true;
   const heatRadio = document.querySelector(`input[name="heat_mode"][value="${heat === 'heat_pump' ? 'heat_pump' : 'normal'}"]`);
   if (heatRadio && !formIsLocked(heatRadio)) heatRadio.checked = true;
   const paintNum = (name, entityKey, digits = 0) => {
@@ -1679,7 +1690,9 @@ async function handleSave(detail) {
   // count those edits as saved: keep the form dirty and only report errors.
   const keepDirty = !!action && !!formEl && formEl.hasAttribute('data-dirty');
   try {
-    if (saveKey === 'device') {
+    if (saveKey === 'drivers-on') {
+      await setDriversEnabled(true);
+    } else if (saveKey === 'device') {
       await setGlobalText('device_display_name', String(form.device_display_name || '').trim() || 'Lune V6');
       await setGlobalText('device_location', String(form.device_location || '').trim());
     } else if (saveKey === 'touch' || saveKey === 'connections') {
@@ -1739,6 +1752,8 @@ async function handleSave(detail) {
         await command('reset_balancing');
       } else {
         await saveHeating_(form);
+        if (form.balancing_mode === 'static' || form.balancing_mode === 'adaptive')
+          await setGlobalSelect('balancing_mode', form.balancing_mode);
         // Checkbox absent when off — always write both absorb flags.
         await setGlobalSelect('preheat_absorb_enabled', form.preheat_enabled ? 'on' : 'off');
         await setGlobalSelect('simple_preheat_enabled', form.preheat_enabled ? 'on' : 'off');
