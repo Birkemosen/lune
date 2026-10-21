@@ -363,6 +363,8 @@
   "csys.hpBase": "Base opening",
   "csys.hpOverheat": "Overheat margin",
   "csys.hpTrim": "Trim floor",
+  "csys.hpCloseAbove": "Close fully above target",
+  "csys.hpCloseAboveHint": "0 = off. A room this far above its target closes fully and reopens 0.2° below. The manifold always keeps at least its total opening (Min. total opening, else 30 %).",
   "csys.balMode": "Distribution",
   "csys.balModeNote": "Static: split by area, pipe and loop length. Adaptive: also adjusts each zone every hour by whether the room runs above or below its target over time, so all rooms reach target at the same flow temperature.",
   "alert.driversOff": "Motors are off",

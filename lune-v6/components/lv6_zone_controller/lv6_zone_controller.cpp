@@ -943,6 +943,17 @@ void Lv6ZoneController::set_hp_demand_pct(float pct) {
   config_store_->update_control(cfg.control);
 }
 
+void Lv6ZoneController::set_hp_close_above_c(float c) {
+  if (!config_store_)
+    return;
+  auto cfg = config_store_->get_config();
+  c = std::isfinite(c) ? std::clamp(c, 0.0f, 3.0f) : 0.0f;
+  if (std::fabs(cfg.control.hp_close_above_c - c) < 0.01f)
+    return;
+  cfg.control.hp_close_above_c = c;
+  config_store_->update_control(cfg.control);
+}
+
 void Lv6ZoneController::set_hp_trim_floor_pct(float pct) {
   if (!config_store_)
     return;
@@ -1313,12 +1324,25 @@ void Lv6ZoneController::run_cycle_() {
       raw_algo = compute_raw_position_(i, temp, setpoint);
       raw_algo += cfg.control.demand_boost_pct;
     }
+    // «Close above target»: latch at setpoint + limit, release 0.2 °C below it.
+    {
+      const float close_above = cfg.control.hp_close_above_c;
+      if (effective_mode == HeatingProfile::HEAT_PUMP && close_above > 0.0f &&
+          std::isfinite(temp) && std::isfinite(setpoint)) {
+        if (temp >= setpoint + close_above)
+          hp_closed_[i] = true;
+        else if (temp <= setpoint + close_above - 0.2f)
+          hp_closed_[i] = false;
+      } else {
+        hp_closed_[i] = false;
+      }
+    }
     float position = control_mode_policy::position_for_state(
         effective_mode, state, flow_alloc_.opening_pct[i], raw_algo,
         cfg.control.maintenance_base_pct, cfg.control.hp_base_pct, cfg.control.hp_trim_floor_pct,
         cfg.control.hp_overheat_margin_c, temp, setpoint, cfg.zones[i].max_opening_pct,
         zone_absorbing_(i), absorb_band, cfg.control.hp_demand_pct, cfg.control.comfort_band_c,
-        manifold_flow_c, get_hp_phase() == HpPhase::IDLE);
+        manifold_flow_c, get_hp_phase() == HpPhase::IDLE, hp_closed_[i]);
     bool was_overheated = (state == ZoneState::OVERHEATED);
 
     position = apply_hydraulic_balance_(i, position);
@@ -1406,6 +1430,39 @@ void Lv6ZoneController::run_cycle_() {
 
   if (floor_applies)
     enforce_minimum_total_opening_(target_positions);
+
+  // Flow guarantee for «close above target»: closing warm rooms must never stop the
+  // manifold. Below the minimum total, reopen the closed loops nearest their target
+  // to the trim floor (min total = the manifold setting, else 30 %).
+  if (effective_mode == HeatingProfile::HEAT_PUMP && cfg.control.hp_close_above_c > 0.0f) {
+    float pos[NUM_ZONES];
+    bool closed[NUM_ZONES];
+    bool en[NUM_ZONES];
+    float surplus[NUM_ZONES];
+    for (uint8_t i = 0; i < NUM_ZONES; i++) {
+      pos[i] = target_positions[i];
+      en[i] = cfg.zones[i].enabled;
+      closed[i] = hp_closed_[i];
+      surplus[i] = (std::isfinite(zone_temps[i]) && std::isfinite(zone_setpoints[i]))
+                       ? zone_temps[i] - zone_setpoints[i] : 99.0f;
+    }
+    const float min_total = cfg.balancing.secondary_min_total_opening_pct > 0.0f
+                                ? cfg.balancing.secondary_min_total_opening_pct : 30.0f;
+    const float floor_pct = std::max(5.0f, std::min(cfg.control.hp_trim_floor_pct, cfg.control.hp_base_pct));
+    const unsigned reopened = control_mode_policy::reopen_for_min_total(pos, closed, surplus, en, floor_pct, min_total);
+    if (reopened > 0) {
+      ESP_LOGD(TAG, "Close-above: %u loop(s) reopened to %.0f%% to keep %.0f%% total flow",
+               reopened, floor_pct, min_total);
+      xSemaphoreTake(snapshot_mutex_, portMAX_DELAY);
+      for (uint8_t i = 0; i < NUM_ZONES; i++) {
+        if (pos[i] != target_positions[i]) {
+          target_positions[i] = pos[i];
+          snapshots_[i].valve_position_pct = pos[i];
+        }
+      }
+      xSemaphoreGive(snapshot_mutex_);
+    }
+  }
 
   // Heat-demand summary for Touch / Asgard feed-temperature trim (heat-pump mode).
   {

@@ -345,6 +345,8 @@
   "csys.hpBase": "Basisåbning",
   "csys.hpOverheat": "Overhedningsmargin",
   "csys.hpTrim": "Trimgulv",
+  "csys.hpCloseAbove": "Luk helt over målet",
+  "csys.hpCloseAboveHint": "0 = fra. Et rum, der er så meget over sit mål, lukker helt og åbner igen 0,2° under. Manifolden holder altid mindst den samlede åbning (Min. samlet åbning, ellers 30 %).",
   "csys.balMode": "Fordeling",
   "csys.balModeNote": "Statisk: fordeling ud fra areal, rør og sløjfelængde. Adaptiv: justerer derudover hver zone time for time efter, om rummet over tid ligger over eller under målet, så alle rum rammer målet ved samme fremløbstemperatur.",
   "alert.driversOff": "Motorerne er slået fra",
