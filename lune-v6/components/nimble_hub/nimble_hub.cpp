@@ -12,6 +12,9 @@
 #include <esp_attr.h>
 #include <esp_heap_caps.h>
 #include <esp_system.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/idf_additions.h"
+#include "freertos/task.h"
 #include "host/ble_gap.h"
 #include "host/ble_hs.h"
 #include "host/ble_hs_adv.h"
@@ -30,10 +33,49 @@ static NimbleHub *g_hub = nullptr;
 
 extern "C" void ble_store_config_init(void);
 
+// The NimBLE host task, created here instead of by nimble_port_freertos_init(): IDF's
+// version ignores a failed xTaskCreate, and its 8 KiB stack must be one contiguous
+// block of internal RAM. With ~14 KiB internal free and a 7.5 KiB largest block left
+// after the controller allocates, the task was silently never created and NimBLE never
+// synced. The stack goes to PSRAM instead (the host task never touches flash: no
+// bonding store, the BTHome callbacks only read RAM config), internal RAM as fallback.
+static TaskHandle_t s_host_task = nullptr;
+static bool s_host_stack_external = false;
+
 static void nimble_host_task(void *param) {
   (void) param;
   nimble_port_run();
-  nimble_port_freertos_deinit();
+  // Stopped by nimble_port_stop(): park until deinit_stack_() deletes the task (a
+  // WithCaps task cannot free its own stack without a helper task).
+  vTaskSuspend(nullptr);
+}
+
+static bool start_host_task() {
+  s_host_stack_external =
+      xTaskCreatePinnedToCoreWithCaps(nimble_host_task, "nimble_host", NIMBLE_HS_STACK_SIZE, nullptr,
+                                      configMAX_PRIORITIES - 4, &s_host_task, NIMBLE_CORE,
+                                      MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) == pdPASS;
+  if (s_host_stack_external)
+    return true;
+  s_host_task = nullptr;
+  if (xTaskCreatePinnedToCore(nimble_host_task, "nimble_host", NIMBLE_HS_STACK_SIZE, nullptr,
+                              configMAX_PRIORITIES - 4, &s_host_task, NIMBLE_CORE) == pdPASS)
+    return true;
+  s_host_task = nullptr;
+  return false;
+}
+
+static void stop_host_task() {
+  if (s_host_task == nullptr)
+    return;
+  // nimble_port_run() returns right after nimble_port_stop(); give it a moment to park.
+  for (int i = 0; i < 20 && eTaskGetState(s_host_task) != eSuspended; i++)
+    vTaskDelay(pdMS_TO_TICKS(10));
+  if (s_host_stack_external)
+    vTaskDeleteWithCaps(s_host_task);
+  else
+    vTaskDelete(s_host_task);
+  s_host_task = nullptr;
 }
 
 static void on_reset(int reason) {
@@ -225,7 +267,14 @@ bool NimbleHub::init_stack_() {
   ble_store_config_init();
 
   this->synced_ = false;
-  nimble_port_freertos_init(nimble_host_task);
+  if (!start_host_task()) {
+    ESP_LOGE(TAG, "NimBLE host task not created (internal=%u largest=%u)",
+             static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_INTERNAL)),
+             static_cast<unsigned>(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL)));
+    nimble_port_deinit();
+    return false;
+  }
+  ESP_LOGD(TAG, "NimBLE host task stack in %s", s_host_stack_external ? "PSRAM" : "internal RAM");
   return true;
 #else
   return false;
@@ -238,6 +287,7 @@ void NimbleHub::deinit_stack_() {
   if (rc != 0) {
     ESP_LOGW(TAG, "nimble_port_stop rc=%d", rc);
   }
+  stop_host_task();
   nimble_port_deinit();
 #endif
 }

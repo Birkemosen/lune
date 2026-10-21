@@ -20,6 +20,8 @@
 #include "../lv6_config_store/group_model.h"
 #include "esphome/core/log.h"
 #include "esp_timer.h"
+#include "esp_heap_caps.h"
+#include "freertos/idf_additions.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -113,9 +115,13 @@ void Lv6ZoneController::setup() {
   // mutex contended during the watchdog's boot window.
   balance_dirty_ = false;
 
-  // Start zone control task
-  BaseType_t ok = xTaskCreatePinnedToCore(
-      task_func_, "lv6_zone", STACK_SIZE, this, PRIORITY, &task_handle_, CORE);
+  // Start zone control task. Its 16 KiB stack lives in PSRAM: internal RAM is short
+  // (NimBLE needs contiguous internal blocks) and the task never touches flash itself
+  // (config writes go through the lv6_nvs task). Internal RAM as fallback.
+  BaseType_t ok = xTaskCreatePinnedToCoreWithCaps(task_func_, "lv6_zone", STACK_SIZE, this, PRIORITY,
+                                                  &task_handle_, CORE, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+  if (ok != pdPASS)
+    ok = xTaskCreatePinnedToCore(task_func_, "lv6_zone", STACK_SIZE, this, PRIORITY, &task_handle_, CORE);
   if (ok != pdPASS) {
     ESP_LOGE(TAG, "Failed to create zone task");
     this->mark_failed();
