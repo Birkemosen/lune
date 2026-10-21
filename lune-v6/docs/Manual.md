@@ -206,6 +206,19 @@ flow temperature:
   fall below *Min. total opening* (else 30 %), the closed loops nearest their target are
   reopened to the trim floor, one at a time, so the manifold always has flow.
 
+**Reopening ahead (both modes).** A floor answers 1–3 hours after its valve opens, so a
+closed room that waited for its thermometer would keep falling well below target. A loop
+closed because its room is warm therefore reopens on the temperature *expected one floor
+lag ahead*: the room's measured fall (°C/h, over 30-minute steps) times the floor lag
+(about 1.5 h for 8 cm concrete, 1 h for screed, less for dry systems, plus about 0.4 h
+for parquet and 0.6 h for carpet). The longer the loop has been closed, the longer the
+lag counts (up to twice after 4 hours), because the slab has given up more of its heat.
+The loop reopens when that expected temperature reaches setpoint + 0.3 °C, at the
+satisfied opening (not the calling opening), after at least 20 minutes closed. In Normal
+mode, which closes at setpoint, it reopens 0.2 °C below setpoint instead of at setpoint −
+comfort band. It closes again if the room turns warm (0.2 °C hysteresis). A steady room
+reopens on its measured temperature.
+
 All openings are for the hardest loop; the hydraulic balance scales each loop by
 its resistance (area, pipe spacing, pipe type, supply length).
 

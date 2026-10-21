@@ -14,6 +14,7 @@
 #include "preheat_absorb_logic.h"
 #include "absorb_command_logic.h"
 #include "preheat_policy.h"
+#include "reopen_policy.h"
 #include "probe_mapping.h"
 #include "thermal_model.h"
 #include "../lv6_config_store/group_model.h"
@@ -1237,6 +1238,7 @@ void Lv6ZoneController::run_cycle_() {
       static_cast<HeatingProfile>(touch_control_mode_.load(std::memory_order_acquire)));
   if (effective_mode != last_effective_mode_) {
     normal_closed_.fill(false);
+    reopen_.fill({});
     heat_demand_timers_ = {};
     last_effective_mode_ = effective_mode;
   }
@@ -1282,10 +1284,13 @@ void Lv6ZoneController::run_cycle_() {
 
   // Heat-pump overheat rule compares each room with the manifold supply.
   const float manifold_flow_c = read_manifold_flow_();
+  const uint32_t cycle_ms = esphome::millis();
   for (uint8_t i = 0; i < NUM_ZONES; i++) {
     if (!cfg.zones[i].enabled) {
       target_positions[i] = 0.0f;
       normal_closed_[i] = false;
+      reopen_[i] = {};
+      reopen_trend_[i] = {};
       xSemaphoreTake(snapshot_mutex_, portMAX_DELAY);
       snapshots_[i].state = ZoneState::UNKNOWN;
       snapshots_[i].valve_position_pct = 0.0f;
@@ -1295,6 +1300,7 @@ void Lv6ZoneController::run_cycle_() {
 
     float temp = zone_temps[i];
     float setpoint = zone_setpoints[i];
+    reopen_policy::update_trend(reopen_trend_[i], temp, cycle_ms);
 
     algorithms_[i].set_algorithm(cfg.zones[i].algorithm);
 
@@ -1343,6 +1349,38 @@ void Lv6ZoneController::run_cycle_() {
         cfg.control.hp_overheat_margin_c, temp, setpoint, cfg.zones[i].max_opening_pct,
         zone_absorbing_(i), absorb_band, cfg.control.hp_demand_pct, cfg.control.comfort_band_c,
         manifold_flow_c, get_hp_phase() == HpPhase::IDLE, hp_closed_[i]);
+    // Anticipated reopening (reopen_policy.h): a loop held closed because its room
+    // is warm reopens at the satisfied opening once the room is expected to fall
+    // to the reopen point within the floor's lag.
+    {
+      const bool closed = position <= 0.0f && (state == ZoneState::OVERHEATED || hp_closed_[i]);
+      float close_point = setpoint;  // Normal closes at setpoint
+      if (effective_mode == HeatingProfile::HEAT_PUMP)
+        close_point = hp_closed_[i] ? setpoint + cfg.control.hp_close_above_c
+                                    : setpoint + cfg.control.comfort_band_c +
+                                          cfg.control.hp_overheat_margin_c + absorb_band;
+      const auto th = thermal_model::estimate(cfg.zones[i], cfg.house_physics);
+      const float lag_h = reopen_policy::floor_lag_h(cfg.zones[i].slab_type,
+                                                     cfg.zones[i].active_thickness_cm, th.r_m2k_per_w);
+      const bool was_active = reopen_[i].active;
+      if (reopen_policy::step(reopen_[i], closed, temp, reopen_trend_[i].slope_c_per_h, setpoint,
+                              close_point, lag_h, cycle_ms)) {
+        // Below setpoint the Normal latch lets go, so the next cycle runs the plain law.
+        if (effective_mode == HeatingProfile::NORMAL && temp < setpoint)
+          normal_closed_[i] = false;
+        state = ZoneState::SATISFIED;
+        zone_states[i] = state;
+        position = control_mode_policy::position_for_state(
+            effective_mode, state, flow_alloc_.opening_pct[i], raw_algo,
+            cfg.control.maintenance_base_pct, cfg.control.hp_base_pct, cfg.control.hp_trim_floor_pct,
+            cfg.control.hp_overheat_margin_c, temp, setpoint, cfg.zones[i].max_opening_pct,
+            zone_absorbing_(i), absorb_band, cfg.control.hp_demand_pct, cfg.control.comfort_band_c,
+            manifold_flow_c, get_hp_phase() == HpPhase::IDLE, false);
+        if (!was_active)
+          ESP_LOGI(TAG, "Zone %d: reopening ahead at %.2f C (setpoint %.2f, %.2f C/h, floor lag %.1f h)",
+                   i + 1, temp, setpoint, reopen_trend_[i].slope_c_per_h, lag_h);
+      }
+    }
     bool was_overheated = (state == ZoneState::OVERHEATED);
 
     position = apply_hydraulic_balance_(i, position);
