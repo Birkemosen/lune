@@ -57,11 +57,12 @@ esp32:
       # stock web_server.
       CONFIG_LWIP_MAX_SOCKETS: "16"
       CONFIG_HTTPD_MAX_URI_LEN: "128"
-      # loopTask (ESPHome main loop) runs every component loop() plus the BLE
-      # advertise path. The dashboard/bridge setup path also copies the
-      # ~1.9 KB DeviceConfig, and the 8 KB stack overflows before setup()
-      # completes. Keep 16 KB headroom for those snapshots and BLE bursts.
-      CONFIG_ESP_MAIN_TASK_STACK_SIZE: "16384"
+      # loopTask (ESPHome main loop) runs every component loop(), setup(), the BLE
+      # advertise path and OTA. It peaked at ~11.9 KB while setup and loop paths
+      # copied DeviceConfig (2.6 KB each); with Lv6ConfigStore::read() the peak is
+      # ~5.4 KB (21 Oct, both boards, incl. a full motor calibration). 12 KB keeps
+      # more than 2x headroom for unmeasured paths (OTA) and returns 4 KB.
+      CONFIG_ESP_MAIN_TASK_STACK_SIZE: "12288"
       # FreeRTOS runtime stats — lets the dashboard report per-core CPU load and
       # per-task CPU% / stack headroom (uxTaskGetSystemState) so a task that
       # saturates a core or starves the loop can be pinpointed. The stats-
@@ -72,7 +73,7 @@ esp32:
     # ESPHome's advanced option is the authoritative loopTask stack setting;
     # its default would override CONFIG_ESP_MAIN_TASK_STACK_SIZE above.
     advanced:
-      loop_task_stack_size: 16384
+      loop_task_stack_size: 12288
 
 # Octal PSRAM on the N8R8. ignore_not_found must stay false: a missing PSRAM
 # is a hardware fault, not a config option.
