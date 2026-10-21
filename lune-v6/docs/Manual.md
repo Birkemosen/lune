@@ -199,6 +199,13 @@ flow temperature:
   margin **and** the manifold supply (flow probe) is more than 1 °C warmer than
   the room — cooler water cannot heat it, so it keeps flowing.
 
+- **Close fully above target** — 0 = off. A room this far above its target (e.g.
+  +0.5 °C) closes its loop fully instead of holding the trim floor, so a warm floor does
+  not take flow from rooms that need it; it reopens 0.2 °C below the limit. A room that
+  needs heat is never closed. **Flow guarantee:** if the manifold's total opening would
+  fall below *Min. total opening* (else 30 %), the closed loops nearest their target are
+  reopened to the trim floor, one at a time, so the manifold always has flow.
+
 All openings are for the hardest loop; the hydraulic balance scales each loop by
 its resistance (area, pipe spacing, pipe type, supply length).
 

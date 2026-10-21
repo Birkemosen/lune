@@ -12,8 +12,10 @@ grep -qE 'ZONE_CONFIG_VERSION_V5 = 5' "$types"
 grep -qE 'HOUSE_PHYSICS_CONFIG_VERSION = 1' "$types"
 grep -qE 'GROUPS_CONFIG_VERSION = 1' "$types"
 grep -qE 'SYSTEM_CONFIG_VERSION = 5' "$types"
-grep -qE 'CONTROL_CONFIG_VERSION = 3' "$types"
-# v3 added hp_demand_pct; v2 control blobs are migrated, not reset.
+grep -qE 'CONTROL_CONFIG_VERSION = 4' "$types"
+# v4 added hp_close_above_c, v3 hp_demand_pct; v3 and v2 control blobs are migrated, not reset.
+grep -qE 'struct ControlConfigV3' "$types"
+grep -qE 'load_section\(handle, KEY_CONTROL, 3, v3\)' "$store"
 grep -qE 'struct ControlConfigV2' "$types"
 grep -qE 'load_section\(handle, KEY_CONTROL, 2, v2\)' "$store"
 grep -qE 'BALANCING_CONFIG_VERSION = 3' "$types"

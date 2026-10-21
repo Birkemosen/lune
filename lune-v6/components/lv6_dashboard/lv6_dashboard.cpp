@@ -608,6 +608,7 @@ void LV6Dashboard::update_snapshot_() {
     s.hp_overheat_margin_c = ctrl_cfg.hp_overheat_margin_c;
     s.hp_base_pct = ctrl_cfg.hp_base_pct;
     s.hp_trim_floor_pct = ctrl_cfg.hp_trim_floor_pct;
+    s.hp_close_above_c = ctrl_cfg.hp_close_above_c;
     s.hp_demand_pct = ctrl_cfg.hp_demand_pct;
     s.preheat_absorbing = this->zone_controller_ && this->zone_controller_->is_preheat_absorbing();
     s.absorb_mode = this->zone_controller_ ? this->zone_controller_->absorb_mode_code() : 0;
@@ -1885,6 +1886,8 @@ void LV6Dashboard::handle_state_(AsyncWebServerRequest *request) {
   if (!append( "\"number-hp_trim_floor_pct\":{\"value\":%s},", num_buf)) return;
   format_float_token(num_buf, sizeof(num_buf), snap->hp_demand_pct, 0);
   if (!append( "\"number-hp_demand_pct\":{\"value\":%s},", num_buf)) return;
+  format_float_token(num_buf, sizeof(num_buf), snap->hp_close_above_c, 1);
+  if (!append( "\"number-hp_close_above_c\":{\"value\":%s},", num_buf)) return;
   if (snap->heat_demand.critical_zone >= 0)
     if (!append( "\"sensor-heat_demand_critical_zone\":{\"value\":%d},",
             snap->heat_demand.critical_zone + 1)) return;
@@ -4498,6 +4501,8 @@ void LV6Dashboard::dispatch_set_(const DashboardAction &act) {
   } else if (strcmp(key, "hp_base_pct") == 0 && has_num && this->zone_controller_) {
     this->zone_controller_->set_hp_base_pct(num_val);
 
+  } else if (strcmp(key, "hp_close_above_c") == 0 && has_num && this->zone_controller_) {
+    this->zone_controller_->set_hp_close_above_c(num_val);
   } else if (strcmp(key, "hp_trim_floor_pct") == 0 && has_num && this->zone_controller_) {
     this->zone_controller_->set_hp_trim_floor_pct(num_val);
 

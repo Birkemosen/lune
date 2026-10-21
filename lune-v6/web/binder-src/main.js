@@ -1403,6 +1403,7 @@ function paintFormsFromState() {
   paintNum('hp_base', gkey.hpBasePct, 0);
   paintNum('hp_overheat', gkey.hpOverheatMarginC, 1);
   paintNum('hp_trim', gkey.hpTrimFloorPct, 0);
+  paintNum('hp_close', gkey.hpCloseAboveC, 1);
   const devName = document.getElementById('device_display_name');
   if (devName && !formIsLocked(devName)) {
     devName.value = es(gkey.deviceDisplayName) || devName.value;
@@ -1630,6 +1631,7 @@ async function saveHeating_(form) {
   // After base: the firmware keeps demand ≥ base.
   if (form.hp_demand != null) await setGlobalNumber('hp_demand_pct', form.hp_demand);
   if (form.hp_trim != null) await setGlobalNumber('hp_trim_floor_pct', form.hp_trim);
+  if (form.hp_close != null) await setGlobalNumber('hp_close_above_c', form.hp_close);
 }
 
 async function saveZoneRoom_(z, form) {

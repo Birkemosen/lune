@@ -93,11 +93,16 @@ inline float position_for_state(HeatingProfile mode, ZoneState state,
                                 float temp, float setpoint, float max_opening_pct,
                                 bool absorbing, float absorb_band_c,
                                 float hp_demand_pct = NAN, float comfort_band_c = 0.5f,
-                                float flow_temp_c = NAN, bool hp_idle = false) {
+                                float flow_temp_c = NAN, bool hp_idle = false,
+                                bool hp_closed = false) {
   const bool hp = mode == HeatingProfile::HEAT_PUMP;
   const float demand_pct =
       std::isnan(hp_demand_pct) ? hp_base_pct : std::max(hp_demand_pct, hp_base_pct);
   const float floor_pct = std::min(hp_trim_floor_pct, hp_base_pct);
+  // «Close above target» (hp_close_above_c): a room latched past it gets no flow;
+  // the manifold minimum (reopen_for_min_total) keeps some flow in the house.
+  if (hp && hp_closed && state != ZoneState::DEMAND)
+    return 0.0f;
   switch (state) {
     case ZoneState::OVERHEATED:
       if (hp && !std::isnan(flow_temp_c) && !std::isnan(temp) &&
@@ -148,6 +153,37 @@ inline float position_for_state(HeatingProfile mode, ZoneState state,
     default:
       return maintenance_base_pct;
   }
+}
+
+/// Flow guarantee for «close above target»: when the manifold's total opening is
+/// below min_total_pct, reopen closed loops to floor_pct, smallest surplus first
+/// (the room nearest its target gets flow back first). Returns loops reopened.
+template <size_t N>
+inline unsigned reopen_for_min_total(float (&positions)[N], const bool (&closed)[N],
+                                     const float (&surplus_c)[N], const bool (&enabled)[N],
+                                     float floor_pct, float min_total_pct) {
+  float total = 0.0f;
+  for (size_t i = 0; i < N; i++)
+    if (enabled[i])
+      total += positions[i];
+  unsigned reopened = 0;
+  bool used[N]{};
+  while (total < min_total_pct) {
+    size_t best = N;
+    for (size_t i = 0; i < N; i++) {
+      if (!enabled[i] || !closed[i] || used[i] || positions[i] >= floor_pct)
+        continue;
+      if (best == N || surplus_c[i] < surplus_c[best])
+        best = i;
+    }
+    if (best == N)
+      break;
+    used[best] = true;
+    total += floor_pct - positions[best];
+    positions[best] = floor_pct;
+    reopened++;
+  }
+  return reopened;
 }
 
 struct HeatDemandTimers {

@@ -951,10 +951,30 @@ void Lv6ConfigStore::load_config_() {
   xSemaphoreTake(mutex_, portMAX_DELAY);
   had_all_sections &= load_section(handle, KEY_SYSTEM, SYSTEM_CONFIG_VERSION, config_.system);
   if (!load_section(handle, KEY_CONTROL, CONTROL_CONFIG_VERSION, config_.control)) {
-    // v2 had no hp_demand_pct: keep every stored control setting and add the
-    // new field at its default instead of resetting the whole section.
+    // v3 had no hp_close_above_c, v2 no hp_demand_pct: keep every stored control
+    // setting and add the new fields at their defaults.
+    ControlConfigV3 v3{};
     ControlConfigV2 v2{};
-    if (load_section(handle, KEY_CONTROL, 2, v2)) {
+    if (load_section(handle, KEY_CONTROL, 3, v3)) {
+      ControlConfig c{};
+      c.comfort_band_c = v3.comfort_band_c;
+      c.maintenance_base_pct = v3.maintenance_base_pct;
+      c.demand_boost_pct = v3.demand_boost_pct;
+      c.boost_factor = v3.boost_factor;
+      c.min_movement_pct = v3.min_movement_pct;
+      c.tanh_steepness = v3.tanh_steepness;
+      c.simple_preheat_enabled = v3.simple_preheat_enabled;
+      c.preheat_absorb_enabled = v3.preheat_absorb_enabled;
+      c.preheat_absorb_band_c = v3.preheat_absorb_band_c;
+      c.preheat_detect_delta_c = v3.preheat_detect_delta_c;
+      c.mode = v3.mode;
+      c.hp_overheat_margin_c = v3.hp_overheat_margin_c;
+      c.hp_base_pct = v3.hp_base_pct;
+      c.hp_trim_floor_pct = v3.hp_trim_floor_pct;
+      c.hp_demand_pct = v3.hp_demand_pct;
+      config_.control = c;
+      ESP_LOGI(TAG, "Control section migrated v3 -> v%" PRIu32, CONTROL_CONFIG_VERSION);
+    } else if (load_section(handle, KEY_CONTROL, 2, v2)) {
       ControlConfig c{};
       c.comfort_band_c = v2.comfort_band_c;
       c.maintenance_base_pct = v2.maintenance_base_pct;

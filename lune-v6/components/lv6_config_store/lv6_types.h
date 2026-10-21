@@ -286,6 +286,28 @@ struct ControlConfig {
   /// between that and setpoint ramp from here down to hp_base_pct. Keeps rooms
   /// that need heat ahead of satisfied ones without closing anyone.
   float hp_demand_pct = 80.0f;
+  /// Heat-pump mode: a room this far above its target closes fully (0 = off). It
+  /// reopens 0.2 °C below; the manifold always keeps a minimum total opening.
+  float hp_close_above_c = 0.0f;
+};
+
+/// ControlConfig as stored by CONTROL_CONFIG_VERSION 3 (before hp_close_above_c).
+struct ControlConfigV3 {
+  float comfort_band_c;
+  float maintenance_base_pct;
+  float demand_boost_pct;
+  float boost_factor;
+  float min_movement_pct;
+  float tanh_steepness;
+  bool simple_preheat_enabled;
+  bool preheat_absorb_enabled;
+  float preheat_absorb_band_c;
+  float preheat_detect_delta_c;
+  HeatingProfile mode;
+  float hp_overheat_margin_c;
+  float hp_base_pct;
+  float hp_trim_floor_pct;
+  float hp_demand_pct;
 };
 
 /// ControlConfig as stored by CONTROL_CONFIG_VERSION 2 (before hp_demand_pct).
@@ -417,7 +439,7 @@ static constexpr uint32_t GROUPS_CONFIG_VERSION = 1;
 /// v5 adds user-facing display_name and location for the dashboard device menu.
 static constexpr uint32_t SYSTEM_CONFIG_VERSION = 5;
 /// v2 adds heating mode + heat-pump base/margin/trim; drops unused min_valve_opening_pct.
-static constexpr uint32_t CONTROL_CONFIG_VERSION = 3;
+static constexpr uint32_t CONTROL_CONFIG_VERSION = 4;
 /// v2 moves defaults to P1 flow / P2 manifold return with zone return probes
 /// unassigned (return-temperature mode off until the user enables it). Layout
 /// is unchanged; the bump replaces stored v1 values that still carried the

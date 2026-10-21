@@ -113,6 +113,29 @@ static void test_heat_pump_base_trim_cutoff() {
                                           80.0f, band, nan, false);
   expect_near(running_hold, base, 0.01f, "HP running: at setpoint holds base (unchanged)");
 
+  // Close above target: a latched room gets 0; a room that needs heat is never closed.
+  float closed_pos = position_for_state(HeatingProfile::HEAT_PUMP, ZoneState::SATISFIED, 0.0f, 0.0f,
+                                        15.0f, base, floor, margin, sp + 0.6f, sp, max_open, false, 0.0f,
+                                        80.0f, band, nan, false, true);
+  expect_near(closed_pos, 0.0f, 0.01f, "HP close-above: latched satisfied room closes fully");
+  float closed_demand = position_for_state(HeatingProfile::HEAT_PUMP, ZoneState::DEMAND, 0.0f, 0.0f,
+                                           15.0f, base, floor, margin, sp - 1.0f, sp, max_open, false, 0.0f,
+                                           80.0f, band, nan, false, true);
+  expect(closed_demand >= 80.0f - 0.01f, "HP close-above: never closes a room that needs heat");
+  // Flow guarantee: 6 loops, 5 closed (surplus 0.6..1.5), one at 10 % → total 10 < 30:
+  // reopen the two closed loops nearest their target to the trim floor (15 %).
+  {
+    float pos[6] = {0, 0, 0, 0, 0, 10};
+    const bool closed[6] = {true, true, true, true, true, false};
+    const float surplus[6] = {1.5f, 0.6f, 1.0f, 0.7f, 1.2f, 0.0f};
+    const bool en[6] = {true, true, true, true, true, true};
+    unsigned n = reopen_for_min_total(pos, closed, surplus, en, 15.0f, 30.0f);
+    expect(n == 2, "flow guarantee: reopens two loops");
+    expect_near(pos[1], 15.0f, 0.01f, "flow guarantee: smallest surplus first (0.6)");
+    expect_near(pos[3], 15.0f, 0.01f, "flow guarantee: then 0.7");
+    expect_near(pos[0], 0.0f, 0.01f, "flow guarantee: warmest stays closed");
+  }
+
   expect(classify(HeatingProfile::HEAT_PUMP, sp + band + margin + 0.1f, sp, band, margin, 0.0f, 0.0f,
                   latched) == ZoneState::OVERHEATED,
          "HP: past margin → OVERHEATED");

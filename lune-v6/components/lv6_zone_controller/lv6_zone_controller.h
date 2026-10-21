@@ -253,6 +253,7 @@ class Lv6ZoneController : public esphome::Component {
   void set_hp_overheat_margin_c(float margin_c);
   void set_hp_base_pct(float pct);
   void set_hp_trim_floor_pct(float pct);
+  void set_hp_close_above_c(float c);
   void set_hp_demand_pct(float pct);
 
   bool is_connected() const { return true; }  // WiFi managed by ESPHome
@@ -296,6 +297,8 @@ class Lv6ZoneController : public esphome::Component {
   std::array<float, NUM_ZONES> house_balance_{1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f};
   std::array<uint32_t, NUM_ZONES> house_balance_until_ms_{};
   HpPhase hp_phase_{HpPhase::UNKNOWN};
+  // «Close above target» latch per zone (hp_close_above_c; reopens 0.2 °C below).
+  std::array<bool, NUM_ZONES> hp_closed_{};
   uint32_t hp_phase_until_ms_{0};
 
   // Adaptive balancing accumulators (runtime only; adapt_i lives in ZoneConfig).
