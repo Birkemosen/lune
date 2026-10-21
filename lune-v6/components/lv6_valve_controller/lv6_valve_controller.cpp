@@ -83,7 +83,7 @@ void Lv6ValveController::setup() {
 
   // Load motor config from config store
   if (config_store_) {
-    motor_cfg_ = config_store_->get_config().motor;
+    motor_cfg_ = config_store_->get_motor_config();
     sanitize_motor_cfg_();
   }
 
@@ -673,10 +673,10 @@ void Lv6ValveController::reload_motor_config() {
 MotorProfile Lv6ValveController::effective_motor_profile_(uint8_t zone) const {
   if (!config_store_ || zone >= NUM_ZONES)
     return motor_cfg_.default_profile;
-  const auto cfg = config_store_->get_config();
-  MotorProfile profile = cfg.zones[zone].motor_profile_override;
-  if (profile == MotorProfile::INHERIT)
-    profile = cfg.motor.default_profile;
+  MotorProfile profile = config_store_->read([zone](const DeviceConfig &cfg) {
+    const MotorProfile p = cfg.zones[zone].motor_profile_override;
+    return p == MotorProfile::INHERIT ? cfg.motor.default_profile : p;
+  });
   if (profile == MotorProfile::INHERIT)
     profile = MotorProfile::HMIP_VDMOT;
   return profile;
@@ -847,10 +847,11 @@ float Lv6ValveController::effective_current_factor_(uint8_t zone, MotorDirection
   float factor = is_opening ? motor_cfg_.open_current_factor : motor_cfg_.close_current_factor;
 
   if (config_store_ && zone < NUM_ZONES) {
-    const auto cfg = config_store_->get_config();
-    const auto &zone_cfg = cfg.zones[zone];
-    float manual_override = is_opening ? zone_cfg.motor_open_current_factor_override
-                                       : zone_cfg.motor_close_current_factor_override;
+    const float manual_override = config_store_->read([zone, is_opening](const DeviceConfig &cfg) {
+      const auto &zone_cfg = cfg.zones[zone];
+      return is_opening ? zone_cfg.motor_open_current_factor_override
+                        : zone_cfg.motor_close_current_factor_override;
+    });
     if (manual_override > 0.0f)
       return manual_override;
   }
@@ -1104,7 +1105,7 @@ void Lv6ValveController::set_manifold_type(ManifoldType type) {
 ManifoldType Lv6ValveController::get_manifold_type() const {
   if (!config_store_)
     return ManifoldType::NC;
-  return config_store_->get_config().manifold_type;
+  return config_store_->get_manifold_type();
 }
 
 MotorTelemetry Lv6ValveController::get_telemetry(uint8_t zone) const {
@@ -1150,10 +1151,8 @@ void Lv6ValveController::request_calibration_all() {
   uint8_t mask = 0;
   for (uint8_t z = 0; z < NUM_ZONES; z++) {
     bool enabled = true;
-    if (config_store_) {
-      const auto &cfg = config_store_->get_config();
-      enabled = cfg.zones[z].enabled;
-    }
+    if (config_store_)
+      enabled = config_store_->read([z](const DeviceConfig &cfg) { return cfg.zones[z].enabled; });
     if (enabled)
       mask |= (1u << z);
   }
@@ -1354,10 +1353,8 @@ void Lv6ValveController::run_() {
             continue;
           }
           bool enabled = true;
-          if (config_store_) {
-            const auto &cfg = config_store_->get_config();
-            enabled = cfg.zones[z].enabled;
-          }
+          if (config_store_)
+            enabled = config_store_->read([z](const DeviceConfig &cfg) { return cfg.zones[z].enabled; });
           if (enabled)
           run_calibration_(z);
           else
@@ -1543,7 +1540,7 @@ void Lv6ValveController::execute_move_(uint8_t zone, float target_pct) {
   float diff = target_pct - current_pct;
   float min_move = 5.0f;
   if (config_store_)
-    min_move = config_store_->get_config().control.min_movement_pct;
+    min_move = config_store_->read([](const DeviceConfig &cfg) { return cfg.control.min_movement_pct; });
 
   if (skip_small_move(diff, min_move, target_pct, rehoming_, position_confident_[zone]))
     return;
@@ -3524,10 +3521,16 @@ void Lv6ValveController::check_relearn_triggers_() {
   if (auto_learn_hold_.load(std::memory_order_acquire))
     return;
 
-  const auto cfg = config_store_->get_config();
+  const uint8_t enabled_mask = config_store_->read([](const DeviceConfig &cfg) {
+    uint8_t m = 0;
+    for (uint8_t z = 0; z < NUM_ZONES; z++)
+      if (cfg.zones[z].enabled)
+        m |= static_cast<uint8_t>(1u << z);
+    return m;
+  });
 
   for (uint8_t z = 0; z < NUM_ZONES; z++) {
-    if (!cfg.zones[z].enabled)
+    if ((enabled_mask & (1u << z)) == 0)
       continue;
 
     xSemaphoreTake(telemetry_mutex_, portMAX_DELAY);

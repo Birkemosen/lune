@@ -7,6 +7,8 @@
 
 #pragma once
 
+#include <utility>
+
 #include "esphome/core/component.h"
 #include "lv6_types.h"
 #include "nvs.h"
@@ -26,7 +28,23 @@ class Lv6ConfigStore : public esphome::Component {
   void dump_config() override;
 
   // Thread-safe config access
+  /// Whole config by value: ~2.6 KiB on the caller's stack. Prefer read() or a
+  /// section getter on task stacks (lv6_valve, lv6_ripple) and in nested calls.
   DeviceConfig get_config() const;
+  /// Run f(const DeviceConfig &) under the store mutex without copying the config.
+  /// f must be short and must not call back into the store (the mutex is not recursive).
+  template <typename F> auto read(F &&f) const -> decltype(f(std::declval<const DeviceConfig &>())) {
+    struct Unlock {
+      SemaphoreHandle_t m;
+      ~Unlock() {
+        if (m != nullptr)
+          xSemaphoreGive(m);
+      }
+    } unlock{mutex_};
+    if (mutex_ != nullptr)
+      xSemaphoreTake(mutex_, portMAX_DELAY);
+    return f(static_cast<const DeviceConfig &>(config_));
+  }
   MotorConfig get_motor_config() const;
   SensorConfig get_sensor_config() const;
   ZoneConfig get_zone_config(uint8_t zone) const;
