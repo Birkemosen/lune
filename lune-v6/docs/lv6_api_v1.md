@@ -436,6 +436,11 @@ Room temperature sources: `Local Probe`, `BLE`, `External`.
 For `External`, V6 binds a stable `sensor_id` (and optional `sensor_name` for UI). Producers
 must not send zone numbers — see `POST /api/v1/room-temperatures`.
 
+`battery_pct` (integer %) and `humidity_pct` (relative humidity, %) come from the zone's
+bound BTHome sensor (object ids 0x01 and 0x03/0x2E); both are `null` when the sensor does
+not send them or has been silent for an hour. They feed problem notifications
+([`lune_notifications_contract_v1.md`](../../shared/contracts/lune_notifications_contract_v1.md)).
+
 ```json
 {
   "ok": true,
@@ -457,6 +462,8 @@ must not send zone numbers — see `POST /api/v1/room-temperatures`.
     "sensor_id": "",
     "sensor_name": "",
     "external_temp_age_ms": null,
+    "battery_pct": 87,
+    "humidity_pct": 48,
     "settings": {
       "area_m2": 18.5,
       "pipe_spacing_mm": 150,

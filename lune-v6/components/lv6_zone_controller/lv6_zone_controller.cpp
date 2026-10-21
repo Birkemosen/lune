@@ -497,6 +497,38 @@ float Lv6ZoneController::get_zone_external_temperature(uint8_t zone) const {
   return external_temperatures_[zone];
 }
 
+void Lv6ZoneController::set_zone_ble_extras(uint8_t zone, int16_t battery_pct, float humidity_pct) {
+  if (zone >= NUM_ZONES)
+    return;
+  const uint32_t now_ms = static_cast<uint32_t>(esp_timer_get_time() / 1000);
+  if (battery_pct >= 0) {
+    ble_battery_pct_[zone] = static_cast<int8_t>(battery_pct > 100 ? 100 : battery_pct);
+    ble_battery_last_ms_[zone] = now_ms == 0 ? 1 : now_ms;
+  }
+  if (std::isfinite(humidity_pct) && humidity_pct >= 0.0f && humidity_pct <= 100.0f) {
+    ble_humidity_pct_[zone] = humidity_pct;
+    ble_humidity_last_ms_[zone] = now_ms == 0 ? 1 : now_ms;
+  }
+}
+
+int8_t Lv6ZoneController::get_zone_battery_pct(uint8_t zone) const {
+  if (zone >= NUM_ZONES || ble_battery_last_ms_[zone] == 0)
+    return -1;
+  const uint32_t now_ms = static_cast<uint32_t>(esp_timer_get_time() / 1000);
+  if (now_ms - ble_battery_last_ms_[zone] > EXTERNAL_TEMP_STALE_MS)
+    return -1;
+  return ble_battery_pct_[zone];
+}
+
+float Lv6ZoneController::get_zone_humidity_pct(uint8_t zone) const {
+  if (zone >= NUM_ZONES || ble_humidity_last_ms_[zone] == 0)
+    return NAN;
+  const uint32_t now_ms = static_cast<uint32_t>(esp_timer_get_time() / 1000);
+  if (now_ms - ble_humidity_last_ms_[zone] > EXTERNAL_TEMP_STALE_MS)
+    return NAN;
+  return ble_humidity_pct_[zone];
+}
+
 uint32_t Lv6ZoneController::get_zone_external_temp_age_ms(uint8_t zone) const {
   if (zone >= NUM_ZONES || external_temp_last_ms_[zone] == 0)
     return UINT32_MAX;
@@ -535,6 +567,9 @@ void Lv6ZoneController::set_zone_ble_mac(uint8_t zone, const std::string &mac) {
   for (char *p = cfg.sensor_config.zone_ble_mac[zone]; *p; ++p)
     *p = toupper(static_cast<unsigned char>(*p));
   config_store_->update_sensor_config(cfg.sensor_config);
+  // Battery / humidity belonged to the previous sensor.
+  ble_battery_last_ms_[zone] = 0;
+  ble_humidity_last_ms_[zone] = 0;
   ESP_LOGI(TAG, "Zone %d BLE MAC: '%s'", zone + 1, cfg.sensor_config.zone_ble_mac[zone]);
 }
 

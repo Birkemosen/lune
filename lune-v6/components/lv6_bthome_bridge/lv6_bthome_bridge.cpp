@@ -26,12 +26,11 @@ void Lv6BthomeBridge::dump_config() {
   ESP_LOGCONFIG(TAG, "BTHome bridge (0xFCD2 → zones)");
 }
 
-bool Lv6BthomeBridge::parse_bthome_temperature_(const uint8_t *data, size_t len, float *out_temp) {
-  if (data == nullptr || len < 3 || out_temp == nullptr)
-    return false;
+void Lv6BthomeBridge::parse_bthome_(const uint8_t *data, size_t len, Reading *out) {
+  if (data == nullptr || len < 3 || out == nullptr)
+    return;
 
   size_t pos = 1;  // skip device info byte
-  float temperature = NAN;
 
   while (pos < len) {
     uint8_t obj_id = data[pos];
@@ -98,18 +97,20 @@ bool Lv6BthomeBridge::parse_bthome_temperature_(const uint8_t *data, size_t len,
       break;
     if (obj_id == 0x02) {
       int16_t raw = static_cast<int16_t>(data[pos + 1] | (data[pos + 2] << 8));
-      temperature = raw * 0.01f;
+      out->temperature_c = raw * 0.01f;
     } else if (obj_id == 0x45) {
       int16_t raw = static_cast<int16_t>(data[pos + 1] | (data[pos + 2] << 8));
-      temperature = raw * 0.1f;
+      out->temperature_c = raw * 0.1f;
+    } else if (obj_id == 0x01) {
+      out->battery_pct = data[pos + 1];  // uint8, 1 %
+    } else if (obj_id == 0x03) {
+      uint16_t raw = static_cast<uint16_t>(data[pos + 1] | (data[pos + 2] << 8));
+      out->humidity_pct = raw * 0.01f;
+    } else if (obj_id == 0x2E) {
+      out->humidity_pct = data[pos + 1];  // uint8, 1 %
     }
     pos += 1 + dlen;
   }
-
-  if (std::isnan(temperature))
-    return false;
-  *out_temp = temperature;
-  return true;
 }
 
 void Lv6BthomeBridge::on_advertisement_(const esphome::nimble_hub::AdvertisementInfo &info) {
@@ -176,17 +177,18 @@ void Lv6BthomeBridge::on_advertisement_(const esphome::nimble_hub::Advertisement
   }
   this->last_update_[slot].ts = now;
 
-  float temperature = NAN;
-  bool has_temp = parse_bthome_temperature_(svc, svc_len, &temperature);
-  if (!has_temp)
-    temperature = NAN;
+  Reading r;
+  parse_bthome_(svc, svc_len, &r);
+  const float temperature = r.temperature_c;
+  const bool has_temp = !std::isnan(temperature);
+  const bool has_extras = r.battery_pct >= 0 || !std::isnan(r.humidity_pct);
 
   ESP_LOGD(TAG, "BTHome advertisement %s: temp=%s RSSI=%d dBm", mac_buf,
            has_temp ? "decoded" : "n/a", static_cast<int>(info.rssi));
 
   this->zones_->report_ble_sensor_seen(mac_buf, temperature, info.rssi, info.name);
 
-  if (!has_temp)
+  if (!has_temp && !has_extras)
     return;
 
   int8_t mz = this->zones_->match_ble_mac(mac_buf);
@@ -194,6 +196,11 @@ void Lv6BthomeBridge::on_advertisement_(const esphome::nimble_hub::Advertisement
     return;
 
   uint8_t z = static_cast<uint8_t>(mz);
+  // Battery / humidity feed problem reporting (lv6_problems) and the zone API.
+  if (has_extras)
+    this->zones_->set_zone_ble_extras(z, r.battery_pct, r.humidity_pct);
+  if (!has_temp)
+    return;
   ESP_LOGI(TAG, "Zone %d BLE temp: %.1f°C (%s)", z + 1, temperature, mac_buf);
   this->zones_->set_zone_external_temperature(z, temperature);
   if (z < 6 && this->zone_temp_[z] != nullptr)

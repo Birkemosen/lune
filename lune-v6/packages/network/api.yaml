@@ -5,6 +5,10 @@ api:
   listen_backlog: 2
   max_connections: 3
   max_send_queue: 4
+  # Lets lv6_problems fire `esphome.lune_problem` events (one per 10 s at
+  # most). Home Assistant only accepts them when «Allow the device to perform
+  # Home Assistant actions» is on for this device.
+  homeassistant_services: true
   encryption:
     key: !secret api_key
   services:

@@ -1,0 +1,19 @@
+# Problem notifications through Home Assistant
+# (shared/contracts/lune_notifications_contract_v1.md).
+# Fires `esphome.lune_problem` (raised / cleared) for valve and sensor problems
+# and, for BTHome sensors bound to a zone, battery and humidity. Events need
+# `homeassistant_services: true` in packages/network/api.yaml and, in Home
+# Assistant, «Allow the device to perform Home Assistant actions»; without it
+# they are dropped and the entities below still show the problems.
+lv6_problems:
+  id: lv6_problem_tracker
+  zone_controller_id: lv6_zones
+  valve_controller_id: lv6_valves
+  config_store_id: lv6_config
+  update_interval: 10s
+  active_problems:
+    name: "Active problems"
+    id: lv6_active_problems
+  problems:
+    name: "Problems"
+    id: lv6_problems_text

@@ -37,6 +37,8 @@ zone for room temperatures.
 
 **[External room temperatures (ingest)](#external-room-temperatures-ingest)**
 
+**[Notifications through Home Assistant](#notifications-through-home-assistant)**
+
 **[Safety principles](#safety-principles)**
 <!-- /toc -->
 
@@ -393,6 +395,39 @@ Content-Type: application/json
 
 Full contract and hub recipes: [external room temperature](./external_room_temperature.md),
 [API v1](./lv6_api_v1.md).
+
+---
+
+<a id="notifications"></a>
+## Notifications through Home Assistant
+
+V6 reports problems to Home Assistant, which sends them to your phone:
+
+- **Valve**: motor fault, motor stalled, valve learning failed (after 10 min).
+- **Sensor**: no room temperature for 30 min (for a zone with a probe, BLE
+  sensor or external sensor set up), flow or return probe on the manifold
+  missing for 30 min.
+- **Battery** of a BLE sensor bound to a zone: 15 % or less (warning), 5 % or
+  less (error); cleared at 25 %.
+- **Humidity** from a BLE sensor bound to a zone: above 60 % or below 40 % for
+  an hour; cleared at 58 % / 42 %.
+
+Each problem is reported when it starts and when it is gone, at most once an hour.
+Zones that are switched off are not reported. Without Home Assistant, V6 keeps
+working as before.
+
+To get the notifications:
+
+1. In Home Assistant, open **Settings › Devices & services › ESPHome**, choose
+   the Lune V6 device, open **Configure** and turn on **Allow the device to
+   perform Home Assistant actions**. Without it, Home Assistant drops the events.
+2. Import the Lune notifications blueprint from
+   [`lune_notifications.yaml`](https://github.com/Birkemosen/lune-coordinator/blob/main/homeassistant/blueprints/automation/lune/lune_notifications.yaml) (see [`homeassistant/README.md`](https://github.com/Birkemosen/lune-coordinator/blob/main/homeassistant/README.md))
+   and choose who gets which kind of problem.
+
+The device also shows **Active problems** (count) and **Problems** (titles) as
+entities, so a dashboard can show them without the blueprint. Texts are in Danish
+for now. Contract: [notifications contract v1](../../shared/contracts/lune_notifications_contract_v1.md).
 
 ---
 

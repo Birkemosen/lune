@@ -1223,6 +1223,7 @@ bool Lv6ValveController::reset_fault(uint8_t zone) {
   xSemaphoreGive(telemetry_mutex_);
 
   current_fault_code_ = FaultCode::NONE;
+  calibration_failed_mask_.fetch_and(static_cast<uint8_t>(~(1u << zone)), std::memory_order_acq_rel);
   save_telemetry_(zone);
   ESP_LOGI(TAG, "Zone %d fault state reset", zone + 1);
   return true;
@@ -4065,6 +4066,10 @@ void Lv6ValveController::set_learning_progress_(uint8_t zone, uint8_t pct, uint8
       ((static_cast<uint32_t>(phase) & 0x0Fu) << 24) |
       ((static_cast<uint32_t>(std::min<uint8_t>(samples_needed, 15)) & 0x0Fu) << 28);
   learning_progress_packed_.store(packed, std::memory_order_release);
+  // Both learning paths report «done» through here: a learned zone no longer
+  // has a failed calibration (problem reporting, lv6_problems).
+  if (phase == 4 && zone < NUM_ZONES)
+    calibration_failed_mask_.fetch_and(static_cast<uint8_t>(~(1u << zone)), std::memory_order_acq_rel);
 }
 
 void Lv6ValveController::clear_learning_progress_() {
@@ -4431,6 +4436,7 @@ void Lv6ValveController::run_calibration_(uint8_t zone) {
   // Only hard-block when we have no learned fallback for this valve.
   telemetry_[zone].blocked = !has_previous_learning;
   xSemaphoreGive(telemetry_mutex_);
+  calibration_failed_mask_.fetch_or(static_cast<uint8_t>(1u << zone), std::memory_order_acq_rel);
 
   if (has_previous_learning) {
     ESP_LOGW(TAG, "Calibration zone %d FAILED after %d attempts; keeping previous learned profile and leaving zone unblocked",
