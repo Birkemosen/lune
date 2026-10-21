@@ -39,14 +39,16 @@ bool Lv6BleDemand::wifi_connected_() const {
 bool Lv6BleDemand::compute_demand_() const {
   if (this->config_store_ == nullptr)
     return false;
-  const auto &sensors = this->config_store_->get_config().sensor_config;
-  if (sensors.ble_clock_sync_enabled)
-    return true;
-  for (uint8_t z = 0; z < NUM_ZONES; z++) {
-    if (sensors.zone_temp_source[z] == TempSource::BLE_SENSOR)
+  // Runs every loop: read the two fields in place instead of copying the config.
+  return this->config_store_->read([](const DeviceConfig &c) {
+    if (c.sensor_config.ble_clock_sync_enabled)
       return true;
-  }
-  return false;
+    for (uint8_t z = 0; z < NUM_ZONES; z++) {
+      if (c.sensor_config.zone_temp_source[z] == TempSource::BLE_SENSOR)
+        return true;
+    }
+    return false;
+  });
 }
 
 void Lv6BleDemand::apply_demand_(bool want_on, uint32_t now_ms) {

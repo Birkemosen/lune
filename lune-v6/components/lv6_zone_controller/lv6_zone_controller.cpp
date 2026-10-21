@@ -23,6 +23,7 @@
 #include "esp_heap_caps.h"
 #include "freertos/idf_additions.h"
 #include <algorithm>
+#include <iterator>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
@@ -95,15 +96,16 @@ void Lv6ZoneController::setup() {
   // FALLBACK_SETPOINT_C first, which then skipped the config-store copy because
   // 20 °C is already in-range — so every reboot ignored the user's setpoint.
   if (config_store_) {
-    const auto &cfg = config_store_->get_config();
-    for (uint8_t i = 0; i < NUM_ZONES; i++) {
-      algorithms_[i].set_algorithm(cfg.zones[i].algorithm);
-      algorithms_[i].set_pid_params(cfg.pid);
-      float sp = cfg.zones[i].setpoint_c;
-      if (sp < 5.0f || sp > 35.0f)
-        sp = FALLBACK_SETPOINT_C;
-      requested_setpoints_[i] = sp;
-    }
+    config_store_->read([&](const DeviceConfig &cfg) {
+      for (uint8_t i = 0; i < NUM_ZONES; i++) {
+        algorithms_[i].set_algorithm(cfg.zones[i].algorithm);
+        algorithms_[i].set_pid_params(cfg.pid);
+        float sp = cfg.zones[i].setpoint_c;
+        if (sp < 5.0f || sp > 35.0f)
+          sp = FALLBACK_SETPOINT_C;
+        requested_setpoints_[i] = sp;
+      }
+    });
   } else {
     requested_setpoints_.fill(FALLBACK_SETPOINT_C);
   }
@@ -135,7 +137,7 @@ void Lv6ZoneController::dump_config() {
   ESP_LOGCONFIG(TAG, "LV6 Zone Controller:");
   ESP_LOGCONFIG(TAG, "  Cycle interval: %" PRIu32 "ms", cycle_interval_ms_);
   if (config_store_) {
-    auto cfg = config_store_->get_config();
+    struct { ProbeConfig probes; } cfg{config_store_->get_probe_config()};
     ESP_LOGCONFIG(TAG, "  Flow probe: %d", cfg.probes.manifold_flow_probe + 1);
     ESP_LOGCONFIG(TAG, "  Return probe: %d", cfg.probes.manifold_return_probe + 1);
     for (uint8_t i = 0; i < NUM_ZONES; i++) {
@@ -2100,7 +2102,12 @@ float Lv6ZoneController::static_balance_weight_(const ZoneConfig &zc) {
 void Lv6ZoneController::recalculate_balance_factors_() {
   if (!config_store_)
     return;
-  const auto cfg = config_store_->get_config();
+  // Two sections, not the whole config (2.6 KiB): this also runs in loopTask from setup().
+  struct { BalancingConfig balancing; ZoneConfig zones[NUM_ZONES]; } cfg;
+  config_store_->read([&](const DeviceConfig &c) {
+    cfg.balancing = c.balancing;
+    std::copy(std::begin(c.zones), std::end(c.zones), cfg.zones);
+  });
 
   // Legacy return-temp balancing (uses measured return temperatures)
   if (effective_balance_mode(cfg.balancing) == BalanceMode::RETURN_TEMP) {
@@ -2158,7 +2165,12 @@ void Lv6ZoneController::recalculate_balance_factors_() {
 void Lv6ZoneController::recalculate_dynamic_balance_factors_() {
   if (!config_store_)
     return;
-  const auto cfg = config_store_->get_config();
+  // Two sections, not the whole config (2.6 KiB): this also runs in loopTask from setup().
+  struct { BalancingConfig balancing; ZoneConfig zones[NUM_ZONES]; } cfg;
+  config_store_->read([&](const DeviceConfig &c) {
+    cfg.balancing = c.balancing;
+    std::copy(std::begin(c.zones), std::end(c.zones), cfg.zones);
+  });
 
   float flow_temp = read_manifold_flow_();
   if (std::isnan(flow_temp)) {
@@ -2404,7 +2416,12 @@ void Lv6ZoneController::enforce_minimum_total_opening_(std::array<float, NUM_ZON
 void Lv6ZoneController::calculate_hydraulic_outputs_() {
   if (!config_store_)
     return;
-  const auto cfg = config_store_->get_config();
+  // Two sections, not the whole config (2.6 KiB): this also runs in loopTask from setup().
+  struct { BalancingConfig balancing; ZoneConfig zones[NUM_ZONES]; } cfg;
+  config_store_->read([&](const DeviceConfig &c) {
+    cfg.balancing = c.balancing;
+    std::copy(std::begin(c.zones), std::end(c.zones), cfg.zones);
+  });
 
   xSemaphoreTake(snapshot_mutex_, portMAX_DELAY);
   for (uint8_t i = 0; i < NUM_ZONES; i++) {

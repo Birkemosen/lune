@@ -243,7 +243,12 @@ esphome:
       then:
         - lambda: |-
             id(climate_setpoint_sync_ready) = false;
-            const auto cfg = id(lv6_config).get_config();
+            // Setpoints only, not the 2.6 KiB config (this runs in loopTask during boot).
+            struct { struct { float setpoint_c; } zones[lv6::NUM_ZONES]; } cfg{};
+            id(lv6_config).read([&](const lv6::DeviceConfig &c) {
+              for (uint8_t i = 0; i < lv6::NUM_ZONES; i++)
+                cfg.zones[i].setpoint_c = c.zones[i].setpoint_c;
+            });
             {
               auto call = id(climate_zone_1).make_call();
               call.set_target_temperature(cfg.zones[0].setpoint_c);

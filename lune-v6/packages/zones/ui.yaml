@@ -381,16 +381,16 @@ switch:
     entity_category: config
     optimistic: false
     lambda: |-
-      return id(lv6_config).get_config().motor.auto_apply_learned_factors;
+      return id(lv6_config).read([&](const lv6::DeviceConfig &c_) { return c_.motor.auto_apply_learned_factors; });
     turn_on_action:
       - lambda: |-
-          auto cfg = id(lv6_config).get_config();
+          struct { lv6::MotorConfig motor; } cfg{id(lv6_config).get_motor_config()};  // motor section only, not the 2.6 KiB config
           cfg.motor.auto_apply_learned_factors = true;
           id(lv6_config).update_motor(cfg.motor);
           id(lv6_valves).reload_motor_config();
     turn_off_action:
       - lambda: |-
-          auto cfg = id(lv6_config).get_config();
+          struct { lv6::MotorConfig motor; } cfg{id(lv6_config).get_motor_config()};  // motor section only, not the 2.6 KiB config
           cfg.motor.auto_apply_learned_factors = false;
           id(lv6_config).update_motor(cfg.motor);
           id(lv6_valves).reload_motor_config();
@@ -665,10 +665,10 @@ number:
     step: 0.1
     optimistic: false
     lambda: |-
-      return id(lv6_config).get_config().motor.close_current_factor;
+      return id(lv6_config).read([&](const lv6::DeviceConfig &c_) { return c_.motor.close_current_factor; });
     set_action:
       - lambda: |-
-          auto cfg = id(lv6_config).get_config();
+          struct { lv6::MotorConfig motor; } cfg{id(lv6_config).get_motor_config()};  // motor section only, not the 2.6 KiB config
           cfg.motor.close_current_factor = x;
           id(lv6_config).update_motor(cfg.motor);
           id(lv6_valves).reload_motor_config();
@@ -686,10 +686,10 @@ number:
     step: 0.05
     optimistic: false
     lambda: |-
-      return id(lv6_config).get_config().motor.close_slope_threshold_ma_per_s;
+      return id(lv6_config).read([&](const lv6::DeviceConfig &c_) { return c_.motor.close_slope_threshold_ma_per_s; });
     set_action:
       - lambda: |-
-          auto cfg = id(lv6_config).get_config();
+          struct { lv6::MotorConfig motor; } cfg{id(lv6_config).get_motor_config()};  // motor section only, not the 2.6 KiB config
           cfg.motor.close_slope_threshold_ma_per_s = x;
           id(lv6_config).update_motor(cfg.motor);
           id(lv6_valves).reload_motor_config();
@@ -707,10 +707,10 @@ number:
     step: 0.1
     optimistic: false
     lambda: |-
-      return id(lv6_config).get_config().motor.close_slope_current_factor;
+      return id(lv6_config).read([&](const lv6::DeviceConfig &c_) { return c_.motor.close_slope_current_factor; });
     set_action:
       - lambda: |-
-          auto cfg = id(lv6_config).get_config();
+          struct { lv6::MotorConfig motor; } cfg{id(lv6_config).get_motor_config()};  // motor section only, not the 2.6 KiB config
           cfg.motor.close_slope_current_factor = x;
           id(lv6_config).update_motor(cfg.motor);
           id(lv6_valves).reload_motor_config();
@@ -728,10 +728,10 @@ number:
     step: 0.1
     optimistic: false
     lambda: |-
-      return id(lv6_config).get_config().motor.open_current_factor;
+      return id(lv6_config).read([&](const lv6::DeviceConfig &c_) { return c_.motor.open_current_factor; });
     set_action:
       - lambda: |-
-          auto cfg = id(lv6_config).get_config();
+          struct { lv6::MotorConfig motor; } cfg{id(lv6_config).get_motor_config()};  // motor section only, not the 2.6 KiB config
           cfg.motor.open_current_factor = x;
           id(lv6_config).update_motor(cfg.motor);
           id(lv6_valves).reload_motor_config();
@@ -749,10 +749,10 @@ number:
     step: 0.05
     optimistic: false
     lambda: |-
-      return id(lv6_config).get_config().motor.open_slope_threshold_ma_per_s;
+      return id(lv6_config).read([&](const lv6::DeviceConfig &c_) { return c_.motor.open_slope_threshold_ma_per_s; });
     set_action:
       - lambda: |-
-          auto cfg = id(lv6_config).get_config();
+          struct { lv6::MotorConfig motor; } cfg{id(lv6_config).get_motor_config()};  // motor section only, not the 2.6 KiB config
           cfg.motor.open_slope_threshold_ma_per_s = x;
           id(lv6_config).update_motor(cfg.motor);
           id(lv6_valves).reload_motor_config();
@@ -770,10 +770,10 @@ number:
     step: 0.1
     optimistic: false
     lambda: |-
-      return id(lv6_config).get_config().motor.open_slope_current_factor;
+      return id(lv6_config).read([&](const lv6::DeviceConfig &c_) { return c_.motor.open_slope_current_factor; });
     set_action:
       - lambda: |-
-          auto cfg = id(lv6_config).get_config();
+          struct { lv6::MotorConfig motor; } cfg{id(lv6_config).get_motor_config()};  // motor section only, not the 2.6 KiB config
           cfg.motor.open_slope_current_factor = x;
           id(lv6_config).update_motor(cfg.motor);
           id(lv6_valves).reload_motor_config();
@@ -791,10 +791,10 @@ number:
     step: 0.1
     optimistic: false
     lambda: |-
-      return id(lv6_config).get_config().motor.open_ripple_limit_factor;
+      return id(lv6_config).read([&](const lv6::DeviceConfig &c_) { return c_.motor.open_ripple_limit_factor; });
     set_action:
       - lambda: |-
-          auto cfg = id(lv6_config).get_config();
+          struct { lv6::MotorConfig motor; } cfg{id(lv6_config).get_motor_config()};  // motor section only, not the 2.6 KiB config
           cfg.motor.open_ripple_limit_factor = x;
           id(lv6_config).update_motor(cfg.motor);
           id(lv6_valves).reload_motor_config();
@@ -812,10 +812,10 @@ number:
     step: 0.5
     optimistic: false
     lambda: |-
-      return id(lv6_config).get_config().motor.pin_engage_step_ma;
+      return id(lv6_config).read([&](const lv6::DeviceConfig &c_) { return c_.motor.pin_engage_step_ma; });
     set_action:
       - lambda: |-
-          auto cfg = id(lv6_config).get_config();
+          struct { lv6::MotorConfig motor; } cfg{id(lv6_config).get_motor_config()};  // motor section only, not the 2.6 KiB config
           cfg.motor.pin_engage_step_ma = x;
           id(lv6_config).update_motor(cfg.motor);
           id(lv6_valves).reload_motor_config();
@@ -833,10 +833,10 @@ number:
     step: 10
     optimistic: false
     lambda: |-
-      return id(lv6_config).get_config().motor.pin_engage_margin_ripples;
+      return id(lv6_config).read([&](const lv6::DeviceConfig &c_) { return c_.motor.pin_engage_margin_ripples; });
     set_action:
       - lambda: |-
-          auto cfg = id(lv6_config).get_config();
+          struct { lv6::MotorConfig motor; } cfg{id(lv6_config).get_motor_config()};  // motor section only, not the 2.6 KiB config
           cfg.motor.pin_engage_margin_ripples = static_cast<uint16_t>(x);
           id(lv6_config).update_motor(cfg.motor);
           id(lv6_valves).reload_motor_config();
@@ -855,10 +855,10 @@ number:
     step: 1
     optimistic: false
     lambda: |-
-      return id(lv6_config).get_config().motor.generic_profile_runtime_limit_s;
+      return id(lv6_config).read([&](const lv6::DeviceConfig &c_) { return c_.motor.generic_profile_runtime_limit_s; });
     set_action:
       - lambda: |-
-          auto cfg = id(lv6_config).get_config();
+          struct { lv6::MotorConfig motor; } cfg{id(lv6_config).get_motor_config()};  // motor section only, not the 2.6 KiB config
           cfg.motor.generic_profile_runtime_limit_s = static_cast<uint32_t>(x);
           id(lv6_config).update_motor(cfg.motor);
           id(lv6_valves).reload_motor_config();
@@ -877,10 +877,10 @@ number:
     step: 1
     optimistic: false
     lambda: |-
-      return id(lv6_config).get_config().motor.hmip_vdmot_runtime_limit_s;
+      return id(lv6_config).read([&](const lv6::DeviceConfig &c_) { return c_.motor.hmip_vdmot_runtime_limit_s; });
     set_action:
       - lambda: |-
-          auto cfg = id(lv6_config).get_config();
+          struct { lv6::MotorConfig motor; } cfg{id(lv6_config).get_motor_config()};  // motor section only, not the 2.6 KiB config
           cfg.motor.hmip_vdmot_runtime_limit_s = static_cast<uint32_t>(x);
           id(lv6_config).update_motor(cfg.motor);
           id(lv6_valves).reload_motor_config();
@@ -903,10 +903,10 @@ number:
     step: 1
     optimistic: false
     lambda: |-
-      return id(lv6_config).get_config().motor.hmip_vdmot_open_runtime_limit_s;
+      return id(lv6_config).read([&](const lv6::DeviceConfig &c_) { return c_.motor.hmip_vdmot_open_runtime_limit_s; });
     set_action:
       - lambda: |-
-          auto cfg = id(lv6_config).get_config();
+          struct { lv6::MotorConfig motor; } cfg{id(lv6_config).get_motor_config()};  // motor section only, not the 2.6 KiB config
           cfg.motor.hmip_vdmot_open_runtime_limit_s = static_cast<uint32_t>(x);
           id(lv6_config).update_motor(cfg.motor);
           id(lv6_valves).reload_motor_config();
@@ -924,10 +924,10 @@ number:
     step: 10
     optimistic: false
     lambda: |-
-      return id(lv6_config).get_config().motor.close_runtime_limit_counts;
+      return id(lv6_config).read([&](const lv6::DeviceConfig &c_) { return c_.motor.close_runtime_limit_counts; });
     set_action:
       - lambda: |-
-          auto cfg = id(lv6_config).get_config();
+          struct { lv6::MotorConfig motor; } cfg{id(lv6_config).get_motor_config()};  // motor section only, not the 2.6 KiB config
           cfg.motor.close_runtime_limit_counts = static_cast<uint32_t>(x);
           id(lv6_config).update_motor(cfg.motor);
           id(lv6_valves).reload_motor_config();
@@ -944,10 +944,10 @@ number:
     step: 10
     optimistic: false
     lambda: |-
-      return id(lv6_config).get_config().motor.open_runtime_limit_counts;
+      return id(lv6_config).read([&](const lv6::DeviceConfig &c_) { return c_.motor.open_runtime_limit_counts; });
     set_action:
       - lambda: |-
-          auto cfg = id(lv6_config).get_config();
+          struct { lv6::MotorConfig motor; } cfg{id(lv6_config).get_motor_config()};  // motor section only, not the 2.6 KiB config
           cfg.motor.open_runtime_limit_counts = static_cast<uint32_t>(x);
           id(lv6_config).update_motor(cfg.motor);
           id(lv6_valves).reload_motor_config();
@@ -964,10 +964,10 @@ number:
     step: 1
     optimistic: false
     lambda: |-
-      return id(lv6_config).get_config().motor.learned_factor_min_samples;
+      return id(lv6_config).read([&](const lv6::DeviceConfig &c_) { return c_.motor.learned_factor_min_samples; });
     set_action:
       - lambda: |-
-          auto cfg = id(lv6_config).get_config();
+          struct { lv6::MotorConfig motor; } cfg{id(lv6_config).get_motor_config()};  // motor section only, not the 2.6 KiB config
           cfg.motor.learned_factor_min_samples = static_cast<uint8_t>(x);
           id(lv6_config).update_motor(cfg.motor);
           id(lv6_valves).reload_motor_config();
@@ -985,10 +985,10 @@ number:
     step: 1
     optimistic: false
     lambda: |-
-      return id(lv6_config).get_config().motor.learned_factor_max_deviation_pct * 100.0f;
+      return id(lv6_config).read([&](const lv6::DeviceConfig &c_) { return c_.motor.learned_factor_max_deviation_pct; }) * 100.0f;
     set_action:
       - lambda: |-
-          auto cfg = id(lv6_config).get_config();
+          struct { lv6::MotorConfig motor; } cfg{id(lv6_config).get_motor_config()};  // motor section only, not the 2.6 KiB config
           cfg.motor.learned_factor_max_deviation_pct = x / 100.0f;
           id(lv6_config).update_motor(cfg.motor);
           id(lv6_valves).reload_motor_config();
@@ -1003,7 +1003,7 @@ select:
       - Generic
       - "HmIP VdMot"
     lambda: |-
-      switch (id(lv6_config).get_config().motor.default_profile) {
+      switch (id(lv6_config).read([&](const lv6::DeviceConfig &c_) { return c_.motor.default_profile; })) {
         case lv6::MotorProfile::GENERIC:
           return std::string("Generic");
         case lv6::MotorProfile::HMIP_VDMOT:
@@ -1012,7 +1012,7 @@ select:
       }
     set_action:
       - lambda: |-
-          auto cfg = id(lv6_config).get_config();
+          struct { lv6::MotorConfig motor; } cfg{id(lv6_config).get_motor_config()};  // motor section only, not the 2.6 KiB config
           cfg.motor.default_profile = (x == "Generic") ? lv6::MotorProfile::GENERIC : lv6::MotorProfile::HMIP_VDMOT;
           id(lv6_config).update_motor(cfg.motor);
           id(lv6_valves).reload_motor_config();
@@ -1032,7 +1032,7 @@ select:
       - "Opportunistic"
       - "Never"
     lambda: |-
-      switch (id(lv6_config).get_config().motor.rehome_policy) {
+      switch (id(lv6_config).read([&](const lv6::DeviceConfig &c_) { return c_.motor.rehome_policy; })) {
         case lv6::RehomePolicy::PERIODIC:
           return std::string("Periodic");
         case lv6::RehomePolicy::OPPORTUNISTIC:
@@ -1045,7 +1045,7 @@ select:
       }
     set_action:
       - lambda: |-
-          auto cfg = id(lv6_config).get_config();
+          struct { lv6::MotorConfig motor; } cfg{id(lv6_config).get_motor_config()};  // motor section only, not the 2.6 KiB config
           if (x == "Periodic") cfg.motor.rehome_policy = lv6::RehomePolicy::PERIODIC;
           else if (x == "Opportunistic") cfg.motor.rehome_policy = lv6::RehomePolicy::OPPORTUNISTIC;
           else if (x == "Never") cfg.motor.rehome_policy = lv6::RehomePolicy::NEVER;
@@ -1089,7 +1089,7 @@ select:
     options: [Inherit, Generic, "HmIP VdMot"]
     lambda: |-
       uint8_t zi = id(ui_selected_zone_index);
-      switch (id(lv6_config).get_config().zones[zi].motor_profile_override) {
+      switch (id(lv6_config).read([&](const lv6::DeviceConfig &c_) { return c_.zones[zi].motor_profile_override; })) {
         case lv6::MotorProfile::GENERIC: return std::string("Generic");
         case lv6::MotorProfile::HMIP_VDMOT: return std::string("HmIP VdMot");
         default: return std::string("Inherit");
@@ -1097,9 +1097,9 @@ select:
     set_action:
       - lambda: |-
           uint8_t zi = id(ui_selected_zone_index);
-          auto cfg = id(lv6_config).get_config();
-          cfg.zones[zi].motor_profile_override = (x == "Generic") ? lv6::MotorProfile::GENERIC : (x == "HmIP VdMot") ? lv6::MotorProfile::HMIP_VDMOT : lv6::MotorProfile::INHERIT;
-          id(lv6_config).update_zone(zi, cfg.zones[zi]);
+          auto zone = id(lv6_config).get_zone_config(zi);  // the selected zone only
+          zone.motor_profile_override = (x == "Generic") ? lv6::MotorProfile::GENERIC : (x == "HmIP VdMot") ? lv6::MotorProfile::HMIP_VDMOT : lv6::MotorProfile::INHERIT;
+          id(lv6_config).update_zone(zi, zone);
           id(lv6_valves).reload_motor_config();
 
   - platform: template
