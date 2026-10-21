@@ -272,6 +272,9 @@ class Lv6ValveController : public esphome::Component {
   void request_calibration(uint8_t zone);
   void request_calibration_all();
   bool reset_fault(uint8_t zone);
+  /// Bit per zone: the last calibration of that zone failed after all retries.
+  /// Cleared by a successful learn or a fault reset. Runtime only (reporting).
+  uint8_t calibration_failed_mask() const { return calibration_failed_mask_.load(std::memory_order_acquire); }
   /// What the user sees on the actuator when resetting a fault (reset guide).
   enum class PositionHint : uint8_t { UNKNOWN = 0, CLOSED = 1, OPEN = 2, MIDDLE = 3 };
   /// Seed the zone's position from the user's look at the plunger: closed/open
@@ -852,6 +855,7 @@ class Lv6ValveController : public esphome::Component {
   /// Packed learning UI progress: zone(8) | pct(8) | sample(8) | phase(4) | need(4)
   /// Updated from the valve task; read lock-free from the dashboard snapshot.
   std::atomic<uint32_t> learning_progress_packed_{0};
+  std::atomic<uint8_t> calibration_failed_mask_{0};
 
   // Motor config cache
   MotorConfig motor_cfg_;

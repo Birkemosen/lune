@@ -44,7 +44,7 @@ LDS_DIR ?= $(DESIGN_DIR)
 LDS_CONSUMER ?= $(ROOT_ABS)
 LDS_OUT ?= $(ROOT_ABS)/.cache/lds
 
-.PHONY: help check ensure-secrets-link config compile build build-verify bump-build prepare-release release release-deploy release-firmware release-bundle upload deploy ota logs discover monitor erase erase-nvs clean dashboard dashboard-tooling dashboard-build dashboard-reference-traces dashboard-watch design-tokens design-verify test test-dashboard test-ripple test-rev31-logic test-rev33-logic test-safety-limits test-stall-model test-stroke-learning test-balance test-authority-lease test-preheat-policy test-preheat-absorb test-absorb-command test-probe-mapping test-thermal-model test-group-model test-flow-allocator test-control-summary test-hydraulic-policy test-hydraulic-diagnostics test-commissioning-schema test-request-guard test-ble-time-beacon test-settings-backup test-control-mode test-reopen
+.PHONY: help check ensure-secrets-link config compile build build-verify bump-build prepare-release release release-deploy release-firmware release-bundle upload deploy ota logs discover monitor erase erase-nvs clean dashboard dashboard-tooling dashboard-build dashboard-reference-traces dashboard-watch design-tokens design-verify test test-dashboard test-ripple test-rev31-logic test-rev33-logic test-safety-limits test-stall-model test-stroke-learning test-balance test-authority-lease test-preheat-policy test-preheat-absorb test-absorb-command test-probe-mapping test-thermal-model test-group-model test-flow-allocator test-control-summary test-hydraulic-policy test-hydraulic-diagnostics test-commissioning-schema test-request-guard test-ble-time-beacon test-settings-backup test-control-mode test-reopen test-problem-tracker
 
 help:
 	@echo "Lune V6 ESPHome tasks"
@@ -266,6 +266,8 @@ CONTROL_MODE_SRCS = test/control_mode/test_control_mode_policy.cpp
 CONTROL_MODE_OUT  = /tmp/test_lv6_control_mode
 REOPEN_SRCS = test/reopen/test_reopen_policy.cpp
 REOPEN_OUT  = /tmp/test_lv6_reopen
+PROBLEM_TRACKER_SRCS = test/problem_tracker/test_problem_tracker.cpp
+PROBLEM_TRACKER_OUT  = /tmp/test_lv6_problem_tracker
 
 test-balance:
 	$(RIPPLE_CXX) -std=c++17 -O2 -Wall -Wextra -I components/lv6_zone_controller $(BALANCE_SRCS) -o $(BALANCE_OUT) -lm
@@ -338,10 +340,14 @@ test-reopen:
 	$(RIPPLE_CXX) -std=c++17 -O2 -Wall -Wextra -I components/lv6_zone_controller -I components/lv6_config_store $(REOPEN_SRCS) -o $(REOPEN_OUT) -lm
 	$(REOPEN_OUT)
 
+test-problem-tracker:
+	$(RIPPLE_CXX) -std=c++17 -O2 -Wall -Wextra -I components/lv6_problems $(PROBLEM_TRACKER_SRCS) -o $(PROBLEM_TRACKER_OUT)
+	$(PROBLEM_TRACKER_OUT)
+
 test-dashboard:
 	sh test/dashboard/test_dashboard.sh
 
-test: design-verify test-dashboard test-ripple test-rev31-logic test-rev33-logic test-safety-limits test-stall-model test-stroke-learning test-balance test-authority-lease test-preheat-policy test-preheat-absorb test-absorb-command test-probe-mapping test-thermal-model test-group-model test-flow-allocator test-control-summary test-hydraulic-policy test-hydraulic-diagnostics test-commissioning-schema test-request-guard test-ble-time-beacon test-settings-backup test-control-mode test-reopen
+test: design-verify test-dashboard test-ripple test-rev31-logic test-rev33-logic test-safety-limits test-stall-model test-stroke-learning test-balance test-authority-lease test-preheat-policy test-preheat-absorb test-absorb-command test-probe-mapping test-thermal-model test-group-model test-flow-allocator test-control-summary test-hydraulic-policy test-hydraulic-diagnostics test-commissioning-schema test-request-guard test-ble-time-beacon test-settings-backup test-control-mode test-reopen test-problem-tracker
 
 # Installs the LATEST build only — no bump, no compile — so one build can be
 # rolled out to several devices. Build first with `make build` (or `make compile`).

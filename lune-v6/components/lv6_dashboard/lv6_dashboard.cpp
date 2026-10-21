@@ -670,6 +670,10 @@ void LV6Dashboard::update_snapshot_() {
       s.zone_external_temp_age_ms[i] =
           this->zone_controller_ ? this->zone_controller_->get_zone_external_temp_age_ms(i)
                                  : UINT32_MAX;
+      s.zone_battery_pct[i] =
+          this->zone_controller_ ? this->zone_controller_->get_zone_battery_pct(i) : -1;
+      s.zone_humidity_pct[i] =
+          this->zone_controller_ ? this->zone_controller_->get_zone_humidity_pct(i) : NAN;
       if (s.zone_temp_source[i] == lv6::TempSource::BLE_SENSOR)
         s.ble_demanded = true;
     }
@@ -2420,6 +2424,12 @@ void LV6Dashboard::handle_zone_(AsyncWebServerRequest *request, uint8_t zone) {
   else
     snprintf(age_tok, sizeof(age_tok), "%lu",
              static_cast<unsigned long>(snap->zone_external_temp_age_ms[i]));
+  char battery_tok[8], humidity_tok[16];
+  if (snap->zone_battery_pct[i] >= 0)
+    snprintf(battery_tok, sizeof(battery_tok), "%d", static_cast<int>(snap->zone_battery_pct[i]));
+  else
+    snprintf(battery_tok, sizeof(battery_tok), "null");
+  format_float_token(humidity_tok, sizeof(humidity_tok), snap->zone_humidity_pct[i], 0);
   appendf(buf, JSON_BUF_SIZE, off,
           "{\"ok\":true,\"version\":\"v1\",\"data\":{\"zone\":%u,\"name\":\"",
           static_cast<unsigned>(zone));
@@ -2429,6 +2439,7 @@ void LV6Dashboard::handle_zone_(AsyncWebServerRequest *request, uint8_t zone) {
           "\"temperature_c\":%s,\"setpoint_c\":%s,\"valve_pct\":%s,\"preheat_c\":%s,"
           "\"temp_source\":\"%s\",\"probe_index\":%d,\"probe_temp_c\":%s,\"ble_mac\":\"%s\","
           "\"sensor_id\":\"%s\",\"sensor_name\":\"%s\",\"external_temp_age_ms\":%s,"
+          "\"battery_pct\":%s,\"humidity_pct\":%s,"
           "\"ua_w_per_k\":%s,\"thermal_mass_kwh_per_k\":%s,\"tau_h\":%s,"
           "\"return_c\":%s,\"loop_share_pct\":%s,\"absorb_state\":\"%s\","
           "\"absorb_capacity_rank\":%s,"
@@ -2442,7 +2453,7 @@ void LV6Dashboard::handle_zone_(AsyncWebServerRequest *request, uint8_t zone) {
           std::isfinite(snap->zone_temp_c[i]) ? "true" : "false",
           temp, setpoint, valve, preload, temp_source_to_dashboard_str(snap->zone_temp_source[i]),
           probe_idx >= 0 ? static_cast<int>(probe_idx) + 1 : 0, probe, snap->zone_ble_mac[i],
-          snap->zone_sensor_id[i], snap->zone_sensor_name[i], age_tok,
+          snap->zone_sensor_id[i], snap->zone_sensor_name[i], age_tok, battery_tok, humidity_tok,
           th.plausible ? ua : "null", th.plausible ? mass : "null",
           th.plausible ? tau : "null", probe, share, absorb_state, rank,
           area, spacing, static_cast<unsigned>(z.pipe_type),

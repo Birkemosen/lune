@@ -138,6 +138,15 @@ class Lv6ZoneController : public esphome::Component {
   /// Age of last external (BLE or HTTP) sample in ms, or UINT32_MAX if never.
   uint32_t get_zone_external_temp_age_ms(uint8_t zone) const;
 
+  /// BTHome battery (%) and relative humidity (%) from the zone's bound BLE
+  /// sensor. Pass a negative battery / NAN humidity for "not in this packet";
+  /// the other value is kept. Called from the BLE advertise path (loopTask).
+  void set_zone_ble_extras(uint8_t zone, int16_t battery_pct, float humidity_pct);
+  /// Last battery %, or -1 when unknown or older than EXTERNAL_TEMP_STALE_MS.
+  int8_t get_zone_battery_pct(uint8_t zone) const;
+  /// Last relative humidity %, or NAN when unknown or older than EXTERNAL_TEMP_STALE_MS.
+  float get_zone_humidity_pct(uint8_t zone) const;
+
   static constexpr uint32_t EXTERNAL_TEMP_STALE_MS = 60 * 60 * 1000;       ///< BLE path
   static constexpr uint32_t EXTERNAL_HTTP_TEMP_STALE_MS = 15 * 60 * 1000;  ///< HTTP EXTERNAL
 
@@ -366,6 +375,11 @@ class Lv6ZoneController : public esphome::Component {
   // External temperatures (BLE sensor, etc.)
   std::array<float, NUM_ZONES> external_temperatures_;
   std::array<uint32_t, NUM_ZONES> external_temp_last_ms_;
+  // BTHome extras from the zone's BLE sensor (runtime only; -1 / NAN = unknown).
+  std::array<int8_t, NUM_ZONES> ble_battery_pct_{-1, -1, -1, -1, -1, -1};
+  std::array<uint32_t, NUM_ZONES> ble_battery_last_ms_{};
+  std::array<float, NUM_ZONES> ble_humidity_pct_{NAN, NAN, NAN, NAN, NAN, NAN};
+  std::array<uint32_t, NUM_ZONES> ble_humidity_last_ms_{};
 
   std::atomic<uint32_t> cycle_count_{0};
   uint32_t cycle_interval_ms_ = 10000;

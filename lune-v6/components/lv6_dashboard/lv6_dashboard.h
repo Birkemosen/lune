@@ -121,6 +121,8 @@ struct DashboardSnapshot {
   char              zone_sensor_id[lv6::NUM_ZONES][lv6::SENSOR_ID_LEN];
   char              zone_sensor_name[lv6::NUM_ZONES][lv6::SENSOR_NAME_LEN];
   uint32_t          zone_external_temp_age_ms[lv6::NUM_ZONES]{};
+  int8_t            zone_battery_pct[lv6::NUM_ZONES]{};    ///< BLE sensor battery %, -1 unknown
+  float             zone_humidity_pct[lv6::NUM_ZONES]{};   ///< BLE sensor RH %, NAN unknown
   lv6::ProbeConfig  probes;
   lv6::MotorConfig  motor;
   lv6::ManifoldType manifold_type;

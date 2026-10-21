@@ -100,6 +100,7 @@ packages:
   climate:      !include packages/zones/climate.yaml
   ui:           !include packages/zones/ui.yaml
   dashboard:    !include packages/zones/lv6_dashboard.yaml
+  problems:     !include packages/zones/problems.yaml
 
 # =============================================================================
 # External Components — Custom hardware drivers
@@ -117,6 +118,7 @@ external_components:
       - lv6_ble_time_beacon
       - lv6_bthome_bridge
       - lv6_ble_demand
+      - lv6_problems
       - lune_wifi
 
 # =============================================================================
@@ -243,6 +245,12 @@ interval:
             const bool ok = probes[i]->has_state() && !std::isnan(probes[i]->state);
             if (ok) { id(probe_fail_cycles)[i] = 0; } else { missing++; id(probe_fail_cycles)[i]++; }
           }
+
+          // Problem reporting: a probe counts as installed once its ROM is learned.
+          uint8_t mapped_mask = 0;
+          for (int i = 0; i < 8; i++)
+            if (*slots[i] != 0) mapped_mask |= static_cast<uint8_t>(1u << i);
+          id(lv6_problem_tracker).set_probe_mapped_mask(mapped_mask);
 
           if (mapped >= 2 && missing == mapped) {
             // Every mapped probe is unavailable at once → almost certainly a

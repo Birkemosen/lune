@@ -244,6 +244,15 @@ ManifoldType Lv6ConfigStore::get_manifold_type() const {
   return val;
 }
 
+SystemConfig Lv6ConfigStore::get_system_config() const {
+  if (mutex_ == nullptr)
+    return config_.system;
+  xSemaphoreTake(mutex_, portMAX_DELAY);
+  SystemConfig copy = config_.system;
+  xSemaphoreGive(mutex_);
+  return copy;
+}
+
 ProbeConfig Lv6ConfigStore::get_probe_config() const {
   if (mutex_ == nullptr)
     return config_.probes;

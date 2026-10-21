@@ -5,6 +5,8 @@
 #include "esphome/components/sensor/sensor.h"
 #include "esphome/core/component.h"
 
+#include <cmath>
+
 namespace lv6 {
 
 class Lv6BthomeBridge : public esphome::Component {
@@ -22,7 +24,13 @@ class Lv6BthomeBridge : public esphome::Component {
 
  protected:
   void on_advertisement_(const esphome::nimble_hub::AdvertisementInfo &info);
-  static bool parse_bthome_temperature_(const uint8_t *svc_data, size_t len, float *out_temp);
+  /// Values decoded from one BTHome v2 service-data payload (NAN / -1 = absent).
+  struct Reading {
+    float temperature_c = NAN;
+    float humidity_pct = NAN;   ///< 0x03 (0.01 %) or 0x2E (1 %)
+    int16_t battery_pct = -1;   ///< 0x01 (1 %)
+  };
+  static void parse_bthome_(const uint8_t *svc_data, size_t len, Reading *out);
 
   esphome::nimble_hub::NimbleHub *hub_{nullptr};
   Lv6ZoneController *zones_{nullptr};
