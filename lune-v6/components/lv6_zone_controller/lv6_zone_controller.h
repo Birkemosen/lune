@@ -18,6 +18,7 @@
 #include "control_mode_policy.h"
 #include "flow_allocator.h"
 #include "hydraulic_policy.h"
+#include "reopen_policy.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/semphr.h"
@@ -299,6 +300,9 @@ class Lv6ZoneController : public esphome::Component {
   HpPhase hp_phase_{HpPhase::UNKNOWN};
   // «Close above target» latch per zone (hp_close_above_c; reopens 0.2 °C below).
   std::array<bool, NUM_ZONES> hp_closed_{};
+  // Anticipated reopening of warm-closed loops (reopen_policy.h; runtime only).
+  std::array<reopen_policy::State, NUM_ZONES> reopen_{};
+  std::array<reopen_policy::Trend, NUM_ZONES> reopen_trend_{};
   uint32_t hp_phase_until_ms_{0};
 
   // Adaptive balancing accumulators (runtime only; adapt_i lives in ZoneConfig).
