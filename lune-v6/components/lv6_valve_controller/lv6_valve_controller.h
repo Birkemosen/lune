@@ -328,9 +328,11 @@ class Lv6ValveController : public esphome::Component {
   static constexpr uint32_t TICK_MS = 10;
   static constexpr uint32_t FAST_TICK_MS = 1;
   static constexpr uint8_t TICKS_PER_FSM = TICK_MS / FAST_TICK_MS;
-  // Calibration nests execute_move_ → motor_loop_ → process_tick_ with large
-  // locals; 8 KB overflowed on enable→auto-relearn. Match zone task headroom.
-  static constexpr uint32_t STACK_SIZE = 16384;
+  // Calibration nests execute_move_ → motor_loop_ → process_tick_. 8 KB overflowed
+  // on enable→auto-relearn while each level copied DeviceConfig (2.6 KiB); with
+  // read() the frames are < 0.6 KiB and the task peaks near 3 KiB. 10 KiB keeps
+  // ample headroom and returns 6 KiB of internal RAM.
+  static constexpr uint32_t STACK_SIZE = 10240;
   static constexpr UBaseType_t PRIORITY = 7;
   static constexpr BaseType_t CORE = 1;
   static constexpr uint8_t CMD_QUEUE_LEN = 12;

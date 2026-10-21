@@ -170,17 +170,29 @@ bool Lv6ZoneController::try_get_system_snapshot(SystemSnapshot *out, uint32_t ti
   // config store has its own mutex; acquiring it while holding
   // snapshot_mutex_ creates a lock-order inversion with command/config paths
   // that already hold the config mutex and then publish a zone snapshot.
-  const auto cfg = config_store_ ? config_store_->get_config() : DeviceConfig{};
+  // Only the enabled mask and the mode are needed: read them without copying the
+  // whole config (2.6 KiB), and build the snapshot straight into *out.
+  uint8_t enabled_mask = 0;
+  HeatingProfile control_mode = HeatingProfile::HEAT_PUMP;
+  if (config_store_) {
+    config_store_->read([&](const DeviceConfig &c) {
+      for (uint8_t i = 0; i < NUM_ZONES; i++)
+        if (c.zones[i].enabled)
+          enabled_mask |= static_cast<uint8_t>(1u << i);
+      control_mode = c.control.mode;
+    });
+  }
 
   if (xSemaphoreTake(snapshot_mutex_, pdMS_TO_TICKS(timeout_ms)) != pdTRUE)
     return false;
 
-  SystemSnapshot sys = {};
+  SystemSnapshot &sys = *out;
+  sys = {};
   float sum_valve = 0.0f;
   for (uint8_t i = 0; i < NUM_ZONES; i++) {
     sys.zones[i] = snapshots_[i];
     sum_valve += snapshots_[i].valve_position_pct;
-    if (cfg.zones[i].enabled && snapshots_[i].state != ZoneState::UNKNOWN)
+    if ((enabled_mask & (1u << i)) != 0 && snapshots_[i].state != ZoneState::UNKNOWN)
       sys.active_zones++;
   }
   xSemaphoreGive(snapshot_mutex_);
@@ -192,7 +204,7 @@ bool Lv6ZoneController::try_get_system_snapshot(SystemSnapshot *out, uint32_t ti
   sys.manifold_return_temp_c = read_manifold_return_();
   sys.preheat_absorbing = preheat_absorb_active_.load();
   sys.heat_demand = heat_demand_;
-  sys.control_mode = config_store_ ? config_store_->get_config().control.mode : HeatingProfile::HEAT_PUMP;
+  sys.control_mode = control_mode;
   sys.effective_control_mode = get_effective_control_mode();
   sys.control_mode_from_touch = touch_authority_active_.load(std::memory_order_acquire) &&
                                 touch_control_mode_valid_.load(std::memory_order_acquire);
@@ -202,8 +214,6 @@ bool Lv6ZoneController::try_get_system_snapshot(SystemSnapshot *out, uint32_t ti
   sys.controller_state = controller_state_;
   sys.system_condition_state = system_condition_state_;
   sys.wifi_connected = true;  // ESPHome manages WiFi
-
-  *out = sys;
   return true;
 }
 
@@ -333,7 +343,7 @@ void Lv6ZoneController::set_zone_enabled(uint8_t zone, bool enabled) {
 bool Lv6ZoneController::is_zone_enabled(uint8_t zone) const {
   if (zone >= NUM_ZONES || !config_store_)
     return false;
-  return config_store_->get_config().zones[zone].enabled;
+  return config_store_->read([&](const DeviceConfig &c_) { return c_.zones[zone].enabled; });
 }
 
 void Lv6ZoneController::set_control_algorithm(ControlAlgorithm algorithm) {
@@ -392,7 +402,7 @@ bool Lv6ZoneController::is_simple_preheat_enabled() const {
 ControlAlgorithm Lv6ZoneController::get_control_algorithm() const {
   if (!config_store_)
     return ControlAlgorithm::TANH;
-  return config_store_->get_config().zones[0].algorithm;
+  return config_store_->read([&](const DeviceConfig &c_) { return c_.zones[0].algorithm; });
 }
 
 bool Lv6ZoneController::set_zone_probe(uint8_t zone, int8_t probe) {
@@ -401,7 +411,7 @@ bool Lv6ZoneController::set_zone_probe(uint8_t zone, int8_t probe) {
   if (probe != PROBE_UNASSIGNED && (probe < 0 || probe >= MAX_PROBES))
     return false;
 
-  const auto probes = config_store_->get_config().probes;
+  const auto probes = config_store_->read([&](const DeviceConfig &c_) { return c_.probes; });
   const int8_t previous = probes.zone_return_probe[zone];
   if (previous == probe)
     return true;
@@ -423,7 +433,7 @@ bool Lv6ZoneController::set_zone_probe(uint8_t zone, int8_t probe) {
 int8_t Lv6ZoneController::get_zone_probe(uint8_t zone) const {
   if (zone >= NUM_ZONES || !config_store_)
     return PROBE_UNASSIGNED;
-  int8_t probe = config_store_->get_config().probes.zone_return_probe[zone];
+  int8_t probe = config_store_->read([&](const DeviceConfig &c_) { return c_.probes.zone_return_probe[zone]; });
   return (probe >= 0 && probe < MAX_PROBES) ? probe : PROBE_UNASSIGNED;
 }
 
@@ -449,7 +459,7 @@ bool Lv6ZoneController::set_manifold_flow_probe(int8_t probe) {
 int8_t Lv6ZoneController::get_manifold_flow_probe() const {
   if (!config_store_)
     return PROBE_UNASSIGNED;
-  int8_t probe = config_store_->get_config().probes.manifold_flow_probe;
+  int8_t probe = config_store_->read([&](const DeviceConfig &c_) { return c_.probes.manifold_flow_probe; });
   return (probe >= 0 && probe < MAX_PROBES) ? probe : 0;
 }
 
@@ -475,7 +485,7 @@ bool Lv6ZoneController::set_manifold_return_probe(int8_t probe) {
 int8_t Lv6ZoneController::get_manifold_return_probe() const {
   if (!config_store_)
     return PROBE_UNASSIGNED;
-  int8_t probe = config_store_->get_config().probes.manifold_return_probe;
+  int8_t probe = config_store_->read([&](const DeviceConfig &c_) { return c_.probes.manifold_return_probe; });
   return (probe >= 0 && probe < MAX_PROBES) ? probe : 0;
 }
 
@@ -561,7 +571,7 @@ void Lv6ZoneController::set_zone_temp_source(uint8_t zone, TempSource source) {
 TempSource Lv6ZoneController::get_zone_temp_source(uint8_t zone) const {
   if (zone >= NUM_ZONES || !config_store_)
     return TempSource::LOCAL_PROBE;
-  return config_store_->get_config().sensor_config.zone_temp_source[zone];
+  return config_store_->read([&](const DeviceConfig &c_) { return c_.sensor_config.zone_temp_source[zone]; });
 }
 
 void Lv6ZoneController::set_zone_ble_mac(uint8_t zone, const std::string &mac) {
@@ -582,7 +592,7 @@ void Lv6ZoneController::set_zone_ble_mac(uint8_t zone, const std::string &mac) {
 std::string Lv6ZoneController::get_zone_ble_mac(uint8_t zone) const {
   if (zone >= NUM_ZONES || !config_store_)
     return "";
-  return std::string(config_store_->get_config().sensor_config.zone_ble_mac[zone]);
+  return config_store_->read([zone](const DeviceConfig &c) { return std::string(c.sensor_config.zone_ble_mac[zone]); });
 }
 
 void Lv6ZoneController::set_zone_sensor_id(uint8_t zone, const std::string &sensor_id) {
@@ -615,7 +625,7 @@ void Lv6ZoneController::set_zone_sensor_name(uint8_t zone, const std::string &na
 std::string Lv6ZoneController::get_zone_sensor_name(uint8_t zone) const {
   if (zone >= NUM_ZONES || !config_store_)
     return "";
-  return std::string(config_store_->get_config().sensor_config.zone_sensor_name[zone]);
+  return config_store_->read([zone](const DeviceConfig &c) { return std::string(c.sensor_config.zone_sensor_name[zone]); });
 }
 
 int8_t Lv6ZoneController::match_ble_mac(const char *mac) const {
@@ -704,7 +714,7 @@ void Lv6ZoneController::set_zone_area_m2(uint8_t zone, float area_m2) {
 float Lv6ZoneController::get_zone_area_m2(uint8_t zone) const {
   if (zone >= NUM_ZONES || !config_store_)
     return 0.0f;
-  return config_store_->get_config().zones[zone].area_m2;
+  return config_store_->read([&](const DeviceConfig &c_) { return c_.zones[zone].area_m2; });
 }
 
 void Lv6ZoneController::set_zone_pipe_spacing_mm(uint8_t zone, float spacing_mm) {
@@ -723,7 +733,7 @@ void Lv6ZoneController::set_zone_pipe_spacing_mm(uint8_t zone, float spacing_mm)
 float Lv6ZoneController::get_zone_pipe_spacing_mm(uint8_t zone) const {
   if (zone >= NUM_ZONES || !config_store_)
     return 0.0f;
-  return config_store_->get_config().zones[zone].pipe_spacing_mm;
+  return config_store_->read([&](const DeviceConfig &c_) { return c_.zones[zone].pipe_spacing_mm; });
 }
 
 void Lv6ZoneController::set_zone_pipe_type(uint8_t zone, PipeType type) {
@@ -741,7 +751,7 @@ void Lv6ZoneController::set_zone_pipe_type(uint8_t zone, PipeType type) {
 PipeType Lv6ZoneController::get_zone_pipe_type(uint8_t zone) const {
   if (zone >= NUM_ZONES || !config_store_)
     return PipeType::PEX_16X2;
-  return config_store_->get_config().zones[zone].pipe_type;
+  return config_store_->read([&](const DeviceConfig &c_) { return c_.zones[zone].pipe_type; });
 }
 
 // =============================================================================
@@ -764,7 +774,7 @@ void Lv6ZoneController::set_zone_probe_role(uint8_t zone, ProbeRole role) {
 ProbeRole Lv6ZoneController::get_zone_probe_role(uint8_t zone) const {
   if (zone >= NUM_ZONES || !config_store_)
     return ProbeRole::ROOM_TEMPERATURE;
-  return config_store_->get_config().zones[zone].probe_role;
+  return config_store_->read([&](const DeviceConfig &c_) { return c_.zones[zone].probe_role; });
 }
 
 // =============================================================================
@@ -843,7 +853,7 @@ void Lv6ZoneController::set_zone_sync(uint8_t zone, int8_t target_zone) {
 int8_t Lv6ZoneController::get_zone_sync(uint8_t zone) const {
   if (zone >= NUM_ZONES || !config_store_)
     return -1;
-  return config_store_->get_config().zones[zone].sync_to_zone;
+  return config_store_->read([&](const DeviceConfig &c_) { return c_.zones[zone].sync_to_zone; });
 }
 
 // =============================================================================
@@ -865,7 +875,7 @@ void Lv6ZoneController::set_balance_mode(BalanceMode mode) {
 BalanceMode Lv6ZoneController::get_balance_mode() const {
   if (!config_store_)
     return BalanceMode::STATIC;
-  return effective_balance_mode(config_store_->get_config().balancing);
+  return effective_balance_mode(config_store_->read([&](const DeviceConfig &c_) { return c_.balancing; }));
 }
 
 void Lv6ZoneController::set_secondary_flow_commissioning(bool enabled) {
@@ -882,7 +892,7 @@ void Lv6ZoneController::set_secondary_flow_commissioning(bool enabled) {
 bool Lv6ZoneController::secondary_flow_commissioning_enabled() const {
   if (!config_store_)
     return false;
-  return config_store_->get_config().balancing.secondary_flow_commissioning_enabled;
+  return config_store_->read([&](const DeviceConfig &c_) { return c_.balancing.secondary_flow_commissioning_enabled; });
 }
 
 void Lv6ZoneController::set_secondary_min_total_opening_pct(float pct) {
@@ -898,7 +908,7 @@ void Lv6ZoneController::set_secondary_min_total_opening_pct(float pct) {
 float Lv6ZoneController::get_secondary_min_total_opening_pct() const {
   if (!config_store_)
     return 15.0f;
-  return config_store_->get_config().balancing.secondary_min_total_opening_pct;
+  return config_store_->read([&](const DeviceConfig &c_) { return c_.balancing.secondary_min_total_opening_pct; });
 }
 
 void Lv6ZoneController::set_target_delta_t(float delta_c) {
@@ -915,7 +925,7 @@ void Lv6ZoneController::set_target_delta_t(float delta_c) {
 float Lv6ZoneController::get_target_delta_t() const {
   if (!config_store_)
     return 5.0f;
-  return config_store_->get_config().balancing.target_delta_t_c;
+  return config_store_->read([&](const DeviceConfig &c_) { return c_.balancing.target_delta_t_c; });
 }
 
 void Lv6ZoneController::set_touch_control_mode(bool valid, HeatingProfile mode) {
@@ -927,7 +937,7 @@ HeatingProfile Lv6ZoneController::get_effective_control_mode() const {
   if (!config_store_)
     return HeatingProfile::HEAT_PUMP;
   return control_mode_policy::resolve_mode(
-      config_store_->get_config().control.mode,
+      config_store_->read([&](const DeviceConfig &c_) { return c_.control.mode; }),
       touch_authority_active_.load(std::memory_order_acquire),
       touch_control_mode_valid_.load(std::memory_order_acquire),
       static_cast<HeatingProfile>(touch_control_mode_.load(std::memory_order_acquire)));
@@ -1673,7 +1683,7 @@ void Lv6ZoneController::check_failsafes_() {
     if (elapsed > TEMP_FAILSAFE_MS) {
       float temp = read_zone_temperature_(i);
       if (std::isnan(temp)) {
-        const float maint = config_store_->get_config().control.maintenance_base_pct;
+        const float maint = config_store_->read([&](const DeviceConfig &c_) { return c_.control.maintenance_base_pct; });
         valve_controller_->request_position(i, maint);
         ESP_LOGW(TAG, "Zone %d temp failsafe (%" PRIu32 "s)", i + 1, elapsed / 1000);
       }

@@ -595,12 +595,12 @@ void LV6Dashboard::update_snapshot_() {
   s.authority_reason[sizeof(s.authority_reason) - 1] = '\0';
 
   if (this->config_store_) {
-    s.system                 = this->config_store_->get_config().system;
+    s.system                 = this->config_store_->read([&](const lv6::DeviceConfig &c_) { return c_.system; });
     s.probes                 = this->config_store_->get_probe_config();
     s.motor                  = this->config_store_->get_motor_config();
     s.manifold_type          = this->config_store_->get_manifold_type();
     s.simple_preheat_enabled = this->config_store_->get_simple_preheat_enabled();
-    const auto ctrl_cfg = this->config_store_->get_config().control;
+    const auto ctrl_cfg = this->config_store_->read([&](const lv6::DeviceConfig &c_) { return c_.control; });
     s.preheat_absorb_enabled = ctrl_cfg.preheat_absorb_enabled;
     s.preheat_absorb_band_c  = ctrl_cfg.preheat_absorb_band_c;
     s.preheat_detect_delta_c = ctrl_cfg.preheat_detect_delta_c;
@@ -655,14 +655,14 @@ void LV6Dashboard::update_snapshot_() {
       }
     }
     s.authority              = this->config_store_->get_authority_config();
-    s.balancing              = this->config_store_->get_config().balancing;
+    s.balancing              = this->config_store_->read([&](const lv6::DeviceConfig &c_) { return c_.balancing; });
     s.min_zone_flow_pct      = s.balancing.secondary_min_total_opening_pct;
     s.minimum_flow_always    = s.balancing.secondary_flow_commissioning_enabled;
     for (uint8_t i = 0; i < lv6::NUM_ZONES; i++) {
       s.zones[i]            = this->config_store_->get_zone_config(i);
       s.zone_temp_source[i] = this->config_store_->get_zone_temp_source(i);
       this->config_store_->get_zone_ble_mac_str(i, s.zone_ble_mac[i], sizeof(s.zone_ble_mac[i]));
-      const auto &sc = this->config_store_->get_config().sensor_config;
+      const auto sc = this->config_store_->get_sensor_config();
       strncpy(s.zone_sensor_id[i], sc.zone_sensor_id[i], sizeof(s.zone_sensor_id[i]) - 1);
       s.zone_sensor_id[i][sizeof(s.zone_sensor_id[i]) - 1] = '\0';
       strncpy(s.zone_sensor_name[i], sc.zone_sensor_name[i], sizeof(s.zone_sensor_name[i]) - 1);
@@ -677,7 +677,7 @@ void LV6Dashboard::update_snapshot_() {
       if (s.zone_temp_source[i] == lv6::TempSource::BLE_SENSOR)
         s.ble_demanded = true;
     }
-    if (this->config_store_->get_config().sensor_config.ble_clock_sync_enabled)
+    if (this->config_store_->read([&](const lv6::DeviceConfig &c_) { return c_.sensor_config.ble_clock_sync_enabled; }))
       s.ble_demanded = true;
   }
 
@@ -690,7 +690,7 @@ void LV6Dashboard::update_snapshot_() {
     s.ble_clock_sync_last_error[sizeof(s.ble_clock_sync_last_error) - 1] = '\0';
     s.ble_clock_sync_advertising = this->ble_time_beacon_->advertising();
   } else if (this->config_store_) {
-    const auto sensors = this->config_store_->get_config().sensor_config;
+    const auto sensors = this->config_store_->get_sensor_config();
     s.ble_clock_sync_enabled = sensors.ble_clock_sync_enabled;
     s.ble_clock_sync_interval_min = sensors.ble_clock_sync_interval_min;
   }
@@ -3728,7 +3728,7 @@ void LV6Dashboard::handle_v1_(AsyncWebServerRequest *request, const char *path) 
       act.has_str) {
     int8_t probe = lv6::PROBE_UNASSIGNED;
     if (parse_probe_option(act.value_str.c_str(), &probe) && probe != lv6::PROBE_UNASSIGNED) {
-      const auto probes = this->config_store_->get_config().probes;
+      const auto probes = this->config_store_->read([&](const lv6::DeviceConfig &c_) { return c_.probes; });
       const bool ignore_flow = (act.key == "manifold_flow_probe");
       const bool ignore_ret = (act.key == "manifold_return_probe");
       const int8_t ignore_zone =
@@ -4498,7 +4498,7 @@ void LV6Dashboard::dispatch_set_(const DashboardAction &act) {
 
   // ---- preheat_absorb_enabled ----
   } else if (strcmp(key, "preheat_absorb_enabled") == 0 && has_str && this->config_store_) {
-    auto ctrl = this->config_store_->get_config().control;
+    auto ctrl = this->config_store_->read([&](const lv6::DeviceConfig &c_) { return c_.control; });
     ctrl.preheat_absorb_enabled = (strcasecmp(str_val, "on") == 0 || strcmp(str_val, "1") == 0);
     this->config_store_->update_control(ctrl);
 
@@ -4522,13 +4522,13 @@ void LV6Dashboard::dispatch_set_(const DashboardAction &act) {
 
   // ---- preheat_absorb_band_c ----
   } else if (strcmp(key, "preheat_absorb_band_c") == 0 && has_num && this->config_store_) {
-    auto ctrl = this->config_store_->get_config().control;
+    auto ctrl = this->config_store_->read([&](const lv6::DeviceConfig &c_) { return c_.control; });
     ctrl.preheat_absorb_band_c = std::max(0.0f, std::min(5.0f, num_val));
     this->config_store_->update_control(ctrl);
 
   // ---- preheat_detect_delta_c ----
   } else if (strcmp(key, "preheat_detect_delta_c") == 0 && has_num && this->config_store_) {
-    auto ctrl = this->config_store_->get_config().control;
+    auto ctrl = this->config_store_->read([&](const lv6::DeviceConfig &c_) { return c_.control; });
     ctrl.preheat_detect_delta_c = std::max(0.1f, std::min(10.0f, num_val));
     this->config_store_->update_control(ctrl);
 
@@ -4551,7 +4551,7 @@ void LV6Dashboard::dispatch_set_(const DashboardAction &act) {
   } else if (strcmp(key, "balancing_mode") == 0 && has_str && this->config_store_) {
     // static: the area/pipe prior only. adaptive: the prior plus an hourly
     // per-zone correction learned from each room's long-term temperature error.
-    auto bal = this->config_store_->get_config().balancing;
+    auto bal = this->config_store_->read([&](const lv6::DeviceConfig &c_) { return c_.balancing; });
     if (strcasecmp(str_val, "adaptive") == 0)
       bal.mode = lv6::BalanceMode::ADAPTIVE;
     else if (strcasecmp(str_val, "static") == 0)
@@ -4565,7 +4565,7 @@ void LV6Dashboard::dispatch_set_(const DashboardAction &act) {
       this->zone_controller_->request_balance_recalc();
 
   } else if (strcmp(key, "min_zone_flow_pct") == 0 && has_num && this->config_store_) {
-    auto bal = this->config_store_->get_config().balancing;
+    auto bal = this->config_store_->read([&](const lv6::DeviceConfig &c_) { return c_.balancing; });
     bal.secondary_min_total_opening_pct = std::max(0.0f, std::min(100.0f, num_val));
     this->config_store_->update_balancing(bal);
 
@@ -4707,9 +4707,9 @@ void LV6Dashboard::sample_history_() {
 
   float demand_floor_pct = 0.0f;
   if (this->config_store_ != nullptr) {
-    const auto cfg = this->config_store_->get_config();
-    if (cfg.balancing.secondary_flow_commissioning_enabled)
-      demand_floor_pct = std::max(0.0f, std::min(100.0f, cfg.balancing.secondary_min_total_opening_pct));
+    const auto bal = this->config_store_->read([](const lv6::DeviceConfig &c) { return c.balancing; });
+    if (bal.secondary_flow_commissioning_enabled)
+      demand_floor_pct = std::max(0.0f, std::min(100.0f, bal.secondary_min_total_opening_pct));
   }
 
   if (snapshot_lock_ != nullptr && snapshot_ready_ &&
