@@ -24,20 +24,20 @@ void Lv6BleTimeBeacon::dump_config() {
 bool Lv6BleTimeBeacon::enabled() const {
   if (this->config_store_ == nullptr)
     return true;
-  return this->config_store_->get_config().sensor_config.ble_clock_sync_enabled;
+  return this->config_store_->read([](const lv6::DeviceConfig &c) { return c.sensor_config.ble_clock_sync_enabled; });
 }
 
 uint16_t Lv6BleTimeBeacon::interval_min() const {
   // Legacy config field kept for settings backup; beacon is continuous ~2s.
   if (this->config_store_ == nullptr)
     return ble_time::CLOCK_SYNC_INTERVAL_MIN_DEFAULT;
-  return ble_time::clamp_interval_min(this->config_store_->get_config().sensor_config.ble_clock_sync_interval_min);
+  return ble_time::clamp_interval_min(this->config_store_->read([](const lv6::DeviceConfig &c) { return c.sensor_config.ble_clock_sync_interval_min; }));
 }
 
 void Lv6BleTimeBeacon::set_enabled(bool enabled) {
   if (this->config_store_ == nullptr)
     return;
-  auto sensors = this->config_store_->get_config().sensor_config;
+  auto sensors = this->config_store_->get_sensor_config();
   sensors.ble_clock_sync_enabled = enabled;
   this->config_store_->update_sensor_config(sensors);
   if (!enabled)
@@ -49,7 +49,7 @@ void Lv6BleTimeBeacon::set_enabled(bool enabled) {
 void Lv6BleTimeBeacon::set_interval_min(uint16_t minutes) {
   if (this->config_store_ == nullptr)
     return;
-  auto sensors = this->config_store_->get_config().sensor_config;
+  auto sensors = this->config_store_->get_sensor_config();
   sensors.ble_clock_sync_interval_min = ble_time::clamp_interval_min(minutes);
   this->config_store_->update_sensor_config(sensors);
 }
