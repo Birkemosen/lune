@@ -1,5 +1,6 @@
 #include "nimble_hub.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <cstring>
 
@@ -73,6 +74,8 @@ void NimbleHub::loop() {
 // A reboot has fixed a NimBLE host that never started; the cap stops a reboot loop.
 static constexpr uint32_t BLE_REBOOT_MAGIC = 0x4c42524bUL;   // "LBRK"
 static constexpr uint8_t BLE_REBOOT_MAX = 3;
+// Past the cap: one more reboot per this much uptime, so BLE is never given up for good.
+static constexpr uint32_t BLE_REBOOT_RETRY_MS = 30UL * 60UL * 1000UL;
 RTC_NOINIT_ATTR static uint32_t s_ble_reboot_magic;
 RTC_NOINIT_ATTR static uint8_t s_ble_reboots;
 static uint8_t ble_reboots() { return s_ble_reboot_magic == BLE_REBOOT_MAGIC ? s_ble_reboots : 0; }
@@ -91,8 +94,11 @@ void NimbleHub::check_sync_watchdog_() {
     return;
   // Two stack restarts without a sync: the host task never started (nimble_port_stop
   // rc=2). A clean reboot fixes that; valves hold position across it (~10 s).
-  if (this->sync_restarts_ >= 2 && ble_reboots() < BLE_REBOOT_MAX) {
-    set_ble_reboots(ble_reboots() + 1);
+  // Without BLE the zones have no room temperatures; past the cap keep trying,
+  // at most once per BLE_REBOOT_RETRY_MS of uptime.
+  const bool may_reboot = ble_reboots() < BLE_REBOOT_MAX || esphome::millis() >= BLE_REBOOT_RETRY_MS;
+  if (this->sync_restarts_ >= 2 && may_reboot) {
+    set_ble_reboots(std::min<uint8_t>(ble_reboots() + 1, BLE_REBOOT_MAX));
     ESP_LOGE(TAG, "NimBLE still not synced after %u stack restarts; rebooting (%u/%u)",
              static_cast<unsigned>(this->sync_restarts_), static_cast<unsigned>(ble_reboots()),
              static_cast<unsigned>(BLE_REBOOT_MAX));
