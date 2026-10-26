@@ -212,7 +212,8 @@ Kun ved **fuld dækning**: alle sløjfer med tildelt ventil på alle forventede 
 Kilde: Odin 2.0 `/api/physics` — lært husvarmetab `HL` (kW/K) og τ (timer).
 
 ```
-UA:     s        = HL × 1000 / Σ ua_prior_default
+UA:     HL'      = HL + G / ΔT_ref                           (intern varme lagt til)
+        s        = HL' × 1000 / Σ ua_prior_default
         u_base'  = s × u_base_default
         u_wall'  = s × u_wall_default                         s clamp 0,25–4,0
 
@@ -222,7 +223,8 @@ Masse:  TM_odin  = HL × τ_odin                                (kWh/K)
 
 - Rammer `s` eller `c_struct'` et clamp, SKAL Touch stoppe kalibreringen og vise årsagen frem for at skrive clampede værdier. Et clamp betyder at enten Odins fysik eller provisioneringen er forkert.
 - Touch skriver `u_base`, `u_wall`, `c_struct` til alle V6'ere med `source: "calibrated"` og tidsstempel.
-- Touch kalibrerer igen, når Odins lærte HL har flyttet sig ≥ 10 % siden sidste kalibrering. Fordi `s` regnes mod standard-prioren, giver en ny kalibrering samme resultat for samme HL (ingen tilbagekobling fra de allerede skalerede V6-priors).
+- Odins HL er netto efter gratis varme (personer, husholdningsstrøm), fordi Odins model ikke har et led for den. `G` er en fast, justerbar husindstilling i Touch (guide: 1–2 personer ca. 400 W, 3–4 ca. 650 W, 5–6 ca. 900 W). `ΔT_ref` er husets inde−ude-ΔT som langsomt gennemsnit (τ ≈ 1 uge, mindst 8 K; 12 K før første måling) — den ΔT Odin har lært ved. Touchs egen daglige læring lægger tilsvarende rummets arealandel af `G` til den leverede effekt.
+- Touch kalibrerer igen, når HL' har flyttet sig ≥ 10 % siden sidste kalibrering. Fordi `s` regnes mod standard-prioren, giver en ny kalibrering samme resultat for samme HL (ingen tilbagekobling fra de allerede skalerede V6-priors).
 - Kalibrering BØR ikke køre de første 14 døgn efter en Odin-fysiknulstilling eller -migrering.
 
 ## 9. Plausibilitetsgrænser
