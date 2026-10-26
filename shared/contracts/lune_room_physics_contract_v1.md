@@ -153,7 +153,7 @@ Touch SKAL beregne konfidens ens for alle sløjfer:
 
 ```
 confidence = min(1, qualifying_days / 21) × clamp(1 − cv, 0, 1)
-cv         = std / mean af de daglige UA-estimater i vinduet
+cv         = relativ spredning af de daglige UA-estimater (EWMA, α 0,25; start 0,3)
 ```
 
 En dag er **kvalificeret** kun hvis alle holder:
@@ -172,7 +172,9 @@ Eksempler: 13 kvalificerede dage med cv 0,05 → 0,59 (under tærsklen). 16 dage
 Vægte skal være kvasi-statiske, ellers flytter hustemperaturen sig af ikke-fysiske årsager.
 
 - V6 SKAL genberegne `ua_effective` kun ved: konfigurationswrite, accepteret `ua-learned`-write, eller ændring af `u_base`/`u_wall`.
-- Touch SKAL skrive `ua-learned` højst én gang per 7 døgn per sløjfe, og kun hvis |ny − nuværende| / nuværende ≥ 0,10, eller konfidensen krydser 0,60.
+- Touch lærer ved lokal midnat af det døgn, der lige er slut: UA = (leveret kWh × 1000 / timer) / middel-ΔT (rum − ude), og skriver `ua-learned` (værdi, konfidens, dage) for rummets sløjfer samme nat. Dage tæller én op pr. kvalificeret døgn.
+- Leveret energi (pumpeflow × fordelerens ΔT) integreres kun mellem målinger højst 10 min fra hinanden og fordeles på rummene efter sløjfeareal × ventilåbning, ikke efter UA.
+- Under konfidens 0,60 følger den skrevne værdi den daglige tendens (EWMA, α 0,25). Fra 0,60 ændres værdien kun, når tendensen har flyttet sig ≥ 10 %; dage og konfidens tæller stadig op. Så er vægtene kvasi-statiske.
 - Touch SKAL bumpe `weights_revision` og skrive en event hver gang en effektiv vægt ændres.
 
 ## 6. τ-prior
@@ -220,6 +222,7 @@ Masse:  TM_odin  = HL × τ_odin                                (kWh/K)
 
 - Rammer `s` eller `c_struct'` et clamp, SKAL Touch stoppe kalibreringen og vise årsagen frem for at skrive clampede værdier. Et clamp betyder at enten Odins fysik eller provisioneringen er forkert.
 - Touch skriver `u_base`, `u_wall`, `c_struct` til alle V6'ere med `source: "calibrated"` og tidsstempel.
+- Touch kalibrerer igen, når Odins lærte HL har flyttet sig ≥ 10 % siden sidste kalibrering. Fordi `s` regnes mod standard-prioren, giver en ny kalibrering samme resultat for samme HL (ingen tilbagekobling fra de allerede skalerede V6-priors).
 - Kalibrering BØR ikke køre de første 14 døgn efter en Odin-fysiknulstilling eller -migrering.
 
 ## 9. Plausibilitetsgrænser
