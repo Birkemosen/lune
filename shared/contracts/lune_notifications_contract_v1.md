@@ -48,6 +48,7 @@ All values are strings (HA event data from ESPHome are strings).
 | `sensor_battery` | Device that receives the sensor | Battery ≤ 15 % = warning, ≤ 5 % = error; clears at ≥ 25 % |
 | `sensor` | Device that owns the sensor | Room or manifold temperature missing for 30 min, probe fault |
 | `valve` | V6 | Motor fault, stall, calibration failed |
+| `device` | V6 | The controller restarted after a crash (program error / out of memory, watchdog, supply dip); raised once Home Assistant is connected, cleared an hour after boot. Details: V6 `GET /api/v1/diagnostics` → `last_crash` |
 
 "Device that receives the sensor": BTHome sensors bound to V6 zones are V6's; sensors
 Touch reads itself are Touch's. Touch never re-reports what a V6 reports.

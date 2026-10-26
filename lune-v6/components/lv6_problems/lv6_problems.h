@@ -49,9 +49,12 @@ class Lv6Problems : public esphome::PollingComponent {
   // Slot layout: per zone VALVE_FAULT..HUMIDITY except FLOW/RETURN, then the
   // two manifold probes.
   static constexpr uint8_t PER_ZONE = 6;  // fault, stall, calibration, room, battery, humidity
-  static constexpr uint8_t NUM_SLOTS = NUM_ZONES * PER_ZONE + 2;
+  static constexpr uint8_t NUM_SLOTS = NUM_ZONES * PER_ZONE + 3;
   static constexpr uint8_t SLOT_FLOW = NUM_ZONES * PER_ZONE;
   static constexpr uint8_t SLOT_RETURN = SLOT_FLOW + 1;
+  static constexpr uint8_t SLOT_RESTART = SLOT_RETURN + 1;
+  /// A restart after a crash is reported for this long, then cleared.
+  static constexpr uint32_t RESTART_NOTICE_MS = 60u * 60u * 1000u;
 
   static uint8_t zone_slot_(uint8_t zone, problems::Kind k);
   static problems::Kind slot_kind_(uint8_t slot);
@@ -75,6 +78,7 @@ class Lv6Problems : public esphome::PollingComponent {
 #endif
   problems::Slot slots_[NUM_SLOTS]{};
   uint8_t probe_mapped_mask_{0};
+  uint8_t restart_reason_{0};  ///< problems::RESTART_* when this boot followed a crash
   int16_t last_count_{-1};
 };
 

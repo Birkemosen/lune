@@ -165,7 +165,7 @@ static void test_texts() {
              std::strcmp(category(Kind::HUMIDITY), "humidity") == 0,
          "contract categories");
   // Every kind × language yields a non-empty title and message.
-  for (uint8_t k = 0; k <= static_cast<uint8_t>(Kind::HUMIDITY); k++)
+  for (uint8_t k = 0; k <= static_cast<uint8_t>(Kind::DEVICE_RESTART); k++)
     for (uint8_t l = 0; l < 2; l++) {
       title(static_cast<Lang>(l), static_cast<Kind>(k), 0, "Stue", buf, sizeof(buf));
       const bool t_ok = buf[0] != '\0';
@@ -176,6 +176,15 @@ static void test_texts() {
       }
     }
   expect(true, "all kinds have titles and messages ≤ 200 bytes");
+  // Restart after a crash: device category, translated reason, no raw reset enum.
+  expect(std::strcmp(category(Kind::DEVICE_RESTART), "device") == 0 &&
+             std::strcmp(id_kind(Kind::DEVICE_RESTART), "device.restart") == 0,
+         "restart: category and id");
+  message(Lang::DA, Kind::DEVICE_RESTART, Severity::ERROR, RESTART_WATCHDOG, 0, buf, sizeof(buf));
+  expect(std::strstr(buf, "watchdog") != nullptr && std::strstr(buf, "ESP_RST") == nullptr,
+         "restart message names the reason in words");
+  message(Lang::EN, Kind::DEVICE_RESTART, Severity::ERROR, RESTART_PANIC, 0, buf, sizeof(buf));
+  expect(std::strstr(buf, "program error") != nullptr, "restart message (English, panic)");
 }
 
 static void test_append_utf8() {

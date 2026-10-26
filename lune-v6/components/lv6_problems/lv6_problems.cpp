@@ -10,6 +10,9 @@
 #ifdef USE_API_HOMEASSISTANT_SERVICES
 #include "esphome/components/api/api_server.h"
 #endif
+#ifdef USE_ESP32
+#include <esp_system.h>
+#endif
 
 namespace lv6 {
 
@@ -40,6 +43,8 @@ Kind Lv6Problems::slot_kind_(uint8_t slot) {
     return Kind::SENSOR_FLOW;
   if (slot == SLOT_RETURN)
     return Kind::SENSOR_RETURN;
+  if (slot == SLOT_RESTART)
+    return Kind::DEVICE_RESTART;
   return ZONE_KINDS[slot % PER_ZONE];
 }
 
@@ -52,6 +57,23 @@ void Lv6Problems::setup() {
     ESP_LOGE(TAG, "zone controller, valve controller or config store missing");
     this->mark_failed();
   }
+#ifdef USE_ESP32
+  switch (esp_reset_reason()) {
+    case ESP_RST_PANIC:
+      restart_reason_ = problems::RESTART_PANIC;
+      break;
+    case ESP_RST_INT_WDT:
+    case ESP_RST_TASK_WDT:
+    case ESP_RST_WDT:
+      restart_reason_ = problems::RESTART_WATCHDOG;
+      break;
+    case ESP_RST_BROWNOUT:
+      restart_reason_ = problems::RESTART_BROWNOUT;
+      break;
+    default:
+      break;
+  }
+#endif
 }
 
 void Lv6Problems::dump_config() {
@@ -136,6 +158,21 @@ void Lv6Problems::evaluate_(uint32_t now) {
       problems::step(s, in, now, problems::HUMIDITY_HOLD_MS, Severity::WARNING, variant,
                      static_cast<uint8_t>(rounded < 0 ? 0 : (rounded > 100 ? 100 : rounded)));
     }
+  }
+
+  // ---- device: this boot followed a crash -------------------------------------
+  // Raised once Home Assistant is connected (an undelivered raise is dropped),
+  // cleared an hour after boot.
+  if (restart_reason_ != 0) {
+    Input in = Input::CLEAR;
+    if (now < RESTART_NOTICE_MS) {
+      bool connected = false;
+#ifdef USE_API_HOMEASSISTANT_SERVICES
+      connected = esphome::api::global_api_server != nullptr && esphome::api::global_api_server->is_connected();
+#endif
+      in = connected ? Input::RAISE : Input::NEUTRAL;
+    }
+    problems::step(slots_[SLOT_RESTART], in, now, 1, Severity::ERROR, restart_reason_);
   }
 
   // ---- sensor: manifold flow / return probe fault -----------------------------

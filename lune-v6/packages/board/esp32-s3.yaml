@@ -35,6 +35,19 @@ esp32:
       # internal heap available for the dashboard and native API tasks.
       CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP: "y"
       CONFIG_MBEDTLS_EXTERNAL_MEM_ALLOC: "y"
+      # malloc()/new may use PSRAM (ESPHome's psram component picks caps-only
+      # allocation, where all of it lands in ~37 KB of internal RAM). On 25 Oct .13
+      # aborted when the native API's send buffer could not grow (operator new
+      # failed) while PSRAM had 7.9 MB free. Allocations below 4 KB still prefer
+      # internal RAM and fall back to PSRAM; larger ones go to PSRAM; 32 KB of
+      # internal RAM stays reserved for DMA / internal-only allocations (WiFi, BT).
+      # Safe here: no ISR is registered IRAM-safe (ESP_INTR_FLAG_IRAM), so none
+      # runs while the cache is off during flash writes; DMA buffers are
+      # allocated with MALLOC_CAP_DMA explicitly.
+      CONFIG_SPIRAM_USE_CAPS_ALLOC: "n"
+      CONFIG_SPIRAM_USE_MALLOC: "y"
+      CONFIG_SPIRAM_MALLOC_ALWAYSINTERNAL: "4096"
+      CONFIG_SPIRAM_MALLOC_RESERVE_INTERNAL: "32768"
       # --- Optional heap attribution (DEBUG BUILDS ONLY — do not ship) ---
       # Prefer dump_task_stats (multi_heap_info / heap_caps_print_heap_info) first.
       # For call-site attribution, include packages/debug/heap-tracing.yaml from

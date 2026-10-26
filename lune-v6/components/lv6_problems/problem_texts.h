@@ -34,7 +34,13 @@ enum class Kind : uint8_t {
   SENSOR_RETURN = 5,
   BATTERY = 6,            ///< value = battery %
   HUMIDITY = 7,           ///< variant 1 = high, 0 = low; value = RH %
+  DEVICE_RESTART = 8,     ///< variant = RESTART_* (why the controller restarted)
 };
+
+// Why the controller restarted (DEVICE_RESTART variant), from esp_reset_reason().
+static constexpr uint8_t RESTART_PANIC = 1;     ///< exception / abort (incl. out of memory)
+static constexpr uint8_t RESTART_WATCHDOG = 2;  ///< task / interrupt watchdog
+static constexpr uint8_t RESTART_BROWNOUT = 3;  ///< supply voltage dipped
 
 static constexpr uint8_t HUMIDITY_HIGH = 1;
 static constexpr uint8_t HUMIDITY_LOW = 0;
@@ -54,6 +60,8 @@ inline const char *category(Kind k) {
       return "sensor_battery";
     case Kind::HUMIDITY:
       return "humidity";
+    case Kind::DEVICE_RESTART:
+      return "device";
   }
   return "sensor";
 }
@@ -69,6 +77,7 @@ inline const char *id_kind(Kind k) {
     case Kind::SENSOR_RETURN: return "sensor.return";
     case Kind::BATTERY: return "sensor_battery.low";
     case Kind::HUMIDITY: return "humidity.out_of_range";
+    case Kind::DEVICE_RESTART: return "device.restart";
   }
   return "problem";
 }
@@ -135,6 +144,9 @@ inline void title(Lang lang, Kind k, uint8_t variant, const char *room, char *ou
       else
         snprintf(out, cap, da ? "%s: lav luftfugtighed" : "%s: low humidity", room);
       return;
+    case Kind::DEVICE_RESTART:
+      snprintf(out, cap, "%s", da ? "Styringen genstartede efter et nedbrud" : "The controller restarted after a crash");
+      return;
   }
   if (cap > 0)
     out[0] = '\0';
@@ -144,6 +156,18 @@ inline void message(Lang lang, Kind k, Severity sev, uint8_t variant, uint8_t va
   const bool da = lang == Lang::DA;
   const unsigned v = value;
   switch (k) {
+    case Kind::DEVICE_RESTART: {
+      const char *why = variant == RESTART_WATCHDOG ? (da ? "en watchdog" : "a watchdog")
+                        : variant == RESTART_BROWNOUT ? (da ? "et spændingsfald" : "a supply voltage dip")
+                                                      : (da ? "en programfejl" : "a program error");
+      snprintf(out, cap,
+               da ? "Lune V6 genstartede efter %s. Ventilerne holdt deres stilling, og styringen kører igen. "
+                    "Detaljerne står under Diagnostik på V6."
+                  : "Lune V6 restarted after %s. The valves held their position and control is running again. "
+                    "The details are under Diagnostics on the V6.",
+               why);
+      return;
+    }
     case Kind::VALVE_FAULT:
       snprintf(out, cap,
                da ? "%s. Tjek aktuatoren og kablet, og nulstil så fejlen på Lune V6."
