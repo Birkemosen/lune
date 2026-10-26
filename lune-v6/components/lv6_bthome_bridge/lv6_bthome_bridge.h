@@ -5,6 +5,7 @@
 #include "esphome/components/sensor/sensor.h"
 #include "esphome/core/component.h"
 
+#include <atomic>
 #include <cmath>
 
 namespace lv6 {
@@ -19,6 +20,7 @@ class Lv6BthomeBridge : public esphome::Component {
   }
 
   void setup() override;
+  void loop() override;
   void dump_config() override;
   float get_setup_priority() const override { return esphome::setup_priority::LATE; }
 
@@ -35,6 +37,13 @@ class Lv6BthomeBridge : public esphome::Component {
   esphome::nimble_hub::NimbleHub *hub_{nullptr};
   Lv6ZoneController *zones_{nullptr};
   esphome::sensor::Sensor *zone_temp_[6]{};
+  // Advertisements arrive on the NimBLE host task; ESPHome entities (and the
+  // native API's send queue behind publish_state) are not thread-safe, so the
+  // reading is parked here and published from loop() on the main loop task.
+  // Publishing from the host task corrupted the API batch on 23 and 25 Oct
+  // (LoadProhibited in try_send_climate_state, abort in APIBuffer::grow_).
+  std::atomic<float> pending_temp_[6]{};
+  std::atomic<uint8_t> pending_mask_{0};
 
   struct LastSeen {
     char mac[18];

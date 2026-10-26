@@ -203,8 +203,19 @@ void Lv6BthomeBridge::on_advertisement_(const esphome::nimble_hub::Advertisement
     return;
   ESP_LOGI(TAG, "Zone %d BLE temp: %.1f°C (%s)", z + 1, temperature, mac_buf);
   this->zones_->set_zone_external_temperature(z, temperature);
-  if (z < 6 && this->zone_temp_[z] != nullptr)
-    this->zone_temp_[z]->publish_state(temperature);
+  if (z < 6 && this->zone_temp_[z] != nullptr) {
+    this->pending_temp_[z].store(temperature, std::memory_order_relaxed);
+    this->pending_mask_.fetch_or(static_cast<uint8_t>(1u << z), std::memory_order_release);
+  }
+}
+
+void Lv6BthomeBridge::loop() {
+  // Main loop task: publish what the NimBLE host task parked (see the header).
+  const uint8_t mask = this->pending_mask_.exchange(0, std::memory_order_acquire);
+  for (uint8_t z = 0; z < 6 && mask != 0; z++) {
+    if ((mask & (1u << z)) != 0 && this->zone_temp_[z] != nullptr)
+      this->zone_temp_[z]->publish_state(this->pending_temp_[z].load(std::memory_order_relaxed));
+  }
 }
 
 }  // namespace lv6
