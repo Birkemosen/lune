@@ -1746,6 +1746,32 @@ void Lv6ValveController::execute_move_(uint8_t zone, float target_pct) {
       stop_motor_(true);
   }
 
+  // A close to the seat that ends BLOCKED is an already-seated valve or a jam:
+  // two-wire signals cannot tell them apart. Learning backs off open and closes
+  // again (home_to_seat_); ordinary moves did not, so a valve already on its
+  // seat at the first re-home after a restart stayed BLOCKED until someone
+  // reset it. Back off once and repeat the close: a free valve now travels to
+  // its seat and confirms it, a real jam blocks again.
+  if (drive_to_endstop && dir == MotorDirection::CLOSE && !calibrating_ && !seat_retrying_ &&
+      current_fault_code_ == FaultCode::BLOCKED) {
+    ESP_LOGW(TAG, "Motor %d close to the seat blocked after %" PRIu32 " ms; backing off %" PRIu32
+                  " ms and closing again", zone + 1, motor_run_time_ms_, LEARN_CLOSE_BACKOFF_OPEN_MS);
+    seat_retrying_ = true;
+    calibration_backoff_open_(zone, LEARN_CLOSE_BACKOFF_OPEN_MS);
+    // The seat check needs to know how far the back-off went, or the close
+    // would be judged against the stale position and read as a jam.
+    xSemaphoreTake(telemetry_mutex_, portMAX_DELAY);
+    const uint32_t stroke = telemetry_[zone].learned_open_ripples;
+    telemetry_[zone].current_position_pct =
+        stroke > 0 ? std::clamp(100.0f * static_cast<float>(get_motion_count_()) / static_cast<float>(stroke),
+                                0.0f, 100.0f)
+                   : 0.0f;
+    xSemaphoreGive(telemetry_mutex_);
+    execute_move_(zone, 0.0f);
+    seat_retrying_ = false;
+    return;
+  }
+
   // Update position
   bool clear_stale_fault = false;
   xSemaphoreTake(telemetry_mutex_, portMAX_DELAY);
@@ -3251,15 +3277,18 @@ void Lv6ValveController::detect_endstop_() {
       // cannot stop more open than the seat it is pressed against. Only running
       // well past where the seat should be is suspicious.
       evidence.seated_start = stroke > 0 && seat_moved <= seat_expected + seat_margin;
-      if (evidence.seated_start && seat_moved + seat_margin < seat_expected && !seat_early_logged_) {
-        seat_early_logged_ = true;
-        ESP_LOGW(TAG, "Motor %d seated %" PRIu32 " ripples early (held %.1f%%, expected %" PRIu32
-                      "): remembered position was off", current_zone_ + 1, seat_expected - seat_moved,
-                 seat_pos, seat_expected);
-      }
     }
     const EndpointDecision decision = classify_endpoint(evidence);
     last_endpoint_decision_ = static_cast<uint8_t>(decision);
+    // Only a stop that is accepted as the seat says anything about the
+    // remembered position; mid-travel the count is merely still low.
+    if (decision == EndpointDecision::ENDPOINT && evidence.seated_start &&
+        seat_moved + seat_margin < seat_expected && !seat_early_logged_) {
+      seat_early_logged_ = true;
+      ESP_LOGW(TAG, "Motor %d seated %" PRIu32 " ripples early (held %.1f%%, expected %" PRIu32
+                    "): remembered position was off", current_zone_ + 1, seat_expected - seat_moved,
+               seat_pos, seat_expected);
+    }
     if (decision == EndpointDecision::JAM && evidence.commanded_endpoint && std::isfinite(seat_pos))
       ESP_LOGW(TAG, "Motor %d seat check: held %.1f%%, moved %" PRIu32 " ripples, expected %" PRIu32
                     " +/- %" PRIu32 ", phase %u, window %d", current_zone_ + 1, seat_pos, seat_moved,

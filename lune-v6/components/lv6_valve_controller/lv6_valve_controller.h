@@ -758,6 +758,8 @@ class Lv6ValveController : public esphome::Component {
   uint32_t last_rehome_ms_[NUM_ZONES] = {};
   /// Guards the one level of recursion in execute_move_().
   bool rehoming_ = false;
+  /// Guards the one back-off retry of a blocked close to the seat.
+  bool seat_retrying_ = false;
   /// Set by the zone controller while closing this zone would breach minimum
   /// flow. eQ-3 shipped a fix for exactly this: their weekly adaptation closed
   /// every valve at once and tripped heat-pump flow alarms.
