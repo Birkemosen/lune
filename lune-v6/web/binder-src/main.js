@@ -523,8 +523,7 @@ function paintStrip() {
     const srcHtml = `<span class="c-info">${tempSourceLabel(es(key.tempSource(z)))}</span>`;
     setBind(`z${z}.tempFrom`, srcHtml);
     paintMotorConf(z, st);
-    const comfort = document.querySelector(`.comfort [popovertarget="sheet-z${z}"]`);
-    if (comfort) comfort.dataset.state = st;
+    document.querySelectorAll(`:is(.comfort, .zcards) [popovertarget="sheet-z${z}"]`).forEach((el) => { el.dataset.state = st; });
     if (st === 'fault') {
       setBind(`z${z}.comfort`, `<b class="bad">${t('state.fault')}</b>`);
     } else if (st === 'blocked') {
@@ -545,6 +544,9 @@ function paintStrip() {
     }
     const opening = toNum(ev(key.valve(z)));
     setBind(`z${z}.flow`, withUnit(opening, '%', 0));
+    // Zone card: the opening beside the name; fault/blocked/learning/off say it in the value instead.
+    setBind(`z${z}.cardOpen`, ['fault', 'blocked', 'learning', 'off'].includes(st) || !Number.isFinite(opening)
+      ? '' : escapeHtml(t('zcard.open', { pct: Math.round(opening) })));
     // Tile: opening as number next to the 10-segment bar; learning shows its own %.
     setBind(`z${z}.valve`, st === 'learning' ? `${zoneLearnPct(z)} %`
       : (st === 'fault' || st === 'blocked' || st === 'off') ? '0 %'
@@ -936,48 +938,81 @@ function escapeHtml(s) {
 
 function paintSparks() {
   sampleHistory(false);
-  for (let z = 1; z <= 6; z++) {
-    const svg = document.querySelector(`[data-bind-spark="z${z}"]`);
-    if (!svg) continue;
-    const temps = getZoneSeries('temp', z);
-    const sps = getZoneSeries('sp', z);
-    const html = seriesToSparkSvg(temps, sps);
-    svg.innerHTML = html;
-    // No temperature → no sparkline (never a flat line); see DESIGN.md 5.9.
-    const row = svg.closest('.comfort > *');
-    if (row) row.toggleAttribute('data-empty', !html);
-  }
+  paintZcards();
   paintTrend();
   paintZcharts();
 }
 
-function seriesToSparkSvg(temps, sps) {
-  // A sparkline needs at least two real temperatures; the target alone is not a graph.
-  if (temps.filter((v) => Number.isFinite(v)).length < 2) return '';
-  const vals = temps.concat(sps).filter((v) => Number.isFinite(v));
-  let lo = Math.min(...vals);
-  let hi = Math.max(...vals);
-  const mid = (lo + hi) / 2;
-  const span = Math.max(hi - lo + 0.6, 3.0);
-  lo = mid - span / 2;
-  hi = mid + span / 2;
+/**
+ * Zone cards on Home: 24 h of the device history (5-min entries) on a 240×100 viewBox,
+ * placed by time so a short history after a restart starts mid-chart. Temperature as a
+ * line, target as a step, hours the zone called for heat hatched. Axis ≥ 3 °C (LDS 5.9).
+ */
+function paintZcards() {
+  const hist = getDashboardValue('zoneStateHistory');
+  const entries = hist && Array.isArray(hist.entries) ? hist.entries : [];
+  const last = entries.length ? entries[entries.length - 1][0] : 0;
   const W = 240;
-  const Hh = 40;
-  const X = (k, len) => ((len <= 1 ? 0 : k / (len - 1)) * W).toFixed(1);
-  const Y = (v) => (Hh - ((v - lo) / (hi - lo)) * Hh).toFixed(1);
-  const line = (arr) => arr.map((v, k) => `${X(k, arr.length)},${Y(v)}`).join(' ');
-  const tp = temps.length ? line(temps) : '';
-  let gp = [];
-  for (let k = 0; k < sps.length; k++) {
-    if (k && sps[k] !== sps[k - 1]) gp.push(`${X(k, sps.length)},${Y(sps[k - 1])}`);
-    gp.push(`${X(k, sps.length)},${Y(sps[k])}`);
+  const Hh = 100;
+  const DAY = 86400;
+  const X = (ts) => (W * (1 - (last - ts) / DAY)).toFixed(1);
+  for (let z = 1; z <= 6; z++) {
+    const svg = document.querySelector(`[data-bind-zcard="z${z}"]`);
+    if (!svg) continue;
+    const card = svg.closest('.zcard');
+    const pts = [];
+    for (const e of entries) {
+      if (!Array.isArray(e) || !(last - e[0] <= DAY)) continue;
+      const tv = e[HIST_TEMP0 + z - 1];
+      const sv = e[HIST_SP0 + z - 1];
+      pts.push({
+        ts: e[0],
+        t: typeof tv === 'number' && Number.isFinite(tv) ? tv : null,
+        sp: typeof sv === 'number' && Number.isFinite(sv) ? sv : null,
+        heat: e[z] === 5,
+      });
+    }
+    // Two real temperatures make a graph; fewer collapse the card to its .empty line.
+    const empty = pts.filter((p) => p.t != null).length < 2;
+    if (card) card.toggleAttribute('data-empty', empty);
+    if (empty) { svg.innerHTML = ''; continue; }
+    const vals = pts.flatMap((p) => [p.t, p.sp]).filter((v) => v != null);
+    let lo = Math.floor(Math.min(...vals) - 0.3);
+    let hi = Math.ceil(Math.max(...vals) + 0.3);
+    if (hi - lo < 3) { const mid = (lo + hi) / 2; lo = Math.floor(mid - 1.5); hi = lo + 3; }
+    const Y = (v) => (Hh - ((v - lo) / (hi - lo)) * Hh).toFixed(1);
+    const step = (pts.length > 1 ? (pts[pts.length - 1].ts - pts[0].ts) / (pts.length - 1) : 300) || 300;
+    let heat = '';
+    for (let k = 0; k < pts.length; k++) {
+      if (!pts[k].heat) continue;
+      let m = k;
+      while (m + 1 < pts.length && pts[m + 1].heat) m += 1;
+      const x0 = Number(X(pts[k].ts));
+      const x1 = Math.min(W, Number(X(pts[m].ts + step)));
+      heat += `<rect class="pre" x="${x0.toFixed(1)}" y="0" width="${(x1 - x0).toFixed(1)}" height="${Hh}"/>`;
+      k = m;
+    }
+    let t = '';
+    let gap = true;
+    for (const p of pts) {
+      if (p.t == null) { gap = true; continue; }
+      t += `${gap ? 'M' : 'L'}${X(p.ts)},${Y(p.t)}`;
+      gap = false;
+    }
+    let sp = '';
+    let prev = null;
+    for (const p of pts) {
+      if (p.sp == null) { prev = null; continue; }
+      if (prev == null) sp += `M${X(p.ts)},${Y(p.sp)}`;
+      else if (p.sp !== prev) sp += `H${X(p.ts)}V${Y(p.sp)}`;
+      prev = p.sp;
+    }
+    if (prev != null) sp += `H${W}`;
+    const grid = [0, 50, 100].map((y) => `<line class="gl" x1="0" x2="${W}" y1="${y}" y2="${y}"/>`).join('');
+    svg.innerHTML = `${grid}${heat}${sp ? `<path class="sp" d="${sp}"/>` : ''}<path class="t" d="${t}"/>`;
+    const lab = (v) => num(v, Number.isInteger(v) ? 0 : 1);
+    setBind(`z${z}.cardY`, `<span>${lab(hi)}°</span><span>${lab((hi + lo) / 2)}°</span><span>${lab(lo)}°</span>`);
   }
-  const goal = gp.join(' ');
-  if (!tp && !goal) return '';
-  const area = tp && goal
-    ? `<polygon class="a" points="${tp} ${[...gp].reverse().join(' ')}"/>`
-    : '';
-  return `${area}${goal ? `<polyline class="g" points="${goal}"/>` : ''}${tp ? `<polyline class="t" points="${tp}"/>` : ''}`;
 }
 
 function paintTrend() {

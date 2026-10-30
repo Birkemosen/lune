@@ -875,6 +875,25 @@
   .comfort [data-state="blocked"] :is(.id, .val) { color: var(--warn); }
   .comfort [data-state="learning"] :is(.id, .val) { color: var(--violet); }
 
+  /* Zonekort (V6 Hjem): ét kort pr. zone med tal og en lav 24 t-graf (.zc.mini) — temperatur,
+     mål som trappekurve og perioder med varme skraveret. Kortet er en knap, der åbner zonens ark.
+     2 kort pr. række i et c7-panel, 1 på mobil. Tom historik → data-empty: grafen klapper sammen til .empty. */
+  .zcards { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr)); gap: var(--space-3); }
+  .zcard { display: grid; gap: var(--space-2); align-content: start; width: 100%; padding: var(--space-3) var(--space-4); border: 0; border-radius: var(--r-tile); background: var(--raised); color: inherit; font: inherit; text-align: inherit; cursor: pointer; }
+  .zcard:hover { box-shadow: inset 0 0 0 1px var(--border); }
+  .zcard-head { display: flex; align-items: baseline; gap: var(--space-2); min-width: 0; }
+  .zcard .id { font-size: var(--fs-xs); font-weight: 600; color: var(--muted); }
+  .zcard .name { flex: 1; min-width: 0; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .zcard-open { font-size: var(--fs-xs); color: var(--muted); white-space: nowrap; }
+  .zcard .val { font-size: var(--fs-sm); color: var(--muted); white-space: nowrap; }
+  .zcard .val b { font-size: var(--fs-lg); font-weight: 600; color: var(--fg); }
+  .zcard[data-state="fault"] :is(.id, .val) { color: var(--danger); }
+  .zcard[data-state="blocked"] :is(.id, .val) { color: var(--warn); }
+  .zcard[data-state="learning"] :is(.id, .val) { color: var(--violet); }
+  .zc.mini { grid-template-columns: 28px minmax(0, 1fr); row-gap: 4px; }
+  .zc.mini :is(.zc-y, .zc-plot) { height: 72px; }
+  .zc.mini .zc-x span { visibility: visible; }
+
   @container (min-width: 560px) {
     .comfort > :is(label, button) {
       grid-template-columns: 40px minmax(90px, 140px) minmax(0, 1fr) 112px;  /* fast værdikolonne → graferne flugter */
@@ -892,6 +911,9 @@
   /* Fremløb/retur-trend i "Varme nu": fylder panelets bund, så kortet
      står lige så højt som komfortlisten ved siden af uden tom luft */
   .trend-wrap { margin-top: auto; }
+  /* Står panelet ved siden af et højere (fx zonekortene), vokser grafen i stedet for tom luft. */
+  .panel > .trend-wrap:not([data-empty]) { flex: 1 1 auto; display: flex; flex-direction: column; }
+  .panel > .trend-wrap:not([data-empty]) > .trend { flex: 1 1 auto; }
   .trend-wrap h4 { display: flex; align-items: center; }
   .trend { display: block; width: 100%; height: 120px; overflow: visible; }
   .trend .f  { fill: none; stroke: var(--accent); stroke-width: 1.8; vector-effect: non-scaling-stroke; stroke-linejoin: round; }
@@ -1030,6 +1052,7 @@
   .legend i { display: inline-block; width: 14px; height: 0; margin-left: 6px; }
   .legend .lt { border-top: 1.6px solid var(--fg); }
   .legend .lg { border-top: 1px dashed var(--muted); }
+  .legend .lh { width: 14px; height: 10px; border-radius: 2px 2px 0 0; background: repeating-linear-gradient(135deg, color-mix(in srgb, var(--accent) 55%, transparent) 0 1.5px, transparent 1.5px 5px); box-shadow: inset 0 0 0 1px var(--heat-fill); }
   @media (max-width: 599.98px) { .legend { display: none; } }
 
   /* ---- 4.6 Klima-kontrol (Tesla-inspireret) ---------------------------
@@ -1733,6 +1756,19 @@
 <input class="state" type="checkbox" id="theme" aria-label="Skift lyst/mørkt tema">
 
 <div class="app" data-probe-layout="2">
+<!-- LDS: fælles SVG-gradienter og mønstre til grafer (refereres fra CSS med url(#…)). Indsæt én gang pr. side, INDE i .app, så var(--accent) osv. er defineret og følger temaet. -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <defs>
+    <linearGradient id="lds-fade-heat" x1="0" y1="0" x2="0" y2="1"><stop offset="0" style="stop-color: var(--accent); stop-opacity: .5"/><stop offset="1" style="stop-color: var(--accent); stop-opacity: 0"/></linearGradient>
+    <linearGradient id="lds-fade-info" x1="0" y1="0" x2="0" y2="1"><stop offset="0" style="stop-color: var(--data-return); stop-opacity: .45"/><stop offset="1" style="stop-color: var(--data-return); stop-opacity: 0"/></linearGradient>
+    <linearGradient id="lds-fade-light" x1="0" y1="0" x2="0" y2="1"><stop offset="0" style="stop-color: var(--data-light); stop-opacity: .45"/><stop offset="1" style="stop-color: var(--data-light); stop-opacity: 0"/></linearGradient>
+    <linearGradient id="lds-fade-danger" x1="0" y1="0" x2="0" y2="1"><stop offset="0" style="stop-color: var(--danger); stop-opacity: .45"/><stop offset="1" style="stop-color: var(--danger); stop-opacity: 0"/></linearGradient>
+    <pattern id="lds-hatch-heat" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="7" height="7" style="fill: var(--accent); fill-opacity: .06"/><line x1="0" y1="0" x2="0" y2="7" style="stroke: var(--accent); stroke-opacity: .55; stroke-width: 1.5"/></pattern>
+    <!-- Tættere kryds-skravering: anden serie i varme-domænet (fx legionella ved siden af varmt vand). -->
+    <pattern id="lds-hatch-heat-dense" width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="4" height="4" style="fill: var(--accent); fill-opacity: .06"/><line x1="0" y1="0" x2="0" y2="4" style="stroke: var(--accent); stroke-opacity: .6; stroke-width: 1"/><line x1="0" y1="0" x2="4" y2="0" style="stroke: var(--accent); stroke-opacity: .6; stroke-width: 1"/></pattern>
+  </defs>
+</svg>
+
   <div class="navbar-wrap wrap">
       <header class="header">
         <details class="device">
@@ -1875,43 +1911,67 @@
         </section>
 
         <section class="panel c7">
-          <header class="panel-head"><h3>Komfort pr. zone</h3><p>Sidste 24 timer</p><span class="legend" aria-hidden="true"><i class="lt"></i>Temperatur<i class="lg"></i>Mål</span></header>
-          <div class="comfort">
-            <button type="button" popovertarget="sheet-z1" data-state="calling">
-              <span class="id">Z1</span>
-              <span class="name" data-bind="z1.name">Josephine</span>
+          <header class="panel-head"><h3>Komfort pr. zone</h3><p>Sidste 24 timer</p><span class="legend" aria-hidden="true"><i class="lt"></i>Temperatur<i class="lg"></i>Mål<i class="lh"></i>Varme</span></header>
+          <div class="zcards">
+            <button class="zcard" type="button" popovertarget="sheet-z1" data-state="calling" data-empty>
+              <span class="zcard-head"><span class="id">Z1</span><span class="name" data-bind="z1.name">Josephine</span><span class="zcard-open" data-bind="z1.cardOpen"></span></span>
               <span class="val" data-bind="z1.comfort">—</span>
-              <svg class="spark" viewBox="0 0 240 40" preserveAspectRatio="none" aria-hidden="true" data-bind-spark="z1"></svg>
+              <span class="zc mini" aria-hidden="true">
+                <span class="zc-y" data-bind="z1.cardY"><span>—</span><span>—</span><span>—</span></span>
+                <span class="zc-plot"><svg viewBox="0 0 240 100" preserveAspectRatio="none" data-bind-zcard="z1"></svg></span>
+                <span class="zc-x"><span style="left:0">−24 t</span><span style="left:50%">−12 t</span><span class="n" style="left:100%">nu</span></span>
+              </span>
+              <span class="empty">Historikken vises ca. 10 minutter efter en genstart.</span>
             </button>
-            <button type="button" popovertarget="sheet-z2" data-state="idle">
-              <span class="id">Z2</span>
-              <span class="name" data-bind="z2.name">Laura</span>
+            <button class="zcard" type="button" popovertarget="sheet-z2" data-state="idle" data-empty>
+              <span class="zcard-head"><span class="id">Z2</span><span class="name" data-bind="z2.name">Laura</span><span class="zcard-open" data-bind="z2.cardOpen"></span></span>
               <span class="val" data-bind="z2.comfort">—</span>
-              <svg class="spark" viewBox="0 0 240 40" preserveAspectRatio="none" aria-hidden="true" data-bind-spark="z2"></svg>
+              <span class="zc mini" aria-hidden="true">
+                <span class="zc-y" data-bind="z2.cardY"><span>—</span><span>—</span><span>—</span></span>
+                <span class="zc-plot"><svg viewBox="0 0 240 100" preserveAspectRatio="none" data-bind-zcard="z2"></svg></span>
+                <span class="zc-x"><span style="left:0">−24 t</span><span style="left:50%">−12 t</span><span class="n" style="left:100%">nu</span></span>
+              </span>
+              <span class="empty">Historikken vises ca. 10 minutter efter en genstart.</span>
             </button>
-            <button type="button" popovertarget="sheet-z3" data-state="idle">
-              <span class="id">Z3</span>
-              <span class="name" data-bind="z3.name">Toilet</span>
+            <button class="zcard" type="button" popovertarget="sheet-z3" data-state="idle" data-empty>
+              <span class="zcard-head"><span class="id">Z3</span><span class="name" data-bind="z3.name">Toilet</span><span class="zcard-open" data-bind="z3.cardOpen"></span></span>
               <span class="val" data-bind="z3.comfort">—</span>
-              <svg class="spark" viewBox="0 0 240 40" preserveAspectRatio="none" aria-hidden="true" data-bind-spark="z3"></svg>
+              <span class="zc mini" aria-hidden="true">
+                <span class="zc-y" data-bind="z3.cardY"><span>—</span><span>—</span><span>—</span></span>
+                <span class="zc-plot"><svg viewBox="0 0 240 100" preserveAspectRatio="none" data-bind-zcard="z3"></svg></span>
+                <span class="zc-x"><span style="left:0">−24 t</span><span style="left:50%">−12 t</span><span class="n" style="left:100%">nu</span></span>
+              </span>
+              <span class="empty">Historikken vises ca. 10 minutter efter en genstart.</span>
             </button>
-            <button type="button" popovertarget="sheet-z4" data-state="calling">
-              <span class="id">Z4</span>
-              <span class="name" data-bind="z4.name">Stue rum 1</span>
+            <button class="zcard" type="button" popovertarget="sheet-z4" data-state="calling" data-empty>
+              <span class="zcard-head"><span class="id">Z4</span><span class="name" data-bind="z4.name">Stue rum 1</span><span class="zcard-open" data-bind="z4.cardOpen"></span></span>
               <span class="val" data-bind="z4.comfort">—</span>
-              <svg class="spark" viewBox="0 0 240 40" preserveAspectRatio="none" aria-hidden="true" data-bind-spark="z4"></svg>
+              <span class="zc mini" aria-hidden="true">
+                <span class="zc-y" data-bind="z4.cardY"><span>—</span><span>—</span><span>—</span></span>
+                <span class="zc-plot"><svg viewBox="0 0 240 100" preserveAspectRatio="none" data-bind-zcard="z4"></svg></span>
+                <span class="zc-x"><span style="left:0">−24 t</span><span style="left:50%">−12 t</span><span class="n" style="left:100%">nu</span></span>
+              </span>
+              <span class="empty">Historikken vises ca. 10 minutter efter en genstart.</span>
             </button>
-            <button type="button" popovertarget="sheet-z5" data-state="calling">
-              <span class="id">Z5</span>
-              <span class="name" data-bind="z5.name">Stue rum 2</span>
+            <button class="zcard" type="button" popovertarget="sheet-z5" data-state="calling" data-empty>
+              <span class="zcard-head"><span class="id">Z5</span><span class="name" data-bind="z5.name">Stue rum 2</span><span class="zcard-open" data-bind="z5.cardOpen"></span></span>
               <span class="val" data-bind="z5.comfort">—</span>
-              <svg class="spark" viewBox="0 0 240 40" preserveAspectRatio="none" aria-hidden="true" data-bind-spark="z5"></svg>
+              <span class="zc mini" aria-hidden="true">
+                <span class="zc-y" data-bind="z5.cardY"><span>—</span><span>—</span><span>—</span></span>
+                <span class="zc-plot"><svg viewBox="0 0 240 100" preserveAspectRatio="none" data-bind-zcard="z5"></svg></span>
+                <span class="zc-x"><span style="left:0">−24 t</span><span style="left:50%">−12 t</span><span class="n" style="left:100%">nu</span></span>
+              </span>
+              <span class="empty">Historikken vises ca. 10 minutter efter en genstart.</span>
             </button>
-            <button type="button" popovertarget="sheet-z6" data-state="fault">
-              <span class="id">Z6</span>
-              <span class="name" data-bind="z6.name">Soveværelse</span>
+            <button class="zcard" type="button" popovertarget="sheet-z6" data-state="fault" data-empty>
+              <span class="zcard-head"><span class="id">Z6</span><span class="name" data-bind="z6.name">Soveværelse</span><span class="zcard-open" data-bind="z6.cardOpen"></span></span>
               <span class="val" data-bind="z6.comfort">—</span>
-              <svg class="spark" viewBox="0 0 240 40" preserveAspectRatio="none" aria-hidden="true" data-bind-spark="z6"></svg>
+              <span class="zc mini" aria-hidden="true">
+                <span class="zc-y" data-bind="z6.cardY"><span>—</span><span>—</span><span>—</span></span>
+                <span class="zc-plot"><svg viewBox="0 0 240 100" preserveAspectRatio="none" data-bind-zcard="z6"></svg></span>
+                <span class="zc-x"><span style="left:0">−24 t</span><span style="left:50%">−12 t</span><span class="n" style="left:100%">nu</span></span>
+              </span>
+              <span class="empty">Historikken vises ca. 10 minutter efter en genstart.</span>
             </button>
           </div>
         </section>
@@ -2570,7 +2630,7 @@
 </div>
 
 <!-- Strenge til binderen: statusser og beskeder der skrives ved runtime -->
-<script type="application/json" id="i18n">{"zdash.follows":"følger {z}","zdash.primary":"primær i gruppe {g}","zdash.memberNote":"{m} følger {p}. Ret målet dér.","common.open":"Åbn {x}","cz.memberStrong":"Grupperet med {p}.","cz.member":"Mål og tidsplan styres fra {p}; følere og gulv indstilles her.","state.calling":"Kalder varme","state.idle":"Hviler","state.fault":"Motorfejl","state.off":"Ikke i brug","state.learning":"Lærer","state.blocked":"Blokeret","tile.fault":"Fejl","tile.learningPct":"Lærer {pct} %","tile.blocked":"Blokeret","tile.charging":"Lune Touch lader gulvet op","badge.calling":"Kalder","dash.sys.sub":"{zones} zoner · {calling} kalder varme · {faults} fejl","sheet.manifoldStatus":"{flow} / {ret} · ΔT {dt} · {open} åben","hpPhase.running":"Varmepumpen kører (fra Lune Touch): kredsene holder varmepumpeåbningerne, så fremløbet kan være lavt.","hpPhase.prestart":"Varmepumpen starter snart (fra Lune Touch): kredsene åbner, så den starter med fuldt flow.","hpPhase.idle":"Varmepumpen står stille (fra Lune Touch): rum ved eller over målet lukker ned til trim-gulvet; rum under målet får resten af varmen.","cz.learnPhase.home":"Homer til sæde","cz.learnPhase.open":"Åbner","cz.learnPhase.close":"Lukker","cz.learnPhase.pass":"{phase} · prøve {sample}/{need}","cz.bleAssign":"Tildel","cz.bleAssigned":"Zone {z}","cz.bleSeen":"Nærliggende sensorer","cz.bleSeenEmpty":"Ingen BTHome-sensorer i nærheden","cz.bleScanning":"Scanner…","cz.scan":"Scan","common.days":"dage","common.hours":"timer","common.minutes":"min","common.none":"Ingen","common.learned":"Lært","common.notLearned":"Ikke lært","rt.savedOk":"Gemt","rt.saveFailed":"Kunne ikke gemme. Tjek forbindelsen til enheden.","rt.saving":"Gemmer…","rt.unsaved.one":"{n} ændring ikke gemt","rt.unsaved.other":"{n} ændringer ikke gemt","rt.nothingToSave":"Ingen ændringer at gemme","rt.leaveUnsaved":"Du har ugemte ændringer.","rt.autoSaving":"Gemmer…","rt.autoSaved":"Gemt","rt.autoFailed":"Ikke gemt – prøv igen","rt.retry":"Prøv igen","rt.secondsAgo":"{v} s siden","rt.minutesAgo":"{v} min siden","device.copied":"Kopieret","device.this":"denne enhed","alert.zoneFault":"{zone} har motorfejl","bal.adaptive":"Adaptiv","bal.static":"Statisk","fault.blocked":"Motoren gik i stå","fault.blocked.body":"Motoren stoppede under belastning, før den nåede endestop. Ofte sidder ventilstiften fast, eller aktuatoren sidder skævt.","fault.mechanical_overrun":"Motoren fandt ikke endestop","fault.mechanical_overrun.body":"Motoren kørte længere end sin vandring uden at mærke endestop. Aktuatoren sidder måske ikke helt nede på ventilen.","fault.unknown":"Fejlsignal fra motordriveren","fault.unknown.body":"Driveren meldte overstrøm, mens motoren kørte. Det sker oftest, når motoren skal rive sig løs. De andre motorer kører videre.","fault.open_circuit":"Ingen forbindelse til motoren","fault.open_circuit.body":"Motoren trækker ingen strøm. Tjek kablet og stikket.","fault.overcurrent":"For høj strøm i motoren","fault.overcurrent.body":"Motoren trak mere strøm end tilladt. Tjek, at ventilstiften kan bevæge sig frit.","fault.thermal":"Motordriveren blev for varm","fault.thermal.body":"Driveren slog fra for at beskytte sig selv. Vent et par minutter, og tjek at motoren ikke kører fast.","fault.timeout":"Motoren nåede ikke endestop i tide","fault.timeout.body":"Motoren nåede ikke endestop inden for den tilladte tid. Tjek aktuatoren.","fault.stall":"Motoren gik i stå","fault.stall.body":"Motoren stoppede uventet. Tjek, at ventilstiften kan bevæge sig frit.","alert.driversOffBody":"Ventilerne flyttes ikke, så rummene får ikke den varme, de beder om. Årsag: {reason}. V6 prøver selv at slå dem til igen.","drv.reason.fault":"fejlsignal fra motordriveren","drv.reason.ota":"en opdatering, der ikke blev færdig","drv.reason.arm":"motordriveren kunne ikke aktiveres","drv.reason.boot":"de blev ikke aktiveret ved opstart","drv.reason.user":"de er slået fra manuelt","dev.online":"Online","dev.offline":"Offline","zdash.preload":"målet hæves {offset} °C.","zdash.preloadUntil":"målet hæves {offset} °C · {remaining} tilbage.","src.ble":"BLE-sensor","src.probe":"Lokal probe","csys.touchWaiting":"Afventer","csys.touchWaitingBody":"Tilføj denne manifold i Lune Touch. Dens identitet vises her automatisk.","csys.touchApproved":"Godkendt","csys.touchPending":"Forbinder","csys.touchControls":"Styrer denne V6","csys.touchReady":"{name} er klar til at forbinde","csys.touchLeaseLost":"Lease udløbet – V6 styrer lokalt. Touch' midlertidige ændringer er ryddet.","zchart.expected":"Forventet kl. {time}","zchart.at":"Kl. {time}","zchart.noForecast":"Ingen fremskrivning endnu","zchart.faultStrong":"Fremskrivningen antager, at motorfejlen fortsætter.","wifi.connectedTo":"Forbundet","wifi.notConnected":"Ikke forbundet","wifi.apActive":"Opsætningsnettet “Lune V6 Setup” er tændt","wifi.sent":"Skifter netværk … siden kan miste forbindelsen et øjeblik.","wifi.needSsid":"Skriv netværksnavnet","wifi.busy":"Et netværksskift er allerede i gang","wifi.switch.pending":"Skifter til {ssid} …","wifi.switch.connected":"Forbundet til {ssid}","wifi.switch.reverted":"{ssid} forbandt ikke – tilbage på det forrige net","wifi.switch.failed":"{ssid} forbandt ikke","_dec":",","_lang":"da"}</script>
+<script type="application/json" id="i18n">{"zdash.follows":"følger {z}","zdash.primary":"primær i gruppe {g}","zdash.memberNote":"{m} følger {p}. Ret målet dér.","common.open":"Åbn {x}","cz.memberStrong":"Grupperet med {p}.","cz.member":"Mål og tidsplan styres fra {p}; følere og gulv indstilles her.","state.calling":"Kalder varme","state.idle":"Hviler","state.fault":"Motorfejl","state.off":"Ikke i brug","state.learning":"Lærer","state.blocked":"Blokeret","tile.fault":"Fejl","tile.learningPct":"Lærer {pct} %","tile.blocked":"Blokeret","tile.charging":"Lune Touch lader gulvet op","badge.calling":"Kalder","dash.sys.sub":"{zones} zoner · {calling} kalder varme · {faults} fejl","sheet.manifoldStatus":"{flow} / {ret} · ΔT {dt} · {open} åben","hpPhase.running":"Varmepumpen kører (fra Lune Touch): kredsene holder varmepumpeåbningerne, så fremløbet kan være lavt.","hpPhase.prestart":"Varmepumpen starter snart (fra Lune Touch): kredsene åbner, så den starter med fuldt flow.","hpPhase.idle":"Varmepumpen står stille (fra Lune Touch): rum ved eller over målet lukker ned til trim-gulvet; rum under målet får resten af varmen.","cz.learnPhase.home":"Homer til sæde","cz.learnPhase.open":"Åbner","cz.learnPhase.close":"Lukker","cz.learnPhase.pass":"{phase} · prøve {sample}/{need}","cz.bleAssign":"Tildel","cz.bleAssigned":"Zone {z}","cz.bleSeen":"Nærliggende sensorer","cz.bleSeenEmpty":"Ingen BTHome-sensorer i nærheden","cz.bleScanning":"Scanner…","cz.scan":"Scan","common.days":"dage","common.hours":"timer","common.minutes":"min","common.none":"Ingen","common.learned":"Lært","common.notLearned":"Ikke lært","rt.savedOk":"Gemt","rt.saveFailed":"Kunne ikke gemme. Tjek forbindelsen til enheden.","rt.saving":"Gemmer…","rt.unsaved.one":"{n} ændring ikke gemt","rt.unsaved.other":"{n} ændringer ikke gemt","rt.nothingToSave":"Ingen ændringer at gemme","rt.leaveUnsaved":"Du har ugemte ændringer.","rt.autoSaving":"Gemmer…","rt.autoSaved":"Gemt","rt.autoFailed":"Ikke gemt – prøv igen","rt.retry":"Prøv igen","rt.secondsAgo":"{v} s siden","rt.minutesAgo":"{v} min siden","device.copied":"Kopieret","device.this":"denne enhed","alert.zoneFault":"{zone} har motorfejl","bal.adaptive":"Adaptiv","bal.static":"Statisk","fault.blocked":"Motoren gik i stå","fault.blocked.body":"Motoren stoppede under belastning, før den nåede endestop. Ofte sidder ventilstiften fast, eller aktuatoren sidder skævt.","fault.mechanical_overrun":"Motoren fandt ikke endestop","fault.mechanical_overrun.body":"Motoren kørte længere end sin vandring uden at mærke endestop. Aktuatoren sidder måske ikke helt nede på ventilen.","fault.unknown":"Fejlsignal fra motordriveren","fault.unknown.body":"Driveren meldte overstrøm, mens motoren kørte. Det sker oftest, når motoren skal rive sig løs. De andre motorer kører videre.","fault.open_circuit":"Ingen forbindelse til motoren","fault.open_circuit.body":"Motoren trækker ingen strøm. Tjek kablet og stikket.","fault.overcurrent":"For høj strøm i motoren","fault.overcurrent.body":"Motoren trak mere strøm end tilladt. Tjek, at ventilstiften kan bevæge sig frit.","fault.thermal":"Motordriveren blev for varm","fault.thermal.body":"Driveren slog fra for at beskytte sig selv. Vent et par minutter, og tjek at motoren ikke kører fast.","fault.timeout":"Motoren nåede ikke endestop i tide","fault.timeout.body":"Motoren nåede ikke endestop inden for den tilladte tid. Tjek aktuatoren.","fault.stall":"Motoren gik i stå","fault.stall.body":"Motoren stoppede uventet. Tjek, at ventilstiften kan bevæge sig frit.","alert.driversOffBody":"Ventilerne flyttes ikke, så rummene får ikke den varme, de beder om. Årsag: {reason}. V6 prøver selv at slå dem til igen.","drv.reason.fault":"fejlsignal fra motordriveren","drv.reason.ota":"en opdatering, der ikke blev færdig","drv.reason.arm":"motordriveren kunne ikke aktiveres","drv.reason.boot":"de blev ikke aktiveret ved opstart","drv.reason.user":"de er slået fra manuelt","dev.online":"Online","dev.offline":"Offline","zdash.preload":"målet hæves {offset} °C.","zdash.preloadUntil":"målet hæves {offset} °C · {remaining} tilbage.","src.ble":"BLE-sensor","src.probe":"Lokal probe","csys.touchWaiting":"Afventer","csys.touchWaitingBody":"Tilføj denne manifold i Lune Touch. Dens identitet vises her automatisk.","csys.touchApproved":"Godkendt","csys.touchPending":"Forbinder","csys.touchControls":"Styrer denne V6","csys.touchReady":"{name} er klar til at forbinde","csys.touchLeaseLost":"Lease udløbet – V6 styrer lokalt. Touch' midlertidige ændringer er ryddet.","zchart.expected":"Forventet kl. {time}","zchart.at":"Kl. {time}","zchart.noForecast":"Ingen fremskrivning endnu","zchart.faultStrong":"Fremskrivningen antager, at motorfejlen fortsætter.","zcard.open":"åben {pct} %","wifi.connectedTo":"Forbundet","wifi.notConnected":"Ikke forbundet","wifi.apActive":"Opsætningsnettet “Lune V6 Setup” er tændt","wifi.sent":"Skifter netværk … siden kan miste forbindelsen et øjeblik.","wifi.needSsid":"Skriv netværksnavnet","wifi.busy":"Et netværksskift er allerede i gang","wifi.switch.pending":"Skifter til {ssid} …","wifi.switch.connected":"Forbundet til {ssid}","wifi.switch.reverted":"{ssid} forbandt ikke – tilbage på det forrige net","wifi.switch.failed":"{ssid} forbandt ikke","_dec":",","_lang":"da"}</script>
 
 <!-- JavaScript: /binder.js (live data, gem, lune-forms.js fra LDS og +/−, hjælp, filnavn) -->
 <script>window.LV6_DASHBOARD_CONFIG={mock:true};</script>
