@@ -460,7 +460,8 @@ function paintStrip() {
   for (let z = 1; z <= 6; z++) {
     const st = zoneState(z);
     if (st === 'calling') calling += 1;
-    if (st === 'fault') faults += 1;
+    // Blocked holds the valve closed too: it needs the same reset, so it counts as a fault.
+    if (st === 'fault' || st === 'blocked') faults += 1;
     const tile = zoneTile(z);
     const needsLearn = zoneNeedsLearning(z);
     if (tile) {
@@ -579,7 +580,7 @@ function paintStrip() {
   for (let z = 1; z <= 6; z++) {
     const v = toNum(ev(key.valve(z)));
     if (Number.isFinite(v)) { totalOpen += v; openCount += 1; }
-    if (!firstFault && zoneState(z) === 'fault') firstFault = z;
+    if (!firstFault && ['fault', 'blocked'].includes(zoneState(z))) firstFault = z;
   }
   const openingPct = openCount ? Math.round(totalOpen / 6) : NaN;
   setBind('manifold.opening', withUnit(openingPct, '%', 0));

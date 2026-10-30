@@ -140,7 +140,7 @@ zone's Overview shows what happened in plain words and a short guide:
 
 **Before you reset**: the actuator sits fully down and straight on the valve, the cable is
 fully in its socket, and the valve pin can move. Then look at the valve and choose
-**The valve is**: *Closed*, *In between*, *Open* or *Not sure*. On a normally open (NO)
+**The valve is**: *Closed*, *Middle*, *Open* or *Not sure*. On a normally open (NO)
 manifold the valve is closed when the plunger is pressed down.
 
 **Did the motor run too far?** If the motor pushed the plunger past the seat (*found no end
@@ -155,7 +155,7 @@ The choice is used when you press **Reset fault**:
 - **Closed** or **Open** — V6 takes that as its known position. The next move runs from
   there without first driving to the end stop, so a motor that is already seated does not
   have to push against the seat again.
-- **In between** or **Not sure** — V6 re-homes towards closed before the next move, as it
+- **Middle** or **Not sure** — V6 re-homes towards closed before the next move, as it
   does after any fault.
 
 A fault that clears by itself is not shown again: the first clean move after a reset (or
