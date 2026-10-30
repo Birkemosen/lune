@@ -34,6 +34,8 @@ LDS_ROOT = next((c for c in (
     ROOT.parents[1] / "lune-design-system",
     pathlib.Path.home() / "workspace/github.com/birkemosen/lune-design-system",
 ) if (c / "tools/lds_build.py").exists()), None)
+# Fælles SVG-mønstre (skravering, glød) til graferne; refereres fra CSS med url(#lds-…).
+LDS_DEFS = (LDS_ROOT / "css" / "lds-svg-defs.html").read_text(encoding="utf-8") if LDS_ROOT else ""
 
 # ---------------------------------------------------------------- katalog --
 class Cat:
@@ -210,12 +212,17 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
           </div>'''
 
     # ---- Hjem (DESIGN.md 15.7): statuslinje, fejl, Varme nu, Komfort pr. zone. Ingen gem-knapper.
+    # Zonekort: tal + 24 t-graf (temperatur, mål, varme). Binderen tegner grafen og y-aksen.
     comfort="".join(f'''
-            <button type="button" popovertarget="sheet-z{z[0]}" data-state="{z[4]}">
-              <span class="id">{rid(z)}</span>
-              <span class="name" data-bind="z{z[0]}.name">{z[1]}</span>
+            <button class="zcard" type="button" popovertarget="sheet-z{z[0]}" data-state="{z[4]}" data-empty>
+              <span class="zcard-head"><span class="id">{rid(z)}</span><span class="name" data-bind="z{z[0]}.name">{z[1]}</span><span class="zcard-open" data-bind="z{z[0]}.cardOpen"></span></span>
               <span class="val" data-bind="z{z[0]}.comfort">—</span>
-              <svg class="spark" viewBox="0 0 240 40" preserveAspectRatio="none" aria-hidden="true" data-bind-spark="z{z[0]}"></svg>
+              <span class="zc mini" aria-hidden="true">
+                <span class="zc-y" data-bind="z{z[0]}.cardY"><span>—</span><span>—</span><span>—</span></span>
+                <span class="zc-plot"><svg viewBox="0 0 240 100" preserveAspectRatio="none" data-bind-zcard="z{z[0]}"></svg></span>
+                <span class="zc-x"><span style="left:0">−24 {H}</span><span style="left:50%">−12 {H}</span><span class="n" style="left:100%">{T("trend.now")}</span></span>
+              </span>
+              <span class="empty">{T("zcard.empty")}</span>
             </button>''' for z in Z)
     home=f'''
       <section class="view" id="v-home-sys" aria-labelledby="h-home">
@@ -241,8 +248,8 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
         </section>
 
         <section class="panel c7">
-          <header class="panel-head"><h3>{T("comfort.title")}</h3><p>{T("trend.title")}</p><span class="legend" aria-hidden="true"><i class="lt"></i>{T("legend.temp")}<i class="lg"></i>{T("legend.target")}</span></header>
-          <div class="comfort">{comfort}
+          <header class="panel-head"><h3>{T("comfort.title")}</h3><p>{T("trend.title")}</p><span class="legend" aria-hidden="true"><i class="lt"></i>{T("legend.temp")}<i class="lg"></i>{T("legend.target")}<i class="lh"></i>{T("legend.heating")}</span></header>
+          <div class="zcards">{comfort}
           </div>
         </section>
       </section>'''
@@ -599,7 +606,7 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
              "alert.driversOffBody","drv.reason.fault","drv.reason.ota","drv.reason.arm","drv.reason.boot","drv.reason.user","dev.online","dev.offline",
              "zdash.preload","zdash.preloadUntil","src.ble","src.probe",
              "csys.touchWaiting","csys.touchWaitingBody","csys.touchApproved","csys.touchPending","csys.touchControls","csys.touchReady","csys.touchLeaseLost",
-             "zchart.expected","zchart.at","zchart.noForecast","zchart.faultStrong",
+             "zchart.expected","zchart.at","zchart.noForecast","zchart.faultStrong","zcard.open",
              "wifi.connectedTo","wifi.notConnected","wifi.apActive","wifi.sent","wifi.needSsid","wifi.busy",
              "wifi.switch.pending","wifi.switch.connected","wifi.switch.reverted","wifi.switch.failed")
     rt={k:T(k) for k in rt_keys}
@@ -633,6 +640,7 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
 <input class="state" type="checkbox" id="theme" aria-label="{T("theme.toggle")}">
 
 <div class="app" data-probe-layout="2">
+{LDS_DEFS}
   <div class="navbar-wrap wrap">
       <header class="header">
         <details class="device">
