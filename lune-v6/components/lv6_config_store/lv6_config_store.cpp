@@ -565,14 +565,17 @@ bool Lv6ConfigStore::load_motor_positions(float *pos, size_t count) {
   return err == ESP_OK && size == count * sizeof(float);
 }
 
-void Lv6ConfigStore::save_valve_curves(const float *start, const float *full) {
-  if (start == nullptr || full == nullptr)
+void Lv6ConfigStore::save_valve_curves(const float *start, const float *full,
+                                       const uint32_t *measured_epoch_s) {
+  if (start == nullptr || full == nullptr || measured_epoch_s == nullptr)
     return;
-  uint8_t blob[sizeof(uint32_t) + 2 * NUM_ZONES * sizeof(float)];
+  constexpr size_t F = NUM_ZONES * sizeof(float);
+  uint8_t blob[sizeof(uint32_t) + 2 * F + NUM_ZONES * sizeof(uint32_t)];
   const uint32_t version = VALVE_CURVE_VERSION;
   std::memcpy(blob, &version, sizeof(uint32_t));
-  std::memcpy(blob + sizeof(uint32_t), start, NUM_ZONES * sizeof(float));
-  std::memcpy(blob + sizeof(uint32_t) + NUM_ZONES * sizeof(float), full, NUM_ZONES * sizeof(float));
+  std::memcpy(blob + sizeof(uint32_t), start, F);
+  std::memcpy(blob + sizeof(uint32_t) + F, full, F);
+  std::memcpy(blob + sizeof(uint32_t) + 2 * F, measured_epoch_s, NUM_ZONES * sizeof(uint32_t));
   nvs_handle_t handle;
   if (nvs_open(NVS_NAMESPACE, NVS_READWRITE, &handle) != ESP_OK)
     return;
@@ -581,10 +584,11 @@ void Lv6ConfigStore::save_valve_curves(const float *start, const float *full) {
   nvs_close(handle);
 }
 
-bool Lv6ConfigStore::load_valve_curves(float *start, float *full) {
-  if (start == nullptr || full == nullptr)
+bool Lv6ConfigStore::load_valve_curves(float *start, float *full, uint32_t *measured_epoch_s) {
+  if (start == nullptr || full == nullptr || measured_epoch_s == nullptr)
     return false;
-  uint8_t blob[sizeof(uint32_t) + 2 * NUM_ZONES * sizeof(float)];
+  constexpr size_t F = NUM_ZONES * sizeof(float);
+  uint8_t blob[sizeof(uint32_t) + 2 * F + NUM_ZONES * sizeof(uint32_t)];
   size_t size = sizeof(blob);
   nvs_handle_t handle;
   if (nvs_open(NVS_NAMESPACE, NVS_READONLY, &handle) != ESP_OK)
@@ -597,8 +601,9 @@ bool Lv6ConfigStore::load_valve_curves(float *start, float *full) {
   std::memcpy(&version, blob, sizeof(uint32_t));
   if (version != VALVE_CURVE_VERSION)
     return false;
-  std::memcpy(start, blob + sizeof(uint32_t), NUM_ZONES * sizeof(float));
-  std::memcpy(full, blob + sizeof(uint32_t) + NUM_ZONES * sizeof(float), NUM_ZONES * sizeof(float));
+  std::memcpy(start, blob + sizeof(uint32_t), F);
+  std::memcpy(full, blob + sizeof(uint32_t) + F, F);
+  std::memcpy(measured_epoch_s, blob + sizeof(uint32_t) + 2 * F, NUM_ZONES * sizeof(uint32_t));
   return true;
 }
 

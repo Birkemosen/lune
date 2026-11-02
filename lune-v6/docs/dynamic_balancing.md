@@ -91,7 +91,12 @@ The curves are stored in their own NVS key (`vcurve`) and shown per zone in
 and/or `full_pct` sets one (web UI write gate, or Touch's authority key).
 
 Learning the curves needs the circulation pump's flow, which only Touch sees (and both
-manifolds share the pump), so Touch learns them and writes them here.
+manifolds share the pump), so Touch measures them and writes them here with the time
+(`measured_epoch_s`; a manual change clears it). For the measurement Touch uses
+`POST /api/v1/valve-test` (authority key): `zone` 1..6 goes to `position_pct`, every other
+loop holds the position it had when the test began (`zone` 0 = hold only), the deadband
+is bypassed and adaptive balancing pauses. It ends after `ttl_s` (30..900) or with
+`POST /api/v1/valve-test/stop`. Touch's side: `lune-coordinator`, `valve_probe.h`.
 
 ### Heat demand for Touch
 

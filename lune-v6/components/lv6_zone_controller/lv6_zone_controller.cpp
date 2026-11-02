@@ -88,9 +88,12 @@ void Lv6ZoneController::setup() {
   }
   if (config_store_) {
     float start[NUM_ZONES], full[NUM_ZONES];
-    if (config_store_->load_valve_curves(start, full)) {
-      for (uint8_t i = 0; i < NUM_ZONES; i++)
+    uint32_t measured[NUM_ZONES];
+    if (config_store_->load_valve_curves(start, full, measured)) {
+      for (uint8_t i = 0; i < NUM_ZONES; i++) {
         valve_curve_[i] = valve_curve::sanitize({start[i], full[i]});
+        valve_curve_measured_[i] = measured[i];
+      }
     }
   }
   preheat_episode_active_.fill(false);
@@ -1582,6 +1585,9 @@ void Lv6ZoneController::run_cycle_() {
       // Minimum-flow overrides force openings unrelated to demand.
       if (min_total_triggered)
         continue;
+      // A valve test holds positions unrelated to demand.
+      if (valve_test_active())
+        continue;
       // Eligible — fold the relative control error into the long-window EMA.
       accumulate_balance_error_(i, zone_setpoints[i] - temp, cfg.balancing.adapt_error_window_s);
     }
@@ -1592,6 +1598,33 @@ void Lv6ZoneController::run_cycle_() {
       snapshots_[i].adapt_err_ema = (adapt_samples_[i] > 0) ? adapt_err_ema_[i] : NAN;
     xSemaphoreGive(snapshot_mutex_);
     update_adaptive_balance_(cfg);
+  }
+
+  // Valve test: every loop holds, the test loop goes where Touch asks (valve-curve
+  // measurement from the pump's flow). Bypasses the deadband so small steps land.
+  bool valve_test = false;
+  {
+    const uint32_t now_ms = esphome::millis();
+    xSemaphoreTake(snapshot_mutex_, portMAX_DELAY);
+    if (valve_test_.active && static_cast<int32_t>(now_ms - valve_test_.until_ms) >= 0) {
+      valve_test_.active = false;
+      ESP_LOGI(TAG, "Valve test ended (TTL)");
+    }
+    if (valve_test_.active) {
+      if (!valve_test_.captured) {
+        for (uint8_t i = 0; i < NUM_ZONES; i++)
+          valve_test_.hold[i] = valve_controller_->get_position(i);
+        valve_test_.captured = true;
+      }
+      for (uint8_t i = 0; i < NUM_ZONES; i++)
+        target_positions[i] = valve_test_.hold[i];
+      if (valve_test_.zone >= 0 && valve_test_.zone < static_cast<int8_t>(NUM_ZONES))
+        target_positions[valve_test_.zone] = valve_test_.position_pct;
+      for (uint8_t i = 0; i < NUM_ZONES; i++)
+        snapshots_[i].valve_position_pct = target_positions[i];
+      valve_test = true;
+    }
+    xSemaphoreGive(snapshot_mutex_);
   }
 
   for (uint8_t i = 0; i < NUM_ZONES; i++) {
@@ -1614,7 +1647,7 @@ void Lv6ZoneController::run_cycle_() {
     // min_movement_pct suppresses normal control chatter.  It must not suppress
     // a safety-flow correction: a 3% correction toward a 15% floor still needs
     // to reach the valve even though the ordinary movement deadband is 5%.
-    if (diff >= cfg.control.min_movement_pct || below_safety_floor)
+    if (diff >= cfg.control.min_movement_pct || below_safety_floor || (valve_test && diff >= 0.5f))
       valve_controller_->request_position(i, target_positions[i]);
   }
 }
@@ -2258,22 +2291,70 @@ float Lv6ZoneController::get_house_balance(uint8_t zone) const {
   return house_balance_[zone];
 }
 
-void Lv6ZoneController::set_valve_curve(uint8_t zone, valve_curve::Curve curve) {
+void Lv6ZoneController::set_valve_curve(uint8_t zone, valve_curve::Curve curve, uint32_t measured_epoch_s) {
   if (zone >= NUM_ZONES || snapshot_mutex_ == nullptr)
     return;
   curve = valve_curve::sanitize(curve);
   float start[NUM_ZONES], full[NUM_ZONES];
+  uint32_t measured[NUM_ZONES];
   xSemaphoreTake(snapshot_mutex_, portMAX_DELAY);
   valve_curve_[zone] = curve;
+  valve_curve_measured_[zone] = measured_epoch_s;
   for (uint8_t i = 0; i < NUM_ZONES; i++) {
     start[i] = valve_curve_[i].start_pct;
     full[i] = valve_curve_[i].full_pct;
+    measured[i] = valve_curve_measured_[i];
   }
   xSemaphoreGive(snapshot_mutex_);
   if (config_store_)
-    config_store_->save_valve_curves(start, full);
+    config_store_->save_valve_curves(start, full, measured);
   ESP_LOGI(TAG, "Zone %u valve curve: flow from %.0f %%, full at %.0f %%", zone + 1, curve.start_pct,
            curve.full_pct);
+}
+
+void Lv6ZoneController::set_valve_test(int8_t zone, float position_pct, uint32_t ttl_ms) {
+  if (snapshot_mutex_ == nullptr)
+    return;
+  xSemaphoreTake(snapshot_mutex_, portMAX_DELAY);
+  if (!valve_test_.active)
+    valve_test_.captured = false;
+  valve_test_.active = true;
+  valve_test_.zone = zone >= 0 && zone < static_cast<int8_t>(NUM_ZONES) ? zone : -1;
+  valve_test_.position_pct = std::clamp(position_pct, 0.0f, 100.0f);
+  const uint32_t until = esphome::millis() + ttl_ms;
+  valve_test_.until_ms = until == 0 ? 1 : until;
+  xSemaphoreGive(snapshot_mutex_);
+  ESP_LOGI(TAG, "Valve test: zone %d → %.0f %%, others hold, %" PRIu32 " s", zone + 1, position_pct,
+           ttl_ms / 1000);
+}
+
+void Lv6ZoneController::clear_valve_test() {
+  if (snapshot_mutex_ == nullptr)
+    return;
+  xSemaphoreTake(snapshot_mutex_, portMAX_DELAY);
+  const bool was = valve_test_.active;
+  valve_test_.active = false;
+  xSemaphoreGive(snapshot_mutex_);
+  if (was)
+    ESP_LOGI(TAG, "Valve test stopped");
+}
+
+uint32_t Lv6ZoneController::get_valve_curve_measured(uint8_t zone) const {
+  if (zone >= NUM_ZONES || snapshot_mutex_ == nullptr)
+    return 0;
+  xSemaphoreTake(snapshot_mutex_, portMAX_DELAY);
+  const uint32_t m = valve_curve_measured_[zone];
+  xSemaphoreGive(snapshot_mutex_);
+  return m;
+}
+
+bool Lv6ZoneController::valve_test_active() const {
+  if (snapshot_mutex_ == nullptr)
+    return false;
+  xSemaphoreTake(snapshot_mutex_, portMAX_DELAY);
+  const bool active = valve_test_.active;
+  xSemaphoreGive(snapshot_mutex_);
+  return active;
 }
 
 valve_curve::Curve Lv6ZoneController::get_valve_curve(uint8_t zone) const {

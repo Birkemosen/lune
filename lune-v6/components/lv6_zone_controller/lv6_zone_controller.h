@@ -238,9 +238,16 @@ class Lv6ZoneController : public esphome::Component {
   static const char *hp_phase_name(HpPhase phase);
   float get_house_balance(uint8_t zone) const;
   /// Valve curve (opening where flow starts / is full) used by dynamic balancing.
-  /// Persisted; sanitised (valve_curve::sanitize).
-  void set_valve_curve(uint8_t zone, valve_curve::Curve curve);
+  /// Persisted with when Touch measured it (0 = not measured); sanitised.
+  void set_valve_curve(uint8_t zone, valve_curve::Curve curve, uint32_t measured_epoch_s);
   valve_curve::Curve get_valve_curve(uint8_t zone) const;
+  uint32_t get_valve_curve_measured(uint8_t zone) const;
+  /// Valve test (Touch measures valve curves from the pump's flow): every loop holds
+  /// the position it has when the test starts; `zone` (0..5, or −1 = hold only)
+  /// goes to `position_pct`. Ends after ttl_ms or clear_valve_test().
+  void set_valve_test(int8_t zone, float position_pct, uint32_t ttl_ms);
+  void clear_valve_test();
+  bool valve_test_active() const;
   uint8_t get_absorb_capacity_rank(uint8_t zone) const;
   /// Relative Kv at opening percent for Motor lab / diagnostics.
   float get_relative_kv(uint8_t zone, float opening_pct) const;
@@ -315,6 +322,16 @@ class Lv6ZoneController : public esphome::Component {
   std::array<float, NUM_ZONES> house_balance_{1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f};
   std::array<uint32_t, NUM_ZONES> house_balance_until_ms_{};
   std::array<valve_curve::Curve, NUM_ZONES> valve_curve_{};  // guarded by snapshot_mutex_
+  std::array<uint32_t, NUM_ZONES> valve_curve_measured_{};    // guarded by snapshot_mutex_
+  struct ValveTest {
+    bool active{false};
+    bool captured{false};  ///< hold positions taken
+    int8_t zone{-1};
+    float position_pct{0.0f};
+    uint32_t until_ms{0};
+    std::array<float, NUM_ZONES> hold{};
+  };
+  ValveTest valve_test_{};  // guarded by snapshot_mutex_
   HpPhase hp_phase_{HpPhase::UNKNOWN};
   // «Close above target» latch per zone (hp_close_above_c; reopens 0.2 °C below).
   std::array<bool, NUM_ZONES> hp_closed_{};
