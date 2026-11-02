@@ -9,6 +9,7 @@ export const key = {
   coordinatorRemaining: (zone) => 'sensor-zone_' + zone + '_coordinator_remaining_s',
   climate: (zone) => 'climate-zone_' + zone,
   valve: (zone) => 'sensor-zone_' + zone + '_valve_pct',
+  flow: (zone) => 'sensor-zone_' + zone + '_flow_pct',
   state: (zone) => 'text_sensor-zone_' + zone + '_state',
   enabled: (zone) => 'switch-zone_' + zone + '_enabled',
   probe: (zone) => 'select-zone_' + zone + '_probe',

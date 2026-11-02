@@ -37,6 +37,8 @@ namespace lv6 {
 
 static const char *const TAG = "lv6_zone_ctrl";
 static constexpr float ALPHA_TOP = 10.8f;  // W/(m²·K) convective+radiative at floor
+/// Heat pump: smallest change in a loop's relative flow that moves its valve.
+static constexpr float HP_FLOW_DEADBAND = 0.10f;
 
 // =============================================================================
 // ESPHome Lifecycle
@@ -1600,6 +1602,11 @@ void Lv6ZoneController::run_cycle_() {
     update_adaptive_balance_(cfg);
   }
 
+  std::array<valve_curve::Curve, NUM_ZONES> curves;
+  xSemaphoreTake(snapshot_mutex_, portMAX_DELAY);
+  curves = valve_curve_;
+  xSemaphoreGive(snapshot_mutex_);
+
   // Valve test: every loop holds, the test loop goes where Touch asks (valve-curve
   // measurement from the pump's flow). Bypasses the deadband so small steps land.
   bool valve_test = false;
@@ -1647,7 +1654,16 @@ void Lv6ZoneController::run_cycle_() {
     // min_movement_pct suppresses normal control chatter.  It must not suppress
     // a safety-flow correction: a 3% correction toward a 15% floor still needs
     // to reach the valve even though the ordinary movement deadband is 5%.
-    if (diff >= cfg.control.min_movement_pct || below_safety_floor || (valve_test && diff >= 0.5f))
+    // Heat pump: the valve curve is steep (full flow within ~15 points of travel),
+    // so a change of 10 % of the loop's flow moves the valve even when the travel
+    // is below the deadband (e.g. 17 → 19 % takes a loop from no flow to some).
+    bool flow_step = false;
+    if (hp_law) {
+      const float dq = valve_curve::flow_fraction(target_positions[i], curves[i]) -
+                       valve_curve::flow_fraction(current_pos, curves[i]);
+      flow_step = std::fabs(dq) >= HP_FLOW_DEADBAND && diff >= 0.5f;
+    }
+    if (diff >= cfg.control.min_movement_pct || below_safety_floor || flow_step || (valve_test && diff >= 0.5f))
       valve_controller_->request_position(i, target_positions[i]);
   }
 }

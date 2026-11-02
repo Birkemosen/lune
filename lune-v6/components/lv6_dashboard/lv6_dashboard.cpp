@@ -641,6 +641,9 @@ void LV6Dashboard::update_snapshot_() {
         s.zone_valve_curve_start_pct[i] = vc.start_pct;
         s.zone_valve_curve_full_pct[i] = vc.full_pct;
         s.zone_valve_curve_measured[i] = this->zone_controller_->get_valve_curve_measured(i);
+        s.zone_flow_pct[i] = std::isfinite(s.zone_valve_pct[i])
+                                 ? 100.0f * lv6::valve_curve::flow_fraction(s.zone_valve_pct[i], vc)
+                                 : NAN;
         s.zone_absorb_capacity_rank[i] = this->zone_controller_->get_absorb_capacity_rank(i);
         s.zone_relative_kv[i] =
             this->zone_controller_->get_relative_kv(i, s.zone_valve_pct[i]);
@@ -654,6 +657,7 @@ void LV6Dashboard::update_snapshot_() {
         s.zone_valve_curve_start_pct[i] = NAN;
         s.zone_valve_curve_full_pct[i] = NAN;
         s.zone_valve_curve_measured[i] = 0;
+        s.zone_flow_pct[i] = NAN;
         s.zone_absorb_capacity_rank[i] = 0;
         s.zone_relative_kv[i] = NAN;
         s.zone_static_factor[i] = NAN;
@@ -1595,6 +1599,16 @@ void LV6Dashboard::handle_state_(AsyncWebServerRequest *request) {
     if (!append( "\"%s\":{\"value\":%s},", ZONE_VALVE_KEYS[i], num_buf)) return;
   }
 
+  // --- relative loop flow through the valve curve (0 decimals) ---
+  static const char *const ZONE_FLOW_KEYS[6] = {
+    "sensor-zone_1_flow_pct", "sensor-zone_2_flow_pct", "sensor-zone_3_flow_pct",
+    "sensor-zone_4_flow_pct", "sensor-zone_5_flow_pct", "sensor-zone_6_flow_pct",
+  };
+  for (uint8_t i = 0; i < 6; i++) {
+    format_float_token(num_buf, sizeof(num_buf), snap->zone_flow_pct[i], 0);
+    if (!append( "\"%s\":{\"value\":%s},", ZONE_FLOW_KEYS[i], num_buf)) return;
+  }
+
   // --- preheat advance ---
   static const char *const PREHEAT_KEYS[6] = {
     "sensor-zone_1_preheat_advance_c", "sensor-zone_2_preheat_advance_c", "sensor-zone_3_preheat_advance_c",
@@ -2267,6 +2281,8 @@ void LV6Dashboard::handle_zones_(AsyncWebServerRequest *request) {
       snprintf(rank, sizeof(rank), "null");
     const float max_open = std::max(1.0f, snap->zones[i].max_opening_pct);
     format_float_token(opening_ratio, sizeof(opening_ratio), snap->zone_valve_pct[i] / max_open, 3);
+    char flow_tok[16];
+    format_float_token(flow_tok, sizeof(flow_tok), snap->zone_flow_pct[i], 0);
     const char *absorb_state =
         (snap->absorb_mode == 2 || (this->zone_controller_ && this->zone_controller_->is_zone_absorb_armed(i))) ? "armed" : (snap->absorb_mode == 1 ? "reactive" : "idle");
     const int8_t primary = sync_roots[i];
@@ -2289,10 +2305,10 @@ void LV6Dashboard::handle_zones_(AsyncWebServerRequest *request) {
             "\",\"friendly_name\":\"");
     append_json_escaped(buf, JSON_BUF_SIZE, off, snap->zones[i].name);
     appendf(buf, JSON_BUF_SIZE, off,
-            "\",\"enabled\":%s,\"temperature_c\":%s,\"setpoint_c\":%s,\"valve_pct\":%s,"
+            "\",\"enabled\":%s,\"temperature_c\":%s,\"setpoint_c\":%s,\"valve_pct\":%s,\"flow_pct\":%s,"
             "\"opening_ratio\":%s,\"preheat_c\":%s,\"state\":\"%s\",\"temp_source\":\"%s\","
             "\"fresh\":%s,\"group_primary\":%u,\"group_members\":[",
-            snap->zones[i].enabled ? "true" : "false", temp, setpoint, valve, opening_ratio, preload,
+            snap->zones[i].enabled ? "true" : "false", temp, setpoint, valve, flow_tok, opening_ratio, preload,
             snap->zone_state[i], temp_source_to_dashboard_str(snap->zone_temp_source[i]),
             std::isfinite(snap->zone_temp_c[i]) ? "true" : "false",
             static_cast<unsigned>(primary + 1));

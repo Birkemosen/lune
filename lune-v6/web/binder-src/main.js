@@ -118,8 +118,8 @@ function zoneState(z) {
     return 'idle';
   }
 
-  const valve = toNum(ev(key.valve(z)));
-  if (Number.isFinite(valve) && valve > 5) return 'calling';
+  const flow = zoneFlow(z);
+  if (Number.isFinite(flow) && flow > 5) return 'calling';
   return 'idle';
 }
 
@@ -157,6 +157,13 @@ function zoneLearnLong(z) {
   return phase ? `${phase} · ${pct} %` : zoneLearnShort(z);
 }
 
+// Loop flow in % of full flow (the valve curve turns pin travel into flow); falls
+// back to the opening on firmware without flow_pct.
+function zoneFlow(z) {
+  const flow = toNum(ev(key.flow(z)));
+  return Number.isFinite(flow) ? flow : toNum(ev(key.valve(z)));
+}
+
 function zoneLevel(z) {
   const st = zoneState(z);
   if (st === 'fault' || st === 'blocked' || st === 'off') return 0;
@@ -164,10 +171,10 @@ function zoneLevel(z) {
     const pct = zoneLearnPct(z);
     return Math.max(1, Math.min(10, Math.ceil(Math.max(pct, 1) / 10)));
   }
-  const valve = toNum(ev(key.valve(z)));
-  // Closed valve or no reading → unlit. 10 segments of 10 % (DESIGN.md 5.2).
-  if (!Number.isFinite(valve) || valve <= 0) return 0;
-  return Math.max(1, Math.min(10, Math.ceil(valve / 10)));
+  const flow = zoneFlow(z);
+  // No flow or no reading → unlit. 10 segments of 10 % (DESIGN.md 5.2).
+  if (!Number.isFinite(flow) || flow <= 0) return 0;
+  return Math.max(1, Math.min(10, Math.ceil(flow / 10)));
 }
 
 function setText(sel, html) {
@@ -543,21 +550,25 @@ function paintStrip() {
       now.innerHTML = Number.isFinite(nowT) ? `${num(nowT)}<small>°C</small>` : '—';
     }
     const opening = toNum(ev(key.valve(z)));
-    setBind(`z${z}.flow`, withUnit(opening, '%', 0));
-    // Zone card: the opening beside the name; fault/blocked/learning/off say it in the value instead.
-    setBind(`z${z}.cardOpen`, ['fault', 'blocked', 'learning', 'off'].includes(st) || !Number.isFinite(opening)
-      ? '' : escapeHtml(t('zcard.open', { pct: Math.round(opening) })));
-    // Tile: opening as number next to the 10-segment bar; learning shows its own %.
+    const flow = zoneFlow(z);
+    // Flow is the main figure; the pin's travel follows as text (valve curve).
+    setBind(`z${z}.flow`, Number.isFinite(flow)
+      ? `${withUnit(flow, '%', 0)}${Number.isFinite(opening) ? ` <small>${escapeHtml(t('zdash.pin', { pct: Math.round(opening) }))}</small>` : ''}`
+      : '—');
+    // Zone card: the flow beside the name; fault/blocked/learning/off say it in the value instead.
+    setBind(`z${z}.cardOpen`, ['fault', 'blocked', 'learning', 'off'].includes(st) || !Number.isFinite(flow)
+      ? '' : escapeHtml(t('zcard.flow', { pct: Math.round(flow) })));
+    // Tile: flow as number next to the 10-segment bar; learning shows its own %.
     setBind(`z${z}.valve`, st === 'learning' ? `${zoneLearnPct(z)} %`
       : (st === 'fault' || st === 'blocked' || st === 'off') ? '0 %'
-      : (Number.isFinite(opening) ? `${Math.round(opening)} %` : '—'));
+      : (Number.isFinite(flow) ? `${Math.round(flow)} %` : '—'));
     const zoneProbe = parseProbeIndex(es(key.probe(z)));
     if (zoneProbe) {
       setBind(`z${z}.return`, withUnit(toNum(ev(key.probeTemp(zoneProbe))), '°C'));
     } else {
       setBind(`z${z}.return`, '—');
     }
-    if (Number.isFinite(opening)) setBar(`z${z}.opening`, opening);
+    if (Number.isFinite(flow)) setBar(`z${z}.opening`, flow);
     const prior = toNum(ev(key.balancePrior(z)));
     const learned = toNum(ev(key.balanceLearned(z)));
     const effective = toNum(ev(key.balanceEffective(z)));
@@ -580,7 +591,7 @@ function paintStrip() {
   let openCount = 0;
   let firstFault = 0;
   for (let z = 1; z <= 6; z++) {
-    const v = toNum(ev(key.valve(z)));
+    const v = zoneFlow(z);
     if (Number.isFinite(v)) { totalOpen += v; openCount += 1; }
     if (!firstFault && ['fault', 'blocked'].includes(zoneState(z))) firstFault = z;
   }
