@@ -1,7 +1,7 @@
 # =============================================================================
 # Lune V6 firmware
 # =============================================================================
-# Device identity is `lune-v6` (MAC suffix at runtime). Hardware revision 3.2
+# Device identity is `lune-v6` (MAC suffix at runtime). Hardware revision 3.3
 # lives in packages/board/, not in the hostname.
 #
 # Build:   make config
@@ -15,3 +15,4 @@ substitutions:
 packages:
   base: !include ../lune.yaml
   ble:  !include ../packages/hardware/ble.yaml
+  secrets: !include ../packages/network/build-secrets.yaml

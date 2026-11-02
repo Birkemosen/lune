@@ -9,8 +9,10 @@ api:
   # most). Home Assistant only accepts them when «Allow the device to perform
   # Home Assistant actions» is on for this device.
   homeassistant_services: true
-  encryption:
-    key: !secret api_key
+  # No key here: a release image accepts the key Home Assistant sets when it
+  # adds the device (kept in flash). Development builds add the key from
+  # secrets.yaml (packages/network/build-secrets.yaml).
+  encryption: {}
   services:
     - service: motor_reset_fault
       variables:

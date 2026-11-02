@@ -2,15 +2,12 @@
 # Lune V6 firmware — public release build
 # =============================================================================
 # Identical to lune-v6.yaml (same device name, same board, same components)
-# except for WiFi: the published factory/OTA images must not contain the build
-# host's WiFi credentials, and must not override credentials a user already
-# provisioned on the device.
+# except for secrets: it leaves out packages/network/build-secrets.yaml, so the
+# published factory/OTA images carry none of the build host's WiFi seed, API
+# encryption key or OTA password. Home Assistant sets the API key when it adds
+# the device; credentials a user provisioned stay on the device across an OTA.
 #
-# packages/network/wifi-release.yaml supplies the AP + captive portal. Neither
-# WiFi package compiles in a station ssid/password; the `!remove` block below
-# drops the `!secret`-backed lune_wifi seed that packages/network/wifi.yaml
-# contributes through the shared base, so the image carries no credentials and
-# lune_wifi only provides runtime network switching from the web UI.
+# packages/network/wifi-release.yaml supplies the AP + captive portal.
 #
 # Build:  make -C lune-v6 release-firmware VERSION=v1.2.3
 # =============================================================================
@@ -23,7 +20,3 @@ packages:
   base:         !include ../lune.yaml
   ble:          !include ../packages/hardware/ble.yaml
   wifi_release: !include ../packages/network/wifi-release.yaml
-
-lune_wifi:
-  seed_ssid: !remove
-  seed_password: !remove
