@@ -2,23 +2,27 @@
 
 ## v1.0.0-rc1 — first release candidate (2026-11-02)
 
-First tagged release of Lune V6 as it runs today: ESPHome firmware on the ESP32-S3 with
-six DRV8215 motor drivers, the web UI on the Lune Design System, and Lune Touch as the
-optional whole-house coordinator. If a week passes without changes, this becomes v1.0.0.
+First tagged release of Lune V6 as it runs today: ESPHome firmware on the hardware
+revision 3.3 PCB (ESP32-S3), six actuator channels driven by three DRV8411 dual
+H-bridges behind a hardware one-hot decoder, and a web UI on the Lune Design System.
+It works on its own or with Lune Touch as the whole-house coordinator. If a week passes
+without changes, this becomes v1.0.0.
 
 ### Heating
-- Heat-pump mode: every loop keeps flow; zones that need heat open more, satisfied zones
-  sit on a trim floor while the heat pump is idle (phase from Touch), and warm-closed
-  loops reopen ahead of the floor's lag. "Close fully above target" keeps a manifold
-  flow guarantee.
-- Room physics: per-zone UA, thermal mass and time constant, learned daily from Odin's
-  heat loss (internal gains added back); Touch can calibrate and write floor and walls.
+- Room temperature control per zone with a heat-pump mode: every loop keeps flow,
+  zones that need heat open more, satisfied zones sit on a trim floor while the heat
+  pump is idle, and warm-closed loops reopen ahead of the floor's lag. "Close fully
+  above target" keeps a manifold flow guarantee.
+- Room physics per zone (heat loss, thermal mass, time constant), learned daily from
+  the house heat loss Lune Touch provides; Touch can calibrate it and set floor and walls.
 - Accepts Touch's house balance per zone; balancing mode selectable.
 
 ### Valves and motors
+- One actuator moves at a time through the decoder; position from current ripple
+  counting, with a firmware-held driver sleep and a separate rail overcurrent input.
 - Re-homing to the seat is never skipped; positions are kept across reboots.
-- A motor fault stops only that motor; drivers recover; a blocked close backs off and
-  retries; overrun stays blocked across restarts.
+- A motor fault stops only that motor; a blocked close backs off and retries; overrun
+  stays blocked across restarts.
 - Fault guide on Home: valve position, breakaway retry, drive back from the panel,
   reset; blocked zones raise the fault alert.
 
