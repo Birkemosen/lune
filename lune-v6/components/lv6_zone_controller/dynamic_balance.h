@@ -5,17 +5,20 @@
 #include <cstddef>
 #include <cstdint>
 
+#include "valve_curve.h"
+
 // Dynamic balancing — the heat-pump law (docs/dynamic_balancing.md).
 //
 // The manifold behaves like a statically balanced installation whose balancing
 // valves follow the rooms' load: every loop has flow, warm rooms hand their flow to
 // cold ones, and the manifold's total follows its most demanding room (full when
-// that room is a band below target). Loops close only when overheated. Pure C++,
+// that room is a band below target). Loops close only when overheated. Flows are
+// relative loop flows; each loop's valve curve turns them into openings. Pure C++,
 // host-testable.
 namespace lv6::dynamic_balance {
 
 static constexpr float G_MIN = 0.25f;           ///< Load factor at target + overheat margin
-static constexpr float MIN_OPEN_PCT = 10.0f;    ///< Smallest opening for an open loop
+static constexpr float Q_MIN = 0.10f;           ///< Smallest relative flow for an open loop
 static constexpr float REOPEN_HYST_C = 0.3f;    ///< Closed loop reopens this far below its limit
 
 struct Loop {
@@ -25,6 +28,7 @@ struct Loop {
   float temp_c{NAN};
   float setpoint_c{NAN};
   float max_opening_pct{100.0f};
+  valve_curve::Curve curve{};  ///< Opening ↔ relative flow
 };
 
 struct Params {
@@ -76,17 +80,19 @@ struct Result {
 };
 
 /// Relative flows q_i (0..1) with Σ q = Q_ref × load, by water-filling: loops that
-/// reach 1.0 stay there, the others share the rest in proportion to their weight.
+/// reach their cap (full flow, or what the max opening passes) stay there, the
+/// others share the rest in proportion to their weight.
 /// The load is the largest load factor among open loops, so the most demanding
 /// room decides how much the whole manifold passes (without balancing between
 /// manifolds a warm floor must not keep its full flow), while the split inside the
 /// manifold moves flow from warm rooms to cold ones. `closed[i]` loops get 0 (their
-/// flow goes to the others). Openings in percent.
+/// flow goes to the others). Openings in percent, through each loop's valve curve.
 template <size_t N>
 inline Result distribute(const Loop (&loops)[N], const Params &p, bool (&closed)[N],
                          float (&opening_pct)[N], float (&q)[N]) {
   Result r;
   float w[N]{};
+  float cap[N]{};
   bool any_open = false;
   for (size_t i = 0; i < N; i++) {
     q[i] = 0.0f;
@@ -95,9 +101,11 @@ inline Result distribute(const Loop (&loops)[N], const Params &p, bool (&closed)
       closed[i] = false;
       continue;
     }
+    cap[i] = valve_curve::flow_fraction(std::clamp(loops[i].max_opening_pct, 0.0f, 100.0f),
+                                        loops[i].curve);
     const float share = std::max(0.0f, loops[i].design_share) *
                         std::clamp(loops[i].house_balance, 0.0f, 1.0f);
-    r.q_ref += std::min(1.0f, share);
+    r.q_ref += std::min(cap[i], share);
     if (!closed[i]) {
       const float g = load_factor(loops[i].temp_c, loops[i].setpoint_c, p);
       w[i] = share * g;
@@ -131,7 +139,7 @@ inline Result distribute(const Loop (&loops)[N], const Params &p, bool (&closed)
   }
   r.q_target = r.q_ref * r.load;
 
-  // Water-filling for Σ min(1, s·w_i) = q_target.
+  // Water-filling for Σ min(cap_i, s·w_i) = q_target.
   bool capped[N]{};
   float remaining = r.q_target;
   for (size_t pass = 0; pass < N + 1; pass++) {
@@ -147,10 +155,10 @@ inline Result distribute(const Loop (&loops)[N], const Params &p, bool (&closed)
     for (size_t i = 0; i < N; i++) {
       if (capped[i] || !(w[i] > 0.0f))
         continue;
-      if (s * w[i] >= 1.0f) {
+      if (s * w[i] >= cap[i]) {
         capped[i] = true;
-        q[i] = 1.0f;
-        remaining -= 1.0f;
+        q[i] = cap[i];
+        remaining -= cap[i];
         newly_capped = true;
       }
     }
@@ -165,9 +173,9 @@ inline Result distribute(const Loop (&loops)[N], const Params &p, bool (&closed)
   for (size_t i = 0; i < N; i++) {
     if (!(q[i] > 0.0f))
       continue;
+    q[i] = std::min(std::max(q[i], Q_MIN), std::max(cap[i], Q_MIN));
     const float max_open = std::clamp(loops[i].max_opening_pct, 0.0f, 100.0f);
-    const float open = std::max(MIN_OPEN_PCT, 100.0f * q[i]);
-    opening_pct[i] = std::min(open, max_open);
+    opening_pct[i] = std::min(valve_curve::opening_for(q[i], loops[i].curve), max_open);
     r.q_total += q[i];
   }
   return r;

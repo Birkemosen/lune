@@ -565,6 +565,43 @@ bool Lv6ConfigStore::load_motor_positions(float *pos, size_t count) {
   return err == ESP_OK && size == count * sizeof(float);
 }
 
+void Lv6ConfigStore::save_valve_curves(const float *start, const float *full) {
+  if (start == nullptr || full == nullptr)
+    return;
+  uint8_t blob[sizeof(uint32_t) + 2 * NUM_ZONES * sizeof(float)];
+  const uint32_t version = VALVE_CURVE_VERSION;
+  std::memcpy(blob, &version, sizeof(uint32_t));
+  std::memcpy(blob + sizeof(uint32_t), start, NUM_ZONES * sizeof(float));
+  std::memcpy(blob + sizeof(uint32_t) + NUM_ZONES * sizeof(float), full, NUM_ZONES * sizeof(float));
+  nvs_handle_t handle;
+  if (nvs_open(NVS_NAMESPACE, NVS_READWRITE, &handle) != ESP_OK)
+    return;
+  nvs_set_blob(handle, KEY_VALVE_CURVE, blob, sizeof(blob));
+  nvs_commit(handle);
+  nvs_close(handle);
+}
+
+bool Lv6ConfigStore::load_valve_curves(float *start, float *full) {
+  if (start == nullptr || full == nullptr)
+    return false;
+  uint8_t blob[sizeof(uint32_t) + 2 * NUM_ZONES * sizeof(float)];
+  size_t size = sizeof(blob);
+  nvs_handle_t handle;
+  if (nvs_open(NVS_NAMESPACE, NVS_READONLY, &handle) != ESP_OK)
+    return false;
+  const esp_err_t err = nvs_get_blob(handle, KEY_VALVE_CURVE, blob, &size);
+  nvs_close(handle);
+  uint32_t version = 0;
+  if (err != ESP_OK || size != sizeof(blob))
+    return false;
+  std::memcpy(&version, blob, sizeof(uint32_t));
+  if (version != VALVE_CURVE_VERSION)
+    return false;
+  std::memcpy(start, blob + sizeof(uint32_t), NUM_ZONES * sizeof(float));
+  std::memcpy(full, blob + sizeof(uint32_t) + NUM_ZONES * sizeof(float), NUM_ZONES * sizeof(float));
+  return true;
+}
+
 bool Lv6ConfigStore::load_motor_telemetry(uint8_t motor, MotorTelemetry &telemetry) {
   if (motor >= NUM_ZONES)
     return false;

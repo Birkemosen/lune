@@ -637,6 +637,9 @@ void LV6Dashboard::update_snapshot_() {
       if (this->zone_controller_) {
         s.zone_loop_share_pct[i] = this->zone_controller_->get_loop_share_pct(i);
         s.zone_house_balance[i] = this->zone_controller_->get_house_balance(i);
+        const auto vc = this->zone_controller_->get_valve_curve(i);
+        s.zone_valve_curve_start_pct[i] = vc.start_pct;
+        s.zone_valve_curve_full_pct[i] = vc.full_pct;
         s.zone_absorb_capacity_rank[i] = this->zone_controller_->get_absorb_capacity_rank(i);
         s.zone_relative_kv[i] =
             this->zone_controller_->get_relative_kv(i, s.zone_valve_pct[i]);
@@ -647,6 +650,8 @@ void LV6Dashboard::update_snapshot_() {
       } else {
         s.zone_loop_share_pct[i] = NAN;
         s.zone_house_balance[i] = 1.0f;
+        s.zone_valve_curve_start_pct[i] = NAN;
+        s.zone_valve_curve_full_pct[i] = NAN;
         s.zone_absorb_capacity_rank[i] = 0;
         s.zone_relative_kv[i] = NAN;
         s.zone_static_factor[i] = NAN;
@@ -2326,7 +2331,8 @@ void LV6Dashboard::handle_zones_(AsyncWebServerRequest *request) {
             "\"group_id\":\"%s\",\"group_role\":\"%s\","
             "\"wind_exposure\":%.2f,\"solar_gain\":%.2f,"
             "\"pipe_inner_mm\":%.0f,\"pipe_spacing_mm\":%.0f,\"supply_pipe_length_m\":%.1f,"
-            "\"house_balance\":%.2f,\"warnings\":[",
+            "\"house_balance\":%.2f,\"valve_curve\":{\"start_pct\":%.1f,\"full_pct\":%.1f},"
+            "\"warnings\":[",
             snap->zones[i].area_m2, static_cast<unsigned>(snap->zones[i].exterior_walls & 0x0F),
             lv6::slab_type_to_string(snap->zones[i].slab_type), thick_tok,
             lv6::covering_type_to_string(snap->zones[i].covering), r_ov_tok, c_slab_m2, c_slab,
@@ -2338,7 +2344,8 @@ void LV6Dashboard::handle_zones_(AsyncWebServerRequest *request) {
             absorb_state, rank, max_offset, group_id, lv6::group_role_to_string(role),
             snap->zones[i].wind_exposure, snap->zones[i].solar_gain,
             lv6::pipe_inner_diameter_mm(snap->zones[i].pipe_type), snap->zones[i].pipe_spacing_mm,
-            snap->zones[i].supply_pipe_length_m, snap->zone_house_balance[i]);
+            snap->zones[i].supply_pipe_length_m, snap->zone_house_balance[i],
+            snap->zone_valve_curve_start_pct[i], snap->zone_valve_curve_full_pct[i]);
     bool fw = true;
     if (th.thickness_ignored) {
       appendf(buf, JSON_BUF_SIZE, off, "%s\"thickness_ignored\"", fw ? "" : ",");
@@ -3306,6 +3313,57 @@ void LV6Dashboard::handle_v1_(AsyncWebServerRequest *request, const char *path) 
       return;
     }
     this->handle_zone_physics_(request, static_cast<uint8_t>(zone), body);
+    return;
+  }
+  if ((zone = match_zone_route(path, "/zones", "valve-curve")) != -1) {
+    // Valve curve for dynamic balancing: opening where flow starts and where it is
+    // full. From the web UI (CSRF gate) or from Touch (authority key), which
+    // learns it from the pump's flow.
+    if (zone == 0) {
+      this->send_v1_(request, 400, "invalid_zone", "Zone must be in range 1..6");
+      return;
+    }
+    if (this->config_store_ == nullptr || this->zone_controller_ == nullptr) {
+      this->send_v1_(request, 503, "controller_unavailable", "Zone controller unavailable");
+      return;
+    }
+    const auto key_header = request->get_header("X-Lune-Authority-Key");
+    if (key_header.has_value()) {
+      const auto auth_cfg = this->config_store_->get_authority_config();
+      float auth_timestamp_s = 0.0f;
+      char auth_nonce[48]{};
+      parse_num_param(request, body, "auth_timestamp_s", &auth_timestamp_s);
+      parse_text_param(request, body, "auth_nonce", "", auth_nonce, sizeof(auth_nonce));
+      if (!touch_auth::request_is_authenticated(auth_cfg.shared_key, key_header->c_str(), ::time(nullptr),
+                                                auth_timestamp_s, auth_nonce)) {
+        this->send_v1_(request, 403, "touch_auth_failed",
+                       "Touch command requires provisioned key, valid UTC timestamp, and nonce");
+        return;
+      }
+    } else if (!this->authorize_write_(request)) {
+      return;
+    }
+    const uint8_t zi = static_cast<uint8_t>(zone - 1);
+    lv6::valve_curve::Curve curve = this->zone_controller_->get_valve_curve(zi);
+    float v = NAN;
+    const bool has_start = parse_num_param(request, body, "start_pct", &v) && std::isfinite(v);
+    if (has_start)
+      curve.start_pct = v;
+    const bool has_full = parse_num_param(request, body, "full_pct", &v) && std::isfinite(v);
+    if (has_full)
+      curve.full_pct = v;
+    if (!has_start && !has_full) {
+      this->send_v1_(request, 400, "missing_param", "start_pct or full_pct is required");
+      return;
+    }
+    this->zone_controller_->set_valve_curve(zi, curve);
+    curve = this->zone_controller_->get_valve_curve(zi);
+    char response[160];
+    snprintf(response, sizeof(response),
+             "{\"ok\":true,\"version\":\"v1\",\"data\":{\"zone\":%u,\"start_pct\":%.1f,\"full_pct\":%.1f}}",
+             static_cast<unsigned>(zone), curve.start_pct, curve.full_pct);
+    data_revision_++;
+    send_text_(request, 200, "application/json", response, true, "no-cache");
     return;
   }
   if ((zone = match_zone_route(path, "/zones", "absorb-arm")) != -1 ||

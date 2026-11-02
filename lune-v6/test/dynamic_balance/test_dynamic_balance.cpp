@@ -61,6 +61,7 @@ static void make_loops(Loop (&loops)[6], const float (&temps)[6], float sp) {
     loops[i].temp_c = temps[i];
     loops[i].setpoint_c = sp;
     loops[i].max_opening_pct = 100.0f;
+    loops[i].curve = {0.0f, 100.0f};  // linear: openings read as relative flow
   }
 }
 
@@ -124,7 +125,8 @@ static void test_warm_manifold_throttles() {
   const Result r = distribute(loops, p, closed, open, q);
   expect_near(r.load, load_factor(22.5f, 22.0f, p), 1e-4f, "warm floor: load = the coolest room");
   expect(r.load < 0.6f, "warm floor: well below full load");
-  expect_near(sum6(q), r.q_ref * r.load, 1e-3f, "warm floor: total = Q_ref × load");
+  expect(sum6(q) >= r.q_ref * r.load - 1e-3f && sum6(q) <= r.q_ref * r.load + Q_MIN,
+         "warm floor: total = Q_ref × load (+ the Q_MIN floor)");
   expect(open[4] < 100.0f, "warm floor: index loop no longer fully open");
   for (int i = 0; i < 6; i++)
     expect(open[i] > 0.0f, "warm floor: every loop keeps flow");
@@ -163,14 +165,66 @@ static void test_house_balance_and_caps() {
   loops[5].design_share = 0.02f;
   r = distribute(loops, p, closed, open, q);
   expect_near(open[4], 80.0f, 0.01f, "cap: max opening respected");
-  expect_near(open[5], MIN_OPEN_PCT, 0.01f, "floor: an open loop never below MIN_OPEN");
+  expect_near(open[5], 100.0f * Q_MIN, 0.01f, "floor: an open loop never below Q_MIN");
 
   loops[2].enabled = false;
   r = distribute(loops, p, closed, open, q);
   expect_near(open[2], 0.0f, 1e-4f, "disabled: no flow");
 }
 
+static void test_valve_curve() {
+  using namespace lv6::valve_curve;
+  const Curve c{8.0f, 40.0f};
+  expect_near(flow_fraction(5.0f, c), 0.0f, 1e-6f, "curve: no flow below start");
+  expect_near(flow_fraction(24.0f, c), 0.5f, 1e-6f, "curve: linear between start and full");
+  expect_near(flow_fraction(70.0f, c), 1.0f, 1e-6f, "curve: full flow above full");
+  expect_near(opening_for(0.5f, c), 24.0f, 1e-4f, "curve: inverse");
+  expect_near(opening_for(0.0f, c), 0.0f, 1e-6f, "curve: zero flow is closed");
+  expect_near(opening_for(1.5f, c), 40.0f, 1e-4f, "curve: q above 1 stops at full");
+  const Curve bad = sanitize({60.0f, 55.0f});
+  expect(bad.start_pct == MAX_START_PCT && bad.full_pct == MAX_START_PCT + MIN_SPAN_PCT,
+         "curve: sanitize keeps start ≤ 50 and a 10-point span");
+  const Curve nan = sanitize({NAN, NAN});
+  expect(nan.start_pct == DEFAULT_START_PCT && nan.full_pct == DEFAULT_FULL_PCT, "curve: NaN → defaults");
+}
+
+static void test_distribute_through_curve() {
+  const Params p{0.5f, 1.0f, 0.0f};
+  Loop loops[6];
+  const float temps[6] = {20, 20, 20, 20, 20, 20};
+  make_loops(loops, temps, 21.0f);
+  for (Loop &l : loops) l.curve = {};  // default 8 → 40 %
+  bool closed[6]{};
+  float open[6], q[6];
+  distribute(loops, p, closed, open, q);
+  expect_near(open[4], 40.0f, 0.01f, "curve: index loop at the full-flow opening, not 100 %");
+  expect_near(open[3], 8.0f + 0.85f * 32.0f, 0.01f, "curve: share mapped through the curve");
+  expect(open[5] > 8.0f, "curve: smallest loop above where flow starts");
+
+  // Warm manifold: small flows stay above the start of the curve.
+  const float warm[6] = {22.6f, 22.5f, 22.8f, 23.2f, 22.9f, 23.0f};
+  make_loops(loops, warm, 22.0f);
+  for (Loop &l : loops) l.curve = {};
+  distribute(loops, p, closed, open, q);
+  for (int i = 0; i < 6; i++)
+    expect(open[i] >= 8.0f + Q_MIN * 32.0f - 1e-3f, "curve: warm loop keeps real flow");
+
+  // Max opening below full flow caps the loop's flow.
+  make_loops(loops, temps, 21.0f);
+  for (Loop &l : loops) l.curve = {};
+  loops[4].max_opening_pct = 24.0f;
+  distribute(loops, p, closed, open, q);
+  expect_near(q[4], 0.5f, 1e-3f, "curve: max opening 24 % caps the loop at half flow");
+  expect_near(open[4], 24.0f, 0.01f, "curve: and the valve at 24 %");
+  // Max opening above full flow does not cap.
+  loops[4].max_opening_pct = 80.0f;
+  distribute(loops, p, closed, open, q);
+  expect_near(q[4], 1.0f, 1e-3f, "curve: max opening above full flow is no cap");
+}
+
 int main() {
+  test_valve_curve();
+  test_distribute_through_curve();
   test_load_factor();
   test_closed_latch();
   test_all_cold_is_static_balance();

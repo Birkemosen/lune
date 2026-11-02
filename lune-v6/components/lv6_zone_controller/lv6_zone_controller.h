@@ -17,6 +17,7 @@
 #include "adaptive_balance.h"
 #include "control_mode_policy.h"
 #include "flow_allocator.h"
+#include "valve_curve.h"
 #include "hydraulic_policy.h"
 #include "reopen_policy.h"
 #include "freertos/FreeRTOS.h"
@@ -236,6 +237,10 @@ class Lv6ZoneController : public esphome::Component {
   HpPhase get_hp_phase() const;
   static const char *hp_phase_name(HpPhase phase);
   float get_house_balance(uint8_t zone) const;
+  /// Valve curve (opening where flow starts / is full) used by dynamic balancing.
+  /// Persisted; sanitised (valve_curve::sanitize).
+  void set_valve_curve(uint8_t zone, valve_curve::Curve curve);
+  valve_curve::Curve get_valve_curve(uint8_t zone) const;
   uint8_t get_absorb_capacity_rank(uint8_t zone) const;
   /// Relative Kv at opening percent for Motor lab / diagnostics.
   float get_relative_kv(uint8_t zone, float opening_pct) const;
@@ -309,6 +314,7 @@ class Lv6ZoneController : public esphome::Component {
   bool balance_dirty_ = true;
   std::array<float, NUM_ZONES> house_balance_{1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f};
   std::array<uint32_t, NUM_ZONES> house_balance_until_ms_{};
+  std::array<valve_curve::Curve, NUM_ZONES> valve_curve_{};  // guarded by snapshot_mutex_
   HpPhase hp_phase_{HpPhase::UNKNOWN};
   // «Close above target» latch per zone (hp_close_above_c; reopens 0.2 °C below).
   std::array<bool, NUM_ZONES> hp_closed_{};

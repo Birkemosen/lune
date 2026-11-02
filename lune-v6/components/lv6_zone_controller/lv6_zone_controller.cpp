@@ -86,6 +86,13 @@ void Lv6ZoneController::setup() {
   } else {
     preheat_advance_c_.fill(0.0f);
   }
+  if (config_store_) {
+    float start[NUM_ZONES], full[NUM_ZONES];
+    if (config_store_->load_valve_curves(start, full)) {
+      for (uint8_t i = 0; i < NUM_ZONES; i++)
+        valve_curve_[i] = valve_curve::sanitize({start[i], full[i]});
+    }
+  }
   preheat_episode_active_.fill(false);
   preheat_episode_min_temp_c_.fill(NAN);
   preheat_episode_max_temp_c_.fill(NAN);
@@ -1417,6 +1424,10 @@ void Lv6ZoneController::run_cycle_() {
       loops[i].setpoint_c = zone_setpoints[i];
       loops[i].max_opening_pct = cfg.zones[i].max_opening_pct;
     }
+    xSemaphoreTake(snapshot_mutex_, portMAX_DELAY);
+    for (uint8_t i = 0; i < NUM_ZONES; i++)
+      loops[i].curve = valve_curve_[i];
+    xSemaphoreGive(snapshot_mutex_);
     const dynamic_balance::Params dbp{cfg.control.comfort_band_c, cfg.control.hp_overheat_margin_c, 0.0f};
     bool closed[NUM_ZONES];
     float openings[NUM_ZONES];
@@ -2245,6 +2256,33 @@ float Lv6ZoneController::get_house_balance(uint8_t zone) const {
   if (static_cast<int32_t>(esphome::millis() - house_balance_until_ms_[zone]) >= 0)
     return 1.0f;
   return house_balance_[zone];
+}
+
+void Lv6ZoneController::set_valve_curve(uint8_t zone, valve_curve::Curve curve) {
+  if (zone >= NUM_ZONES || snapshot_mutex_ == nullptr)
+    return;
+  curve = valve_curve::sanitize(curve);
+  float start[NUM_ZONES], full[NUM_ZONES];
+  xSemaphoreTake(snapshot_mutex_, portMAX_DELAY);
+  valve_curve_[zone] = curve;
+  for (uint8_t i = 0; i < NUM_ZONES; i++) {
+    start[i] = valve_curve_[i].start_pct;
+    full[i] = valve_curve_[i].full_pct;
+  }
+  xSemaphoreGive(snapshot_mutex_);
+  if (config_store_)
+    config_store_->save_valve_curves(start, full);
+  ESP_LOGI(TAG, "Zone %u valve curve: flow from %.0f %%, full at %.0f %%", zone + 1, curve.start_pct,
+           curve.full_pct);
+}
+
+valve_curve::Curve Lv6ZoneController::get_valve_curve(uint8_t zone) const {
+  if (zone >= NUM_ZONES || snapshot_mutex_ == nullptr)
+    return {};
+  xSemaphoreTake(snapshot_mutex_, portMAX_DELAY);
+  const valve_curve::Curve c = valve_curve_[zone];
+  xSemaphoreGive(snapshot_mutex_);
+  return c;
 }
 
 // =============================================================================

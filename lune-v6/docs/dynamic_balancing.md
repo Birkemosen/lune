@@ -65,13 +65,33 @@ Per control cycle, for each enabled loop *i*:
    That matters while the manifolds are not balanced against each other: a warm floor
    must not keep its full flow because the other floor needs heat. A closed loop's flow
    goes to the others.
-4. **Opening** = `100 · q_i`, clamped to the zone's maximum opening, at least
-   `MIN_OPEN` (10 %) for an open loop. The valve characteristic is taken as linear; the
-   learned correction absorbs the difference over time.
+4. **Opening** through the loop's valve curve (below), clamped to the zone's maximum
+   opening. An open loop gets at least `Q_MIN` (10 %) of full flow. A maximum opening
+   below the curve's full-flow point caps the loop's flow; Q_ref uses the same cap.
 5. **Never all closed.** If every loop would be closed, the one nearest its limit stays
    open at `G_MIN`.
 
 The valve deadband (`min_movement_pct`) keeps small changes from moving the motors.
+
+### Valve curve
+
+Manifold valve inserts open quickly. Measured on the author's two manifolds (pump flow
+against single valve moves, a week of data): moving a valve from 0 to 6–7 % changed
+nothing, the flow arrives between about 10 and 35 %, and moves between 35 and 80 % changed
+the pump flow by 0–0.6 l/min. Taking the opening as linear therefore left warm loops at
+15–30 % passing most of their flow, and the secondary flow rose to about 150 % of the
+heat pump's.
+
+Each loop has a curve with two points: `start_pct` (flow begins, default 8 %) and
+`full_pct` (full flow, default 40 %), linear between. Relative flow `q` becomes the
+opening `start + q · (full − start)`; the index loop sits at `full_pct`, not 100 %.
+
+The curves are stored in their own NVS key (`vcurve`) and shown per zone in
+`/api/v1/zones` (`valve_curve`). `POST /api/v1/zones/{n}/valve-curve` with `start_pct`
+and/or `full_pct` sets one (web UI write gate, or Touch's authority key).
+
+Learning the curves needs the circulation pump's flow, which only Touch sees (and both
+manifolds share the pump), so Touch learns them and writes them here.
 
 ### Heat demand for Touch
 
