@@ -1,5 +1,46 @@
 # Changelog
 
+## v1.0.0-rc1 — first release candidate (2026-11-02)
+
+First tagged release of Lune V6 as it runs today: ESPHome firmware on the ESP32-S3 with
+six DRV8215 motor drivers, the web UI on the Lune Design System, and Lune Touch as the
+optional whole-house coordinator. If a week passes without changes, this becomes v1.0.0.
+
+### Heating
+- Heat-pump mode: every loop keeps flow; zones that need heat open more, satisfied zones
+  sit on a trim floor while the heat pump is idle (phase from Touch), and warm-closed
+  loops reopen ahead of the floor's lag. "Close fully above target" keeps a manifold
+  flow guarantee.
+- Room physics: per-zone UA, thermal mass and time constant, learned daily from Odin's
+  heat loss (internal gains added back); Touch can calibrate and write floor and walls.
+- Accepts Touch's house balance per zone; balancing mode selectable.
+
+### Valves and motors
+- Re-homing to the seat is never skipped; positions are kept across reboots.
+- A motor fault stops only that motor; drivers recover; a blocked close backs off and
+  retries; overrun stays blocked across restarts.
+- Fault guide on Home: valve position, breakaway retry, drive back from the panel,
+  reset; blocked zones raise the fault alert.
+
+### Sensors and connectivity
+- BLE (BTHome) room sensors with a sync watchdog and bounded reboots; 1-Wire probes at
+  12 bit.
+- Problem notifications to Home Assistant (contract v1), including a restart after a
+  crash; last crash log in diagnostics.
+- WiFi changeable from the web UI; credentials survive OTA.
+
+### Web UI
+- Home / sheet / System on the Lune Design System (2.3.29): zone cards with a 24 h
+  chart (temperature, target, heating), fault panel, mobile layout.
+
+### Stability
+- No whole-config copies on loop, valve and httpd paths; smaller task stacks; NimBLE
+  and zone task stacks and history buffers in PSRAM.
+
+---
+
+Entries below are from HeatValve-6, the predecessor of Lune V6, before this repository.
+
 ## v2.0.0 — ESP-IDF Rewrite (2025-07-09)
 
 Complete rewrite from ESPHome YAML to pure ESP-IDF C++ with PlatformIO.

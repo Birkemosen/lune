@@ -117,7 +117,7 @@ make -C lune-v6 test
 Release firmware (no WiFi secrets) → gitignored `lune-v6/dist/`:
 
 ```bash
-make release-firmware VERSION=v1.1.0
+make release-firmware VERSION=v1.0.0
 ```
 
 `secrets.yaml` stays at the repo root and is gitignored.
