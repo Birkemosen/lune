@@ -1,10 +1,10 @@
 # Changelog
 
-## v1.1.0-rc1 — first release candidate (2026-11-02)
+## v1.0.0-rc1 — first release candidate (2026-11-02)
 
 First tagged release of Lune V6 as it runs today: ESPHome firmware on the ESP32-S3 with
 six DRV8215 motor drivers, the web UI on the Lune Design System, and Lune Touch as the
-optional whole-house coordinator. If a week passes without changes, this becomes v1.1.0.
+optional whole-house coordinator. If a week passes without changes, this becomes v1.0.0.
 
 ### Heating
 - Heat-pump mode: every loop keeps flow; zones that need heat open more, satisfied zones
