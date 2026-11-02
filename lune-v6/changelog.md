@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased (for v1.0.0)
+
+- Public images without secrets: the WiFi seed, API encryption key and OTA password
+  moved to `packages/network/build-secrets.yaml`, which only the development entrypoint
+  (`configurations/lune-v6.yaml`) includes. `lune-v6-release.yaml` leaves it out; Home
+  Assistant sets the API key when it adds the device. The v1.0.0-rc1 images were
+  withdrawn because they carried the build host's API key and OTA password.
+
 ## v1.0.0-rc1 — first release candidate (2026-11-02)
 
 First tagged release of Lune V6 as it runs today: ESPHome firmware on the hardware

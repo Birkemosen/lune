@@ -7,8 +7,8 @@
 # captive portal or Improv. Without one, the device keeps using its stored
 # credentials across an OTA and falls back to the setup AP when they fail.
 #
-# Used by configurations/lune-v6-release.yaml, which also `!remove`s the
-# lune_wifi seed (`!secret` credentials) inherited from packages/network/wifi.yaml.
+# Used by configurations/lune-v6-release.yaml, which leaves out
+# packages/network/build-secrets.yaml (WiFi seed, API key, OTA password).
 # =============================================================================
 
 wifi:
