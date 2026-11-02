@@ -707,8 +707,19 @@ bool Lv6ConfigStore::load_zone_config_(nvs_handle_t handle) {
   if (zone_config_blob_is_current(version, read_size)) {
     xSemaphoreTake(mutex_, portMAX_DELAY);
     memcpy(config_.zones, blob.data() + sizeof(uint32_t), sizeof(ZoneConfig) * NUM_ZONES);
+    // The old default cap of 90 % (not settable) becomes 100 %: dynamic balancing
+    // opens the most demanding loop fully. Saved with the next zone write.
+    uint8_t lifted = 0;
+    for (uint8_t i = 0; i < NUM_ZONES; i++) {
+      if (std::fabs(config_.zones[i].max_opening_pct - 90.0f) < 0.01f) {
+        config_.zones[i].max_opening_pct = 100.0f;
+        lifted++;
+      }
+    }
     xSemaphoreGive(mutex_);
     ESP_LOGI(TAG, "Zone config restored from durable key (v%" PRIu32 ")", version);
+    if (lifted > 0)
+      ESP_LOGI(TAG, "Max. opening 90 %% -> 100 %% on %u zone(s)", static_cast<unsigned>(lifted));
     return true;
   }
 
@@ -733,6 +744,8 @@ bool Lv6ConfigStore::load_zone_config_(nvs_handle_t handle) {
       z.tau_learned_h = NAN;
       z.wind_exposure = 0.0f;
       z.solar_gain = 0.0f;
+      if (std::fabs(z.max_opening_pct - 90.0f) < 0.01f)
+        z.max_opening_pct = 100.0f;
       config_.zones[i] = z;
     }
     // Seed groups from legacy sync_to_zone stars when groups section is empty.

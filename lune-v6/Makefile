@@ -44,7 +44,7 @@ LDS_DIR ?= $(DESIGN_DIR)
 LDS_CONSUMER ?= $(ROOT_ABS)
 LDS_OUT ?= $(ROOT_ABS)/.cache/lds
 
-.PHONY: help check ensure-secrets-link config compile build build-verify bump-build prepare-release release release-deploy release-firmware release-bundle upload deploy ota logs discover monitor erase erase-nvs clean dashboard dashboard-tooling dashboard-build dashboard-reference-traces dashboard-watch design-tokens design-verify test test-dashboard test-ripple test-rev31-logic test-rev33-logic test-safety-limits test-stall-model test-stroke-learning test-balance test-authority-lease test-preheat-policy test-preheat-absorb test-absorb-command test-probe-mapping test-thermal-model test-group-model test-flow-allocator test-control-summary test-hydraulic-policy test-hydraulic-diagnostics test-commissioning-schema test-request-guard test-ble-time-beacon test-settings-backup test-control-mode test-reopen test-problem-tracker
+.PHONY: help check ensure-secrets-link config compile build build-verify bump-build prepare-release release release-deploy release-firmware release-bundle upload deploy ota logs discover monitor erase erase-nvs clean dashboard dashboard-tooling dashboard-build dashboard-reference-traces dashboard-watch design-tokens design-verify test test-dashboard test-ripple test-rev31-logic test-rev33-logic test-safety-limits test-stall-model test-stroke-learning test-balance test-authority-lease test-preheat-policy test-preheat-absorb test-absorb-command test-probe-mapping test-thermal-model test-group-model test-flow-allocator test-control-summary test-hydraulic-policy test-hydraulic-diagnostics test-commissioning-schema test-request-guard test-ble-time-beacon test-settings-backup test-control-mode test-dynamic-balance test-reopen test-problem-tracker
 
 help:
 	@echo "Lune V6 ESPHome tasks"
@@ -262,6 +262,8 @@ BLE_TIME_BEACON_SRCS = test/ble_time_beacon/test_ble_time_beacon.cpp
 BLE_TIME_BEACON_OUT  = /tmp/test_lv6_ble_time_beacon
 SETTINGS_BACKUP_SRCS = test/settings_backup/test_settings_backup.cpp components/lv6_dashboard/settings_backup.cpp
 SETTINGS_BACKUP_OUT  = /tmp/test_lv6_settings_backup
+DYNAMIC_BALANCE_SRCS = test/dynamic_balance/test_dynamic_balance.cpp
+DYNAMIC_BALANCE_OUT  = /tmp/test_lv6_dynamic_balance
 CONTROL_MODE_SRCS = test/control_mode/test_control_mode_policy.cpp
 CONTROL_MODE_OUT  = /tmp/test_lv6_control_mode
 REOPEN_SRCS = test/reopen/test_reopen_policy.cpp
@@ -336,6 +338,10 @@ test-control-mode:
 	$(RIPPLE_CXX) -std=c++17 -O2 -Wall -Wextra -I components/lv6_zone_controller -I components/lv6_config_store $(CONTROL_MODE_SRCS) -o $(CONTROL_MODE_OUT) -lm
 	$(CONTROL_MODE_OUT)
 
+test-dynamic-balance:
+	$(RIPPLE_CXX) -std=c++17 -O2 -Wall -Wextra -I components/lv6_zone_controller $(DYNAMIC_BALANCE_SRCS) -o $(DYNAMIC_BALANCE_OUT) -lm
+	$(DYNAMIC_BALANCE_OUT)
+
 test-reopen:
 	$(RIPPLE_CXX) -std=c++17 -O2 -Wall -Wextra -I components/lv6_zone_controller -I components/lv6_config_store $(REOPEN_SRCS) -o $(REOPEN_OUT) -lm
 	$(REOPEN_OUT)
@@ -347,7 +353,7 @@ test-problem-tracker:
 test-dashboard:
 	sh test/dashboard/test_dashboard.sh
 
-test: design-verify test-dashboard test-ripple test-rev31-logic test-rev33-logic test-safety-limits test-stall-model test-stroke-learning test-balance test-authority-lease test-preheat-policy test-preheat-absorb test-absorb-command test-probe-mapping test-thermal-model test-group-model test-flow-allocator test-control-summary test-hydraulic-policy test-hydraulic-diagnostics test-commissioning-schema test-request-guard test-ble-time-beacon test-settings-backup test-control-mode test-reopen test-problem-tracker
+test: design-verify test-dashboard test-ripple test-rev31-logic test-rev33-logic test-safety-limits test-stall-model test-stroke-learning test-balance test-authority-lease test-preheat-policy test-preheat-absorb test-absorb-command test-probe-mapping test-thermal-model test-group-model test-flow-allocator test-control-summary test-hydraulic-policy test-hydraulic-diagnostics test-commissioning-schema test-request-guard test-ble-time-beacon test-settings-backup test-control-mode test-dynamic-balance test-reopen test-problem-tracker
 
 # Installs the LATEST build only — no bump, no compile — so one build can be
 # rolled out to several devices. Build first with `make build` (or `make compile`).

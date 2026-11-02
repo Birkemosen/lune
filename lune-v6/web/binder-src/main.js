@@ -1435,12 +1435,7 @@ function paintFormsFromState() {
     el.value = digits > 0 ? n.toFixed(digits) : String(Math.round(n));
   };
   paintNum('heat_min_open', gkey.minZoneFlowPct, 0);
-  paintNum('hp_demand', gkey.hpDemandPct, 0);
-  paintNum('hp_base', gkey.hpBasePct, 0);
   paintNum('hp_overheat', gkey.hpOverheatMarginC, 1);
-  paintNum('hp_trim', gkey.hpTrimFloorPct, 0);
-  paintNum('hp_close', gkey.hpCloseAboveC, 1);
-  paintNum('hp_run_min', gkey.hpRunningMinTotalPct, 0);
   const devName = document.getElementById('device_display_name');
   if (devName && !formIsLocked(devName)) {
     devName.value = es(gkey.deviceDisplayName) || devName.value;
@@ -1664,12 +1659,6 @@ async function saveHeating_(form) {
   await setGlobalSelect('heating_mode', form.heat_mode === 'heat_pump' ? 'heat_pump' : 'normal');
   if (form.heat_min_open != null) await setGlobalNumber('min_zone_flow_pct', form.heat_min_open);
   if (form.hp_overheat != null) await setGlobalNumber('hp_overheat_margin_c', form.hp_overheat);
-  if (form.hp_base != null) await setGlobalNumber('hp_base_pct', form.hp_base);
-  // After base: the firmware keeps demand ≥ base.
-  if (form.hp_demand != null) await setGlobalNumber('hp_demand_pct', form.hp_demand);
-  if (form.hp_trim != null) await setGlobalNumber('hp_trim_floor_pct', form.hp_trim);
-  if (form.hp_close != null) await setGlobalNumber('hp_close_above_c', form.hp_close);
-  if (form.hp_run_min != null) await setGlobalNumber('hp_running_min_total_pct', form.hp_run_min);
 }
 
 async function saveZoneRoom_(z, form) {

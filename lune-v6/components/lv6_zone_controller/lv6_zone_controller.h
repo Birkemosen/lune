@@ -264,7 +264,6 @@ class Lv6ZoneController : public esphome::Component {
   void set_hp_base_pct(float pct);
   void set_hp_trim_floor_pct(float pct);
   void set_hp_close_above_c(float c);
-  void set_hp_running_min_total_pct(float pct);
   void set_hp_demand_pct(float pct);
 
   bool is_connected() const { return true; }  // WiFi managed by ESPHome
@@ -304,6 +303,9 @@ class Lv6ZoneController : public esphome::Component {
 
   // Hydraulic balance
   std::array<float, NUM_ZONES> balance_factors_;
+  /// Heat-pump design share per loop: static prior × learned correction, not
+  /// clamped (dynamic balancing normalises it).
+  std::array<float, NUM_ZONES> design_share_{};
   bool balance_dirty_ = true;
   std::array<float, NUM_ZONES> house_balance_{1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f};
   std::array<uint32_t, NUM_ZONES> house_balance_until_ms_{};
@@ -358,8 +360,6 @@ class Lv6ZoneController : public esphome::Component {
   uint8_t absorb_arm_source_{0};  ///< 0=none, 1=armed, 2=reactive (history code)
 
   // Flow allocator (A4) — runtime energy debt + loop shares.
-  flow_allocator::State flow_alloc_{};
-  uint32_t flow_alloc_last_ms_{0};
   std::array<float, NUM_ZONES> loop_share_pct_{};
   std::array<uint8_t, NUM_ZONES> absorb_capacity_rank_{};
 

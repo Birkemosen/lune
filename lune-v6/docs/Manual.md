@@ -186,58 +186,39 @@ the current mode; **Live readings** of every 1-Wire probe, so wiring can be chec
 ### Settings › Heating mode and Heat pump limits
 
 **Normal** vs **Heat pump**, plus an optional minimum total opening across
-accepting loops (0 disables; normal mode only). Heat-pump openings only apply in
-heat-pump mode, where every loop keeps flow so the heat pump can hold the lowest
-flow temperature:
+accepting loops (0 disables; normal mode only).
 
-- **Opening when calling** — a room below setpoint − comfort band opens at least
-  this far; the flow allocator may open it further (default 80 %). Between that
-  and setpoint the opening ramps down to the base opening.
-- **Base opening** — valve position at setpoint (default 60 %)
-- **Overheat margin** — °C above setpoint over which the opening trims from base
-  to the trim floor (default 1.0 °C)
-- **Trim floor** — opening held above setpoint + margin (default 15 %; 30–40 %
-  keeps more flow). A zone only closes once it is past setpoint + comfort band +
-  margin **and** the manifold supply (flow probe) is more than 1 °C warmer than
-  the room — cooler water cannot heat it, so it keeps flowing.
+**Heat pump: dynamic balancing** ([design](dynamic_balancing.md)). The manifold works
+like a statically balanced installation whose balancing valves follow the rooms:
 
-- **Close fully above target** — 0 = off. A room this far above its target (e.g.
-  +0.5 °C) closes its loop fully instead of holding the trim floor, so a warm floor does
-  not take flow from rooms that need it; it reopens 0.2 °C below the limit. A room that
-  needs heat is never closed. **Flow guarantee:** if the manifold's total opening would
-  fall below *Min. total opening* (else 30 %), the closed loops nearest their target are
-  reopened to the trim floor, one at a time, so the manifold always has flow.
-- **Min. opening while the heat pump runs** — 0 = off. With a parallel buffer tank the
-  floors must draw at least as much water as the heat pump pushes into the tank;
-  otherwise hot water runs straight back to the heat pump, which then throttles or
-  stops. While Lune Touch reports the heat pump running (or about to start), closed
-  loops are reopened to the trim floor, nearest their target first, until the
-  manifold's total opening is at least this value. Overheated rooms stay closed. Set
-  it on the manifold best suited to take the extra heat, typically heavy floors with
-  low resistance (concrete, larger pipes); e.g. 100 % ≈ three loops at a 35 % trim
-  floor. Check the result in Touch's buffer balance. Without Touch the rule is off.
+- Every loop has flow all the time. Its share is its design share (the hydraulic
+  balance: area, heat loss, floor, pipe, loop length, plus the learned correction).
+  The most demanding loop is fully open; the others are throttled to their share.
+- A room's share follows its temperature: full share one comfort band below target,
+  falling to a quarter at target + **overheat margin** (default 1.0 °C).
+- Inside the manifold warm rooms hand their flow to cold ones and the total stays put.
+  The manifold's total follows its most demanding room: full while one room is a comfort
+  band below target, less when every room on the manifold is warm.
+- A loop closes only when its room is past target + comfort band + overheat margin (more
+  while Touch pre-buffers), and reopens 0.3 °C below that. Its flow goes to the other
+  loops. The manifold never closes every loop.
+- The heat comes from the supply temperature. V6 tells Touch to **raise** it when a room
+  has been below target − comfort band for 20 minutes, and to **lower** it when no room
+  has been below target for 30 minutes.
 
-**Reopening ahead (both modes).** A floor answers 1–3 hours after its valve opens, so a
+With every loop open, the circulation pump sets the total flow: set it once so the
+secondary flow is about 105–125 % of the heat pump's (Touch shows the buffer balance).
+
+**Normal mode: reopening ahead.** A floor answers 1–3 hours after its valve opens, so a
 closed room that waited for its thermometer would keep falling well below target. A loop
 closed because its room is warm therefore reopens on the temperature *expected one floor
 lag ahead*: the room's measured fall (°C/h, over 30-minute steps) times the floor lag
 (about 1.5 h for 8 cm concrete, 1 h for screed, less for dry systems, plus about 0.4 h
 for parquet and 0.6 h for carpet). The longer the loop has been closed, the longer the
 lag counts (up to twice after 4 hours), because the slab has given up more of its heat.
-The loop reopens when that expected temperature reaches setpoint + 0.3 °C, at the
-satisfied opening (not the calling opening), after at least 20 minutes closed. In Normal
-mode, which closes at setpoint, it reopens 0.2 °C below setpoint instead of at setpoint −
-comfort band. It closes again if the room turns warm (0.2 °C hysteresis). A steady room
-reopens on its measured temperature.
-
-All openings are for the hardest loop; the hydraulic balance scales each loop by
-its resistance (area, pipe spacing, pipe type, supply length).
-
-**From Lune Touch — the heat pump's phase** (Touch › Circulation › *Follow the heat pump*):
-while Touch says the heat pump is **idle**, a satisfied room uses the trim floor instead of
-the base opening (rooms below target still open to the opening when calling). **Running** and
-**starts soon** use the curve above. The manifold sheet shows the phase in one line; it
-expires after 15 minutes without a new message, and V6 is back on its own curve.
+The loop reopens 0.2 °C below setpoint instead of at setpoint − comfort band, after at
+least 20 minutes closed. It closes again if the room turns warm (0.2 °C hysteresis). A
+steady room reopens on its measured temperature.
 
 Default local mode is heat pump.
 

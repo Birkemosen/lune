@@ -1,0 +1,184 @@
+#include "dynamic_balance.h"
+
+#include <cmath>
+#include <cstdio>
+#include <cstdlib>
+
+using namespace lv6::dynamic_balance;
+
+static void expect(bool cond, const char *msg) {
+  if (!cond) {
+    std::fprintf(stderr, "FAIL  %s\n", msg);
+    std::exit(1);
+  }
+  std::printf("PASS  %s\n", msg);
+}
+
+static void expect_near(float a, float b, float tol, const char *msg) {
+  if (std::fabs(a - b) > tol)
+    std::fprintf(stderr, "      got %.4f, want %.4f\n", a, b);
+  expect(std::fabs(a - b) <= tol, msg);
+}
+
+static float sum6(const float (&v)[6]) {
+  float s = 0.0f;
+  for (float x : v) s += x;
+  return s;
+}
+
+static void test_load_factor() {
+  const Params p{0.5f, 1.0f, 0.0f};
+  expect_near(load_factor(20.0f, 21.0f, p), 1.0f, 1e-4f, "load: one band below target → 1");
+  expect_near(load_factor(20.5f, 21.0f, p), 1.0f, 1e-4f, "load: exactly one band below → 1");
+  expect_near(load_factor(22.0f, 21.0f, p), G_MIN, 1e-4f, "load: target + margin → G_MIN");
+  expect_near(load_factor(23.0f, 21.0f, p), G_MIN, 1e-4f, "load: hotter still → G_MIN");
+  const float at_target = G_MIN + (1.0f / 1.5f) * (1.0f - G_MIN);
+  expect_near(load_factor(21.0f, 21.0f, p), at_target, 1e-4f, "load: at target, linear");
+  expect_near(load_factor(NAN, 21.0f, p), 1.0f, 1e-4f, "load: no temperature → 1");
+  expect(load_factor(21.2f, 21.0f, p) < load_factor(21.1f, 21.0f, p), "load: falls as the room warms");
+}
+
+static void test_closed_latch() {
+  const Params p{0.5f, 1.0f, 0.0f};
+  // Limit = 21 + 0.5 + 1.0 = 22.5
+  expect(!update_closed(false, 22.5f, 21.0f, p), "latch: at the limit stays open");
+  expect(update_closed(false, 22.6f, 21.0f, p), "latch: above the limit closes");
+  expect(update_closed(true, 22.3f, 21.0f, p), "latch: stays closed inside the hysteresis");
+  expect(!update_closed(true, 22.1f, 21.0f, p), "latch: reopens 0.3 below the limit");
+  const Params absorb{0.5f, 1.0f, 1.0f};
+  expect(!update_closed(false, 23.0f, 21.0f, absorb), "latch: absorb band raises the limit");
+  expect(!update_closed(true, NAN, 21.0f, p), "latch: no temperature → open");
+}
+
+// Ground floor priors from a real manifold (design share incl. learned correction).
+static const float SHARES[6] = {0.35f, 0.315f, 0.67f, 0.85f, 1.0f, 0.24f};
+
+static void make_loops(Loop (&loops)[6], const float (&temps)[6], float sp) {
+  for (int i = 0; i < 6; i++) {
+    loops[i].enabled = true;
+    loops[i].design_share = SHARES[i];
+    loops[i].house_balance = 1.0f;
+    loops[i].temp_c = temps[i];
+    loops[i].setpoint_c = sp;
+    loops[i].max_opening_pct = 100.0f;
+  }
+}
+
+static void test_all_cold_is_static_balance() {
+  const Params p{0.5f, 1.0f, 0.0f};
+  Loop loops[6];
+  const float temps[6] = {20, 20, 20, 20, 20, 20};
+  make_loops(loops, temps, 21.0f);
+  bool closed[6]{};
+  float open[6], q[6];
+  const Result r = distribute(loops, p, closed, open, q);
+  expect_near(r.q_ref, 3.425f, 1e-3f, "static: Q_ref = Σ shares");
+  expect_near(sum6(q), r.q_ref, 1e-3f, "static: total equals Q_ref");
+  expect_near(open[4], 100.0f, 0.01f, "static: index loop fully open");
+  expect_near(open[3], 85.0f, 0.01f, "static: others at their design share");
+  expect_near(open[5], 24.0f, 0.01f, "static: smallest at its share");
+}
+
+static void test_warm_rooms_give_flow_to_cold() {
+  const Params p{0.5f, 1.0f, 0.0f};
+  Loop loops[6];
+  // Kontor cold, everyone else 0.8 above target.
+  const float temps[6] = {20.0f, 21.8f, 21.8f, 21.8f, 21.8f, 21.8f};
+  make_loops(loops, temps, 21.0f);
+  bool closed[6]{};
+  float open[6], q[6];
+  const Result r = distribute(loops, p, closed, open, q);
+  expect_near(r.load, 1.0f, 1e-4f, "redistribute: a cold room keeps the manifold at full load");
+  expect_near(sum6(q), r.q_ref, 1e-3f, "redistribute: total stays at Q_ref");
+  expect(open[0] > 35.0f + 1.0f, "redistribute: cold room above its design share");
+  expect(open[4] <= 100.0f, "redistribute: index never above 100");
+  for (int i = 1; i < 6; i++)
+    expect(open[i] > 0.0f, "redistribute: warm rooms keep flow");
+}
+
+static void test_closed_flow_goes_to_others() {
+  const Params p{0.5f, 1.0f, 0.0f};
+  Loop loops[6];
+  const float temps[6] = {21.0f, 21.0f, 21.0f, 21.0f, 23.0f, 21.0f};  // index overheated
+  make_loops(loops, temps, 21.0f);
+  bool closed[6]{};
+  for (int i = 0; i < 6; i++)
+    closed[i] = update_closed(closed[i], loops[i].temp_c, loops[i].setpoint_c, p);
+  float open[6], q[6];
+  const Result r = distribute(loops, p, closed, open, q);
+  expect(closed[4], "closed: overheated index loop latched");
+  expect_near(open[4], 0.0f, 1e-4f, "closed: no flow in the overheated loop");
+  expect_near(r.load, load_factor(21.0f, 21.0f, p), 1e-4f, "closed: load = the neediest open room");
+  expect_near(sum6(q), r.q_ref * r.load, 1e-3f, "closed: the others carry the manifold's flow");
+  expect(q[3] > 0.85f * r.load + 0.05f, "closed: the next loop gets more than its own share");
+}
+
+static void test_warm_manifold_throttles() {
+  const Params p{0.5f, 1.0f, 0.0f};
+  Loop loops[6];
+  // Every room above target (a warm floor): the manifold passes less in total.
+  const float temps[6] = {22.6f, 22.5f, 22.8f, 23.2f, 22.9f, 23.0f};
+  make_loops(loops, temps, 22.0f);
+  bool closed[6]{};
+  float open[6], q[6];
+  const Result r = distribute(loops, p, closed, open, q);
+  expect_near(r.load, load_factor(22.5f, 22.0f, p), 1e-4f, "warm floor: load = the coolest room");
+  expect(r.load < 0.6f, "warm floor: well below full load");
+  expect_near(sum6(q), r.q_ref * r.load, 1e-3f, "warm floor: total = Q_ref × load");
+  expect(open[4] < 100.0f, "warm floor: index loop no longer fully open");
+  for (int i = 0; i < 6; i++)
+    expect(open[i] > 0.0f, "warm floor: every loop keeps flow");
+}
+
+static void test_never_all_closed() {
+  const Params p{0.5f, 1.0f, 0.0f};
+  Loop loops[6];
+  const float temps[6] = {23.5f, 23.0f, 24.0f, 23.2f, 23.8f, 23.1f};
+  make_loops(loops, temps, 21.0f);
+  bool closed[6];
+  for (bool &c : closed) c = true;
+  float open[6], q[6];
+  distribute(loops, p, closed, open, q);
+  int open_count = 0;
+  for (int i = 0; i < 6; i++)
+    if (open[i] > 0.0f) open_count++;
+  expect(open_count == 1, "all hot: exactly one loop stays open");
+  expect(open[1] > 0.0f, "all hot: the one nearest its limit");
+}
+
+static void test_house_balance_and_caps() {
+  const Params p{0.5f, 1.0f, 0.0f};
+  Loop loops[6];
+  const float temps[6] = {20, 20, 20, 20, 20, 20};
+  make_loops(loops, temps, 21.0f);
+  for (Loop &l : loops) l.house_balance = 0.5f;
+  bool closed[6]{};
+  float open[6], q[6];
+  Result r = distribute(loops, p, closed, open, q);
+  expect_near(r.q_ref, 3.425f * 0.5f, 1e-3f, "house balance: lowers the manifold's total");
+  expect_near(open[4], 50.0f, 0.01f, "house balance: index at half");
+
+  make_loops(loops, temps, 21.0f);
+  loops[4].max_opening_pct = 80.0f;
+  loops[5].design_share = 0.02f;
+  r = distribute(loops, p, closed, open, q);
+  expect_near(open[4], 80.0f, 0.01f, "cap: max opening respected");
+  expect_near(open[5], MIN_OPEN_PCT, 0.01f, "floor: an open loop never below MIN_OPEN");
+
+  loops[2].enabled = false;
+  r = distribute(loops, p, closed, open, q);
+  expect_near(open[2], 0.0f, 1e-4f, "disabled: no flow");
+}
+
+int main() {
+  test_load_factor();
+  test_closed_latch();
+  test_all_cold_is_static_balance();
+  test_warm_rooms_give_flow_to_cold();
+  test_closed_flow_goes_to_others();
+  test_warm_manifold_throttles();
+  test_never_all_closed();
+  test_house_balance_and_caps();
+  std::printf("All dynamic balance tests passed.\n");
+  return 0;
+}

@@ -59,138 +59,21 @@ static void test_normal_latch() {
   expect(!latched, "Normal: latch cleared");
 }
 
-static void test_heat_pump_base_trim_cutoff() {
+static void test_heat_pump_classify() {
   bool latched = false;
   const float sp = 21.0f;
   const float band = 0.5f;
   const float margin = 1.0f;
-  const float base = 60.0f;
-  const float floor = 15.0f;
-  const float max_open = 90.0f;
 
   expect(classify(HeatingProfile::HEAT_PUMP, 20.0f, sp, band, margin, 0.0f, 0.0f, latched) ==
              ZoneState::DEMAND,
          "HP: below band → DEMAND");
-
   expect(classify(HeatingProfile::HEAT_PUMP, 21.0f, sp, band, margin, 0.0f, 0.0f, latched) ==
              ZoneState::SATISFIED,
          "HP: at setpoint → SATISFIED (not closed)");
-
-  float hold = position_for_state(HeatingProfile::HEAT_PUMP, ZoneState::SATISFIED, 0.0f, 0.0f,
-                                  15.0f, base, floor, margin, sp, sp, max_open, false, 0.0f);
-  expect_near(hold, base, 0.01f, "HP: at setpoint holds base opening");
-
-  float mid = position_for_state(HeatingProfile::HEAT_PUMP, ZoneState::SATISFIED, 0.0f, 0.0f, 15.0f,
-                                 base, floor, margin, sp + 0.5f, sp, max_open, false, 0.0f);
-  expect(mid < base && mid > floor, "HP: mid-margin soft-trims between base and floor");
-
-  float at_margin = position_for_state(HeatingProfile::HEAT_PUMP, ZoneState::SATISFIED, 0.0f, 0.0f,
-                                       15.0f, base, floor, margin, sp + margin, sp, max_open, false,
-                                       0.0f);
-  expect_near(at_margin, floor, 0.01f, "HP: at margin edge holds the trim floor");
-  float past_margin = position_for_state(HeatingProfile::HEAT_PUMP, ZoneState::SATISFIED, 0.0f, 0.0f,
-                                         15.0f, base, floor, margin, sp + margin + 0.3f, sp, max_open,
-                                         false, 0.0f);
-  expect_near(past_margin, floor, 0.01f, "HP: floor held until OVERHEATED (keeps flow)");
-
-  // Heat pump idle (Touch): a satisfied room drops to the trim floor; a room
-  // that needs heat still opens; the comfort band still leans toward demand.
-  const float nan = std::numeric_limits<float>::quiet_NaN();
-  float idle_hold = position_for_state(HeatingProfile::HEAT_PUMP, ZoneState::SATISFIED, 0.0f, 0.0f,
-                                       15.0f, base, floor, margin, sp, sp, max_open, false, 0.0f,
-                                       80.0f, band, nan, true);
-  expect_near(idle_hold, floor, 0.01f, "HP idle: at setpoint holds the trim floor");
-  float idle_cool = position_for_state(HeatingProfile::HEAT_PUMP, ZoneState::SATISFIED, 0.0f, 0.0f,
-                                       15.0f, base, floor, margin, sp - band, sp, max_open, false, 0.0f,
-                                       80.0f, band, nan, true);
-  expect_near(idle_cool, 80.0f, 0.01f, "HP idle: bottom of the band leans fully to demand");
-  float idle_demand = position_for_state(HeatingProfile::HEAT_PUMP, ZoneState::DEMAND, 0.0f, 0.0f,
-                                         15.0f, base, floor, margin, sp - 1.0f, sp, max_open, false, 0.0f,
-                                         80.0f, band, nan, true);
-  expect(idle_demand >= 80.0f - 0.01f, "HP idle: a room that needs heat still opens to demand");
-  float running_hold = position_for_state(HeatingProfile::HEAT_PUMP, ZoneState::SATISFIED, 0.0f, 0.0f,
-                                          15.0f, base, floor, margin, sp, sp, max_open, false, 0.0f,
-                                          80.0f, band, nan, false);
-  expect_near(running_hold, base, 0.01f, "HP running: at setpoint holds base (unchanged)");
-
-  // Close above target: a latched room gets 0; a room that needs heat is never closed.
-  float closed_pos = position_for_state(HeatingProfile::HEAT_PUMP, ZoneState::SATISFIED, 0.0f, 0.0f,
-                                        15.0f, base, floor, margin, sp + 0.6f, sp, max_open, false, 0.0f,
-                                        80.0f, band, nan, false, true);
-  expect_near(closed_pos, 0.0f, 0.01f, "HP close-above: latched satisfied room closes fully");
-  float closed_demand = position_for_state(HeatingProfile::HEAT_PUMP, ZoneState::DEMAND, 0.0f, 0.0f,
-                                           15.0f, base, floor, margin, sp - 1.0f, sp, max_open, false, 0.0f,
-                                           80.0f, band, nan, false, true);
-  expect(closed_demand >= 80.0f - 0.01f, "HP close-above: never closes a room that needs heat");
-  // Flow guarantee: 6 loops, 5 closed (surplus 0.6..1.5), one at 10 % → total 10 < 30:
-  // reopen the two closed loops nearest their target to the trim floor (15 %).
-  {
-    float pos[6] = {0, 0, 0, 0, 0, 10};
-    const bool closed[6] = {true, true, true, true, true, false};
-    const float surplus[6] = {1.5f, 0.6f, 1.0f, 0.7f, 1.2f, 0.0f};
-    const bool en[6] = {true, true, true, true, true, true};
-    unsigned n = reopen_for_min_total(pos, closed, surplus, en, 15.0f, 30.0f);
-    expect(n == 2, "flow guarantee: reopens two loops");
-    expect_near(pos[1], 15.0f, 0.01f, "flow guarantee: smallest surplus first (0.6)");
-    expect_near(pos[3], 15.0f, 0.01f, "flow guarantee: then 0.7");
-    expect_near(pos[0], 0.0f, 0.01f, "flow guarantee: warmest stays closed");
-  }
-  // Flow floor while the heat pump runs: 100 % total. One loop at 35 %, the rest
-  // closed; the overheated room (surplus 0.4, nearest target) must stay closed.
-  {
-    float pos[6] = {35, 0, 0, 0, 0, 0};
-    const ZoneState st[6] = {ZoneState::DEMAND, ZoneState::OVERHEATED, ZoneState::SATISFIED,
-                             ZoneState::SATISFIED, ZoneState::SATISFIED, ZoneState::SATISFIED};
-    const float surplus[6] = {-0.5f, 0.4f, 0.6f, 1.2f, 0.8f, 0.7f};
-    const bool en[6] = {true, true, true, true, true, false};
-    unsigned n = keep_running_flow(pos, st, surplus, en, 35.0f, 100.0f);
-    expect(n == 2, "running floor: reopens two loops (35 + 2*35 >= 100)");
-    expect_near(pos[1], 0.0f, 0.01f, "running floor: overheated room stays closed");
-    expect_near(pos[2], 35.0f, 0.01f, "running floor: smallest surplus first (0.6)");
-    expect_near(pos[4], 35.0f, 0.01f, "running floor: then 0.8");
-    expect_near(pos[3], 0.0f, 0.01f, "running floor: warmest stays closed");
-    expect_near(pos[5], 0.0f, 0.01f, "running floor: disabled loop untouched");
-  }
-
   expect(classify(HeatingProfile::HEAT_PUMP, sp + band + margin + 0.1f, sp, band, margin, 0.0f, 0.0f,
                   latched) == ZoneState::OVERHEATED,
-         "HP: past margin → OVERHEATED");
-
-  float closed = position_for_state(HeatingProfile::HEAT_PUMP, ZoneState::OVERHEATED, 0.0f, 0.0f,
-                                    15.0f, base, floor, margin, 30.0f, sp, max_open, false, 0.0f);
-  expect_near(closed, 0.0f, 0.01f, "HP: OVERHEATED → 0%");
-}
-
-static void test_heat_pump_demand_curve_and_cool_flow() {
-  const float sp = 22.0f, band = 0.5f, margin = 1.0f, max_open = 90.0f;
-  const float demand = 80.0f, base = 60.0f, floor = 35.0f;
-  auto pos = [&](ZoneState st, float temp, float alloc, float flow) {
-    return position_for_state(HeatingProfile::HEAT_PUMP, st, alloc, 0.0f, 15.0f, base, floor, margin,
-                              temp, sp, max_open, false, 0.0f, demand, band, flow);
-  };
-  expect_near(pos(ZoneState::DEMAND, 21.0f, 0.0f, NAN), demand, 0.01f,
-              "HP DEMAND opens at least the demand opening");
-  expect_near(pos(ZoneState::DEMAND, 21.0f, 88.0f, NAN), 88.0f, 0.01f,
-              "HP DEMAND keeps a larger allocator share");
-  expect_near(pos(ZoneState::SATISFIED, sp - band, 0.0f, NAN), demand, 0.01f,
-              "HP: band edge below setpoint = demand opening");
-  expect_near(pos(ZoneState::SATISFIED, sp - band / 2.0f, 0.0f, NAN), (demand + base) / 2.0f, 0.01f,
-              "HP: halfway into the band ramps between demand and base");
-  expect_near(pos(ZoneState::SATISFIED, sp, 0.0f, NAN), base, 0.01f, "HP: at setpoint = base");
-  expect_near(pos(ZoneState::SATISFIED, sp + margin, 0.0f, NAN), floor, 0.01f,
-              "HP: setpoint + margin = trim floor");
-  expect_near(pos(ZoneState::OVERHEATED, 24.0f, 0.0f, 24.5f), floor, 0.01f,
-              "HP OVERHEATED keeps the floor while supply ≤ room + 1 °C");
-  expect_near(pos(ZoneState::OVERHEATED, 24.0f, 0.0f, 26.0f), 0.0f, 0.01f,
-              "HP OVERHEATED closes when supply is warmer than the room");
-  expect_near(pos(ZoneState::OVERHEATED, 24.0f, 0.0f, NAN), 0.0f, 0.01f,
-              "HP OVERHEATED closes when supply temperature is unknown");
-  expect_near(position_for_state(HeatingProfile::NORMAL, ZoneState::OVERHEATED, 0.0f, 0.0f, 15.0f, base,
-                                 floor, margin, 24.0f, sp, max_open, false, 0.0f, demand, band, 22.0f),
-              0.0f, 0.01f, "Normal OVERHEATED closes regardless of supply");
-  expect_near(position_for_state(HeatingProfile::HEAT_PUMP, ZoneState::DEMAND, 0.0f, 0.0f, 15.0f, 70.0f,
-                                 floor, margin, 21.0f, sp, max_open, false, 0.0f, 60.0f, band, NAN),
-              70.0f, 0.01f, "HP DEMAND never below base even if demand < base");
+         "HP: past band + margin → OVERHEATED");
 }
 
 static void test_heat_pump_absorb_extends_margin() {
@@ -211,85 +94,95 @@ static void test_heat_pump_absorb_extends_margin() {
          "HP with absorb: margin extended keeps SATISFIED");
 }
 
-static void test_normal_position_closes() {
-  float closed = position_for_state(HeatingProfile::NORMAL, ZoneState::OVERHEATED, 40.0f, 50.0f,
-                                    15.0f, 60.0f, 15.0f, 1.0f, 21.5f, 21.0f, 90.0f, false, 0.0f);
-  expect_near(closed, 0.0f, 0.01f, "Normal OVERHEATED → 0%");
-
-  float sat = position_for_state(HeatingProfile::NORMAL, ZoneState::SATISFIED, 0.0f, 40.0f, 15.0f,
-                                 60.0f, 15.0f, 1.0f, 20.8f, 21.0f, 90.0f, false, 0.0f);
-  expect_near(sat, 15.0f, 0.01f, "Normal SATISFIED uses maintenance base");
-
-  float dem = position_for_state(HeatingProfile::NORMAL, ZoneState::DEMAND, 0.0f, 55.0f, 15.0f, 60.0f,
-                                 15.0f, 1.0f, 20.0f, 21.0f, 90.0f, false, 0.0f);
-  expect_near(dem, 55.0f, 0.01f, "Normal DEMAND uses algorithm opening");
-
-  float hp_dem = position_for_state(HeatingProfile::HEAT_PUMP, ZoneState::DEMAND, 13.0f, 40.0f, 15.0f,
-                                    60.0f, 15.0f, 1.0f, 22.4f, 23.0f, 90.0f, false, 0.0f);
-  expect_near(hp_dem, 60.0f, 0.01f, "HP DEMAND never opens less than the satisfied base");
-  float hp_dem_hi = position_for_state(HeatingProfile::HEAT_PUMP, ZoneState::DEMAND, 75.0f, 40.0f, 15.0f,
-                                       60.0f, 15.0f, 1.0f, 21.0f, 23.0f, 90.0f, false, 0.0f);
-  expect_near(hp_dem_hi, 75.0f, 0.01f, "HP DEMAND keeps a larger allocator share");
+static void test_normal_position() {
+  expect_near(normal_position(ZoneState::OVERHEATED, 50.0f, 15.0f, 90.0f), 0.0f, 0.01f,
+              "Normal OVERHEATED → 0%");
+  expect_near(normal_position(ZoneState::SATISFIED, 40.0f, 15.0f, 90.0f), 15.0f, 0.01f,
+              "Normal SATISFIED uses maintenance base");
+  expect_near(normal_position(ZoneState::DEMAND, 55.0f, 15.0f, 90.0f), 55.0f, 0.01f,
+              "Normal DEMAND uses algorithm opening");
+  expect_near(normal_position(ZoneState::DEMAND, 120.0f, 15.0f, 90.0f), 90.0f, 0.01f,
+              "Normal DEMAND capped at max opening");
+  expect_near(normal_position(ZoneState::UNKNOWN, 0.0f, 15.0f, 90.0f), 15.0f, 0.01f,
+              "Normal UNKNOWN uses maintenance base");
 }
 
 static HeatDemandZoneInput zone(bool enabled, bool primary, bool calibrated, ZoneState state,
-                                float opening, float max_open, float pre_floor) {
+                                float opening, float error_c) {
   HeatDemandZoneInput z{};
   z.enabled = enabled;
   z.is_primary = primary;
   z.calibrated = calibrated;
   z.state = state;
   z.opening_pct = opening;
-  z.max_opening_pct = max_open;
-  z.pre_floor_opening_pct = pre_floor;
+  z.max_opening_pct = 100.0f;
+  z.error_c = error_c;
   return z;
 }
 
 static void test_heat_demand() {
   HeatDemandTimers timers{};
-  HeatDemandZoneInput zones[2] = {
-      zone(true, true, true, ZoneState::DEMAND, 90.0f, 90.0f, 90.0f),
-      zone(true, true, true, ZoneState::SATISFIED, 50.0f, 90.0f, 50.0f),
+  HeatDemandZoneInput zones[3] = {
+      zone(true, true, true, ZoneState::DEMAND, 40.0f, 0.6f),
+      zone(true, true, true, ZoneState::DEMAND, 100.0f, 0.9f),
+      zone(true, true, true, ZoneState::SATISFIED, 60.0f, -0.2f),
   };
 
-  auto hold = step_heat_demand(timers, 60'000u, HeatingProfile::HEAT_PUMP, 60.0f, zones, 2);
+  auto hold = step_heat_demand(timers, 60'000u, HeatingProfile::HEAT_PUMP, zones, 3);
   expect(hold.recommendation == HeatDemandRecommendation::HOLD, "heat_demand starts at HOLD");
-  expect(hold.demanding_zones == 1, "one demanding zone counted");
-  expect(hold.critical_zone == 0, "critical zone is the saturated demander");
-  expect(hold.saturated_s == 60u, "saturated_s advances while saturated");
+  expect(hold.demanding_zones == 2, "two demanding zones counted");
+  expect(hold.critical_zone == 1, "critical zone is the greatest deficit");
+  expect_near(hold.critical_opening_ratio, 1.0f, 1e-4f, "critical opening ratio reported");
+  expect(hold.saturated_s == 60u, "saturated_s advances while a room is in demand");
 
-  // Advance past 20 minutes of saturation
   for (int i = 0; i < 20; i++)
-    hold = step_heat_demand(timers, 60'000u, HeatingProfile::HEAT_PUMP, 60.0f, zones, 2);
+    hold = step_heat_demand(timers, 60'000u, HeatingProfile::HEAT_PUMP, zones, 3);
   expect(hold.recommendation == HeatDemandRecommendation::RAISE,
-         "heat_demand RAISE after 20 min saturation");
+         "heat_demand RAISE after 20 min with a room in demand");
 
-  // Min-flow-raised zone excluded from demand accounting
+  // A demanding room with a small opening still raises: it already has its full share.
   timers = {};
-  HeatDemandZoneInput floored[1] = {
-      zone(true, true, true, ZoneState::DEMAND, 40.0f, 90.0f, 10.0f),
-  };
-  auto ignored =
-      step_heat_demand(timers, 60'000u, HeatingProfile::HEAT_PUMP, 60.0f, floored, 1);
-  expect(ignored.demanding_zones == 0, "min-flow-raised openings excluded");
-  expect(ignored.recommendation == HeatDemandRecommendation::HOLD,
-         "excluded floor raise does not drive RAISE");
+  HeatDemandZoneInput small[1] = {zone(true, true, true, ZoneState::DEMAND, 24.0f, 0.7f)};
+  for (int i = 0; i < 21; i++)
+    hold = step_heat_demand(timers, 60'000u, HeatingProfile::HEAT_PUMP, small, 1);
+  expect(hold.recommendation == HeatDemandRecommendation::RAISE,
+         "small loop in demand raises too");
 
-  // Headroom → LOWER after 30 min
+  // Uncalibrated loops are ignored.
   timers = {};
-  HeatDemandZoneInput calm[1] = {
-      zone(true, true, true, ZoneState::SATISFIED, 40.0f, 90.0f, 40.0f),
+  HeatDemandZoneInput uncal[1] = {zone(true, true, false, ZoneState::DEMAND, 100.0f, 1.0f)};
+  auto ignored = step_heat_demand(timers, 60'000u, HeatingProfile::HEAT_PUMP, uncal, 1);
+  expect(ignored.demanding_zones == 0, "uncalibrated loop excluded");
+
+  // Every room at or above target → LOWER after 30 min.
+  timers = {};
+  HeatDemandZoneInput calm[2] = {
+      zone(true, true, true, ZoneState::SATISFIED, 100.0f, -0.1f),
+      zone(true, true, true, ZoneState::SATISFIED, 40.0f, 0.0f),
   };
-  auto lower = step_heat_demand(timers, 60'000u, HeatingProfile::HEAT_PUMP, 60.0f, calm, 1);
-  expect(lower.headroom, "headroom when no demand and opening below base");
+  auto lower = step_heat_demand(timers, 60'000u, HeatingProfile::HEAT_PUMP, calm, 2);
+  expect(lower.headroom, "headroom when no room is below target");
   for (int i = 0; i < 30; i++)
-    lower = step_heat_demand(timers, 60'000u, HeatingProfile::HEAT_PUMP, 60.0f, calm, 1);
+    lower = step_heat_demand(timers, 60'000u, HeatingProfile::HEAT_PUMP, calm, 2);
   expect(lower.recommendation == HeatDemandRecommendation::LOWER,
          "heat_demand LOWER after 30 min headroom");
 
+  // A room just below target (inside the band) holds: no raise, no lower.
+  timers = {};
+  HeatDemandZoneInput mid[1] = {zone(true, true, true, ZoneState::SATISFIED, 80.0f, 0.2f)};
+  for (int i = 0; i < 40; i++)
+    lower = step_heat_demand(timers, 60'000u, HeatingProfile::HEAT_PUMP, mid, 1);
+  expect(lower.recommendation == HeatDemandRecommendation::HOLD, "inside the band → HOLD");
+
+  // No temperatures → no headroom.
+  timers = {};
+  HeatDemandZoneInput blind[1] = {zone(true, true, true, ZoneState::UNKNOWN, 50.0f, NAN)};
+  auto none = step_heat_demand(timers, 60'000u, HeatingProfile::HEAT_PUMP, blind, 1);
+  expect(!none.headroom, "unknown temperatures give no headroom");
+
   // Normal mode clears timers / holds recommendation
   timers.saturated_ms = 999999;
-  auto normal = step_heat_demand(timers, 60'000u, HeatingProfile::NORMAL, 60.0f, zones, 2);
+  auto normal = step_heat_demand(timers, 60'000u, HeatingProfile::NORMAL, zones, 3);
   expect(normal.recommendation == HeatDemandRecommendation::HOLD,
          "Normal mode does not emit raise/lower");
   expect(timers.saturated_ms == 0, "Normal mode clears heat_demand timers");
@@ -298,10 +191,9 @@ static void test_heat_demand() {
 int main() {
   test_resolve_mode();
   test_normal_latch();
-  test_heat_pump_base_trim_cutoff();
-  test_heat_pump_demand_curve_and_cool_flow();
+  test_heat_pump_classify();
   test_heat_pump_absorb_extends_margin();
-  test_normal_position_closes();
+  test_normal_position();
   test_heat_demand();
   std::puts("Control mode policy tests passed.");
   return 0;

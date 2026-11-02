@@ -38,12 +38,7 @@ device_display_name
 device_location
 heat_min_open
 heat_mode
-hp_base
-hp_demand
 hp_overheat
-hp_trim
-hp_close
-hp_run_min
 include_learned
 m_cfloor
 m_cslope
