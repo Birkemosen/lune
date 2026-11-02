@@ -708,6 +708,8 @@ size_t write_export_json(char *out, size_t out_cap, const lv6::DeviceConfig &cfg
   b.key_num("hp_demand_pct", c.hp_demand_pct);
   b.addf(",");
   b.key_num("hp_close_above_c", c.hp_close_above_c);
+  b.addf(",");
+  b.key_num("hp_running_min_total_pct", c.hp_running_min_total_pct);
   b.addf("}");
 
   const lv6::BalancingConfig &bal = cfg.balancing;
@@ -1115,6 +1117,7 @@ ImportResult apply_import_json(const char *json, lv6::DeviceConfig &cfg, bool re
       c.hp_trim_floor_pct = c.hp_base_pct;
     apply_float(node, "hp_demand_pct", c.hp_demand_pct, 0.0, 100.0, result.applied);
     apply_float(node, "hp_close_above_c", c.hp_close_above_c, 0.0, 3.0, result.applied);
+    apply_float(node, "hp_running_min_total_pct", c.hp_running_min_total_pct, 0.0, 600.0, result.applied);
     if (c.hp_demand_pct < c.hp_base_pct)
       c.hp_demand_pct = c.hp_base_pct;
   }

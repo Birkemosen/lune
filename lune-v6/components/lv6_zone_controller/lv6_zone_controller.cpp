@@ -1008,6 +1008,17 @@ void Lv6ZoneController::set_hp_close_above_c(float c) {
   config_store_->update_control(cfg.control);
 }
 
+void Lv6ZoneController::set_hp_running_min_total_pct(float pct) {
+  if (!config_store_)
+    return;
+  auto cfg = config_store_->get_config();
+  pct = std::isfinite(pct) ? std::clamp(pct, 0.0f, 600.0f) : 0.0f;
+  if (std::fabs(cfg.control.hp_running_min_total_pct - pct) < 0.01f)
+    return;
+  cfg.control.hp_running_min_total_pct = pct;
+  config_store_->update_control(cfg.control);
+}
+
 void Lv6ZoneController::set_hp_trim_floor_pct(float pct) {
   if (!config_store_)
     return;
@@ -1525,7 +1536,16 @@ void Lv6ZoneController::run_cycle_() {
   // Flow guarantee for «close above target»: closing warm rooms must never stop the
   // manifold. Below the minimum total, reopen the closed loops nearest their target
   // to the trim floor (min total = the manifold setting, else 30 %).
-  if (effective_mode == HeatingProfile::HEAT_PUMP && cfg.control.hp_close_above_c > 0.0f) {
+  // Flow floor while the heat pump runs (hp_running_min_total_pct): with a
+  // parallel buffer the secondary flow must stay above the primary, so while
+  // Touch reports the heat pump running (or about to start) the total opening
+  // is raised further, reopening only loops that are not overheated.
+  const HpPhase hp_phase = get_hp_phase();
+  const bool hp_running = hp_phase == HpPhase::RUNNING || hp_phase == HpPhase::PRESTART;
+  const bool running_floor = effective_mode == HeatingProfile::HEAT_PUMP && hp_running &&
+                             cfg.control.hp_running_min_total_pct > 0.0f;
+  if (effective_mode == HeatingProfile::HEAT_PUMP &&
+      (cfg.control.hp_close_above_c > 0.0f || running_floor)) {
     float pos[NUM_ZONES];
     bool closed[NUM_ZONES];
     bool en[NUM_ZONES];
@@ -1540,10 +1560,25 @@ void Lv6ZoneController::run_cycle_() {
     const float min_total = cfg.balancing.secondary_min_total_opening_pct > 0.0f
                                 ? cfg.balancing.secondary_min_total_opening_pct : 30.0f;
     const float floor_pct = std::max(5.0f, std::min(cfg.control.hp_trim_floor_pct, cfg.control.hp_base_pct));
-    const unsigned reopened = control_mode_policy::reopen_for_min_total(pos, closed, surplus, en, floor_pct, min_total);
+    unsigned reopened = 0;
+    if (cfg.control.hp_close_above_c > 0.0f) {
+      reopened = control_mode_policy::reopen_for_min_total(pos, closed, surplus, en, floor_pct, min_total);
+      if (reopened > 0)
+        ESP_LOGD(TAG, "Close-above: %u loop(s) reopened to %.0f%% to keep %.0f%% total flow",
+                 reopened, floor_pct, min_total);
+    }
+    if (running_floor) {
+      ZoneState states[NUM_ZONES];
+      for (uint8_t i = 0; i < NUM_ZONES; i++)
+        states[i] = zone_states[i];
+      const unsigned extra = control_mode_policy::keep_running_flow(
+          pos, states, surplus, en, floor_pct, cfg.control.hp_running_min_total_pct);
+      if (extra > 0)
+        ESP_LOGD(TAG, "Heat pump running: %u loop(s) reopened to %.0f%% to keep %.0f%% total flow",
+                 extra, floor_pct, cfg.control.hp_running_min_total_pct);
+      reopened += extra;
+    }
     if (reopened > 0) {
-      ESP_LOGD(TAG, "Close-above: %u loop(s) reopened to %.0f%% to keep %.0f%% total flow",
-               reopened, floor_pct, min_total);
       xSemaphoreTake(snapshot_mutex_, portMAX_DELAY);
       for (uint8_t i = 0; i < NUM_ZONES; i++) {
         if (pos[i] != target_positions[i]) {

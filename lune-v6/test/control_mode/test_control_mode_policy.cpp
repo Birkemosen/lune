@@ -135,6 +135,22 @@ static void test_heat_pump_base_trim_cutoff() {
     expect_near(pos[3], 15.0f, 0.01f, "flow guarantee: then 0.7");
     expect_near(pos[0], 0.0f, 0.01f, "flow guarantee: warmest stays closed");
   }
+  // Flow floor while the heat pump runs: 100 % total. One loop at 35 %, the rest
+  // closed; the overheated room (surplus 0.4, nearest target) must stay closed.
+  {
+    float pos[6] = {35, 0, 0, 0, 0, 0};
+    const ZoneState st[6] = {ZoneState::DEMAND, ZoneState::OVERHEATED, ZoneState::SATISFIED,
+                             ZoneState::SATISFIED, ZoneState::SATISFIED, ZoneState::SATISFIED};
+    const float surplus[6] = {-0.5f, 0.4f, 0.6f, 1.2f, 0.8f, 0.7f};
+    const bool en[6] = {true, true, true, true, true, false};
+    unsigned n = keep_running_flow(pos, st, surplus, en, 35.0f, 100.0f);
+    expect(n == 2, "running floor: reopens two loops (35 + 2*35 >= 100)");
+    expect_near(pos[1], 0.0f, 0.01f, "running floor: overheated room stays closed");
+    expect_near(pos[2], 35.0f, 0.01f, "running floor: smallest surplus first (0.6)");
+    expect_near(pos[4], 35.0f, 0.01f, "running floor: then 0.8");
+    expect_near(pos[3], 0.0f, 0.01f, "running floor: warmest stays closed");
+    expect_near(pos[5], 0.0f, 0.01f, "running floor: disabled loop untouched");
+  }
 
   expect(classify(HeatingProfile::HEAT_PUMP, sp + band + margin + 0.1f, sp, band, margin, 0.0f, 0.0f,
                   latched) == ZoneState::OVERHEATED,

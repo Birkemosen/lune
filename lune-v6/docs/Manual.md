@@ -207,6 +207,15 @@ flow temperature:
   needs heat is never closed. **Flow guarantee:** if the manifold's total opening would
   fall below *Min. total opening* (else 30 %), the closed loops nearest their target are
   reopened to the trim floor, one at a time, so the manifold always has flow.
+- **Min. opening while the heat pump runs** — 0 = off. With a parallel buffer tank the
+  floors must draw at least as much water as the heat pump pushes into the tank;
+  otherwise hot water runs straight back to the heat pump, which then throttles or
+  stops. While Lune Touch reports the heat pump running (or about to start), closed
+  loops are reopened to the trim floor, nearest their target first, until the
+  manifold's total opening is at least this value. Overheated rooms stay closed. Set
+  it on the manifold best suited to take the extra heat, typically heavy floors with
+  low resistance (concrete, larger pipes); e.g. 100 % ≈ three loops at a 35 % trim
+  floor. Check the result in Touch's buffer balance. Without Touch the rule is off.
 
 **Reopening ahead (both modes).** A floor answers 1–3 hours after its valve opens, so a
 closed room that waited for its thermometer would keep falling well below target. A loop

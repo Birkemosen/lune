@@ -414,7 +414,8 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
                  sstep("hp_base",T("csys.hpBase"),60,30,100,1,"%",dec=0)+
                  sstep("hp_overheat",T("csys.hpOverheat"),1.0,0.3,3.0,0.1,"°C")+
                  sstep("hp_trim",T("csys.hpTrim"),35,0,100,1,"%",dec=0)+
-                 sstep("hp_close",T("csys.hpCloseAbove"),0.0,0,3.0,0.1,"°C",hint=T("csys.hpCloseAboveHint")),cls="hp-limits")}
+                 sstep("hp_close",T("csys.hpCloseAbove"),0.0,0,3.0,0.1,"°C",hint=T("csys.hpCloseAboveHint"))+
+                 sstep("hp_run_min",T("csys.hpRunMinTotal"),0,0,600,10,"%",dec=0,hint=T("csys.hpRunMinTotalHint")),cls="hp-limits")}
           {group(T("bal.title"),
                  srow(span(T("csys.balMode")),seg("balancing_mode",[("static",T("bal.static")),("adaptive",T("bal.adaptive"))],"static",T("csys.balMode"))),
                  f'<p class="note">{T("csys.balModeNote")}</p>')}

@@ -1440,6 +1440,7 @@ function paintFormsFromState() {
   paintNum('hp_overheat', gkey.hpOverheatMarginC, 1);
   paintNum('hp_trim', gkey.hpTrimFloorPct, 0);
   paintNum('hp_close', gkey.hpCloseAboveC, 1);
+  paintNum('hp_run_min', gkey.hpRunningMinTotalPct, 0);
   const devName = document.getElementById('device_display_name');
   if (devName && !formIsLocked(devName)) {
     devName.value = es(gkey.deviceDisplayName) || devName.value;
@@ -1668,6 +1669,7 @@ async function saveHeating_(form) {
   if (form.hp_demand != null) await setGlobalNumber('hp_demand_pct', form.hp_demand);
   if (form.hp_trim != null) await setGlobalNumber('hp_trim_floor_pct', form.hp_trim);
   if (form.hp_close != null) await setGlobalNumber('hp_close_above_c', form.hp_close);
+  if (form.hp_run_min != null) await setGlobalNumber('hp_running_min_total_pct', form.hp_run_min);
 }
 
 async function saveZoneRoom_(z, form) {

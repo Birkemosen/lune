@@ -43,6 +43,7 @@ hp_demand
 hp_overheat
 hp_trim
 hp_close
+hp_run_min
 include_learned
 m_cfloor
 m_cslope

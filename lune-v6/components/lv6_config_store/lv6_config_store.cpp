@@ -960,11 +960,33 @@ void Lv6ConfigStore::load_config_() {
   xSemaphoreTake(mutex_, portMAX_DELAY);
   had_all_sections &= load_section(handle, KEY_SYSTEM, SYSTEM_CONFIG_VERSION, config_.system);
   if (!load_section(handle, KEY_CONTROL, CONTROL_CONFIG_VERSION, config_.control)) {
-    // v3 had no hp_close_above_c, v2 no hp_demand_pct: keep every stored control
-    // setting and add the new fields at their defaults.
+    // v4 had no hp_running_min_total_pct, v3 no hp_close_above_c, v2 no
+    // hp_demand_pct: keep every stored control setting and add the new fields at
+    // their defaults.
+    ControlConfigV4 v4{};
     ControlConfigV3 v3{};
     ControlConfigV2 v2{};
-    if (load_section(handle, KEY_CONTROL, 3, v3)) {
+    if (load_section(handle, KEY_CONTROL, 4, v4)) {
+      ControlConfig c{};
+      c.comfort_band_c = v4.comfort_band_c;
+      c.maintenance_base_pct = v4.maintenance_base_pct;
+      c.demand_boost_pct = v4.demand_boost_pct;
+      c.boost_factor = v4.boost_factor;
+      c.min_movement_pct = v4.min_movement_pct;
+      c.tanh_steepness = v4.tanh_steepness;
+      c.simple_preheat_enabled = v4.simple_preheat_enabled;
+      c.preheat_absorb_enabled = v4.preheat_absorb_enabled;
+      c.preheat_absorb_band_c = v4.preheat_absorb_band_c;
+      c.preheat_detect_delta_c = v4.preheat_detect_delta_c;
+      c.mode = v4.mode;
+      c.hp_overheat_margin_c = v4.hp_overheat_margin_c;
+      c.hp_base_pct = v4.hp_base_pct;
+      c.hp_trim_floor_pct = v4.hp_trim_floor_pct;
+      c.hp_demand_pct = v4.hp_demand_pct;
+      c.hp_close_above_c = v4.hp_close_above_c;
+      config_.control = c;
+      ESP_LOGI(TAG, "Control section migrated v4 -> v%" PRIu32, CONTROL_CONFIG_VERSION);
+    } else if (load_section(handle, KEY_CONTROL, 3, v3)) {
       ControlConfig c{};
       c.comfort_band_c = v3.comfort_band_c;
       c.maintenance_base_pct = v3.maintenance_base_pct;

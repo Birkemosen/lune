@@ -264,6 +264,7 @@ class Lv6ZoneController : public esphome::Component {
   void set_hp_base_pct(float pct);
   void set_hp_trim_floor_pct(float pct);
   void set_hp_close_above_c(float c);
+  void set_hp_running_min_total_pct(float pct);
   void set_hp_demand_pct(float pct);
 
   bool is_connected() const { return true; }  // WiFi managed by ESPHome

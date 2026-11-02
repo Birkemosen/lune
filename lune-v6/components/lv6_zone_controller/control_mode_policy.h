@@ -186,6 +186,19 @@ inline unsigned reopen_for_min_total(float (&positions)[N], const bool (&closed)
   return reopened;
 }
 
+/// Flow floor while the heat pump runs: like reopen_for_min_total, but any loop
+/// below floor_pct may reopen unless its room is overheated (comfort first). With
+/// a parallel buffer this keeps the secondary flow above the primary.
+template <size_t N>
+inline unsigned keep_running_flow(float (&positions)[N], const ZoneState (&states)[N],
+                                  const float (&surplus_c)[N], const bool (&enabled)[N],
+                                  float floor_pct, float min_total_pct) {
+  bool candidate[N]{};
+  for (size_t i = 0; i < N; i++)
+    candidate[i] = enabled[i] && states[i] != ZoneState::OVERHEATED;
+  return reopen_for_min_total(positions, candidate, surplus_c, enabled, floor_pct, min_total_pct);
+}
+
 struct HeatDemandTimers {
   uint32_t saturated_ms{0};
   uint32_t headroom_ms{0};

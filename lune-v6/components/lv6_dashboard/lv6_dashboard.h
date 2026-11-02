@@ -148,6 +148,7 @@ struct DashboardSnapshot {
   float             hp_base_pct{60.0f};
   float             hp_trim_floor_pct{15.0f};
   float             hp_close_above_c{0.0f};
+  float             hp_running_min_total_pct{0.0f};
   float             hp_demand_pct{80.0f};
   lv6::HeatDemandSummary heat_demand{};
 
