@@ -354,6 +354,7 @@
   "lab.vc.measured": "målt af Lune Touch {date}",
   "lab.vc.default": "standardkurve",
   "lab.vc.meta": "Z{z}",
+  "zdash.vcFull": "fuldt flow {v} l/min",
   "csys.saveManifold": "Gem manifold",
   "csys.regulation": "Regulering",
   "csys.preheat": "Preheat-absorption",

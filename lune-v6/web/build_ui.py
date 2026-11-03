@@ -333,7 +333,14 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
           <div><dt>{T("zdash.preheatAdv")}</dt><dd data-bind="z{i}.preheat">—</dd></div>
           <div><dt>{T("zdash.offsetNow")}</dt><dd data-bind="z{i}.offset">—</dd></div>
           <div><dt>{T("zdash.tempFrom")}</dt><dd data-bind="z{i}.tempFrom">—</dd></div>
-        </dl>'''
+        </dl>
+        <div class="sub mtrace" data-bind-show="z{i}.vc" hidden>
+          <h4>{T("lab.vc.title")} <span class="legend" data-bind="z{i}.vcMeta"></span></h4>
+          <div class="mtrace-row square"><div class="mtrace-y" aria-hidden="true"><span>100 <small>%</small></span><span>50</span><span>0</span></div>
+            <svg class="trend" viewBox="0 0 600 100" preserveAspectRatio="none" role="img" aria-label="{T("lab.vc.aria")}"><path class="vpos" data-zc-pos="{i}" d=""/><path class="vc" data-zc-curve="{i}" d=""/></svg></div>
+          <div class="axis" aria-hidden="true"><span>0 %</span><span>{T("lab.vc.axis")}</span><span>100 %</span></div>
+          <p class="note" data-bind="z{i}.vcNote"></p>
+        </div>'''
         # Indstillinger: én formular, én gem-bjælke. data-patch: binderen skriver kun de ændrede dele.
         merge=f'<option value="">{T("common.none")}</option>'+"".join(f'<option value="{y[0]}" data-zone-opt="{y[0]}">Z{y[0]}</option>' for y in Z if y[0]!=i)
         pipes="".join(f'<option{" selected" if p==pipe else ""}>{p}</option>' for p in PIPES)
@@ -686,7 +693,7 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
              "alert.driversOffBody","drv.reason.fault","drv.reason.ota","drv.reason.arm","drv.reason.boot","drv.reason.user","dev.online","dev.offline",
              "zdash.preload","zdash.preloadUntil","src.ble","src.probe",
              "csys.touchWaiting","csys.touchWaitingBody","csys.touchApproved","csys.touchPending","csys.touchControls","csys.touchReady","csys.touchLeaseLost",
-             "zchart.expected","zchart.at","zchart.noForecast","zchart.faultStrong","zcard.flow","zcard.flowRet","lab.thr.meta","lab.thr.capture","lab.thr.reference","lab.thr.verdictNone","lab.thr.verdictCeiling","lab.thr.verdictLate","lab.thr.verdictFirst","lab.thr.first","lab.thr.notReached","lab.thr.suggestText","lab.path.threshold","lab.path.trailing","lab.path.seat","lab.path.popoff","lab.path.openStop","lab.path.stall","lab.path.circuit","lab.path.ceiling","lab.path.wall","lab.vc.note","lab.vc.measured","lab.vc.default","lab.vc.meta","lab.dir.open","lab.dir.close","lab.state.setup","lab.state.armed","lab.state.seated","lab.state.opened","lab.state.closed","lab.state.running","lab.state.halted","lab.phase.free","lab.phase.contact","lab.phase.load","lab.phase.stopping","lab.pinSeen","lab.pinWaiting","lab.on","lab.off","lab.chartMeta","lab.dir.open","lab.dir.close","lab.err.drivers","lab.err.failed","lab.haltedMsg","csys.ownerFlow","csys.ownerReturn","zdash.pin",
+             "zchart.expected","zchart.at","zchart.noForecast","zchart.faultStrong","zcard.flow","zcard.flowRet","zdash.vcFull","lab.thr.meta","lab.thr.capture","lab.thr.reference","lab.thr.verdictNone","lab.thr.verdictCeiling","lab.thr.verdictLate","lab.thr.verdictFirst","lab.thr.first","lab.thr.notReached","lab.thr.suggestText","lab.path.threshold","lab.path.trailing","lab.path.seat","lab.path.popoff","lab.path.openStop","lab.path.stall","lab.path.circuit","lab.path.ceiling","lab.path.wall","lab.vc.note","lab.vc.measured","lab.vc.default","lab.vc.meta","lab.dir.open","lab.dir.close","lab.state.setup","lab.state.armed","lab.state.seated","lab.state.opened","lab.state.closed","lab.state.running","lab.state.halted","lab.phase.free","lab.phase.contact","lab.phase.load","lab.phase.stopping","lab.pinSeen","lab.pinWaiting","lab.on","lab.off","lab.chartMeta","lab.dir.open","lab.dir.close","lab.err.drivers","lab.err.failed","lab.haltedMsg","csys.ownerFlow","csys.ownerReturn","zdash.pin",
              "wifi.connectedTo","wifi.notConnected","wifi.apActive","wifi.sent","wifi.needSsid","wifi.busy",
              "wifi.switch.pending","wifi.switch.connected","wifi.switch.reverted","wifi.switch.failed")
     rt={k:T(k) for k in rt_keys}

@@ -454,7 +454,44 @@ async function refreshZones(force) {
     const data = d.data || d;
     zones = Array.isArray(data) ? data : (data.zones || []);
     paintCurve();
+    paintZoneCurves();
   } catch (_) { /* offline: keep the last curve */ }
+}
+
+/** Zone sheets: the learned curve (measured by Touch) under the zone's overview. */
+function paintZoneCurves() {
+  if (!h) return;
+  for (const row of zones || []) {
+    const z = Number(row.zone);
+    const c = row.valve_curve;
+    const measured = !!(c && Number(c.measured_epoch_s) > 0);
+    h.setShow(`z${z}.vc`, measured);
+    if (!measured) continue;
+    const start = Number(c.start_pct);
+    const full = Number(c.full_pct);
+    const pos = Number(row.valve_pct);
+    const x = (pct) => (pct / 100) * W;
+    document.querySelectorAll(`[data-zc-curve="${z}"]`).forEach((el) =>
+      el.setAttribute('d', `M0,100H${x(start).toFixed(1)}L${x(full).toFixed(1)},0H${W}`));
+    document.querySelectorAll(`[data-zc-pos="${z}"]`).forEach((el) =>
+      el.setAttribute('d', Number.isFinite(pos) ? `M${x(pos).toFixed(1)},0V100` : ''));
+    const lmin = Number(c.full_lmin);
+    h.setBind(`z${z}.vcMeta`, Number.isFinite(lmin) && lmin > 0 ? h.escapeHtml(h.t('zdash.vcFull', { v: h.num(lmin, 1) })) : '');
+    h.setBind(`z${z}.vcNote`, h.escapeHtml(curveNote(c, row)));
+  }
+}
+
+function curveNote(c, row) {
+  const pos = Number(row.valve_pct);
+  const flow = Number(row.flow_pct);
+  const measured = Number(c.measured_epoch_s) > 0;
+  const src = measured
+    ? h.t('lab.vc.measured', { date: new Date(Number(c.measured_epoch_s) * 1000).toLocaleDateString(/^\/da\b/.test(location.pathname) ? 'da-DK' : 'en-GB') })
+    : h.t('lab.vc.default');
+  return h.t('lab.vc.note', {
+    start: h.num(Number(c.start_pct), 0), full: h.num(Number(c.full_pct), 0), src,
+    pos: Number.isFinite(pos) ? h.num(pos, 0) : '—', flow: Number.isFinite(flow) ? h.num(flow, 0) : '—',
+  });
 }
 
 function paintCurve() {
