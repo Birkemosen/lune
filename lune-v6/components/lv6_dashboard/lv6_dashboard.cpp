@@ -641,6 +641,7 @@ void LV6Dashboard::update_snapshot_() {
         s.zone_valve_curve_start_pct[i] = vc.start_pct;
         s.zone_valve_curve_full_pct[i] = vc.full_pct;
         s.zone_valve_curve_measured[i] = this->zone_controller_->get_valve_curve_measured(i);
+        s.zone_valve_curve_full_lmin[i] = this->zone_controller_->get_valve_curve_full_lmin(i);
         s.zone_flow_pct[i] = std::isfinite(s.zone_valve_pct[i])
                                  ? 100.0f * lv6::valve_curve::flow_fraction(s.zone_valve_pct[i], vc)
                                  : NAN;
@@ -657,6 +658,7 @@ void LV6Dashboard::update_snapshot_() {
         s.zone_valve_curve_start_pct[i] = NAN;
         s.zone_valve_curve_full_pct[i] = NAN;
         s.zone_valve_curve_measured[i] = 0;
+        s.zone_valve_curve_full_lmin[i] = NAN;
         s.zone_flow_pct[i] = NAN;
         s.zone_absorb_capacity_rank[i] = 0;
         s.zone_relative_kv[i] = NAN;
@@ -2330,6 +2332,11 @@ void LV6Dashboard::handle_zones_(AsyncWebServerRequest *request) {
       snprintf(thick_tok, sizeof(thick_tok), "%.1f", snap->zones[i].active_thickness_cm);
     else
       snprintf(thick_tok, sizeof(thick_tok), "null");
+    char full_lmin_tok[16];
+    if (std::isfinite(snap->zone_valve_curve_full_lmin[i]))
+      snprintf(full_lmin_tok, sizeof(full_lmin_tok), "%.2f", snap->zone_valve_curve_full_lmin[i]);
+    else
+      snprintf(full_lmin_tok, sizeof(full_lmin_tok), "null");
     char r_ov_tok[24];
     if (std::isfinite(snap->zones[i].r_override_m2k_per_w))
       snprintf(r_ov_tok, sizeof(r_ov_tok), "%.3f", snap->zones[i].r_override_m2k_per_w);
@@ -2349,7 +2356,7 @@ void LV6Dashboard::handle_zones_(AsyncWebServerRequest *request) {
             "\"group_id\":\"%s\",\"group_role\":\"%s\","
             "\"wind_exposure\":%.2f,\"solar_gain\":%.2f,"
             "\"pipe_inner_mm\":%.0f,\"pipe_spacing_mm\":%.0f,\"supply_pipe_length_m\":%.1f,"
-            "\"house_balance\":%.2f,\"valve_curve\":{\"start_pct\":%.1f,\"full_pct\":%.1f,\"measured_epoch_s\":%lu},"
+            "\"house_balance\":%.2f,\"valve_curve\":{\"start_pct\":%.1f,\"full_pct\":%.1f,\"measured_epoch_s\":%lu,\"full_lmin\":%s},"
             "\"warnings\":[",
             snap->zones[i].area_m2, static_cast<unsigned>(snap->zones[i].exterior_walls & 0x0F),
             lv6::slab_type_to_string(snap->zones[i].slab_type), thick_tok,
@@ -2364,7 +2371,7 @@ void LV6Dashboard::handle_zones_(AsyncWebServerRequest *request) {
             lv6::pipe_inner_diameter_mm(snap->zones[i].pipe_type), snap->zones[i].pipe_spacing_mm,
             snap->zones[i].supply_pipe_length_m, snap->zone_house_balance[i],
             snap->zone_valve_curve_start_pct[i], snap->zone_valve_curve_full_pct[i],
-            static_cast<unsigned long>(snap->zone_valve_curve_measured[i]));
+            static_cast<unsigned long>(snap->zone_valve_curve_measured[i]), full_lmin_tok);
     bool fw = true;
     if (th.thickness_ignored) {
       appendf(buf, JSON_BUF_SIZE, off, "%s\"thickness_ignored\"", fw ? "" : ",");
@@ -3433,7 +3440,11 @@ void LV6Dashboard::handle_v1_(AsyncWebServerRequest *request, const char *path) 
     if (!key_header.has_value() || !parse_num_param(request, body, "measured_epoch_s", &measured) ||
         !std::isfinite(measured) || measured < 0.0f)
       measured = 0.0f;
-    this->zone_controller_->set_valve_curve(zi, curve, static_cast<uint32_t>(measured));
+    // With a measurement Touch also sends the loop's full flow (l/min).
+    float full_lmin = NAN;
+    if (measured > 0.0f && (!parse_num_param(request, body, "full_lmin", &full_lmin) || !std::isfinite(full_lmin)))
+      full_lmin = NAN;
+    this->zone_controller_->set_valve_curve(zi, curve, static_cast<uint32_t>(measured), full_lmin);
     curve = this->zone_controller_->get_valve_curve(zi);
     char response[160];
     snprintf(response, sizeof(response),

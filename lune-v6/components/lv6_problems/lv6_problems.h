@@ -48,7 +48,7 @@ class Lv6Problems : public esphome::PollingComponent {
  protected:
   // Slot layout: per zone VALVE_FAULT..HUMIDITY except FLOW/RETURN, then the
   // two manifold probes.
-  static constexpr uint8_t PER_ZONE = 6;  // fault, stall, calibration, room, battery, humidity
+  static constexpr uint8_t PER_ZONE = 7;  // fault, stall, calibration, room, battery, humidity, area
   static constexpr uint8_t NUM_SLOTS = NUM_ZONES * PER_ZONE + 3;
   static constexpr uint8_t SLOT_FLOW = NUM_ZONES * PER_ZONE;
   static constexpr uint8_t SLOT_RETURN = SLOT_FLOW + 1;

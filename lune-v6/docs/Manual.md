@@ -103,6 +103,10 @@ which zone it follows and opens that one; its target is locked.
 **Room**: name, area and temperature source (**probe** or **BLE**, with scan and
 assign). With 8 return probes, the zone's return probe is chosen here.
 
+The floor **area** sets the zone's share of the flow, so set the real heated floor area. A
+new zone has none: until it is set, the control uses the mean area of the other zones and
+the problem list shows «area not set».
+
 External Wi‑Fi room temperatures (Shelly / Home Assistant / Homey) map
 `sensor_id` → zone **only on V6**. Producers never send a zone index. See
 [external room temperature](./external_room_temperature.md).

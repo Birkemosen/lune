@@ -18,6 +18,7 @@
 #include "reopen_policy.h"
 #include "probe_mapping.h"
 #include "thermal_model.h"
+#include "zone_area.h"
 #include "../lv6_config_store/group_model.h"
 #include "esphome/core/log.h"
 #include "esp_timer.h"
@@ -89,12 +90,13 @@ void Lv6ZoneController::setup() {
     preheat_advance_c_.fill(0.0f);
   }
   if (config_store_) {
-    float start[NUM_ZONES], full[NUM_ZONES];
+    float start[NUM_ZONES], full[NUM_ZONES], lmin[NUM_ZONES];
     uint32_t measured[NUM_ZONES];
-    if (config_store_->load_valve_curves(start, full, measured)) {
+    if (config_store_->load_valve_curves(start, full, measured, lmin)) {
       for (uint8_t i = 0; i < NUM_ZONES; i++) {
         valve_curve_[i] = valve_curve::sanitize({start[i], full[i]});
         valve_curve_measured_[i] = measured[i];
+        valve_curve_full_lmin_[i] = lmin[i];
       }
     }
   }
@@ -1082,7 +1084,8 @@ void Lv6ZoneController::run_cycle_() {
   // movement commands that will be rejected by the valve controller.
   bool drivers_enabled = valve_controller_->are_drivers_enabled();
 
-  const auto cfg = config_store_->get_config();
+  auto cfg = config_store_->get_config();
+  zone_area::fill_unset(cfg.zones);  // control uses a mean area for zones without one
 
   const BalanceMode bmode = effective_balance_mode(cfg.balancing);
   const bool adaptive_mode = (bmode == BalanceMode::ADAPTIVE);
@@ -2119,6 +2122,7 @@ void Lv6ZoneController::recalculate_balance_factors_() {
     cfg.balancing = c.balancing;
     std::copy(std::begin(c.zones), std::end(c.zones), cfg.zones);
   });
+  zone_area::fill_unset(cfg.zones);
 
   // Legacy return-temp balancing (uses measured return temperatures)
   if (effective_balance_mode(cfg.balancing) == BalanceMode::RETURN_TEMP) {
@@ -2184,6 +2188,7 @@ void Lv6ZoneController::recalculate_dynamic_balance_factors_() {
     cfg.balancing = c.balancing;
     std::copy(std::begin(c.zones), std::end(c.zones), cfg.zones);
   });
+  zone_area::fill_unset(cfg.zones);
 
   float flow_temp = read_manifold_flow_();
   if (std::isnan(flow_temp)) {
@@ -2307,23 +2312,27 @@ float Lv6ZoneController::get_house_balance(uint8_t zone) const {
   return house_balance_[zone];
 }
 
-void Lv6ZoneController::set_valve_curve(uint8_t zone, valve_curve::Curve curve, uint32_t measured_epoch_s) {
+void Lv6ZoneController::set_valve_curve(uint8_t zone, valve_curve::Curve curve, uint32_t measured_epoch_s,
+                                        float full_lmin) {
   if (zone >= NUM_ZONES || snapshot_mutex_ == nullptr)
     return;
   curve = valve_curve::sanitize(curve);
-  float start[NUM_ZONES], full[NUM_ZONES];
+  float start[NUM_ZONES], full[NUM_ZONES], lmin[NUM_ZONES];
   uint32_t measured[NUM_ZONES];
   xSemaphoreTake(snapshot_mutex_, portMAX_DELAY);
   valve_curve_[zone] = curve;
   valve_curve_measured_[zone] = measured_epoch_s;
+  // A measured curve carries its flow; a manual change keeps no measurement.
+  valve_curve_full_lmin_[zone] = measured_epoch_s != 0 && std::isfinite(full_lmin) && full_lmin > 0.0f ? full_lmin : NAN;
   for (uint8_t i = 0; i < NUM_ZONES; i++) {
     start[i] = valve_curve_[i].start_pct;
     full[i] = valve_curve_[i].full_pct;
     measured[i] = valve_curve_measured_[i];
+    lmin[i] = valve_curve_full_lmin_[i];
   }
   xSemaphoreGive(snapshot_mutex_);
   if (config_store_)
-    config_store_->save_valve_curves(start, full, measured);
+    config_store_->save_valve_curves(start, full, measured, lmin);
   ESP_LOGI(TAG, "Zone %u valve curve: flow from %.0f %%, full at %.0f %%", zone + 1, curve.start_pct,
            curve.full_pct);
 }
@@ -2362,6 +2371,15 @@ uint32_t Lv6ZoneController::get_valve_curve_measured(uint8_t zone) const {
   const uint32_t m = valve_curve_measured_[zone];
   xSemaphoreGive(snapshot_mutex_);
   return m;
+}
+
+float Lv6ZoneController::get_valve_curve_full_lmin(uint8_t zone) const {
+  if (zone >= NUM_ZONES || snapshot_mutex_ == nullptr)
+    return NAN;
+  xSemaphoreTake(snapshot_mutex_, portMAX_DELAY);
+  const float f = valve_curve_full_lmin_[zone];
+  xSemaphoreGive(snapshot_mutex_);
+  return f;
 }
 
 bool Lv6ZoneController::valve_test_active() const {
@@ -2511,6 +2529,7 @@ void Lv6ZoneController::calculate_hydraulic_outputs_() {
     cfg.balancing = c.balancing;
     std::copy(std::begin(c.zones), std::end(c.zones), cfg.zones);
   });
+  zone_area::fill_unset(cfg.zones);
 
   xSemaphoreTake(snapshot_mutex_, portMAX_DELAY);
   for (uint8_t i = 0; i < NUM_ZONES; i++) {

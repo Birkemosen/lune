@@ -239,9 +239,12 @@ class Lv6ZoneController : public esphome::Component {
   float get_house_balance(uint8_t zone) const;
   /// Valve curve (opening where flow starts / is full) used by dynamic balancing.
   /// Persisted with when Touch measured it (0 = not measured); sanitised.
-  void set_valve_curve(uint8_t zone, valve_curve::Curve curve, uint32_t measured_epoch_s);
+  /// full_lmin: the loop's full flow measured by Touch (l/min, NAN = unknown).
+  void set_valve_curve(uint8_t zone, valve_curve::Curve curve, uint32_t measured_epoch_s,
+                       float full_lmin = NAN);
   valve_curve::Curve get_valve_curve(uint8_t zone) const;
   uint32_t get_valve_curve_measured(uint8_t zone) const;
+  float get_valve_curve_full_lmin(uint8_t zone) const;
   /// Valve test (Touch measures valve curves from the pump's flow): every loop holds
   /// the position it has when the test starts; `zone` (0..5, or −1 = hold only)
   /// goes to `position_pct`. Ends after ttl_ms or clear_valve_test().
@@ -323,6 +326,7 @@ class Lv6ZoneController : public esphome::Component {
   std::array<uint32_t, NUM_ZONES> house_balance_until_ms_{};
   std::array<valve_curve::Curve, NUM_ZONES> valve_curve_{};  // guarded by snapshot_mutex_
   std::array<uint32_t, NUM_ZONES> valve_curve_measured_{};    // guarded by snapshot_mutex_
+  std::array<float, NUM_ZONES> valve_curve_full_lmin_{NAN, NAN, NAN, NAN, NAN, NAN};  // guarded by snapshot_mutex_
   struct ValveTest {
     bool active{false};
     bool captured{false};  ///< hold positions taken

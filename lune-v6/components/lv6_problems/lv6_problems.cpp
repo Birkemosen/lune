@@ -4,6 +4,8 @@
 #include <cstdio>
 #include <cstring>
 
+#include "../lv6_zone_controller/zone_area.h"
+
 #include "esphome/core/application.h"
 #include "esphome/core/hal.h"
 #include "esphome/core/log.h"
@@ -29,7 +31,8 @@ static constexpr size_t TEXT_MAX = 255;  ///< Contract: `Problems` cut to 255 ch
 
 // Per-zone slot order.
 static constexpr Kind ZONE_KINDS[] = {Kind::VALVE_FAULT, Kind::VALVE_STALL, Kind::VALVE_CALIBRATION,
-                                      Kind::SENSOR_ROOM, Kind::BATTERY,     Kind::HUMIDITY};
+                                      Kind::SENSOR_ROOM, Kind::BATTERY,     Kind::HUMIDITY,
+                                      Kind::ZONE_AREA};
 
 uint8_t Lv6Problems::zone_slot_(uint8_t zone, Kind k) {
   for (uint8_t i = 0; i < PER_ZONE; i++)
@@ -120,6 +123,11 @@ void Lv6Problems::evaluate_(uint32_t now) {
     problems::step(slots_[zone_slot_(z, Kind::VALVE_CALIBRATION)],
                    valve_applies && (calib_failed & (1u << z)) ? Input::RAISE : Input::CLEAR, now,
                    problems::DEFAULT_HOLD_MS, Severity::ERROR);
+
+    // ---- config: floor area not set (the control uses the board's mean) -----
+    problems::step(slots_[zone_slot_(z, Kind::ZONE_AREA)],
+                   zc.enabled && !zone_area::is_set(zc.area_m2) ? Input::RAISE : Input::CLEAR, now,
+                   problems::DEFAULT_HOLD_MS, Severity::WARNING);
 
     // ---- sensor: room temperature missing 30 min ----------------------------
     const TempSource src = config_->get_zone_temp_source(z);

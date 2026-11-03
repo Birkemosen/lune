@@ -1,4 +1,5 @@
 #include "dynamic_balance.h"
+#include "zone_area.h"
 
 #include <cmath>
 #include <cstdio>
@@ -222,7 +223,23 @@ static void test_distribute_through_curve() {
   expect_near(q[4], 1.0f, 1e-3f, "curve: max opening above full flow is no cap");
 }
 
+static void test_zone_area() {
+  using namespace lv6::zone_area;
+  lv6::ZoneConfig z[lv6::NUM_ZONES];
+  expect(z[0].area_m2 == 0.0f && !is_set(z[0].area_m2), "area: a new zone has no area");
+  expect_near(fallback(z), FALLBACK_M2, 1e-4f, "area: no areas anywhere → fallback");
+  z[0].area_m2 = 20.0f;
+  z[1].area_m2 = 10.0f;
+  z[2].area_m2 = 40.0f;
+  z[2].enabled = false;
+  expect_near(fallback(z), 15.0f, 1e-4f, "area: mean of the enabled zones that have one");
+  fill_unset(z);
+  expect_near(z[3].area_m2, 15.0f, 1e-4f, "area: unset zone gets the mean");
+  expect_near(z[0].area_m2, 20.0f, 1e-4f, "area: a set area is kept");
+}
+
 int main() {
+  test_zone_area();
   test_valve_curve();
   test_distribute_through_curve();
   test_load_factor();

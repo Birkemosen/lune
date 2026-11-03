@@ -88,8 +88,10 @@ class Lv6ConfigStore : public esphome::Component {
   bool load_motor_positions(float *pos, size_t count);
   /// Valve curves (start/full opening per loop, when Touch measured it; 0 = not
   /// measured), own key. Each array holds NUM_ZONES values.
-  void save_valve_curves(const float *start, const float *full, const uint32_t *measured_epoch_s);
-  bool load_valve_curves(float *start, float *full, uint32_t *measured_epoch_s);
+  /// full_lmin: each loop's full flow in l/min as Touch measured it (NAN = unknown).
+  void save_valve_curves(const float *start, const float *full, const uint32_t *measured_epoch_s,
+                         const float *full_lmin);
+  bool load_valve_curves(float *start, float *full, uint32_t *measured_epoch_s, float *full_lmin);
 
   /// User preference: keep motor drivers armed across reboot. Missing key →
   /// returns false from load (caller keeps boot default).
@@ -109,7 +111,7 @@ class Lv6ConfigStore : public esphome::Component {
   static constexpr const char *KEY_MOTOR_PFX = "mot";
   static constexpr const char *KEY_MOTOR_POS = "motpos";
   static constexpr const char *KEY_VALVE_CURVE = "vcurve";
-  static constexpr uint32_t VALVE_CURVE_VERSION = 2;
+  static constexpr uint32_t VALVE_CURVE_VERSION = 3;  ///< v3 adds full_lmin; v2 still loads
   static constexpr const char *KEY_SENSORS = "sensors";  // BLE pairing, survives main-blob resets
   static constexpr const char *KEY_ZONES = "zones";      // Zone config, survives main-blob resets
   // Remaining global-settings sections, each mirrored to its own durable key so

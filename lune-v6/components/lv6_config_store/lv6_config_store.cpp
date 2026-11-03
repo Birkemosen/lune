@@ -566,16 +566,18 @@ bool Lv6ConfigStore::load_motor_positions(float *pos, size_t count) {
 }
 
 void Lv6ConfigStore::save_valve_curves(const float *start, const float *full,
-                                       const uint32_t *measured_epoch_s) {
-  if (start == nullptr || full == nullptr || measured_epoch_s == nullptr)
+                                       const uint32_t *measured_epoch_s, const float *full_lmin) {
+  if (start == nullptr || full == nullptr || measured_epoch_s == nullptr || full_lmin == nullptr)
     return;
   constexpr size_t F = NUM_ZONES * sizeof(float);
-  uint8_t blob[sizeof(uint32_t) + 2 * F + NUM_ZONES * sizeof(uint32_t)];
+  constexpr size_t U = NUM_ZONES * sizeof(uint32_t);
+  uint8_t blob[sizeof(uint32_t) + 2 * F + U + F];
   const uint32_t version = VALVE_CURVE_VERSION;
   std::memcpy(blob, &version, sizeof(uint32_t));
   std::memcpy(blob + sizeof(uint32_t), start, F);
   std::memcpy(blob + sizeof(uint32_t) + F, full, F);
-  std::memcpy(blob + sizeof(uint32_t) + 2 * F, measured_epoch_s, NUM_ZONES * sizeof(uint32_t));
+  std::memcpy(blob + sizeof(uint32_t) + 2 * F, measured_epoch_s, U);
+  std::memcpy(blob + sizeof(uint32_t) + 2 * F + U, full_lmin, F);
   nvs_handle_t handle;
   if (nvs_open(NVS_NAMESPACE, NVS_READWRITE, &handle) != ESP_OK)
     return;
@@ -584,26 +586,36 @@ void Lv6ConfigStore::save_valve_curves(const float *start, const float *full,
   nvs_close(handle);
 }
 
-bool Lv6ConfigStore::load_valve_curves(float *start, float *full, uint32_t *measured_epoch_s) {
-  if (start == nullptr || full == nullptr || measured_epoch_s == nullptr)
+bool Lv6ConfigStore::load_valve_curves(float *start, float *full, uint32_t *measured_epoch_s,
+                                       float *full_lmin) {
+  if (start == nullptr || full == nullptr || measured_epoch_s == nullptr || full_lmin == nullptr)
     return false;
   constexpr size_t F = NUM_ZONES * sizeof(float);
-  uint8_t blob[sizeof(uint32_t) + 2 * F + NUM_ZONES * sizeof(uint32_t)];
+  constexpr size_t U = NUM_ZONES * sizeof(uint32_t);
+  constexpr size_t V2 = sizeof(uint32_t) + 2 * F + U;  // v2: no full_lmin
+  uint8_t blob[V2 + F];
   size_t size = sizeof(blob);
   nvs_handle_t handle;
   if (nvs_open(NVS_NAMESPACE, NVS_READONLY, &handle) != ESP_OK)
     return false;
   const esp_err_t err = nvs_get_blob(handle, KEY_VALVE_CURVE, blob, &size);
   nvs_close(handle);
-  uint32_t version = 0;
-  if (err != ESP_OK || size != sizeof(blob))
+  if (err != ESP_OK || size < sizeof(uint32_t))
     return false;
+  uint32_t version = 0;
   std::memcpy(&version, blob, sizeof(uint32_t));
-  if (version != VALVE_CURVE_VERSION)
+  const bool v3 = version == 3 && size == V2 + F;
+  const bool v2 = version == 2 && size == V2;
+  if (!v3 && !v2)
     return false;
   std::memcpy(start, blob + sizeof(uint32_t), F);
   std::memcpy(full, blob + sizeof(uint32_t) + F, F);
-  std::memcpy(measured_epoch_s, blob + sizeof(uint32_t) + 2 * F, NUM_ZONES * sizeof(uint32_t));
+  std::memcpy(measured_epoch_s, blob + sizeof(uint32_t) + 2 * F, U);
+  if (v3)
+    std::memcpy(full_lmin, blob + V2, F);
+  else
+    for (uint8_t i = 0; i < NUM_ZONES; i++)
+      full_lmin[i] = NAN;
   return true;
 }
 

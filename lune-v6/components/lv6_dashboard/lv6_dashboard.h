@@ -139,6 +139,7 @@ struct DashboardSnapshot {
   float             zone_valve_curve_start_pct[6]{};  ///< Valve curve: flow starts
   float             zone_valve_curve_full_pct[6]{};   ///< Valve curve: full flow
   uint32_t          zone_valve_curve_measured[6]{};   ///< When Touch measured it (0 = not)
+  float             zone_valve_curve_full_lmin[6]{NAN, NAN, NAN, NAN, NAN, NAN};  ///< Measured full flow, l/min
   float             zone_flow_pct[6]{};               ///< Loop flow, % of full (valve curve)
   uint8_t           zone_absorb_capacity_rank[6]{};
   float             zone_relative_kv[6]{};  ///< Kv at current commanded opening

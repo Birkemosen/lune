@@ -35,6 +35,7 @@ enum class Kind : uint8_t {
   BATTERY = 6,            ///< value = battery %
   HUMIDITY = 7,           ///< variant 1 = high, 0 = low; value = RH %
   DEVICE_RESTART = 8,     ///< variant = RESTART_* (why the controller restarted)
+  ZONE_AREA = 9,          ///< the zone's floor area is not set
 };
 
 // Why the controller restarted (DEVICE_RESTART variant), from esp_reset_reason().
@@ -62,6 +63,8 @@ inline const char *category(Kind k) {
       return "humidity";
     case Kind::DEVICE_RESTART:
       return "device";
+    case Kind::ZONE_AREA:
+      return "config";
   }
   return "sensor";
 }
@@ -78,6 +81,7 @@ inline const char *id_kind(Kind k) {
     case Kind::BATTERY: return "sensor_battery.low";
     case Kind::HUMIDITY: return "humidity.out_of_range";
     case Kind::DEVICE_RESTART: return "device.restart";
+    case Kind::ZONE_AREA: return "config.area_unset";
   }
   return "problem";
 }
@@ -146,6 +150,9 @@ inline void title(Lang lang, Kind k, uint8_t variant, const char *room, char *ou
       return;
     case Kind::DEVICE_RESTART:
       snprintf(out, cap, "%s", da ? "Styringen genstartede efter et nedbrud" : "The controller restarted after a crash");
+      return;
+    case Kind::ZONE_AREA:
+      snprintf(out, cap, da ? "%s: areal ikke angivet" : "%s: area not set", room);
       return;
   }
   if (cap > 0)
@@ -228,6 +235,13 @@ inline void message(Lang lang, Kind k, Severity sev, uint8_t variant, uint8_t va
                  da ? "Batteriet i rumføleren er på %u %%. Skift det snart."
                     : "The room sensor's battery is at %u %%. Replace it soon.",
                  v);
+      return;
+    case Kind::ZONE_AREA:
+      snprintf(out, cap, "%s",
+               da ? "Zonens gulvareal er ikke angivet, så Lune V6 regner med gennemsnittet af de andre zoner. "
+                    "Angiv arealet i zonens ark under Indstillinger › Rum."
+                  : "The zone's floor area is not set, so Lune V6 uses the mean of the other zones. "
+                    "Set the area in the zone's sheet under Settings › Room.");
       return;
     case Kind::HUMIDITY:
       if (variant == HUMIDITY_HIGH)

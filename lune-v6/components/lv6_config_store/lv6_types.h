@@ -201,7 +201,7 @@ enum class ProbeRole : uint8_t {
 
 struct ZoneConfig {
   bool enabled = true;
-  float area_m2 = 15.0f;
+  float area_m2 = 0.0f;  ///< 0 = not set (zone_area.h)
   float max_opening_pct = 100.0f;
   PipeType pipe_type = PipeType::PEX_16X2;
   FloorType floor_type = FloorType::TILE;
