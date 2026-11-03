@@ -22,13 +22,14 @@ zone for room temperatures.
 
 **[Manifold sheet](#manifold-sheet)**
 
+- [Settings › Manifold](#settings--manifold)
 - [Settings › Heating mode and Heat pump limits](#settings--heating-mode-and-heat-pump-limits)
 - [Settings › Preheat absorption and balancing](#settings--preheat-absorption-and-balancing)
 
 **[System](#system)**
 
 - [Device](#device)
-- [Manifold and motors](#manifold-and-motors)
+- [Motors](#motors)
 - [Connections](#connections)
 - [Firmware and backup](#firmware-and-backup)
 - [Service](#service)
@@ -72,10 +73,13 @@ straight at a place, for example `#z3/settings` or `#system/connections`.
 - **Motors are off** — appears when the motor drivers are off, with the cause
   (turned off by you, firmware update, hardware fault, start-up) and **Turn motors on**.
   See [Motor drivers](#motor-drivers-on-off-and-recovery).
-- **Heat now** — manifold supply, return, ΔT, total opening and the last 24 hours.
+- **Heat now** — manifold supply, return, ΔT, total flow and the last 24 hours.
   **Open manifold** opens the manifold sheet.
-- **Comfort by zone** — temperature against target for each zone over 24 hours;
-  a row opens the zone's sheet.
+- **Comfort by zone** — temperature against target for each zone over 24 hours, with
+  the loop's flow; with 8 probes also the zone's own return. A card opens the zone's sheet.
+
+The first tile in the strip, **Manifold**, shows supply and return and opens the
+manifold sheet.
 
 The zone tiles show temperature, a chip with the distance to target (blue below,
 neutral near, orange above) and the valve opening in five steps.
@@ -177,10 +181,28 @@ blocked. Each retry and each block is logged with which fault line fired.
 
 ## Manifold sheet
 
-**Overview** — supply, return, ΔT and total opening; the **balancing** table with
-the current mode; **Live readings** of every 1-Wire probe, so wiring can be checked.
+**Overview** — supply, return, ΔT and total flow; the **balancing** table with
+the current mode; **Live readings** of every 1-Wire probe, each labelled with what it is
+assigned to (a zone, the manifold's supply or return, or not assigned), so wiring can
+be checked.
 
 **History** — supply and return over the last 24 hours.
+
+<a id="manifold"></a>
+### Settings › Manifold
+
+Valve type (**NO** / **NC**) and which 1-Wire probes measure manifold supply and
+return. That drives ΔT on the manifold tile and the direction motors must run. The choice
+must match the valve inserts: with **NO** the valve is open when the plunger is up;
+a wrong choice makes every zone run inverted.
+
+<a id="return-probes"></a>
+**Probe layout**: **2 probes** — shared supply/return on the manifold. **8 probes** —
+a return sensor per zone for finer diagnostics and commissioning; assign each zone's
+return in its sheet under Settings › Room. Check the wiring with **Live readings** under
+Overview before saving the layout. A probe can only have one role: choosing one that a zone
+or the manifold already uses is refused, and the message names who holds it.
+1-Wire probes read at 12 bit (0.0625 °C).
 
 <a id="heating"></a>
 ### Settings › Heating mode and Heat pump limits
@@ -259,26 +281,13 @@ without NTP. Automatic display sync is typically once per day.
 press once to enter setup (`SEt`), then press twice rapidly. Bluetooth must be
 on (hold ~5 s to toggle if needed).
 
-<a id="manifold"></a>
-### Manifold and motors
+<a id="motors"></a>
+### Motors
 
-Valve type (**NO** / **NC**) and which 1-Wire probes measure manifold supply and
-return. That drives ΔT on the strip and the direction motors must run. The choice
-must match the valve inserts: with **NO** the valve is open when the plunger is up;
-a wrong choice makes every zone run inverted.
-
-<a id="return-probes"></a>
-**Probe layout**: **2 probes** — shared supply/return on the manifold. **8 probes** —
-a return sensor per zone for finer diagnostics and commissioning; assign each zone's
-return in its sheet under Settings › Room. Check the wiring with **Live readings** in
-the manifold sheet before saving the layout.
-
-**Motors**: motor drivers can be disabled to electrically disconnect all six actuators
+Motor drivers can be disabled to electrically disconnect all six actuators
 (see [Motor drivers](#motor-drivers-on-off-and-recovery)). Saving this panel never
 changes the drivers. Default motor profile and max run time apply until a zone has
 learned its own stroke.
-
-**Temperature probes**: 1-Wire probes read at 12 bit (0.0625 °C).
 
 **Advanced** (subpages **Close end stop**, **Open end stop**, **Relearning**): expert
 endstop limits in the firmware's units. They are commissioning defaults — once

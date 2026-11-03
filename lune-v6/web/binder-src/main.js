@@ -577,8 +577,13 @@ function paintStrip() {
       ? `${withUnit(flow, '%', 0)}${Number.isFinite(opening) ? ` <small>${escapeHtml(t('zdash.pin', { pct: Math.round(opening) }))}</small>` : ''}`
       : '—');
     // Zone card: the flow beside the name; fault/blocked/learning/off say it in the value instead.
+    // With 8 probes the zone's own return follows (from its assigned probe).
+    const cardProbe = probeLayoutMode() === '8' ? parseProbeIndex(es(key.probe(z))) : 0;
+    const cardRet = cardProbe ? toNum(ev(key.probeTemp(cardProbe))) : NaN;
     setBind(`z${z}.cardOpen`, ['fault', 'blocked', 'learning', 'off'].includes(st) || !Number.isFinite(flow)
-      ? '' : escapeHtml(t('zcard.flow', { pct: Math.round(flow) })));
+      ? '' : escapeHtml(Number.isFinite(cardRet)
+        ? t('zcard.flowRet', { pct: Math.round(flow), ret: num(cardRet) })
+        : t('zcard.flow', { pct: Math.round(flow) })));
     // Tile: flow as number next to the 10-segment bar; learning shows its own %.
     setBind(`z${z}.valve`, st === 'learning' ? `${zoneLearnPct(z)} %`
       : (st === 'fault' || st === 'blocked' || st === 'off') ? '0 %'
@@ -621,6 +626,9 @@ function paintStrip() {
   for (let p = 1; p <= 8; p++) {
     const pt = toNum(ev(key.probeTemp(p)));
     setBind(`probe.${p}`, Number.isFinite(pt) ? `${num(pt)} <small>°C</small>` : '—');
+    const owner = parseProbeIndex(es(gkey.manifoldFlowProbe)) === p ? t('csys.ownerFlow')
+      : parseProbeIndex(es(gkey.manifoldReturnProbe)) === p ? t('csys.ownerReturn') : probeOwner_(p);
+    setBind(`probe.${p}.label`, escapeHtml(owner ? t('csys.probeMapped', { n: p, owner }) : t('csys.probeFree', { n: p })));
   }
   setBar('manifold.opening', openingPct);
   // Heat pump phase from Touch (valves follow the heat pump): one line, only when known.
@@ -1681,6 +1689,24 @@ const MOTOR_LIMITS = [
 ];
 
 /** True when a data-patch save changed one of these fields (or the form is not a patch). */
+/** Manifold sheet: valve type and probes, written only when changed. */
+async function saveManifoldHardware_(detail, form) {
+  // Return-probe layout first: 8 probes resets flow/return to 1/2 and zones to 3–8.
+  if (touched(detail, ['return_probe_mode'])) {
+    const mode = form.return_probe_mode === '8' ? '8' : '2';
+    if (mode === '8') await applyEightProbeDefaults();
+    else await applyTwoProbeLayout();
+    setProbeLayoutUi(mode, { force: true });
+  }
+  // Only when changed: a stale radio must never overwrite the valve type (it inverts every valve).
+  if (touched(detail, ['manifold_type']) && (form.manifold_type === 'no' || form.manifold_type === 'nc')) {
+    await setGlobalSelect('manifold_type', form.manifold_type === 'no' ? 'NO' : 'NC');
+  }
+  if (touched(detail, ['probe_flow', 'probe_return']) && (form.probe_flow != null || form.probe_return != null)) {
+    await applyManifoldProbes_(form.probe_flow, form.probe_return);
+  }
+}
+
 function touched(detail, names) {
   const changed = detail && detail.changed;
   if (!changed) return true;
@@ -1776,25 +1802,11 @@ async function handleSave(detail) {
       else {
         await setGlobalSelect('ble_clock_sync_enabled', form.ble_clock_enabled ? 'on' : 'off');
       }
-    } else if (saveKey === 'manifold') {
+    } else if (saveKey === 'motors') {
       if (action === 'relearn_all') {
         await ensureMotorsReady_();
         await calibrateAllMotors();
       } else {
-        // Return-probe layout first: 8 probes resets flow/return to 1/2 and zones to 3–8.
-        if (touched(detail, ['return_probe_mode'])) {
-          const mode = form.return_probe_mode === '8' ? '8' : '2';
-          if (mode === '8') await applyEightProbeDefaults();
-          else await applyTwoProbeLayout();
-          setProbeLayoutUi(mode, { force: true });
-        }
-        // Only when changed: a stale radio must never overwrite the valve type (it inverts every valve).
-        if (touched(detail, ['manifold_type']) && (form.manifold_type === 'no' || form.manifold_type === 'nc')) {
-          await setGlobalSelect('manifold_type', form.manifold_type === 'no' ? 'NO' : 'NC');
-        }
-        if (form.probe_flow != null || form.probe_return != null) {
-          await applyManifoldProbes_(form.probe_flow, form.probe_return);
-        }
         // motor_drivers is a switch and saves on toggle (autosaveConfigSwitch_); writing it here
         // persisted "off" whenever the form was saved while drivers were briefly off after an OTA.
         if (form.motor_type) {
@@ -1820,10 +1832,11 @@ async function handleSave(detail) {
         if (form.m_maxdev != null) await setGlobalNumber('learned_factor_max_deviation_pct', Number(form.m_maxdev) * 100);
       }
     } else if (saveKey === 'regulation') {
-      // Manifold sheet › Settings: heating mode + balancing + preheat in one form.
+      // Manifold sheet › Settings: valve type and probes, heating mode, balancing, preheat.
       if (action === 'reset_balancing') {
         await command('reset_balancing');
       } else {
+        await saveManifoldHardware_(detail, form);
         await saveHeating_(form);
         if (form.balancing_mode === 'static' || form.balancing_mode === 'adaptive')
           await setGlobalSelect('balancing_mode', form.balancing_mode);

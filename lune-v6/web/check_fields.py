@@ -26,7 +26,7 @@ MAX_ROWS, MAX_GROUPS = 6, 5
 SAVE_KEYS = {
     r"device": "saveKey === 'device'",
     r"ble_clock": "saveKey === 'ble_clock'",
-    r"manifold": "saveKey === 'manifold'",
+    r"motors": "saveKey === 'motors'",
     r"regulation": "saveKey === 'regulation'",
     r"connections": "saveKey === 'connections'",
     r"wifi": "saveKey === 'wifi'",

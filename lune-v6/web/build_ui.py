@@ -401,10 +401,17 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
             </table></div></div>
           <div class="sub"><h4>{T("csys.probeLive")}</h4>
             <dl class="metrics">
-              {"".join(metric(T("csys.probe",n=k),"—","°C",f"probe.{k}",attrs=f' data-probe="{k}"') for k in range(1,9))}
+              {"".join(metric(f'<span data-bind="probe.{k}.label">{T("csys.probe",n=k)}</span>',"—","°C",f"probe.{k}",attrs=f' data-probe="{k}"') for k in range(1,9))}
             </dl></div>'''
         settings=f'''
-        <form data-save="regulation">
+        <form data-save="regulation" data-patch>
+        {group(T("csys.manifold"),
+               srow(span(T("csys.valveType")),seg("manifold_type",[("no",T("csys.no")),("nc",T("csys.nc"))],"nc",T("csys.valveType")))+
+               srow(lab("probe_flow",T("csys.supplyProbe")),probes(1,"probe_flow",include_none=False))+
+               srow(lab("probe_return",T("csys.returnProbe")),probes(2,"probe_return",include_none=False))+
+               srow(span(T("csys.probeMode")),seg("return_probe_mode",[("2",T("csys.probeMode2")),("8",T("csys.probeMode8"))],"2",T("csys.probeMode"))),
+               f'<p class="note">{T("csys.returnProbesNote")}</p>',
+               help=help_btn("help-manifold",T("csys.manifold")))}
           {group(T("csys.heating"),
                  srow(span(T("csys.heatMode")),seg("heat_mode",[("normal",T("csys.heatNormal")),("heat_pump",T("csys.heatPump"))],"heat_pump",T("csys.heatMode")))+
                  srow(lab("heat_min_open",T("csys.minOpening")),stepper("heat_min_open",0,0,100,1,"%",label=T("csys.minOpening"),dec=0),T("csys.minOpeningHint"),cls="normal-only"),
@@ -419,7 +426,7 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
                   extra=f'<p class="note" data-bind-show="absorb.touchNote" hidden>{T("csys.absorbTouch")}</p>',
                   help=help_btn("help-regulation",T("csys.regulation")))}
           <div class="actions">{confirm_pop("confirm-reset-bal","csys.resetBal","csys.resetBalTitle","csys.resetBalNote","reset_balancing","csys.resetBalConfirm")}</div>
-          {savebar("regulation",T("csys.saveReg"))}
+          {savebar("regulation",T("csys.saveManifold"))}
         </form>'''
         status=f'<span data-bind="manifold.status">—</span>'
         return sheet("manifold",T("hash.manifold"),I_MANI,T("sheet.manifold"),status,overview,trend_block(),settings)
@@ -430,7 +437,7 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
         return (f'<section class="sys-cat" data-cat="{cat}" aria-labelledby="h-c-{cat}"{attrs}><label class="sys-back" for="c-none">{T("sys.title")}</label>'
                 f'<header><div><small>{T("sys.title")}</small><h2 id="h-c-{cat}">{title}</h2></div></header>{body}</section>')
     CATS=[("device",T("cat.device"),'<path d="M4 11l8-7 8 7v9H4z"/>'),
-          ("manifold",T("csys.mm"),'<path d="M4 7h16M4 12h16M4 17h16"/>'),
+          ("motors",T("csys.motors"),'<circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3"/>'),
           ("connections",T("cat.connections"),'<path d="M9 15l6-6M7 13l-2 2a3 3 0 0 0 4 4l2-2M17 11l2-2a3 3 0 0 0-4-4l-2 2"/>'),
           ("firmware",T("cat.firmware"),'<path d="M12 4v10M8 10l4 4 4-4M5 19h14"/>'),
           ("service",T("csys.service"),'<path d="M14 6a4 4 0 0 0-5 5l-5 5 3 3 5-5a4 4 0 0 0 5-5l-2 2-3-3z"/>'),
@@ -452,15 +459,8 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
                srow(span(T("csys.bleClockSync")),f'<button class="btn" type="submit" name="action" value="sync">{T("csys.bleClockSync")}</button>'),
                help=help_btn("help-ble-clock",T("csys.bleClock")))}
       </form>'''))
-    cats.append(syscat("manifold",T("csys.mm"),f'''
-      <form data-save="manifold" data-patch>
-        {group(T("csys.manifold"),
-               srow(span(T("csys.valveType")),seg("manifold_type",[("no",T("csys.no")),("nc",T("csys.nc"))],"nc",T("csys.valveType")))+
-               srow(lab("probe_flow",T("csys.supplyProbe")),probes(1,"probe_flow",include_none=False))+
-               srow(lab("probe_return",T("csys.returnProbe")),probes(2,"probe_return",include_none=False))+
-               srow(span(T("csys.probeMode")),seg("return_probe_mode",[("2",T("csys.probeMode2")),("8",T("csys.probeMode8"))],"2",T("csys.probeMode"))),
-               f'<p class="note">{T("csys.returnProbesNote")}</p>',
-               help=help_btn("help-manifold",T("csys.mm")))}
+    cats.append(syscat("motors",T("csys.motors"),f'''
+      <form data-save="motors" data-patch>
         {ggroup(T("csys.motors"),sswitch("motor_drivers",T("csys.drivers"),T("csys.driversSub"),True),
                 srow(lab("motor_type",T("csys.motorType")),'<select class="select" id="motor_type" name="motor_type"><option>Generic</option><option selected>HmIP VdMot</option></select>')+
                 sstep("m_runtime",T("csys.maxRun"),38,5,40,1,"s",dec=0))}
@@ -473,7 +473,7 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
                    sstep("m_relmov",T("csys.afterMoves"),200,10,2000,10,"",dec=0)+sstep("m_relh",T("csys.afterHours"),168,1,720,1,H,dec=0)+sstep("m_minsamp",T("csys.minSamples"),3,1,20,1,"",dec=0)+sstep("m_maxdev",T("csys.maxDev"),0.15,0.01,1,0.01,"",dec=2))),
                f'<p class="note">{T("csys.limitsMsg")}</p>')}
         <div class="actions">{confirm_pop("confirm-relearn-all","csys.relearnAll","csys.relearnAllTitle","csys.relearnAllNote","relearn_all","csys.relearnAllConfirm")}</div>
-        {savebar("manifold",T("csys.saveManifold"))}
+        {savebar("motors",T("csys.saveMotors"))}
       </form>'''))
     copy_row=lambda key,bid,bind: srow(span(T(key)),f'<code class="mono" id="{bid}" data-bind="{bind}">—</code><button type="button" class="btn copy" data-copy="#{bid}">{T("common.copy")}</button>')
     cats.append(syscat("connections",T("cat.connections"),f'''
@@ -602,7 +602,7 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
              "alert.driversOffBody","drv.reason.fault","drv.reason.ota","drv.reason.arm","drv.reason.boot","drv.reason.user","dev.online","dev.offline",
              "zdash.preload","zdash.preloadUntil","src.ble","src.probe",
              "csys.touchWaiting","csys.touchWaitingBody","csys.touchApproved","csys.touchPending","csys.touchControls","csys.touchReady","csys.touchLeaseLost",
-             "zchart.expected","zchart.at","zchart.noForecast","zchart.faultStrong","zcard.flow","zdash.pin",
+             "zchart.expected","zchart.at","zchart.noForecast","zchart.faultStrong","zcard.flow","zcard.flowRet","csys.probeMapped","csys.probeFree","csys.ownerFlow","csys.ownerReturn","zdash.pin",
              "wifi.connectedTo","wifi.notConnected","wifi.apActive","wifi.sent","wifi.needSsid","wifi.busy",
              "wifi.switch.pending","wifi.switch.connected","wifi.switch.reverted","wifi.switch.failed")
     rt={k:T(k) for k in rt_keys}
