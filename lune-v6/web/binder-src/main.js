@@ -271,6 +271,27 @@ async function freeProbeFromZones_(probe1based) {
   }
 }
 
+/** Who holds a 1-based probe: a zone's name or the manifold's supply/return. */
+function probeOwner_(probe1based) {
+  for (let z = 1; z <= 6; z++) {
+    if (parseProbeIndex(es(key.probe(z))) === probe1based) return es(key.name(z)) || `Zone ${z}`;
+  }
+  if (parseProbeIndex(es(gkey.manifoldFlowProbe)) === probe1based) return t('rt.probeOwnerFlow');
+  if (parseProbeIndex(es(gkey.manifoldReturnProbe)) === probe1based) return t('rt.probeOwnerReturn');
+  return '';
+}
+
+/** Save error for the user: a refused probe says which probe and who holds it. */
+function saveErrorText_(err, saveKey, form) {
+  if (err && err.code === 'probe_conflict') {
+    const m = /^zone\/(\d+)$/.exec(saveKey || '');
+    const probe = m ? parseProbeIndex(form[`z${m[1]}_ret`]) : 0;
+    const owner = probe ? probeOwner_(probe) : '';
+    return owner ? t('rt.probeConflict', { probe, owner }) : t('rt.probeConflictAny');
+  }
+  return t('rt.saveFailed');
+}
+
 function firstFreeProbeIndex_(reserved) {
   const taken = new Set(reserved.filter((n) => n >= 1 && n <= 8));
   for (let z = 1; z <= 6; z++) {
@@ -1928,8 +1949,9 @@ async function handleSave(detail) {
     if (formEl && typeof formEl.luneSaved === 'function') formEl.luneSaved(true);
   } catch (err) {
     console.error('lune:save failed', saveKey, err);
-    if (formEl && typeof formEl.luneSaved === 'function') formEl.luneSaved(false, t('rt.saveFailed'));
-    else addToast(t('rt.saveFailed'));
+    const msg = saveErrorText_(err, saveKey, form);
+    if (formEl && typeof formEl.luneSaved === 'function') formEl.luneSaved(false, msg);
+    else addToast(msg);
   }
 }
 

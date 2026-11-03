@@ -87,6 +87,8 @@ function postV1(path, params, mockBody, opts) {
       addActivity(detail);
       const err = new Error(detail);
       err.status = resp.status;
+      // The device's error code (e.g. probe_conflict) lets the UI say what was refused.
+      try { err.code = ((await resp.json()).error || {}).code; } catch (_) { /* no JSON body */ }
       throw err;
     }
     return resp;
