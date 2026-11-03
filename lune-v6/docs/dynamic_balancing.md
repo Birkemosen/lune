@@ -82,9 +82,16 @@ the pump flow by 0–0.6 l/min. Taking the opening as linear therefore left warm
 15–30 % passing most of their flow, and the secondary flow rose to about 150 % of the
 heat pump's.
 
-Each loop has a curve with two points: `start_pct` (flow begins, default 8 %) and
-`full_pct` (full flow, default 40 %), linear between. Relative flow `q` becomes the
+Each loop has a curve with two points: `start_pct` (flow begins, default 15 %) and
+`full_pct` (full flow, default 50 %), linear between. Relative flow `q` becomes the
 opening `start + q · (full − start)`; the index loop sits at `full_pct`, not 100 %.
+
+The default comes from Touch's measurement of 12 loops on two manifolds: flow starts at
+4–29 % (median 15.5 %, the two manifolds 24 % and 11 %) and is full at 27–48 % (median
+34 %). One curve cannot fit them all, and a start set too low (a loop without flow) or a
+full point set too low (the index loop short of flow) is worse than a curve that is too
+wide, so the default is wide. Measured against the 12 curves, 15 → 50 % leaves a loop
+without flow in 8 % of the cases (8 → 40 %: 23 %) and never starves the index loop.
 
 The curves are stored in their own NVS key (`vcurve`) and shown per zone in
 `/api/v1/zones` (`valve_curve`). `POST /api/v1/zones/{n}/valve-curve` with `start_pct`

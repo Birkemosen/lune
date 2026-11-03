@@ -12,10 +12,16 @@
 //
 // Modelled as two points per loop: `start_pct` (flow begins) and `full_pct` (full
 // flow), linear between. Pure C++, host-testable.
+//
+// The default is for boards without a measured curve. Touch measured 12 loops on two
+// manifolds: flow starts at 4–29 % (median 15.5) and is full at 27–48 % (median 34).
+// One curve cannot fit them all, and the errors are not equal: a start set too low
+// leaves a loop with no flow, a full point set too low starves the index loop. So the
+// default is wide, 15 → 50 %: still far narrower than the pin's stroke.
 namespace lv6::valve_curve {
 
-static constexpr float DEFAULT_START_PCT = 8.0f;
-static constexpr float DEFAULT_FULL_PCT = 40.0f;
+static constexpr float DEFAULT_START_PCT = 15.0f;
+static constexpr float DEFAULT_FULL_PCT = 50.0f;
 static constexpr float MAX_START_PCT = 50.0f;
 static constexpr float MIN_SPAN_PCT = 10.0f;  ///< full − start
 

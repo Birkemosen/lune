@@ -193,7 +193,7 @@ static void test_distribute_through_curve() {
   Loop loops[6];
   const float temps[6] = {20, 20, 20, 20, 20, 20};
   make_loops(loops, temps, 21.0f);
-  for (Loop &l : loops) l.curve = {};  // default 8 → 40 %
+  for (Loop &l : loops) l.curve = {8.0f, 40.0f};  // 8 → 40 %, independent of the default
   bool closed[6]{};
   float open[6], q[6];
   distribute(loops, p, closed, open, q);
@@ -204,14 +204,14 @@ static void test_distribute_through_curve() {
   // Warm manifold: small flows stay above the start of the curve.
   const float warm[6] = {22.6f, 22.5f, 22.8f, 23.2f, 22.9f, 23.0f};
   make_loops(loops, warm, 22.0f);
-  for (Loop &l : loops) l.curve = {};
+  for (Loop &l : loops) l.curve = {8.0f, 40.0f};
   distribute(loops, p, closed, open, q);
   for (int i = 0; i < 6; i++)
     expect(open[i] >= 8.0f + Q_MIN * 32.0f - 1e-3f, "curve: warm loop keeps real flow");
 
   // Max opening below full flow caps the loop's flow.
   make_loops(loops, temps, 21.0f);
-  for (Loop &l : loops) l.curve = {};
+  for (Loop &l : loops) l.curve = {8.0f, 40.0f};
   loops[4].max_opening_pct = 24.0f;
   distribute(loops, p, closed, open, q);
   expect_near(q[4], 0.5f, 1e-3f, "curve: max opening 24 % caps the loop at half flow");
