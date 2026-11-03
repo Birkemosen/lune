@@ -238,7 +238,26 @@ static void test_zone_area() {
   expect_near(z[0].area_m2, 20.0f, 1e-4f, "area: a set area is kept");
 }
 
+static void test_measured_shares() {
+  // Stueetage 2026-11-03: UA (W/K) and measured full flow (l/min).
+  const bool on[6] = {true, true, true, true, true, true};
+  const float ua[6] = {13.5f, 9.4f, 8.1f, 16.6f, 28.2f, 7.5f};
+  const float full[6] = {1.44f, 1.13f, 1.51f, 2.01f, 2.42f, 1.69f};
+  float out[6] = {};
+  expect(measured_shares(on, ua, full, out), "measured shares: every loop measured");
+  expect_near(out[4], 1.0f, 1e-6f, "measured shares: Pejsestue has the most demand per litre");
+  expect(out[5] < out[2] && out[2] < out[0] && out[0] < 1.0f, "measured shares: Bad < Bryggers < Kontor < 1");
+  // One enabled loop without a measurement: keep the model.
+  float part[6] = {1.44f, 1.13f, NAN, 2.01f, 2.42f, 1.69f};
+  float keep[6] = {7, 7, 7, 7, 7, 7};
+  expect(!measured_shares(on, ua, part, keep) && keep[0] == 7.0f, "measured shares: one unmeasured loop keeps the model");
+  // A disabled loop does not need one.
+  const bool some[6] = {true, true, false, true, true, true};
+  expect(measured_shares(some, ua, part, out) && out[2] == 0.0f, "measured shares: a disabled loop needs no measurement");
+}
+
 int main() {
+  test_measured_shares();
   test_zone_area();
   test_valve_curve();
   test_distribute_through_curve();

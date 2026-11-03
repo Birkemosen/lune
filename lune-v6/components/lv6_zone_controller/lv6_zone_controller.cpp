@@ -2116,10 +2116,11 @@ float Lv6ZoneController::static_balance_weight_(const ZoneConfig &zc) {
 void Lv6ZoneController::recalculate_balance_factors_() {
   if (!config_store_)
     return;
-  // Two sections, not the whole config (2.6 KiB): this also runs in loopTask from setup().
-  struct { BalancingConfig balancing; ZoneConfig zones[NUM_ZONES]; } cfg;
+  // Three sections, not the whole config (2.6 KiB): this also runs in loopTask from setup().
+  struct { BalancingConfig balancing; HousePhysicsConfig house_physics; ZoneConfig zones[NUM_ZONES]; } cfg;
   config_store_->read([&](const DeviceConfig &c) {
     cfg.balancing = c.balancing;
+    cfg.house_physics = c.house_physics;
     std::copy(std::begin(c.zones), std::end(c.zones), cfg.zones);
   });
   zone_area::fill_unset(cfg.zones);
@@ -2148,6 +2149,27 @@ void Lv6ZoneController::recalculate_balance_factors_() {
     if (weights[i] > max_w)
       max_w = weights[i];
   }
+  // Once Touch has measured every loop's full flow, the measurement replaces the
+  // friction estimate: share = heat demand (UA) / full flow.
+  {
+    bool enabled[NUM_ZONES];
+    float demand[NUM_ZONES], full[NUM_ZONES], measured[NUM_ZONES];
+    xSemaphoreTake(snapshot_mutex_, portMAX_DELAY);
+    for (uint8_t i = 0; i < NUM_ZONES; i++)
+      full[i] = valve_curve_full_lmin_[i];
+    xSemaphoreGive(snapshot_mutex_);
+    for (uint8_t i = 0; i < NUM_ZONES; i++) {
+      enabled[i] = cfg.zones[i].enabled;
+      const auto th = thermal_model::estimate(cfg.zones[i], cfg.house_physics);
+      demand[i] = th.ua_effective_w_per_k;
+    }
+    balance_measured_ = dynamic_balance::measured_shares(enabled, demand, full, measured);
+    if (balance_measured_) {
+      for (uint8_t i = 0; i < NUM_ZONES; i++)
+        weights[i] = measured[i];
+      max_w = 1.0f;
+    }
+  }
 
   xSemaphoreTake(snapshot_mutex_, portMAX_DELAY);
   for (uint8_t i = 0; i < NUM_ZONES; i++) {
@@ -2173,8 +2195,8 @@ void Lv6ZoneController::recalculate_balance_factors_() {
   }
   xSemaphoreGive(snapshot_mutex_);
 
-  ESP_LOGI(TAG, "%s balance: [%.2f, %.2f, %.2f, %.2f, %.2f, %.2f]",
-           adaptive ? "Adaptive" : "Static",
+  ESP_LOGI(TAG, "%s balance (%s): [%.2f, %.2f, %.2f, %.2f, %.2f, %.2f]",
+           adaptive ? "Adaptive" : "Static", balance_measured_ ? "measured flow" : "pipe model",
            balance_factors_[0], balance_factors_[1], balance_factors_[2],
            balance_factors_[3], balance_factors_[4], balance_factors_[5]);
 }
@@ -2333,6 +2355,7 @@ void Lv6ZoneController::set_valve_curve(uint8_t zone, valve_curve::Curve curve, 
   xSemaphoreGive(snapshot_mutex_);
   if (config_store_)
     config_store_->save_valve_curves(start, full, measured, lmin);
+  balance_dirty_ = true;  // a measured full flow changes the design shares
   ESP_LOGI(TAG, "Zone %u valve curve: flow from %.0f %%, full at %.0f %%", zone + 1, curve.start_pct,
            curve.full_pct);
 }

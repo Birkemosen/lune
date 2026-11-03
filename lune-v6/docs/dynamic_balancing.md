@@ -46,6 +46,11 @@ Per control cycle, for each enabled loop *i*:
    existing resistance-aware model (area × heat loss, floor, pipe, loop length),
    normalised so the most demanding loop is 1.0. A zone without an area (a new zone; 0 = not set) counts
    with the mean area of the board's other zones until it is set, and V6 raises «area not set».
+   Once Touch has measured every enabled loop's full flow (`full_lmin`, below), the
+   measurement replaces the resistance model: the prior is the room's heat demand (UA,
+   W/K) divided by the loop's full flow, normalised the same way (`dynamic_balance.h`,
+   `measured_shares`). `/api/v1/zones` reports which is in use (`balance_basis`:
+   `measured` or `model`). Touch's house balance uses the same quantity between boards.
    The learned correction is the adaptive
    balancing multiplier (slow, hourly, relative to the other loops). Touch's house
    balance `H_i` (≤ 1) multiplies it.
@@ -102,7 +107,7 @@ and/or `full_pct` sets one (web UI write gate, or Touch's authority key).
 Learning the curves needs the circulation pump's flow, which only Touch sees (and both
 manifolds share the pump), so Touch measures them and writes them here with the time
 (`measured_epoch_s`; a manual change clears it), together with the loop's full flow in l/min
-(`full_lmin`, the pump-flow step from closed to open), which Touch uses for the split per manifold. For the measurement Touch uses
+(`full_lmin`, the pump-flow step from closed to open), which Touch uses for the split per manifold and V6 for the design shares. For the measurement Touch uses
 `POST /api/v1/valve-test` (authority key): `zone` 1..6 goes to `position_pct`, every other
 loop holds the position it had when the test began (`zone` 0 = hold only), the deadband
 is bypassed and adaptive balancing pauses. It ends after `ttl_s` (30..900) or with

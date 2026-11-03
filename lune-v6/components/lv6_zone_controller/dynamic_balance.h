@@ -37,6 +37,31 @@ struct Params {
   float absorb_band_c{0.0f};  ///< Extra headroom while Touch pre-buffers
 };
 
+/// Design shares from measured loop flow: a loop needs flow in proportion to its heat
+/// demand (W/K) and can carry its measured full flow (l/min), so its share of full flow
+/// is demand / full_lmin, normalised so the most demanding loop is 1. Replaces the
+/// friction estimate once Touch has measured every enabled loop. Returns false (out
+/// untouched) unless every enabled loop has a demand and a measured full flow.
+template <size_t N>
+inline bool measured_shares(const bool (&enabled)[N], const float (&demand)[N], const float (&full_lmin)[N],
+                            float (&out)[N]) {
+  float need[N]{};
+  float max_need = 0.0f;
+  for (size_t i = 0; i < N; i++) {
+    if (!enabled[i])
+      continue;
+    if (!(std::isfinite(demand[i]) && demand[i] > 0.0f && std::isfinite(full_lmin[i]) && full_lmin[i] > 0.0f))
+      return false;
+    need[i] = demand[i] / full_lmin[i];
+    max_need = std::max(max_need, need[i]);
+  }
+  if (!(max_need > 0.0f))
+    return false;
+  for (size_t i = 0; i < N; i++)
+    out[i] = enabled[i] ? need[i] / max_need : 0.0f;
+  return true;
+}
+
 /// Load factor from the room's error: 1 at least one band below target, G_MIN at
 /// target + margin, linear between. No temperature → 1 (statically balanced).
 inline float load_factor(float temp_c, float setpoint_c, const Params &p) {

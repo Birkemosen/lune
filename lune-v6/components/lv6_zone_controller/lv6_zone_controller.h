@@ -201,6 +201,7 @@ class Lv6ZoneController : public esphome::Component {
   void reset_balancing();
   /// Recompute balance factors on the next cycle (e.g. after a balancing mode change).
   void request_balance_recalc() { balance_dirty_ = true; }
+  bool balance_measured() const { return balance_measured_; }
 
   void set_simple_preheat_enabled(bool enabled);
   bool is_simple_preheat_enabled() const;
@@ -322,6 +323,7 @@ class Lv6ZoneController : public esphome::Component {
   /// clamped (dynamic balancing normalises it).
   std::array<float, NUM_ZONES> design_share_{};
   bool balance_dirty_ = true;
+  bool balance_measured_ = false;  ///< Design shares from measured loop flow (Touch)
   std::array<float, NUM_ZONES> house_balance_{1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f};
   std::array<uint32_t, NUM_ZONES> house_balance_until_ms_{};
   std::array<valve_curve::Curve, NUM_ZONES> valve_curve_{};  // guarded by snapshot_mutex_

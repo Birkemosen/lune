@@ -2230,10 +2230,12 @@ void LV6Dashboard::handle_zones_(AsyncWebServerRequest *request) {
 
   appendf(buf, JSON_BUF_SIZE, off,
           "{\"ok\":true,\"version\":\"v1\",\"data\":{\"node_id\":\"%s\","
-          "\"device_name\":\"%s\",\"device_location\":\"%s\",\"count\":%u,\"hp_phase\":\"%s\",\"zones\":[",
+          "\"device_name\":\"%s\",\"device_location\":\"%s\",\"count\":%u,\"hp_phase\":\"%s\","
+          "\"balance_basis\":\"%s\",\"zones\":[",
           node_id, name_esc, place_esc, static_cast<unsigned>(lv6::NUM_ZONES),
           this->zone_controller_ ? lv6::Lv6ZoneController::hp_phase_name(this->zone_controller_->get_hp_phase())
-                                 : "unknown");
+                                 : "unknown",
+          this->zone_controller_ && this->zone_controller_->balance_measured() ? "measured" : "model");
   for (uint8_t i = 0; i < lv6::NUM_ZONES && off + 1200 < JSON_BUF_SIZE; i++) {
     char temp[24], setpoint[24], valve[24], preload[24];
     format_float_token(temp, sizeof(temp), snap->zone_temp_c[i], 1);
