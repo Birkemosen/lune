@@ -7,6 +7,11 @@
  * pulled often enough that successive ring windows (~13 s on the device) overlap; the
  * browser merges them into one trace for the whole stroke. Background polling pauses
  * meanwhile (motorLabBusy). Finish turns manual mode off so automatic control resumes.
+ *
+ * After a stroke the end-stop explorer replays the trace (or the reference trace)
+ * through the firmware's trip paths with the thresholds in the form below it, so an
+ * edit shows at once where the motor would stop; Save writes the thresholds. The valve
+ * curve shows the selected zone's flow against opening, as the control uses it.
  */
 import { ev, es, setDashboardValue } from '../dashboard-src/core/store.js';
 import { key, gkey } from '../dashboard-src/utils/keys.js';
@@ -17,7 +22,10 @@ import {
 import {
   parseMotorTraceCsv, mergeMotorTraceSamples, motorTraceSeries, strokePhaseKey,
   downloadMotorTraceCsv, pinContactSample,
+  analyzeMotorTrace,
 } from '../dashboard-src/utils/motor-trace.js';
+import { explainEndstop } from '../dashboard-src/utils/endstop-explorer.js';
+import { REFERENCE_CLOSE, REFERENCE_OPEN, referenceSamples } from '../dashboard-src/utils/motor-reference-traces.js';
 
 const POLL_MS = 400;          // live board
 const PULL_MS = 3000;         // trace ring pull; the device ring holds ~13 s
@@ -31,6 +39,10 @@ let samples = [];
 let lastDir = 'open';
 let run = null;               // { stop: bool, halted: bool }
 const done = new Set();
+let capture = null;           // { dir, samples } of the latest traced move
+let learnedStallMa = null;    // motor_safety.learned_stall_ma when known
+let zones = null;             // /api/v1/zones rows (valve curves)
+let zonesAt = 0;
 
 const root = () => document.querySelector('.lab');
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -188,7 +200,10 @@ async function traced(dir, ms) {
     await sleep(POLL_MS);
     let ms_ = null;
     try { const r = await fetchDiagnostics(); ms_ = (r.data || r).motor_safety; } catch (_) { /* keep polling */ }
-    if (ms_) paintLive(ms_);
+    if (ms_) {
+      paintLive(ms_);
+      if (Number(ms_.learned_stall_ma) > 0) learnedStallMa = Number(ms_.learned_stall_ma);
+    }
     const now = Date.now();
     if (now - lastPull >= PULL_MS) { lastPull = now; await pullTrace(); }
     const moving = ms_ && (ms_.motor_busy || ms_.drive_on);
@@ -199,6 +214,9 @@ async function traced(dir, ms) {
   }
   await pullTrace();
   setDashboardValue('motorLabBusy', false);
+  if (samples.length > 1) capture = { dir, samples: samples.slice() };
+  explore();
+  refreshZones(true);
   const halted = run.halted;
   run = null;
   return !halted;
@@ -250,10 +268,232 @@ export async function labEmergencyStop() {
   await emergencyStopMotors();
 }
 
+// ---- End-stop explorer --------------------------------------------------------
+
+const THR_FORM = 'form[data-save="lab-thr"]';
+const PATHS = {
+  close: ['trailing', 'threshold', 'seat', 'popoff', 'stall', 'circuit', 'ceiling', 'wall'],
+  open: ['threshold', 'openStop', 'stall', 'circuit', 'ceiling'],
+};
+
+function field(name) {
+  const el = document.querySelector(`${THR_FORM} [name="${name}"]`);
+  const v = el ? Number(String(el.value).replace(',', '.')) : NaN;
+  return Number.isFinite(v) ? v : undefined;
+}
+
+/** Explorer parameters from the form (unsaved edits included). */
+function params() {
+  const hmip = String(ev(gkey.motorProfileDefault) || '').toLowerCase().includes('hmip');
+  const runS = Number(ev(hmip ? gkey.hmipRuntimeLimitSeconds : gkey.genericRuntimeLimitSeconds));
+  const p = {
+    closeFactor: field('close_threshold_multiplier'),
+    trailingStepMa: field('close_trailing_step_ma'),
+    trailingWindowMs: field('close_trailing_ref_ms'),
+    trailingSustainMs: field('close_trailing_sustain_ms'),
+    openFactor: field('open_endstop_current_factor'),
+    stallFraction: field('open_endstop_stall_fraction'),
+    seatMa: field('cap_close_seat_ma'),
+    seatFrames: field('cap_close_seat_frames'),
+    popoffMa: field('cap_close_popoff_ma'),
+    openStopMa: field('cap_open_stop_ma'),
+    stallMa: field('cap_stall_ma'),
+    circuitMa: field('cap_circuit_fault_ma'),
+    closeCeilingCounts: field('close_runtime_limit_counts'),
+    closeCeilingS: Number.isFinite(runS) && runS > 0 ? runS : undefined,
+    learnedStallMa: learnedStallMa || undefined,
+  };
+  for (const k of Object.keys(p)) if (p[k] === undefined) delete p[k];
+  return p;
+}
+
+function source() {
+  const r = document.querySelector('input[name="lab_src"]:checked');
+  return r ? r.value : 'capture';
+}
+
+function hline(cls, y) {
+  return `<path class="${cls}" d="M0,${y.toFixed(1)}H${W}"/>`;
+}
+
+function vline(cls, x) {
+  return `<path class="${cls}" d="M${x.toFixed(1)},0V100"/>`;
+}
+
+function fmtS(ms) {
+  return `${h.num(ms / 1000, 1)} s`;
+}
+
+function explore() {
+  const box = document.querySelector('[data-lab-explorer]');
+  if (!box || !h) return;
+  const src = source();
+  const dir = capture ? capture.dir : 'close';
+  const rows = src === 'reference'
+    ? referenceSamples(dir === 'open' ? REFERENCE_OPEN : REFERENCE_CLOSE)
+    : (capture ? capture.samples : []);
+  if (rows.length < 4) { box.setAttribute('data-empty', ''); h.setShow('lab.thr.hasSuggest', false); return; }
+  box.removeAttribute('data-empty');
+  const res = explainEndstop(rows, dir, params());
+  const series = res.series;
+  if (!series.length) { box.setAttribute('data-empty', ''); return; }
+  const t0 = series[0].t_ms;
+  const t1 = series[series.length - 1].t_ms;
+  const tx = (t) => ((t - t0) / Math.max(1, t1 - t0)) * W;
+
+  // Current scale covers the trace and the dynamic threshold; caps above it are listed, not drawn.
+  const vals = series.flatMap((r) => [r.current_ma, r.threshold_ma]).filter(Number.isFinite);
+  const hi = Math.max(...vals) * 1.15;
+  const lo = 0;
+  const ty = (v) => 100 - ((v - lo) / (hi - lo)) * 100;
+  const p = res.params;
+  setThr('current', pathOf(series.map((r) => [r.t_ms, r.current_ma]), t0, t1, lo, hi));
+  setThr('threshold', pathOf(series.map((r) => [r.t_ms, r.threshold_ma]), t0, t1, lo, hi));
+  const caps = dir === 'close' ? [p.seatMa, p.popoffMa, p.stallMa, p.circuitMa] : [p.openStopMa, p.stallMa, p.circuitMa];
+  if (res.baselineMa != null) caps.push(res.baselineMa);
+  setThrHtml('caps', caps.filter((v) => Number.isFinite(v) && v <= hi).map((v) => hline('cap', ty(v))).join(''));
+  setThrHtml('trips', PATHS[dir].filter((id) => res.trips[id])
+    .map((id) => vline(id === res.first ? 'trip first' : 'trip', tx(res.trips[id].t_ms))).join(''));
+  h.setBind('lab.y.thr', `<span>${h.num(hi, 0)} <small>mA</small></span><span>${h.num(hi / 2, 0)}</span><span>0</span>`);
+  h.setBind('lab.thr.x', `<span>0 s</span><span>${fmtS((t1 - t0) / 2)}</span><span>${fmtS(t1 - t0)}</span>`);
+  h.setBind('lab.thr.meta', h.escapeHtml(h.t('lab.thr.meta', {
+    dir: h.t(`lab.dir.${dir}`), src: h.t(src === 'reference' ? 'lab.thr.reference' : 'lab.thr.capture'),
+  })));
+
+  // Trailing rise (closing only) against the step threshold.
+  const closing = dir === 'close';
+  h.setShow('lab.thr.rise', closing);
+  if (closing) {
+    const rise = series.map((r) => [r.t_ms, r.rise_ma]);
+    const rv = rise.map((x) => x[1]).filter(Number.isFinite);
+    const rhi = Math.max(p.trailingStepMa * 1.5, ...(rv.length ? rv : [1]));
+    const rlo = Math.min(0, ...(rv.length ? rv : [0]));
+    setThr('rise', pathOf(rise, t0, t1, rlo, rhi));
+    setThrHtml('risecap', hline('cap', 100 - ((p.trailingStepMa - rlo) / (rhi - rlo)) * 100));
+    h.setBind('lab.y.rise', `<span>${h.num(rhi, 1)} <small>mA</small></span><span>${h.num((rhi + rlo) / 2, 1)}</span><span>${h.num(rlo, 1)}</span>`);
+  }
+
+  // Table: every path, its threshold and where it would fire.
+  const level = {
+    threshold: res.series.slice().reverse().find((r) => r.threshold_ma != null),
+    seat: p.seatMa, popoff: p.popoffMa, openStop: p.openStopMa, stall: p.stallMa, circuit: p.circuitMa,
+  };
+  const thrText = (id) => {
+    if (id === 'threshold') return level.threshold ? `${h.num(level.threshold.threshold_ma, 1)} mA` : '—';
+    if (id === 'trailing') return `${h.num(p.trailingStepMa, 1)} mA / ${h.num(p.trailingWindowMs / 1000, 1)} s`;
+    if (id === 'ceiling') return `${h.num(closing ? p.closeCeilingS : p.openCeilingS, 0)} s`;
+    if (id === 'wall') return '40 s';
+    return Number.isFinite(level[id]) ? `${h.num(level[id], 0)} mA` : '—';
+  };
+  h.setBind('lab.thr.rows', PATHS[dir].map((id) => {
+    const trip = res.trips[id];
+    const first = id === res.first;
+    const name = h.escapeHtml(h.t(`lab.path.${id}`));
+    return `<tr${first ? ' class="first"' : ''}><td>${name}${first ? ` <span class="badge">${h.escapeHtml(h.t('lab.thr.first'))}</span>` : ''}</td>`
+      + `<td class="num">${thrText(id)}</td>`
+      + `<td class="num">${trip ? fmtS(trip.t_ms - t0) : h.escapeHtml(h.t('lab.thr.notReached'))}</td>`
+      + `<td class="num">${trip ? trip.motion_count : '—'}</td></tr>`;
+  }).join(''));
+
+  // Verdict.
+  let verdict;
+  if (!res.first) verdict = h.t('lab.thr.verdictNone');
+  else if (res.first === 'ceiling') verdict = h.t('lab.thr.verdictCeiling', { t: fmtS(res.trips.ceiling.t_ms - t0) });
+  else {
+    const tr = res.trips[res.first];
+    const vars = { name: h.t(`lab.path.${res.first}`), t: fmtS(tr.t_ms - t0), ma: `${h.num(tr.current_ma, 1)} mA` };
+    verdict = h.t(res.beforeWall ? 'lab.thr.verdictFirst' : 'lab.thr.verdictLate', vars);
+  }
+  h.setBind('lab.thr.verdict', h.escapeHtml(verdict));
+
+  // Suggested factor from the recorded stroke (not from the reference trace).
+  const a = src === 'capture' && capture ? analyzeMotorTrace(capture.samples, dir) : null;
+  const ok = !!(a && a.ok && Number.isFinite(a.suggested_factor));
+  h.setShow('lab.thr.hasSuggest', ok);
+  if (ok) {
+    const name = closing ? 'close_threshold_multiplier' : 'open_endstop_current_factor';
+    const label = h.t(closing ? 'lab.p.closeFactor' : 'lab.p.openFactor');
+    const btn = document.querySelector('[data-lab="suggest"]');
+    if (btn) { btn.dataset.field = name; btn.dataset.value = String(a.suggested_factor); }
+    h.setBind('lab.thr.suggest', h.escapeHtml(h.t('lab.thr.suggestText', { name: label, v: h.num(a.suggested_factor, 2) })));
+  }
+}
+
+function setThr(k, d) {
+  document.querySelectorAll(`[data-thr="${k}"]`).forEach((el) => el.setAttribute('d', d));
+}
+
+function setThrHtml(k, html) {
+  document.querySelectorAll(`[data-thr="${k}"]`).forEach((el) => { el.innerHTML = html; });
+}
+
+/** Thresholds from state into the form, unless it is being edited. */
+function paintThresholds() {
+  const form = document.querySelector(THR_FORM);
+  if (!form || !h || h.formIsLocked(form.querySelector('input'))) return;
+  let changed = false;
+  form.querySelectorAll('input[name]').forEach((el) => {
+    const v = Number(ev(`number-${el.name}`));
+    if (!Number.isFinite(v)) return;
+    const dec = (String(el.step).split('.')[1] || '').length;
+    const text = v.toFixed(dec);
+    if (el.value !== text) { el.value = text; changed = true; }
+  });
+  if (changed) explore();
+}
+
+// ---- Valve curve --------------------------------------------------------------
+
+async function refreshZones(force) {
+  if (!force && zones && Date.now() - zonesAt < 30000) return;
+  zonesAt = Date.now();
+  try {
+    const r = await fetch('/api/v1/zones', { cache: 'no-store' });
+    if (!r.ok) return;
+    const d = await r.json();
+    const data = d.data || d;
+    zones = Array.isArray(data) ? data : (data.zones || []);
+    paintCurve();
+  } catch (_) { /* offline: keep the last curve */ }
+}
+
+function paintCurve() {
+  const box = document.querySelector('[data-lab-curve]');
+  if (!box || !h) return;
+  const z = zone();
+  const row = (zones || []).find((r) => Number(r.zone) === z);
+  const c = row && row.valve_curve;
+  if (!c || !Number.isFinite(Number(c.start_pct)) || !Number.isFinite(Number(c.full_pct))) {
+    box.setAttribute('data-empty', '');
+    return;
+  }
+  box.removeAttribute('data-empty');
+  const start = Number(c.start_pct);
+  const full = Number(c.full_pct);
+  const x = (pct) => (pct / 100) * W;
+  document.querySelectorAll('[data-vc="curve"]').forEach((el) =>
+    el.setAttribute('d', `M0,100H${x(start).toFixed(1)}L${x(full).toFixed(1)},0H${W}`));
+  const pos = Number(row.valve_pct);
+  const flow = Number(row.flow_pct);
+  document.querySelectorAll('[data-vc="pos"]').forEach((el) =>
+    el.setAttribute('d', Number.isFinite(pos) ? `M${x(pos).toFixed(1)},0V100` : ''));
+  const measured = Number(c.measured_epoch_s) > 0;
+  const src = measured
+    ? h.t('lab.vc.measured', { date: new Date(Number(c.measured_epoch_s) * 1000).toLocaleDateString(/^\/da\b/.test(location.pathname) ? 'da-DK' : 'en-GB') })
+    : h.t('lab.vc.default');
+  h.setBind('lab.vc.meta', h.escapeHtml(h.t('lab.vc.meta', { z })));
+  h.setBind('lab.vc.note', h.escapeHtml(h.t('lab.vc.note', {
+    start: h.num(start, 0), full: h.num(full, 0), src,
+    pos: Number.isFinite(pos) ? h.num(pos, 0) : '—', flow: Number.isFinite(flow) ? h.num(flow, 0) : '—',
+  })));
+}
+
 /** The zone list carries the zones' names once state has loaded. */
 export function paintMotorLab() {
   const sel = document.getElementById('lab_zone');
   if (!sel) return;
+  paintThresholds();
+  refreshZones(false);
   for (const opt of sel.options) {
     const z = Number(opt.value);
     const name = es(key.name(z));
@@ -265,6 +505,13 @@ export function initMotorLab(helpers) {
   h = helpers;
   if (!root()) return;
   setState('setup');
+  document.addEventListener('input', (e) => {
+    if (e.target.closest(THR_FORM)) explore();
+  });
+  document.addEventListener('change', (e) => {
+    if (e.target.name === 'lab_src' || e.target.closest(THR_FORM)) explore();
+    if (e.target.id === 'lab_zone') paintCurve();
+  });
   document.addEventListener('click', (e) => {
     const b = e.target.closest('[data-lab]');
     if (!b || !root() || !root().contains(b)) return;
@@ -272,6 +519,15 @@ export function initMotorLab(helpers) {
     const jog = () => Math.round(Math.max(1, Math.min(45, Number(document.getElementById('lab_ms')?.value) || 10)) * 1000);
     if (a === 'stop') { if (run) run.stop = true; return; }
     if (a === 'csv') { downloadMotorTraceCsv(samples, `lune-v6-z${zone()}-${lastDir}.csv`); return; }
+    if (a === 'suggest') {
+      const el = document.querySelector(`${THR_FORM} [name="${b.dataset.field}"]`);
+      if (el) {
+        const dec = (String(el.step).split('.')[1] || '').length;
+        el.value = Number(b.dataset.value).toFixed(dec);
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+      return;
+    }
     if (state === 'running') return;
     const armed = ['armed', 'seated', 'opened', 'closed'].includes(state);
     if (a.startsWith('jog-') && !armed) return;

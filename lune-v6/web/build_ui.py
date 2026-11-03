@@ -572,16 +572,14 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
                lab_step(1,"arm","arm","setup halted","armed")+
                lab_step(2,"seat","seat","armed","seated")+
                lab_step(3,"open","open","seated closed","opened")+
-               lab_step(4,"close","close","opened","closed"))}
+               lab_step(4,"close","close","opened","closed")+
+               sstep("lab_ms",T("lab.manual.duration"),10,1,45,1,"s",dec=0,hint=T("lab.manual.hint"))+
+               srow(span(T("lab.manual.move")),f'<button class="btn" type="button" data-lab="jog-open">{T("lab.manual.open")}</button><button class="btn" type="button" data-lab="jog-close">{T("lab.manual.close")}</button>',attrs=' data-show-when="armed seated opened closed"'))}
         <div class="actions">
           <button class="btn danger-solid" type="button" data-action="motorlab-estop">{T("csys.motorLabEstop")}</button>
           <button class="btn" type="button" data-lab="stop" data-show-when="running">{T("lab.stop")}</button>
           <button class="btn" type="button" data-lab="finish" data-show-when="armed seated opened closed halted">{T("lab.finish")}</button>
         </div>
-        {group(T("lab.manual.title"),
-               sstep("lab_ms",T("lab.manual.duration"),10,1,45,1,"s",dec=0)+
-               srow(span(T("lab.manual.move")),f'<button class="btn" type="button" data-lab="jog-open">{T("lab.manual.open")}</button><button class="btn" type="button" data-lab="jog-close">{T("lab.manual.close")}</button>',attrs=' data-show-when="armed seated opened closed"'),
-               f'<p class="note">{T("lab.manual.hint")}</p>')}
         <div class="sub"><h4>{T("lab.live")}</h4>
           <dl class="metrics">
             {metric(T("lab.current"),"—","mA","lab.current")}
@@ -607,6 +605,37 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
           <div class="phase-strip" data-bind="lab.phases" aria-label="{T("lab.chart.phase")}"></div>
           <div class="axis" data-bind="lab.x" aria-hidden="true"><span>0 s</span><span>—</span></div>
           <div class="actions"><button class="btn" type="button" data-lab="csv">{T("lab.csv")}</button></div>
+        </div>
+        <div class="sub mtrace" data-lab-explorer data-empty>
+          <h4>{T("lab.thr.title")} <span class="legend" data-bind="lab.thr.meta"></span></h4>
+          <p class="empty">{T("lab.thr.empty")}</p>
+          {seg("lab_src",[("capture",T("lab.thr.capture")),("reference",T("lab.thr.reference"))],"capture",T("lab.thr.source"))}
+          <p class="note" data-bind="lab.thr.verdict"></p>
+          <div class="actions" data-bind-show="lab.thr.hasSuggest" hidden><span class="hint" data-bind="lab.thr.suggest"></span><button class="btn" type="button" data-lab="suggest">{T("lab.thr.useSuggest")}</button></div>
+          <div class="mtrace-row"><div class="mtrace-y" data-bind="lab.y.thr" aria-hidden="true"><span>—</span><span>—</span><span>—</span></div>
+            <svg class="trend" viewBox="0 0 600 100" preserveAspectRatio="none" role="img" aria-label="{T("lab.thr.chartAria")}"><g data-thr="caps"></g><path class="thr" data-thr="threshold" d=""/><path class="mc" data-thr="current" d=""/><g data-thr="trips"></g></svg></div>
+          <div class="mtrace-row" data-bind-show="lab.thr.rise" hidden><div class="mtrace-y" data-bind="lab.y.rise" aria-hidden="true"><span>—</span><span>—</span><span>—</span></div>
+            <svg class="trend" viewBox="0 0 600 100" preserveAspectRatio="none" role="img" aria-label="{T("lab.thr.riseAria")}"><g data-thr="risecap"></g><path class="slp" data-thr="rise" d=""/></svg></div>
+          <div class="axis" data-bind="lab.thr.x" aria-hidden="true"><span>0 s</span><span>—</span></div>
+          <div class="table-wrap"><table class="table">
+            <thead><tr><th>{T("lab.thr.col.path")}</th><th class="num">{T("lab.thr.col.threshold")}</th><th class="num">{T("lab.thr.col.fires")}</th><th class="num">{T("lab.thr.col.counts")}</th></tr></thead>
+            <tbody data-bind="lab.thr.rows"></tbody>
+          </table></div>
+        </div>
+        <form data-save="lab-thr" data-patch>
+          <p class="note">{T("lab.p.intro")}</p>
+          {group(T("lab.g.close"),sstep("close_threshold_multiplier",T("lab.p.closeFactor"),1.05,1.05,2.5,0.05,"×",dec=2)+sstep("close_trailing_step_ma",T("lab.p.trailStep"),0.5,0.5,20,0.1,"mA",dec=1)+sstep("close_trailing_ref_ms",T("lab.p.trailWindow"),250,250,10000,50,"ms",dec=0)+sstep("close_trailing_sustain_ms",T("lab.p.trailSustain"),0,0,10000,50,"ms",dec=0))}
+          {group(T("lab.g.openCeiling"),sstep("open_endstop_current_factor",T("lab.p.openFactor"),1.0,1.0,5.0,0.05,"×",dec=2)+sstep("open_endstop_stall_fraction",T("lab.p.stallFraction"),0.1,0.1,0.6,0.05,"",dec=2)+sstep("close_runtime_limit_counts",T("lab.p.closeCounts"),1,1,3000,10,"",dec=0))}
+          {group(T("lab.g.caps"),sstep("cap_close_seat_ma",T("lab.p.seat"),5,5,140,1,"mA",dec=0)+sstep("cap_close_seat_frames",T("lab.p.seatFrames"),1,1,20,1,"",dec=0)+sstep("cap_close_popoff_ma",T("lab.p.popoff"),5,5,140,1,"mA",dec=0)+sstep("cap_open_stop_ma",T("lab.p.openStop"),5,5,140,1,"mA",dec=0)+sstep("cap_stall_ma",T("lab.p.stall"),5,5,140,1,"mA",dec=0)+sstep("cap_circuit_fault_ma",T("lab.p.circuit"),5,5,140,1,"mA",dec=0))}
+          {savebar("lab-thr",T("lab.p.save"))}
+        </form>
+        <div class="sub mtrace" data-lab-curve data-empty>
+          <h4>{T("lab.vc.title")} <span class="legend" data-bind="lab.vc.meta"></span></h4>
+          <p class="empty">{T("lab.vc.empty")}</p>
+          <div class="mtrace-row square"><div class="mtrace-y" aria-hidden="true"><span>100 <small>%</small></span><span>50</span><span>0</span></div>
+            <svg class="trend" viewBox="0 0 600 100" preserveAspectRatio="none" role="img" aria-label="{T("lab.vc.aria")}"><path class="vpos" data-vc="pos" d=""/><path class="vc" data-vc="curve" d=""/></svg></div>
+          <div class="axis" aria-hidden="true"><span>0 %</span><span>{T("lab.vc.axis")}</span><span>100 %</span></div>
+          <p class="note" data-bind="lab.vc.note"></p>
         </div>
       </div>''',attrs=" data-dev-only hidden"))
     dev_attr=lambda c: " data-dev-only hidden" if c in DEV_ONLY else ""
@@ -657,7 +686,7 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
              "alert.driversOffBody","drv.reason.fault","drv.reason.ota","drv.reason.arm","drv.reason.boot","drv.reason.user","dev.online","dev.offline",
              "zdash.preload","zdash.preloadUntil","src.ble","src.probe",
              "csys.touchWaiting","csys.touchWaitingBody","csys.touchApproved","csys.touchPending","csys.touchControls","csys.touchReady","csys.touchLeaseLost",
-             "zchart.expected","zchart.at","zchart.noForecast","zchart.faultStrong","zcard.flow","zcard.flowRet","lab.state.setup","lab.state.armed","lab.state.seated","lab.state.opened","lab.state.closed","lab.state.running","lab.state.halted","lab.phase.free","lab.phase.contact","lab.phase.load","lab.phase.stopping","lab.pinSeen","lab.pinWaiting","lab.on","lab.off","lab.chartMeta","lab.dir.open","lab.dir.close","lab.err.drivers","lab.err.failed","lab.haltedMsg","csys.ownerFlow","csys.ownerReturn","zdash.pin",
+             "zchart.expected","zchart.at","zchart.noForecast","zchart.faultStrong","zcard.flow","zcard.flowRet","lab.thr.meta","lab.thr.capture","lab.thr.reference","lab.thr.verdictNone","lab.thr.verdictCeiling","lab.thr.verdictLate","lab.thr.verdictFirst","lab.thr.first","lab.thr.notReached","lab.thr.suggestText","lab.path.threshold","lab.path.trailing","lab.path.seat","lab.path.popoff","lab.path.openStop","lab.path.stall","lab.path.circuit","lab.path.ceiling","lab.path.wall","lab.vc.note","lab.vc.measured","lab.vc.default","lab.vc.meta","lab.dir.open","lab.dir.close","lab.state.setup","lab.state.armed","lab.state.seated","lab.state.opened","lab.state.closed","lab.state.running","lab.state.halted","lab.phase.free","lab.phase.contact","lab.phase.load","lab.phase.stopping","lab.pinSeen","lab.pinWaiting","lab.on","lab.off","lab.chartMeta","lab.dir.open","lab.dir.close","lab.err.drivers","lab.err.failed","lab.haltedMsg","csys.ownerFlow","csys.ownerReturn","zdash.pin",
              "wifi.connectedTo","wifi.notConnected","wifi.apActive","wifi.sent","wifi.needSsid","wifi.busy",
              "wifi.switch.pending","wifi.switch.connected","wifi.switch.reverted","wifi.switch.failed")
     rt={k:T(k) for k in rt_keys}

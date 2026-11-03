@@ -1806,6 +1806,12 @@ async function handleSave(detail) {
       else {
         await setGlobalSelect('ble_clock_sync_enabled', form.ble_clock_enabled ? 'on' : 'off');
       }
+    } else if (saveKey === 'lab-thr') {
+      // Motor lab › end-stop thresholds: each write reloads the motor config, so only what changed.
+      for (const [name, value] of Object.entries((detail && detail.changed) || {})) {
+        const v = parseNum(value);
+        if (Number.isFinite(v)) await setGlobalNumber(name, v);
+      }
     } else if (saveKey === 'motors') {
       if (action === 'relearn_all') {
         await ensureMotorsReady_();
@@ -2113,7 +2119,7 @@ function boot() {
   if (m) document.cookie = `lune_lang=${m[1]};path=/;max-age=31536000`;
 
   initZchartScrub();
-  initMotorLab({ t, num, escapeHtml, setBind, setShow });
+  initMotorLab({ t, num, escapeHtml, setBind, setShow, formIsLocked });
 
   document.addEventListener('lune:save', (e) => {
     handleSave(e.detail);

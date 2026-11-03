@@ -27,6 +27,7 @@ SAVE_KEYS = {
     r"device": "saveKey === 'device'",
     r"ble_clock": "saveKey === 'ble_clock'",
     r"motors": "saveKey === 'motors'",
+    r"lab-thr": "saveKey === 'lab-thr'",
     r"regulation": "saveKey === 'regulation'",
     r"connections": "saveKey === 'connections'",
     r"wifi": "saveKey === 'wifi'",

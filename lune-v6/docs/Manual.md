@@ -392,6 +392,20 @@ the trace. **Emergency stop** stops every motor and turns the drivers off; the s
 starts over. **Finish and resume control** turns manual mode off. Leaving the page does
 not, so finish before you go.
 
+**End stop on the stroke** replays the latest recording (or the Rev 3.3 reference trace)
+through the firmware's end-stop logic, tick by tick: the current with the dynamic
+threshold (dashed) and the absolute caps (dotted), a marker where each path would stop the
+motor (solid for the one that stops first), the trailing rise on a closing stroke, and a
+table of every path with its threshold, time and counts. It is exact about the logic, not
+the noise: the firmware runs on finer frames than the trace. A recorded stroke also gives a
+suggested close or open factor (**Use suggestion** puts it in the form).
+
+The **thresholds** below (closing, opening and ceiling, absolute caps) replay in the chart
+as you change them; **Save thresholds** writes only what changed to V6.
+
+**Valve curve** shows the selected zone's flow against opening as the control uses it:
+measured by Lune Touch (with the date) or the default curve, with the valve's position now.
+
 ---
 
 <a id="ingest"></a>
