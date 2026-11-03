@@ -628,7 +628,9 @@ function paintStrip() {
     setBind(`probe.${p}`, Number.isFinite(pt) ? `${num(pt)} <small>°C</small>` : '—');
     const owner = parseProbeIndex(es(gkey.manifoldFlowProbe)) === p ? t('csys.ownerFlow')
       : parseProbeIndex(es(gkey.manifoldReturnProbe)) === p ? t('csys.ownerReturn') : probeOwner_(p);
-    setBind(`probe.${p}.label`, escapeHtml(owner ? t('csys.probeMapped', { n: p, owner }) : t('csys.probeFree', { n: p })));
+    // The probe's role as a pill next to its name; a free probe has none.
+    setBind(`probe.${p}.role`, escapeHtml(owner));
+    setShow(`probe.${p}.hasRole`, !!owner);
   }
   setBar('manifold.opening', openingPct);
   // Heat pump phase from Touch (valves follow the heat pump): one line, only when known.

@@ -401,7 +401,7 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
             </table></div></div>
           <div class="sub"><h4>{T("csys.probeLive")}</h4>
             <dl class="metrics">
-              {"".join(metric(f'<span data-bind="probe.{k}.label">{T("csys.probe",n=k)}</span>',"—","°C",f"probe.{k}",attrs=f' data-probe="{k}"') for k in range(1,9))}
+              {"".join(metric(f'{T("csys.probe",n=k)} <span class="badge" data-bind="probe.{k}.role" data-bind-show="probe.{k}.hasRole" hidden></span>',"—","°C",f"probe.{k}",attrs=f' data-probe="{k}"') for k in range(1,9))}
             </dl></div>'''
         settings=f'''
         <form data-save="regulation" data-patch>
@@ -602,7 +602,7 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
              "alert.driversOffBody","drv.reason.fault","drv.reason.ota","drv.reason.arm","drv.reason.boot","drv.reason.user","dev.online","dev.offline",
              "zdash.preload","zdash.preloadUntil","src.ble","src.probe",
              "csys.touchWaiting","csys.touchWaitingBody","csys.touchApproved","csys.touchPending","csys.touchControls","csys.touchReady","csys.touchLeaseLost",
-             "zchart.expected","zchart.at","zchart.noForecast","zchart.faultStrong","zcard.flow","zcard.flowRet","csys.probeMapped","csys.probeFree","csys.ownerFlow","csys.ownerReturn","zdash.pin",
+             "zchart.expected","zchart.at","zchart.noForecast","zchart.faultStrong","zcard.flow","zcard.flowRet","csys.ownerFlow","csys.ownerReturn","zdash.pin",
              "wifi.connectedTo","wifi.notConnected","wifi.apActive","wifi.sent","wifi.needSsid","wifi.busy",
              "wifi.switch.pending","wifi.switch.connected","wifi.switch.reverted","wifi.switch.failed")
     rt={k:T(k) for k in rt_keys}
