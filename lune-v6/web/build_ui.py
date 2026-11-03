@@ -551,9 +551,64 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
           {confirm_pop("confirm-restart","csys.restart","csys.restartTitle","csys.restartNote","restart","csys.restartConfirm")}
         </div>
       </form>'''))
+    # Motorlab (kun dev-builds): ét slag ad gangen på én motor, med live strøm og faser.
+    def lab_step(n,key,action,when,done):
+        btn=f'<button class="btn" type="button" data-lab="{action}" data-show-when="{when}">{T(f"lab.{key}.action")}</button>'
+        badge=f'<span class="badge ok" data-bind-show="lab.done.{key}" hidden>{T("lab.done")}</span>'
+        return srow(f'<span>{n}. {T(f"lab.{key}.title")}</span>',badge+btn,T(f"lab.{key}.hint"))
+    lab_zone_opts="".join(f'<option value="{z[0]}">Z{z[0]} {z[1]}</option>' for z in Z)
+    def mt_row(layer,bind,unit,cls):
+        attr=f' data-layer="{layer}"' if layer else ""
+        return (f'<div class="mtrace-row"{attr}><div class="mtrace-y" data-bind="lab.y.{bind}" aria-hidden="true"><span>—</span><span>—</span><span>—</span></div>'
+                f'<svg class="trend" viewBox="0 0 600 100" preserveAspectRatio="none" role="img" aria-label="{T(f"lab.chart.{bind}" if bind=="current" else f"lab.chart.{bind}Aria")}"><path class="{cls}" data-lab-path="{bind}" d=""/></svg></div>')
     cats.append(syscat("motorlab",T("cat.motorlab"),f'''
-      <p class="msg warn"><span>{T("csys.motorLabMsg")}</span></p>
-      <div class="actions"><button class="btn" type="button" data-action="motorlab-estop">{T("csys.motorLabEstop")}</button></div>''',attrs=" data-dev-only hidden"))
+      <div class="lab" data-state="setup">
+        <p class="msg warn"><span>{T("csys.motorLabMsg")}</span></p>
+        {group(T("lab.motor"),
+               srow(lab("lab_zone",T("lab.motor")),f'<select class="select w-md" id="lab_zone" name="lab_zone">{lab_zone_opts}</select>')+
+               srow(span(T("lab.status")),'<span class="badge" data-bind="lab.status">—</span>'),
+               f'<p class="note">{T("lab.intro")}</p>')}
+        {group(T("lab.steps"),
+               lab_step(1,"arm","arm","setup halted","armed")+
+               lab_step(2,"seat","seat","armed","seated")+
+               lab_step(3,"open","open","seated closed","opened")+
+               lab_step(4,"close","close","opened","closed"))}
+        <div class="actions">
+          <button class="btn danger-solid" type="button" data-action="motorlab-estop">{T("csys.motorLabEstop")}</button>
+          <button class="btn" type="button" data-lab="stop" data-show-when="running">{T("lab.stop")}</button>
+          <button class="btn" type="button" data-lab="finish" data-show-when="armed seated opened closed halted">{T("lab.finish")}</button>
+        </div>
+        {group(T("lab.manual.title"),
+               sstep("lab_ms",T("lab.manual.duration"),10,1,45,1,"s",dec=0)+
+               srow(span(T("lab.manual.move")),f'<button class="btn" type="button" data-lab="jog-open">{T("lab.manual.open")}</button><button class="btn" type="button" data-lab="jog-close">{T("lab.manual.close")}</button>',attrs=' data-show-when="armed seated opened closed"'),
+               f'<p class="note">{T("lab.manual.hint")}</p>')}
+        <div class="sub"><h4>{T("lab.live")}</h4>
+          <dl class="metrics">
+            {metric(T("lab.current"),"—","mA","lab.current")}
+            {metric(T("lab.mean"),"—","mA","lab.mean")}
+            {metric(T("lab.peak"),"—","mA","lab.peak")}
+            {metric(T("lab.runtime"),"—","s","lab.runtime")}
+            {metric(T("lab.ripples"),"—","","lab.ripples")}
+            {metric(T("lab.phase"),"—","","lab.phase")}
+            {metric(T("lab.pin"),"—","","lab.pin")}
+            {metric(T("lab.drivers"),"—","","lab.drivers")}
+          </dl></div>
+        <div class="sub mtrace" data-empty>
+          <h4>{T("lab.chart.title")} <span class="legend" data-bind="lab.chartMeta"></span></h4>
+          <p class="empty">{T("lab.chart.empty")}</p>
+          <div class="layers" role="group" aria-label="{T("lab.chart.layers")}">
+            <label><input class="sr-only" type="checkbox" value="phase" checked>{T("lab.chart.phase")}</label>
+            <label><input class="sr-only" type="checkbox" value="cadence"><i class="lcad"></i>{T("lab.chart.cadence")}</label>
+            <label><input class="sr-only" type="checkbox" value="slope"><i class="lslp"></i>{T("lab.chart.slope")}</label>
+          </div>
+          {mt_row("","current","mA","mc")}
+          {mt_row("cadence","cadence","Hz","cad")}
+          {mt_row("slope","slope","mA/s","slp")}
+          <div class="phase-strip" data-bind="lab.phases" aria-label="{T("lab.chart.phase")}"></div>
+          <div class="axis" data-bind="lab.x" aria-hidden="true"><span>0 s</span><span>—</span></div>
+          <div class="actions"><button class="btn" type="button" data-lab="csv">{T("lab.csv")}</button></div>
+        </div>
+      </div>''',attrs=" data-dev-only hidden"))
     dev_attr=lambda c: " data-dev-only hidden" if c in DEV_ONLY else ""
     sys_radios=f'<input class="state" type="radio" name="syscat" id="c-none" checked aria-label="{T("sys.cats")}">'+"".join(
         f'<input class="state" type="radio" name="syscat" id="c-{c}" data-hash="{T("hash."+c)}" aria-label="{t}">' for c,t,_ in CATS)
@@ -602,7 +657,7 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
              "alert.driversOffBody","drv.reason.fault","drv.reason.ota","drv.reason.arm","drv.reason.boot","drv.reason.user","dev.online","dev.offline",
              "zdash.preload","zdash.preloadUntil","src.ble","src.probe",
              "csys.touchWaiting","csys.touchWaitingBody","csys.touchApproved","csys.touchPending","csys.touchControls","csys.touchReady","csys.touchLeaseLost",
-             "zchart.expected","zchart.at","zchart.noForecast","zchart.faultStrong","zcard.flow","zcard.flowRet","csys.ownerFlow","csys.ownerReturn","zdash.pin",
+             "zchart.expected","zchart.at","zchart.noForecast","zchart.faultStrong","zcard.flow","zcard.flowRet","lab.state.setup","lab.state.armed","lab.state.seated","lab.state.opened","lab.state.closed","lab.state.running","lab.state.halted","lab.phase.free","lab.phase.contact","lab.phase.load","lab.phase.stopping","lab.pinSeen","lab.pinWaiting","lab.on","lab.off","lab.chartMeta","lab.dir.open","lab.dir.close","lab.err.drivers","lab.err.failed","lab.haltedMsg","csys.ownerFlow","csys.ownerReturn","zdash.pin",
              "wifi.connectedTo","wifi.notConnected","wifi.apActive","wifi.sent","wifi.needSsid","wifi.busy",
              "wifi.switch.pending","wifi.switch.connected","wifi.switch.reverted","wifi.switch.failed")
     rt={k:T(k) for k in rt_keys}

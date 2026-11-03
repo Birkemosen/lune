@@ -374,8 +374,23 @@ cause, how long they have been off and how many recoveries have run.
 <a id="motor-lab"></a>
 ### Motor lab (dev builds)
 
-Stroke capture for development firmware only. Suspends automatic control while
-recording; use the emergency stop if needed.
+Stroke capture on one motor, development firmware only (release images hide it).
+
+1. **Arm** pauses automatic control for every zone (manual mode) and turns the motor
+   drivers on.
+2. **Seat the valve** closes until the pin is seated, so the opening stroke starts from a
+   known end.
+3. **Record the opening stroke**, then 4. **the closing stroke**, each run for the motor
+   profile's run time; end-stop detection stops the motor earlier.
+
+**Manual move** runs a timed open or close (1–45 s) with end-stop detection on, once the
+lab is armed. **Live** shows current, mean, peak, runtime, ripples, stroke phase, when the
+pin was met and the drivers. The **motor current** chart covers the whole stroke: the
+browser merges successive reads of the device's trace ring (~13 s) while the motor runs,
+with the stroke phases underneath and cadence and slope as layers. **Download CSV** saves
+the trace. **Emergency stop** stops every motor and turns the drivers off; the sequence
+starts over. **Finish and resume control** turns manual mode off. Leaving the page does
+not, so finish before you go.
 
 ---
 

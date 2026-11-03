@@ -21,10 +21,11 @@ import {
   setMotorTarget, openMotorTimed, closeMotorTimed, stopMotor, command, runI2cScan, postZonePhysics, postForecastProfile,
   exportSettings, importSettings, saveSettingsBackup, fetchLatestRelease,
   firmwareCheck, firmwareInstall, uploadFirmware, downloadDeviceLogs,
-  setManualMode, emergencyStopMotors, fetchPhysicsAlerts, fetchBleScan,
+  setManualMode, fetchPhysicsAlerts, fetchBleScan,
   resetMotorFault, backOffMotor, resetMotorAndRelearn, calibrateAllMotors, fetchWifi, changeWifi,
 } from '../dashboard-src/core/api.js';
 import { projectTemperature, PROJ_HORIZON } from './projection.js';
+import { initMotorLab, labEmergencyStop, paintMotorLab } from './motorlab.js';
 
 /** History entry indices for appended zone temp / sp_plan (after demand @ 10). */
 const HIST_TEMP0 = 11;
@@ -1578,6 +1579,7 @@ function paintAll() {
   // alone can flip true from a revision poll before entities are applied.
   const hasEntities = ev(gkey.uptime) != null || ev(gkey.flow) != null || !!es(gkey.firmware);
   if (!hasEntities) return;
+  paintMotorLab();
   paintStrip();
   paintDevice();
   paintTouch();
@@ -2111,6 +2113,7 @@ function boot() {
   if (m) document.cookie = `lune_lang=${m[1]};path=/;max-age=31536000`;
 
   initZchartScrub();
+  initMotorLab({ t, num, escapeHtml, setBind, setShow });
 
   document.addEventListener('lune:save', (e) => {
     handleSave(e.detail);
@@ -2154,7 +2157,7 @@ function boot() {
       assignBleMac(Number(assign.dataset.zone) || 0, assign.dataset.mac || '');
     }
     if (e.target.closest('[data-action="motorlab-estop"]')) {
-      emergencyStopMotors();
+      labEmergencyStop();
     }
     if (e.target.closest('[data-action="copy-diag"]')) {
       e.preventDefault();
