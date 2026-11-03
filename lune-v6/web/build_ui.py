@@ -407,7 +407,7 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
         <form data-save="regulation">
           {group(T("csys.heating"),
                  srow(span(T("csys.heatMode")),seg("heat_mode",[("normal",T("csys.heatNormal")),("heat_pump",T("csys.heatPump"))],"heat_pump",T("csys.heatMode")))+
-                 sstep("heat_min_open",T("csys.minOpening"),0,0,100,1,"%",dec=0),
+                 srow(lab("heat_min_open",T("csys.minOpening")),stepper("heat_min_open",0,0,100,1,"%",label=T("csys.minOpening"),dec=0),T("csys.minOpeningHint"),cls="normal-only"),
                  help=help_btn("help-heating",T("csys.heating")))}
           {group(T("csys.heatPumpLimits"),
                  sstep("hp_overheat",T("csys.hpOverheat"),1.0,0.3,3.0,0.1,"°C",hint=T("csys.hpOverheatHint")),cls="hp-limits")}
