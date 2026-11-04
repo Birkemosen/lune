@@ -360,7 +360,7 @@
   "csys.preheat": "Preheat-absorption",
   "csys.absorb": "Opsug overskudsvarme",
   "csys.absorbSub": "Bruger gulvet som buffer",
-  "csys.absorbTouch": "Lune Touch har lease: kun Touch åbner for opsugning (opladning før vind og kulde, Odins varmevinduer). V6's egen registrering er slået fra.",
+  "csys.absorbTouch": "Lune Touch har lease: kun Touch åbner for opsugning (opladning før vind og kulde, Odins varmevinduer). V6's egen registrering er slået fra. Er kontakten slået fra, opsuger denne manifold heller ikke for Touch.",
   "csys.touchLeaseLost": "Lease udløbet – V6 styrer lokalt. Touch' midlertidige ændringer er ryddet.",
   "tile.charging": "Lune Touch lader gulvet op",
   "csys.band": "Absorb-bånd",

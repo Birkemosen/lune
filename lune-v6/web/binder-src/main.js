@@ -1493,7 +1493,8 @@ function paintFormsFromState() {
   if (manual && !formIsLocked(manual)) manual.checked = !!getDashboardValue('manualMode');
   const absorb = document.querySelector('input[name="preheat_enabled"]');
   if (absorb && !formIsLocked(absorb)) {
-    absorb.checked = isEntityOn(gkey.preheatAbsorbEnabled) || isEntityOn(gkey.simplePreheatEnabled);
+    // Simple preheat is always on in firmware; the switch is absorb alone.
+    absorb.checked = isEntityOn(gkey.preheatAbsorbEnabled);
   }
   paintNum('ph_band', gkey.preheatAbsorbBandC, 1);
   for (const [name, entity] of MOTOR_LIMITS) paintNum(name, gkey[entity], 2);
@@ -1636,7 +1637,6 @@ async function autosaveConfigSwitch_(input) {
     await setGlobalSelect('ble_clock_sync_enabled', on ? 'on' : 'off');
   } else if (name === 'preheat_enabled') {
     await setGlobalSelect('preheat_absorb_enabled', on ? 'on' : 'off');
-    await setGlobalSelect('simple_preheat_enabled', on ? 'on' : 'off');
   } else if (/^z(\d+)_enabled$/.test(name)) {
     await setEnabled(Number(RegExp.$1), on);
   } else {
@@ -1850,9 +1850,8 @@ async function handleSave(detail) {
         await saveHeating_(form);
         if (form.balancing_mode === 'static' || form.balancing_mode === 'adaptive')
           await setGlobalSelect('balancing_mode', form.balancing_mode);
-        // Checkbox absent when off — always write both absorb flags.
+        // Checkbox absent when off — always write the absorb flag.
         await setGlobalSelect('preheat_absorb_enabled', form.preheat_enabled ? 'on' : 'off');
-        await setGlobalSelect('simple_preheat_enabled', form.preheat_enabled ? 'on' : 'off');
         if (form.ph_band != null) await setGlobalNumber('preheat_absorb_band_c', parseNum(form.ph_band));
         if (form.ph_delta != null) await setGlobalNumber('preheat_detect_delta_c', parseNum(form.ph_delta));
       }

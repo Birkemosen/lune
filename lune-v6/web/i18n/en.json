@@ -389,7 +389,7 @@
   "csys.preheat": "Preheat absorption",
   "csys.absorb": "Absorb surplus heat",
   "csys.absorbSub": "Uses the floor as a buffer",
-  "csys.absorbTouch": "Lune Touch holds the lease: only Touch opens for absorbing (charging before wind and cold, Odin heat windows). V6's own detection is off.",
+  "csys.absorbTouch": "Lune Touch holds the lease: only Touch opens for absorbing (charging before wind and cold, Odin heat windows). V6's own detection is off. With the switch off, this manifold does not absorb for Touch either.",
   "csys.touchLeaseLost": "Lease expired – V6 runs locally. Touch's temporary changes have been cleared.",
   "tile.charging": "Lune Touch is charging the floor",
   "csys.band": "Absorb band",

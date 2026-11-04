@@ -1861,6 +1861,10 @@ void Lv6ZoneController::update_preheat_absorb_(const DeviceConfig &cfg,
 }
 
 bool Lv6ZoneController::zone_absorbing_(uint8_t zone) const {
+  // The manifold's absorb switch also covers Touch's per-zone charges.
+  if (config_store_ != nullptr &&
+      !config_store_->read([](const DeviceConfig &c) { return c.control.preheat_absorb_enabled; }))
+    return false;
   if (preheat_absorb_active_.load())
     return true;
   return is_zone_absorb_armed(zone);
