@@ -599,7 +599,6 @@ void LV6Dashboard::update_snapshot_() {
     s.probes                 = this->config_store_->get_probe_config();
     s.motor                  = this->config_store_->get_motor_config();
     s.manifold_type          = this->config_store_->get_manifold_type();
-    s.simple_preheat_enabled = this->config_store_->get_simple_preheat_enabled();
     const auto ctrl_cfg = this->config_store_->read([&](const lv6::DeviceConfig &c_) { return c_.control; });
     s.preheat_absorb_enabled = ctrl_cfg.preheat_absorb_enabled;
     s.preheat_absorb_band_c  = ctrl_cfg.preheat_absorb_band_c;
@@ -1877,10 +1876,6 @@ void LV6Dashboard::handle_state_(AsyncWebServerRequest *request) {
       snap->drivers_enabled ? "on" : "off",
       snap->drivers_enabled ? "" : snap->drivers_off_reason)) return;
 
-  if (!append(
-      "\"switch-simple_preheat_enabled\":{\"state\":\"%s\"},",
-      snap->simple_preheat_enabled ? "on" : "off")) return;
-
   format_float_token(num_buf, sizeof(num_buf), snap->preheat_absorb_band_c, 1);
   if (!append(
       "\"switch-preheat_absorb_enabled\":{\"state\":\"%s\"},"
@@ -2539,7 +2534,7 @@ void LV6Dashboard::handle_settings_(AsyncWebServerRequest *request) {
 
   appendf(buf, BUF_SIZE, off,
           "{\"ok\":true,\"version\":\"v1\",\"data\":{\"control\":{"
-          "\"simple_preheat_enabled\":%s,\"preheat_absorb_enabled\":%s,"
+          "\"preheat_absorb_enabled\":%s,"
           "\"preheat_absorb_band_c\":%s,\"preheat_detect_delta_c\":%s,"
           "\"heating_mode\":\"%s\",\"hp_overheat_margin_c\":%s,"
           "\"hp_base_pct\":%s,\"hp_trim_floor_pct\":%s,\"hp_demand_pct\":%s},"
@@ -2551,7 +2546,6 @@ void LV6Dashboard::handle_settings_(AsyncWebServerRequest *request) {
           "\"hmip_runtime_limit_s\":%lu,\"relearn_after_movements\":%lu,"
           "\"relearn_after_hours\":%lu},"
           "\"authority\":{\"installation_id\":\"%s\",\"coordinator_id\":\"%s\",\"authentication_configured\":%s},\"zones\":[",
-          snap->simple_preheat_enabled ? "true" : "false",
           snap->preheat_absorb_enabled ? "true" : "false",
           preheat_band, preheat_delta,
           lv6::heating_profile_to_string(snap->heating_mode), hp_margin, hp_base, hp_trim, hp_demand,
@@ -4681,11 +4675,6 @@ void LV6Dashboard::dispatch_set_(const DashboardAction &act) {
     auto ctrl = this->config_store_->read([&](const lv6::DeviceConfig &c_) { return c_.control; });
     ctrl.preheat_detect_delta_c = std::max(0.1f, std::min(10.0f, num_val));
     this->config_store_->update_control(ctrl);
-
-  // ---- simple_preheat_enabled ----
-  } else if (strcmp(key, "simple_preheat_enabled") == 0 && has_str && this->zone_controller_) {
-    const bool en = strcasecmp(str_val, "on") == 0 || strcasecmp(str_val, "true") == 0 || strcmp(str_val, "1") == 0;
-    this->zone_controller_->set_simple_preheat_enabled(en);
 
   // ---- motor_profile_default ----
   } else if (strcmp(key, "motor_profile_default") == 0 && has_str && this->config_store_ && this->valve_controller_) {

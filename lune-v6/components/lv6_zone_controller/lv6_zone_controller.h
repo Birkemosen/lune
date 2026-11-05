@@ -203,8 +203,6 @@ class Lv6ZoneController : public esphome::Component {
   void request_balance_recalc() { balance_dirty_ = true; }
   bool balance_measured() const { return balance_measured_; }
 
-  void set_simple_preheat_enabled(bool enabled);
-  bool is_simple_preheat_enabled() const;
   bool is_preheat_absorbing() const { return preheat_absorb_active_.load(); }
   /// Armed absorb window from coordinator (P5). Runtime-only; never survives reboot.
   bool is_absorb_arm_active() const { return absorb_arm_active_(); }

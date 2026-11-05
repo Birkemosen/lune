@@ -219,7 +219,6 @@ const globalSelectMap = {
   manifold_flow_probe: gkey.manifoldFlowProbe,
   manifold_return_probe: gkey.manifoldReturnProbe,
   motor_profile_default: gkey.motorProfileDefault,
-  simple_preheat_enabled: gkey.simplePreheatEnabled,
   preheat_absorb_enabled: gkey.preheatAbsorbEnabled,
   ble_clock_sync_enabled: gkey.bleClockSyncEnabled,
   heating_mode: gkey.heatingMode,

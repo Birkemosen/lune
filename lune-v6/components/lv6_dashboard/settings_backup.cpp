@@ -689,8 +689,6 @@ size_t write_export_json(char *out, size_t out_cap, const lv6::DeviceConfig &cfg
   b.addf(",\"control\":{");
   b.key_num("comfort_band_c", c.comfort_band_c);
   b.addf(",");
-  b.key_bool("simple_preheat_enabled", c.simple_preheat_enabled);
-  b.addf(",");
   b.key_bool("preheat_absorb_enabled", c.preheat_absorb_enabled);
   b.addf(",");
   b.key_num("preheat_absorb_band_c", c.preheat_absorb_band_c);
@@ -1098,7 +1096,6 @@ ImportResult apply_import_json(const char *json, lv6::DeviceConfig &cfg, bool re
   if (member_inner(settings, "control", &node)) {
     lv6::ControlConfig &c = cfg.control;
     apply_float(node, "comfort_band_c", c.comfort_band_c, 0.1, 5.0, result.applied);
-    apply_bool(node, "simple_preheat_enabled", c.simple_preheat_enabled, result.applied);
     apply_bool(node, "preheat_absorb_enabled", c.preheat_absorb_enabled, result.applied);
     apply_float(node, "preheat_absorb_band_c", c.preheat_absorb_band_c, 0.0, 10.0, result.applied);
     apply_float(node, "preheat_detect_delta_c", c.preheat_detect_delta_c, 0.0, 40.0,

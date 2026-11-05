@@ -401,22 +401,6 @@ void Lv6ZoneController::set_control_algorithm(ControlAlgorithm algorithm) {
   ESP_LOGI(TAG, "Control algorithm set to %s for all zones", algo_name);
 }
 
-void Lv6ZoneController::set_simple_preheat_enabled(bool enabled) {
-  (void) enabled;
-  if (!config_store_)
-    return;
-  auto cfg = config_store_->get_config();
-  if (cfg.control.simple_preheat_enabled)
-    return;
-  cfg.control.simple_preheat_enabled = true;
-  config_store_->update_control(cfg.control);
-  ESP_LOGI(TAG, "Simple preheat is always active; stored disabled flag repaired");
-}
-
-bool Lv6ZoneController::is_simple_preheat_enabled() const {
-  return true;
-}
-
 ControlAlgorithm Lv6ZoneController::get_control_algorithm() const {
   if (!config_store_)
     return ControlAlgorithm::TANH;

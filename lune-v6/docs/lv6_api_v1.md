@@ -546,7 +546,6 @@ Returns dashboard-editable settings currently backed by config store and control
   "version": "v1",
   "data": {
     "control": {
-      "simple_preheat_enabled": true,
       "preheat_absorb_enabled": true,
       "preheat_absorb_band_c": 1.0,
       "preheat_detect_delta_c": 8.0

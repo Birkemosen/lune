@@ -98,7 +98,6 @@ export const gkey = {
   relearnAfterHours: 'number-relearn_after_hours',
   learnedFactorMinSamples: 'number-learned_factor_min_samples',
   learnedFactorMaxDeviationPct: 'number-learned_factor_max_deviation_pct',
-  simplePreheatEnabled: 'switch-simple_preheat_enabled',
   preheatAbsorbEnabled: 'switch-preheat_absorb_enabled',
   preheatAbsorbBandC: 'number-preheat_absorb_band_c',
   preheatDetectDeltaC: 'number-preheat_detect_delta_c',

@@ -151,7 +151,6 @@ function seed() {
   setEntity(gkey.relearnAfterHours, { value: 168 });
   setEntity(gkey.learnedFactorMinSamples, { value: 3 });
   setEntity(gkey.learnedFactorMaxDeviationPct, { value: 12 });
-  setEntity(gkey.simplePreheatEnabled, { state: 'on' });
   setEntity(gkey.minZoneFlowPct, { value: 15 });
   setEntity(gkey.minimumFlowAlways, { state: 'off' });
   setEntity(gkey.heatingMode, { state: 'heat_pump' });
@@ -652,7 +651,6 @@ export function handleMockPost(body) {
   if (k === 'manifold_flow_probe') { setEntity(gkey.manifoldFlowProbe, { state: String(v) }); addActivity('Setting updated: ' + k + ' = ' + v); return; }
   if (k === 'manifold_return_probe') { setEntity(gkey.manifoldReturnProbe, { state: String(v) }); addActivity('Setting updated: ' + k + ' = ' + v); return; }
   if (k === 'motor_profile_default') { setEntity(gkey.motorProfileDefault, { state: String(v) }); addActivity('Setting updated: ' + k + ' = ' + v); return; }
-  if (k === 'simple_preheat_enabled') { setEntity(gkey.simplePreheatEnabled, { state: String(v) }); addActivity('Setting updated: ' + k + ' = ' + v); return; }
   if (k === 'minimum_flow_always') { setEntity(gkey.minimumFlowAlways, { state: String(v) }); addActivity('Setting updated: ' + k + ' = ' + v); return; }
   if (k === 'heating_mode') {
     const mode = String(v) === 'normal' ? 'normal' : 'heat_pump';
@@ -794,7 +792,6 @@ export function mockSettingsExport(includeLearned) {
       hp_base_pct: ev(gkey.hpBasePct),
       hp_trim_floor_pct: ev(gkey.hpTrimFloorPct),
       hp_demand_pct: ev(gkey.hpDemandPct),
-      simple_preheat_enabled: es(gkey.simplePreheatEnabled) === 'on',
       ble_clock_sync_enabled: es(gkey.bleClockSyncEnabled) === 'on',
       ble_clock_sync_interval_min: ev(gkey.bleClockSyncIntervalMin),
     },

@@ -231,10 +231,6 @@ ZoneConfig Lv6ConfigStore::get_zone_config(uint8_t zone) const {
   return copy;
 }
 
-bool Lv6ConfigStore::get_simple_preheat_enabled() const {
-  return true;
-}
-
 ManifoldType Lv6ConfigStore::get_manifold_type() const {
   if (mutex_ == nullptr)
     return config_.manifold_type;

@@ -48,7 +48,6 @@ class Lv6ConfigStore : public esphome::Component {
   MotorConfig get_motor_config() const;
   SensorConfig get_sensor_config() const;
   ZoneConfig get_zone_config(uint8_t zone) const;
-  bool get_simple_preheat_enabled() const;
   ManifoldType get_manifold_type() const;
   ProbeConfig get_probe_config() const;
   SystemConfig get_system_config() const;

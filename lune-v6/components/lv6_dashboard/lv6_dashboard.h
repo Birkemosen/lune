@@ -126,7 +126,6 @@ struct DashboardSnapshot {
   lv6::ProbeConfig  probes;
   lv6::MotorConfig  motor;
   lv6::ManifoldType manifold_type;
-  bool              simple_preheat_enabled;
   bool              preheat_absorb_enabled;
   float             preheat_absorb_band_c;
   float             preheat_detect_delta_c;

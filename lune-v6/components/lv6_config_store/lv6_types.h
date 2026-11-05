@@ -267,7 +267,7 @@ struct ControlConfig {
   float boost_factor = 1.0f;
   float min_movement_pct = 5.0f;
   float tanh_steepness = 0.70f;
-  bool simple_preheat_enabled = true;
+  bool simple_preheat_enabled = true;  // Unused: kept for the stored layout (simple preheat is always on)
   // Preheat absorption — when Lune Touch pre-buffers
   // the slab, hot water arrives while no zone demands heat. Without this, zones
   // hit OVERHEATED and close, blocking the buffer. While absorbing, the overheat
