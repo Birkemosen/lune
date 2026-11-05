@@ -99,7 +99,7 @@ inline bool update_closed(bool closed, float temp_c, float setpoint_c, const Par
 struct Result {
   float q_ref{0.0f};    ///< Σ relative flow of the balanced manifold
   float load{0.0f};     ///< Manifold load: the largest load factor of an open loop
-  float q_target{0.0f}; ///< q_ref × load
+  float q_target{0.0f}; ///< (open loops' Q_ref, plus the closed loops' when a room is cold) × load
   float q_total{0.0f};  ///< Σ relative flow commanded
   float scale{0.0f};    ///< Common factor s
 };
@@ -110,15 +110,19 @@ struct Result {
 /// The load is the largest load factor among open loops, so the most demanding
 /// room decides how much the whole manifold passes (without balancing between
 /// manifolds a warm floor must not keep its full flow), while the split inside the
-/// manifold moves flow from warm rooms to cold ones. `closed[i]` loops get 0 (their
-/// flow goes to the others). Openings in percent, through each loop's valve curve.
+/// manifold moves flow from warm rooms to cold ones. `closed[i]` loops get 0; their
+/// flow goes to the others only while an open room is at or below target, so a
+/// warm room is never handed the flow of closed ones. Openings in percent, through
+/// each loop's valve curve.
 template <size_t N>
 inline Result distribute(const Loop (&loops)[N], const Params &p, bool (&closed)[N],
                          float (&opening_pct)[N], float (&q)[N]) {
   Result r;
   float w[N]{};
   float cap[N]{};
+  float ref[N]{};
   bool any_open = false;
+  bool any_cold = false;  // An open room at or below target (or without a temperature)
   for (size_t i = 0; i < N; i++) {
     q[i] = 0.0f;
     opening_pct[i] = 0.0f;
@@ -130,13 +134,16 @@ inline Result distribute(const Loop (&loops)[N], const Params &p, bool (&closed)
                                         loops[i].curve);
     const float share = std::max(0.0f, loops[i].design_share) *
                         std::clamp(loops[i].house_balance, 0.0f, 1.0f);
-    r.q_ref += std::min(cap[i], share);
+    ref[i] = std::min(cap[i], share);
+    r.q_ref += ref[i];
     if (!closed[i]) {
       const float g = load_factor(loops[i].temp_c, loops[i].setpoint_c, p);
       w[i] = share * g;
       if (w[i] > 0.0f) {
         any_open = true;
         r.load = std::max(r.load, g);
+        if (!(loops[i].temp_c > loops[i].setpoint_c))
+          any_cold = true;
       }
     }
   }
@@ -162,7 +169,11 @@ inline Result distribute(const Loop (&loops)[N], const Params &p, bool (&closed)
               std::clamp(loops[best].house_balance, 0.0f, 1.0f) * G_MIN;
     r.load = G_MIN;
   }
-  r.q_target = r.q_ref * r.load;
+  float q_base = 0.0f;
+  for (size_t i = 0; i < N; i++)
+    if (loops[i].enabled && (any_cold || !closed[i]))
+      q_base += ref[i];
+  r.q_target = q_base * r.load;
 
   // Water-filling for Σ min(cap_i, s·w_i) = q_target.
   bool capped[N]{};

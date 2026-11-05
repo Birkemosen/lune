@@ -115,6 +115,22 @@ static void test_closed_flow_goes_to_others() {
   expect(q[3] > 0.85f * r.load + 0.05f, "closed: the next loop gets more than its own share");
 }
 
+static void test_closed_flow_skips_warm_rooms() {
+  // Stueetage 2026-11-05 01:00: five rooms closed, Bad open at target + 1.0 (limit 23.0).
+  const Params p{0.5f, 0.5f, 0.0f};
+  Loop loops[6];
+  const float temps[6] = {23.4f, 23.9f, 23.4f, 23.3f, 23.4f, 23.0f};
+  make_loops(loops, temps, 22.0f);
+  bool closed[6]{};
+  for (int i = 0; i < 6; i++)
+    closed[i] = update_closed(closed[i], loops[i].temp_c, loops[i].setpoint_c, p);
+  float open[6], q[6];
+  const Result r = distribute(loops, p, closed, open, q);
+  expect(!closed[5] && closed[0] && closed[4], "warm rest: only Bad stays open");
+  expect_near(q[5], std::max(SHARES[5] * G_MIN, Q_MIN), 1e-3f, "warm rest: Bad keeps its own share × load (min Q_MIN), not the closed loops' flow");
+  expect_near(r.q_target, SHARES[5] * G_MIN, 1e-3f, "warm rest: the target counts only the open loop");
+}
+
 static void test_warm_manifold_throttles() {
   const Params p{0.5f, 1.0f, 0.0f};
   Loop loops[6];
@@ -266,6 +282,7 @@ int main() {
   test_all_cold_is_static_balance();
   test_warm_rooms_give_flow_to_cold();
   test_closed_flow_goes_to_others();
+  test_closed_flow_skips_warm_rooms();
   test_warm_manifold_throttles();
   test_never_all_closed();
   test_house_balance_and_caps();

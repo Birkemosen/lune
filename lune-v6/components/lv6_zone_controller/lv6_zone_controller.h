@@ -245,9 +245,10 @@ class Lv6ZoneController : public esphome::Component {
   uint32_t get_valve_curve_measured(uint8_t zone) const;
   float get_valve_curve_full_lmin(uint8_t zone) const;
   /// Valve test (Touch measures valve curves from the pump's flow): every loop holds
-  /// the position it has when the test starts; `zone` (0..5, or −1 = hold only)
-  /// goes to `position_pct`. Ends after ttl_ms or clear_valve_test().
-  void set_valve_test(int8_t zone, float position_pct, uint32_t ttl_ms);
+  /// the position it has when the test starts, or goes to `others_pct` when that is
+  /// given; `zone` (0..5, or −1 = none) goes to `position_pct`. Ends after ttl_ms or
+  /// clear_valve_test().
+  void set_valve_test(int8_t zone, float position_pct, uint32_t ttl_ms, float others_pct = NAN);
   void clear_valve_test();
   bool valve_test_active() const;
   uint8_t get_absorb_capacity_rank(uint8_t zone) const;
@@ -332,6 +333,7 @@ class Lv6ZoneController : public esphome::Component {
     bool captured{false};  ///< hold positions taken
     int8_t zone{-1};
     float position_pct{0.0f};
+    float others_pct{NAN};  ///< NaN: the others hold
     uint32_t until_ms{0};
     std::array<float, NUM_ZONES> hold{};
   };

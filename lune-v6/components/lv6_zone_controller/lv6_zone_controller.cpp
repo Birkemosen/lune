@@ -1610,6 +1610,8 @@ void Lv6ZoneController::run_cycle_() {
           valve_test_.hold[i] = valve_controller_->get_position(i);
         valve_test_.captured = true;
       }
+      if (std::isfinite(valve_test_.others_pct))
+        valve_test_.hold.fill(valve_test_.others_pct);
       for (uint8_t i = 0; i < NUM_ZONES; i++)
         target_positions[i] = valve_test_.hold[i];
       if (valve_test_.zone >= 0 && valve_test_.zone < static_cast<int8_t>(NUM_ZONES))
@@ -2348,7 +2350,7 @@ void Lv6ZoneController::set_valve_curve(uint8_t zone, valve_curve::Curve curve, 
            curve.full_pct);
 }
 
-void Lv6ZoneController::set_valve_test(int8_t zone, float position_pct, uint32_t ttl_ms) {
+void Lv6ZoneController::set_valve_test(int8_t zone, float position_pct, uint32_t ttl_ms, float others_pct) {
   if (snapshot_mutex_ == nullptr)
     return;
   xSemaphoreTake(snapshot_mutex_, portMAX_DELAY);
@@ -2357,11 +2359,16 @@ void Lv6ZoneController::set_valve_test(int8_t zone, float position_pct, uint32_t
   valve_test_.active = true;
   valve_test_.zone = zone >= 0 && zone < static_cast<int8_t>(NUM_ZONES) ? zone : -1;
   valve_test_.position_pct = std::clamp(position_pct, 0.0f, 100.0f);
+  valve_test_.others_pct = std::isfinite(others_pct) ? std::clamp(others_pct, 0.0f, 100.0f) : NAN;
   const uint32_t until = esphome::millis() + ttl_ms;
   valve_test_.until_ms = until == 0 ? 1 : until;
   xSemaphoreGive(snapshot_mutex_);
-  ESP_LOGI(TAG, "Valve test: zone %d → %.0f %%, others hold, %" PRIu32 " s", zone + 1, position_pct,
-           ttl_ms / 1000);
+  if (std::isfinite(others_pct))
+    ESP_LOGI(TAG, "Valve test: zone %d → %.0f %%, others %.0f %%, %" PRIu32 " s", zone + 1, position_pct,
+             others_pct, ttl_ms / 1000);
+  else
+    ESP_LOGI(TAG, "Valve test: zone %d → %.0f %%, others hold, %" PRIu32 " s", zone + 1, position_pct,
+             ttl_ms / 1000);
 }
 
 void Lv6ZoneController::clear_valve_test() {

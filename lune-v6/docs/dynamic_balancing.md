@@ -71,7 +71,9 @@ Per control cycle, for each enabled loop *i*:
    it while the sum stays put; a manifold whose rooms are all warm passes less in total.
    That matters while the manifolds are not balanced against each other: a warm floor
    must not keep its full flow because the other floor needs heat. A closed loop's flow
-   goes to the others.
+   goes to the others only while an open room is at or below target; when every open
+   room is warm, `Q_ref` counts only the open loops, so the last open room on a warm
+   floor keeps its own share × load instead of the whole floor's flow.
 4. **Opening** through the loop's valve curve (below), clamped to the zone's maximum
    opening. An open loop gets at least `Q_MIN` (10 %) of full flow. A maximum opening
    below the curve's full-flow point caps the loop's flow; Q_ref uses the same cap.
@@ -107,9 +109,12 @@ and/or `full_pct` sets one (web UI write gate, or Touch's authority key).
 Learning the curves needs the circulation pump's flow, which only Touch sees (and both
 manifolds share the pump), so Touch measures them and writes them here with the time
 (`measured_epoch_s`; a manual change clears it), together with the loop's full flow in l/min
-(`full_lmin`, the pump-flow step from closed to open), which Touch uses for the split per manifold and V6 for the design shares. For the measurement Touch uses
+(`full_lmin`, the pump-flow step from closed to open with every other loop closed,
+converted to a pump head of 3 m), which Touch uses for the split per manifold and V6 for the design shares. For the measurement Touch uses
 `POST /api/v1/valve-test` (authority key): `zone` 1..6 goes to `position_pct`, every other
-loop holds the position it had when the test began (`zone` 0 = hold only), the deadband
+loop goes to `others_pct` when given (Touch sends 0 so each loop is measured alone: a
+loop passes far more with its neighbours closed, 1.1 vs 1.9 l/min for one loop at the
+same head) or else holds the position it had when the test began (`zone` 0 = none), the deadband
 is bypassed and adaptive balancing pauses. It ends after `ttl_s` (30..900) or with
 `POST /api/v1/valve-test/stop`. Touch's side: `lune-coordinator`, `valve_probe.h`.
 

@@ -3338,8 +3338,9 @@ void LV6Dashboard::handle_v1_(AsyncWebServerRequest *request, const char *path) 
     return;
   }
   if (strcmp(path, "/valve-test") == 0 || strcmp(path, "/valve-test/stop") == 0) {
-    // Touch's valve-curve measurement: every loop holds, `zone` (1..6; 0 = hold
-    // only) goes to position_pct. Ends after ttl_s (30..900) or on /stop.
+    // Touch's valve-curve measurement: every loop holds (or goes to others_pct when
+    // given), `zone` (1..6; 0 = none) goes to position_pct. Ends after ttl_s
+    // (30..900) or on /stop.
     if (this->config_store_ == nullptr || this->zone_controller_ == nullptr) {
       this->send_v1_(request, 503, "controller_unavailable", "Zone controller unavailable");
       return;
@@ -3367,8 +3368,9 @@ void LV6Dashboard::handle_v1_(AsyncWebServerRequest *request, const char *path) 
                  "{\"ok\":true,\"version\":\"v1\",\"data\":{\"active\":false}}", true, "no-cache");
       return;
     }
-    float zone_num = 0.0f, position = 0.0f, ttl_s = 300.0f;
+    float zone_num = 0.0f, position = 0.0f, ttl_s = 300.0f, others = NAN;
     parse_num_param(request, body, "zone", &zone_num);
+    parse_num_param(request, body, "others_pct", &others);
     parse_num_param(request, body, "position_pct", &position);
     parse_num_param(request, body, "ttl_s", &ttl_s);
     if (!std::isfinite(zone_num) || zone_num < 0.0f || zone_num > lv6::NUM_ZONES) {
@@ -3381,7 +3383,7 @@ void LV6Dashboard::handle_v1_(AsyncWebServerRequest *request, const char *path) 
       ttl_s = 300.0f;
     ttl_s = std::clamp(ttl_s, 30.0f, 900.0f);
     const int8_t zi = static_cast<int8_t>(zone_num) - 1;
-    this->zone_controller_->set_valve_test(zi, position, static_cast<uint32_t>(ttl_s * 1000.0f));
+    this->zone_controller_->set_valve_test(zi, position, static_cast<uint32_t>(ttl_s * 1000.0f), others);
     char response[160];
     snprintf(response, sizeof(response),
              "{\"ok\":true,\"version\":\"v1\",\"data\":{\"active\":true,\"zone\":%d,\"position_pct\":%.1f,"
