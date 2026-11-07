@@ -9,6 +9,8 @@
 using lv6::classify_endpoint;
 using lv6::endpoint_decision_records_position;
 using lv6::endpoint_decision_stops_drive;
+using lv6::seat_stop_short;
+using lv6::seat_where_expected;
 using lv6::EndpointDecision;
 using lv6::EndpointEvidence;
 using lv6::StrokeConfig;
@@ -702,8 +704,40 @@ static void test_seated_start_closing_is_the_seat() {
   assert(classify_endpoint(e) == EndpointDecision::CONTINUE);
 }
 
+// Kontor 2026-11-07: re-homes from 94.7 % (expected 1671 counts; margin 250,
+// short margin 70 = 4 % of 1765) stopped on the spring ramp after 1428 and 1546
+// and were taken as the seat; true seats from a trusted start land 50-80 past it. From a trusted position a short stop is a jam (the back-off retry
+// finds the seat); from a hint (restart, fault, reset guide) it is still the seat.
+static void test_short_stop_from_trusted_position_is_not_the_seat() {
+  assert(seat_stop_short(1428, 1671, 70));
+  assert(seat_stop_short(1546, 1671, 70));
+  assert(!seat_stop_short(1620, 1671, 70));  // within the short margin
+  assert(seat_where_expected(1671, 1671, 250, 70, true));
+  assert(seat_where_expected(1620, 1671, 250, 70, true));
+  assert(!seat_where_expected(1428, 1671, 250, 70, true));
+  assert(seat_where_expected(1428, 1671, 250, 70, false));
+  assert(!seat_where_expected(2000, 1671, 250, 70, false));  // past the seat: never
+  assert(seat_where_expected(40, 0, 120, 120, true));          // already on the seat
+  // Short and trusted: seated_start false, window withheld -> jam, not the seat.
+  EndpointEvidence e;
+  e.blanking_elapsed = true;
+  e.current_present = true;
+  e.load_evidence = true;
+  e.commutation_observed = true;
+  e.commutation_plateau = true;
+  e.commanded_endpoint = true;
+  e.direction_is_open = false;
+  e.phase = StrokePhase::UNDER_LOAD;
+  e.endpoint_window = false;
+  e.seated_start = seat_where_expected(1428, 1671, 250, 70, true);
+  assert(classify_endpoint(e) == EndpointDecision::JAM);
+  e.seated_start = seat_where_expected(1428, 1671, 250, 70, false);
+  assert(classify_endpoint(e) == EndpointDecision::ENDPOINT);
+}
+
 int main() {
   test_seated_start_closing_is_the_seat();
+  test_short_stop_from_trusted_position_is_not_the_seat();
   test_address_map_matches_the_contract();
   test_superseded_formula_is_not_equivalent();
   test_selection_is_fail_safe();
