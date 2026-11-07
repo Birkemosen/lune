@@ -684,6 +684,15 @@ class Lv6ValveController : public esphome::Component {
   /// close pass should seat (the stored stroke may be the one being replaced).
   uint32_t cal_seat_expected_{0};
   bool seat_short_logged_ = false;
+  /// Rev 3.3 close past pin contact: the seat rise (+1 mA over the plateau) is
+  /// where the seal first bears, not the seat. A soft insert compresses ~450
+  /// counts further before the wall (Kontor: 31 -> 44 mA), and where the rise
+  /// trips moves with motor temperature and spring ramp, so every close presses
+  /// on to the wall: the seat cap, the rotor stopping or a stall. Only if the
+  /// wall does not come within this many counts of the seal is the seal taken.
+  static constexpr uint32_t SEAL_PRESS_MIN_RIPPLES = 700;
+  static constexpr float SEAL_PRESS_STROKE_FRACTION = 0.35f;
+  uint32_t seal_count_{0};   ///< count where the seal bore this close; 0 = not yet
   MotorDirection fault_dir_[NUM_ZONES]{};   ///< direction of the run that faulted
   bool back_off_allowed_[NUM_ZONES]{};      ///< one timed run away from the fault
   bool move_aborted_ = false;   ///< set by a breakaway retry: the run did not move the valve
