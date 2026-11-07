@@ -41,6 +41,7 @@ struct Params {
   float overheat_margin_c{1.0f};
   float absorb_band_c{0.0f};  ///< Extra headroom while Touch pre-buffers
   float supply_c{NAN};        ///< Manifold supply temperature (NaN: unknown, no heat moving)
+  bool idle{false};           ///< Heat source not running (Touch): static balance, see distribute
 };
 
 /// Design shares from measured loop flow: a loop needs flow in proportion to its heat
@@ -135,6 +136,12 @@ struct Result {
 /// top, so the open loops keep the flows they had (closed loops' flow included).
 /// Openings in
 /// percent, through each loop's valve curve.
+///
+/// `p.idle` (the heat source is not running): the manifold is statically balanced.
+/// Every open loop gets its design share (load factor 1), closed loops hand nothing
+/// on, and an overheated loop moves heat whenever the supply is colder than its room,
+/// whether or not another room wants it: the buffer's rest and the rooms' surplus
+/// spread by themselves, and only a warm room the water would heat stays closed.
 template <size_t N>
 inline Result distribute(const Loop (&loops)[N], const Params &p, bool (&closed)[N],
                          float (&opening_pct)[N], float (&q)[N], bool (&moving)[N]) {
@@ -161,7 +168,7 @@ inline Result distribute(const Loop (&loops)[N], const Params &p, bool (&closed)
     ref[i] = std::min(cap[i], share);
     r.q_ref += ref[i];
     if (!closed[i]) {
-      const float g = load_factor(loops[i].temp_c, loops[i].setpoint_c, p);
+      const float g = p.idle ? 1.0f : load_factor(loops[i].temp_c, loops[i].setpoint_c, p);
       w[i] = share * g;
       if (w[i] > 0.0f) {
         any_open = true;
@@ -174,7 +181,7 @@ inline Result distribute(const Loop (&loops)[N], const Params &p, bool (&closed)
   // Heat moves only while a room on the manifold wants it; otherwise it would go
   // back into rooms that are already warm.
   for (size_t i = 0; i < N; i++) {
-    moving[i] = moving[i] && any_cold;
+    moving[i] = moving[i] && (any_cold || p.idle);
     any_moving = any_moving || moving[i];
   }
   // Never all closed: keep the loop nearest its limit open at the minimum load
@@ -202,7 +209,7 @@ inline Result distribute(const Loop (&loops)[N], const Params &p, bool (&closed)
   }
   float q_base = 0.0f;
   for (size_t i = 0; i < N; i++)
-    if (loops[i].enabled && (any_cold || !closed[i]))
+    if (loops[i].enabled && ((any_cold && !p.idle) || !closed[i]))
       q_base += ref[i];
   r.q_target = q_base * r.load;
 

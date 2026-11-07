@@ -2,6 +2,7 @@
 
 ## Unreleased (for v1.0.0)
 
+- Heat-pump mode is statically balanced while the heat source is idle (Touch's heat-pump phase): every loop gets its design share, and a room over its limit stays closed only while the supply is warmer than it (it moves heat once the water is colder). The load law runs while the heat source runs or prestarts, and when Touch says nothing.
 - Heat-pump mode moves heat: a loop closed because its room is too warm reopens while the manifold's supply is at least 1 K colder than the room and another room on the manifold is at or below target. The water then carries the surplus (sun, stove, a warm slab) through the buffer to the rooms that want it; the open loops keep their flows. `/api/v1/zones` shows `heat_moving`.
 - Public images without secrets: the WiFi seed, API encryption key and OTA password
   moved to `packages/network/build-secrets.yaml`, which only the development entrypoint

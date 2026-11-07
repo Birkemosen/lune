@@ -343,6 +343,7 @@ class Lv6ZoneController : public esphome::Component {
   HpPhase hp_phase_{HpPhase::UNKNOWN};
   // «Close above target» latch per zone (hp_close_above_c; reopens 0.2 °C below).
   std::array<bool, NUM_ZONES> hp_closed_{};
+  bool hp_idle_balance_{false};  ///< Static balance while the heat source is idle
   std::array<bool, NUM_ZONES> hp_moving_{};  ///< Overheated loop moving heat (dynamic_balance.h)
   // Anticipated reopening of warm-closed loops (reopen_policy.h; runtime only).
   std::array<reopen_policy::State, NUM_ZONES> reopen_{};

@@ -312,6 +312,37 @@ static void test_heat_moving() {
   expect(r2.moving == 0 && q[3] == 0.0f, "moving: not while every room is warm");
 }
 
+static void test_idle_static_balance() {
+  // Heat source idle: every open loop at its design share, whatever the room's load.
+  Params p{0.5f, 1.0f, 0.0f};
+  p.idle = true;
+  p.supply_c = 30.0f;  // buffer still warm after a charge
+  Loop loops[6];
+  const float temps[6] = {21.0f, 22.4f, 22.9f, 25.0f, 22.0f, 23.2f};
+  make_loops(loops, temps, 22.0f);
+  bool closed[6]{}, moving[6]{};
+  for (int i = 0; i < 6; i++)
+    closed[i] = update_closed(closed[i], loops[i].temp_c, loops[i].setpoint_c, p);
+  float open[6], q[6];
+  distribute(loops, p, closed, open, q, moving);
+  for (int i = 0; i < 6; i++)
+    if (i != 3)
+      expect_near(q[i], std::max(SHARES[i], Q_MIN), 1e-3f, "idle: open loops at their design share");
+  expect(closed[3] && !moving[3] && q[3] == 0.0f, "idle: a warm room stays closed while the water would heat it");
+
+  // The buffer has cooled below the warm room: it moves heat even with no cold room.
+  const float warm[6] = {23.2f, 23.4f, 23.0f, 25.0f, 23.1f, 23.2f};
+  make_loops(loops, warm, 22.0f);
+  p.supply_c = 23.5f;
+  bool c2[6]{}, m2[6]{};
+  for (int i = 0; i < 6; i++)
+    c2[i] = update_closed(c2[i], loops[i].temp_c, loops[i].setpoint_c, p);
+  distribute(loops, p, c2, open, q, m2);
+  expect(c2[3] && m2[3], "idle: moves heat without a cold room");
+  expect_near(q[3], SHARES[3], 1e-3f, "idle: the moving loop at its design share");
+  expect_near(q[4], SHARES[4], 1e-3f, "idle: warm open rooms keep their share too");
+}
+
 int main() {
   test_measured_shares();
   test_zone_area();
@@ -326,6 +357,7 @@ int main() {
   test_warm_manifold_throttles();
   test_never_all_closed();
   test_heat_moving();
+  test_idle_static_balance();
   test_house_balance_and_caps();
   std::printf("All dynamic balance tests passed.\n");
   return 0;

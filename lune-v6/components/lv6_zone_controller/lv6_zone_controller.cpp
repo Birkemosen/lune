@@ -1423,6 +1423,9 @@ void Lv6ZoneController::run_cycle_() {
     xSemaphoreGive(snapshot_mutex_);
     dynamic_balance::Params dbp{cfg.control.comfort_band_c, cfg.control.hp_overheat_margin_c, 0.0f};
     dbp.supply_c = read_manifold_flow_();
+    // Heat source not running (Touch's phase): static balance; running, prestart or
+    // no word from Touch: the load law.
+    dbp.idle = get_hp_phase() == HpPhase::IDLE;
     bool closed[NUM_ZONES];
     bool moving[NUM_ZONES];
     float openings[NUM_ZONES];
@@ -1432,6 +1435,10 @@ void Lv6ZoneController::run_cycle_() {
       moving[i] = hp_moving_[i];
     }
     const auto db = dynamic_balance::distribute(loops, dbp, closed, openings, q, moving);
+    if (dbp.idle != hp_idle_balance_) {
+      ESP_LOGI(TAG, "Dynamic balance: %s", dbp.idle ? "heat source idle, static balance" : "load law");
+      hp_idle_balance_ = dbp.idle;
+    }
     for (uint8_t i = 0; i < NUM_ZONES; i++)
       if (moving[i] != hp_moving_[i])
         ESP_LOGI(TAG, "Zone %d: %s heat (room %.1f C, supply %.1f C)", i + 1,
