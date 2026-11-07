@@ -1023,13 +1023,35 @@ void Lv6ConfigStore::load_config_() {
   xSemaphoreTake(mutex_, portMAX_DELAY);
   had_all_sections &= load_section(handle, KEY_SYSTEM, SYSTEM_CONFIG_VERSION, config_.system);
   if (!load_section(handle, KEY_CONTROL, CONTROL_CONFIG_VERSION, config_.control)) {
-    // v4 had no hp_running_min_total_pct, v3 no hp_close_above_c, v2 no
-    // hp_demand_pct: keep every stored control setting and add the new fields at
-    // their defaults.
+    // v5 had no hp_heat_move_k, v4 no hp_running_min_total_pct, v3 no
+    // hp_close_above_c, v2 no hp_demand_pct: keep every stored control setting and
+    // add the new fields at their defaults.
+    ControlConfigV5 v5{};
     ControlConfigV4 v4{};
     ControlConfigV3 v3{};
     ControlConfigV2 v2{};
-    if (load_section(handle, KEY_CONTROL, 4, v4)) {
+    if (load_section(handle, KEY_CONTROL, 5, v5)) {
+      ControlConfig c{};
+      c.comfort_band_c = v5.comfort_band_c;
+      c.maintenance_base_pct = v5.maintenance_base_pct;
+      c.demand_boost_pct = v5.demand_boost_pct;
+      c.boost_factor = v5.boost_factor;
+      c.min_movement_pct = v5.min_movement_pct;
+      c.tanh_steepness = v5.tanh_steepness;
+      c.simple_preheat_enabled = v5.simple_preheat_enabled;
+      c.preheat_absorb_enabled = v5.preheat_absorb_enabled;
+      c.preheat_absorb_band_c = v5.preheat_absorb_band_c;
+      c.preheat_detect_delta_c = v5.preheat_detect_delta_c;
+      c.mode = v5.mode;
+      c.hp_overheat_margin_c = v5.hp_overheat_margin_c;
+      c.hp_base_pct = v5.hp_base_pct;
+      c.hp_trim_floor_pct = v5.hp_trim_floor_pct;
+      c.hp_demand_pct = v5.hp_demand_pct;
+      c.hp_close_above_c = v5.hp_close_above_c;
+      c.hp_running_min_total_pct = v5.hp_running_min_total_pct;
+      config_.control = c;
+      ESP_LOGI(TAG, "Control section migrated v5 -> v%" PRIu32, CONTROL_CONFIG_VERSION);
+    } else if (load_section(handle, KEY_CONTROL, 4, v4)) {
       ControlConfig c{};
       c.comfort_band_c = v4.comfort_band_c;
       c.maintenance_base_pct = v4.maintenance_base_pct;

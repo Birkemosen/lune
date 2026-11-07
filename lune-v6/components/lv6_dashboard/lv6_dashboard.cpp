@@ -605,6 +605,7 @@ void LV6Dashboard::update_snapshot_() {
     s.preheat_detect_delta_c = ctrl_cfg.preheat_detect_delta_c;
     s.heating_mode = ctrl_cfg.mode;
     s.hp_overheat_margin_c = ctrl_cfg.hp_overheat_margin_c;
+    s.hp_heat_move_k = ctrl_cfg.hp_heat_move_k;
     s.hp_base_pct = ctrl_cfg.hp_base_pct;
     s.hp_trim_floor_pct = ctrl_cfg.hp_trim_floor_pct;
     s.hp_close_above_c = ctrl_cfg.hp_close_above_c;
@@ -1902,6 +1903,8 @@ void LV6Dashboard::handle_state_(AsyncWebServerRequest *request) {
       lv6::heat_demand_recommendation_to_string(snap->heat_demand.recommendation))) return;
   format_float_token(num_buf, sizeof(num_buf), snap->hp_overheat_margin_c, 1);
   if (!append( "\"number-hp_overheat_margin_c\":{\"value\":%s},", num_buf)) return;
+  format_float_token(num_buf, sizeof(num_buf), snap->hp_heat_move_k, 1);
+  if (!append( "\"number-hp_heat_move_k\":{\"value\":%s},", num_buf)) return;
   format_float_token(num_buf, sizeof(num_buf), snap->hp_base_pct, 0);
   if (!append( "\"number-hp_base_pct\":{\"value\":%s},", num_buf)) return;
   format_float_token(num_buf, sizeof(num_buf), snap->hp_trim_floor_pct, 0);
@@ -2529,6 +2532,8 @@ void LV6Dashboard::handle_settings_(AsyncWebServerRequest *request) {
   format_float_token(preheat_delta, sizeof(preheat_delta), snap->preheat_detect_delta_c, 1);
   format_float_token(min_flow, sizeof(min_flow), snap->min_zone_flow_pct, 1);
   format_float_token(hp_margin, sizeof(hp_margin), snap->hp_overheat_margin_c, 1);
+  char hp_move[16];
+  format_float_token(hp_move, sizeof(hp_move), snap->hp_heat_move_k, 1);
   format_float_token(hp_base, sizeof(hp_base), snap->hp_base_pct, 0);
   format_float_token(hp_trim, sizeof(hp_trim), snap->hp_trim_floor_pct, 0);
   format_float_token(hp_demand, sizeof(hp_demand), snap->hp_demand_pct, 0);
@@ -2537,7 +2542,7 @@ void LV6Dashboard::handle_settings_(AsyncWebServerRequest *request) {
           "{\"ok\":true,\"version\":\"v1\",\"data\":{\"control\":{"
           "\"preheat_absorb_enabled\":%s,"
           "\"preheat_absorb_band_c\":%s,\"preheat_detect_delta_c\":%s,"
-          "\"heating_mode\":\"%s\",\"hp_overheat_margin_c\":%s,"
+          "\"heating_mode\":\"%s\",\"hp_overheat_margin_c\":%s,\"hp_heat_move_k\":%s,"
           "\"hp_base_pct\":%s,\"hp_trim_floor_pct\":%s,\"hp_demand_pct\":%s},"
           "\"minimum_flow\":{\"enabled\":%s,\"min_zone_flow_pct\":%s},"
           "\"ble_clock_sync\":{\"enabled\":%s,\"interval_min\":%u,\"last_ok_s\":%lu,"
@@ -2549,7 +2554,7 @@ void LV6Dashboard::handle_settings_(AsyncWebServerRequest *request) {
           "\"authority\":{\"installation_id\":\"%s\",\"coordinator_id\":\"%s\",\"authentication_configured\":%s},\"zones\":[",
           snap->preheat_absorb_enabled ? "true" : "false",
           preheat_band, preheat_delta,
-          lv6::heating_profile_to_string(snap->heating_mode), hp_margin, hp_base, hp_trim, hp_demand,
+          lv6::heating_profile_to_string(snap->heating_mode), hp_margin, hp_move, hp_base, hp_trim, hp_demand,
           snap->minimum_flow_always ? "true" : "false", min_flow,
           snap->ble_clock_sync_enabled ? "true" : "false",
           static_cast<unsigned>(snap->ble_clock_sync_interval_min),
@@ -4655,6 +4660,8 @@ void LV6Dashboard::dispatch_set_(const DashboardAction &act) {
 
   } else if (strcmp(key, "hp_overheat_margin_c") == 0 && has_num && this->zone_controller_) {
     this->zone_controller_->set_hp_overheat_margin_c(num_val);
+  } else if (strcmp(key, "hp_heat_move_k") == 0 && has_num && this->zone_controller_) {
+    this->zone_controller_->set_hp_heat_move_k(num_val);
 
   } else if (strcmp(key, "hp_base_pct") == 0 && has_num && this->zone_controller_) {
     this->zone_controller_->set_hp_base_pct(num_val);

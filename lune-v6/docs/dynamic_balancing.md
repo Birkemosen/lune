@@ -61,7 +61,8 @@ Per control cycle, for each enabled loop *i*:
      **closed** (latched, reopens 0.3 °C below that limit). This is the only reason a
      loop closes.
    - **moving heat:** a closed loop reopens while the manifold's supply is at least
-     1 K colder than its room (until less than 0.5 K), and only while an open room on
+     `hp_heat_move_k` (default 0.5 K, 0–3) colder than its room (until less than 0.3 K
+     closer than that), and only while an open room on
      the manifold is at or below target. The water then gathers the room's surplus
      (sun, a stove, a warm slab) and carries it through the buffer to the rooms that
      want it. It gets its design share `min(1, P_i · H_i)`, on top of the others' flows,
@@ -89,7 +90,7 @@ Per control cycle, for each enabled loop *i*:
 6. **Heat source idle: static balance.** While Touch says the heat source is not running
    (`hp_phase` idle, Touch's «valves follow the heat pump»), every open loop gets its
    design share (load factor 1), closed loops hand nothing on, and an overheated loop
-   moves heat whenever the supply is 1 K colder than its room, cold room or not. Flow is
+   moves heat whenever the supply is `hp_heat_move_k` colder than its room, cold room or not. Flow is
    the default: the buffer's rest and the rooms' surplus spread by themselves, every
    floor keeps water, and the valves mostly move when the heat source starts and stops.
    Only a room over its limit stays closed, while the water would heat it. Running,

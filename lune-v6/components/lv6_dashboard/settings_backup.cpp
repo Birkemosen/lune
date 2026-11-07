@@ -698,6 +698,7 @@ size_t write_export_json(char *out, size_t out_cap, const lv6::DeviceConfig &cfg
   b.key_str("heating_mode", lv6::heating_profile_to_string(c.mode));
   b.addf(",");
   b.key_num("hp_overheat_margin_c", c.hp_overheat_margin_c);
+  b.key_num("hp_heat_move_k", c.hp_heat_move_k);
   b.addf(",");
   b.key_num("hp_base_pct", c.hp_base_pct);
   b.addf(",");
@@ -1106,6 +1107,7 @@ ImportResult apply_import_json(const char *json, lv6::DeviceConfig &cfg, bool re
       result.applied++;
     }
     apply_float(node, "hp_overheat_margin_c", c.hp_overheat_margin_c, 0.3, 3.0, result.applied);
+    apply_float(node, "hp_heat_move_k", c.hp_heat_move_k, 0.0, 3.0, result.applied);
     apply_float(node, "hp_base_pct", c.hp_base_pct, 30.0, 100.0, result.applied);
     apply_float(node, "hp_trim_floor_pct", c.hp_trim_floor_pct, 0.0, 100.0, result.applied);
     if (c.hp_trim_floor_pct > c.hp_base_pct)

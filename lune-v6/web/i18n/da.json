@@ -481,6 +481,8 @@
   "csys.heatPumpLimits": "Varmepumpegrænser",
   "csys.hpOverheat": "Overophedningsmargin",
   "csys.hpOverheatHint": "Grader over målet, hvor rummet får sin mindste andel af flowet. Et komfortbånd højere lukker sløjfen. De andre sløjfer har altid flow.",
+  "csys.hpMove": "Varmeflytning",
+  "csys.hpMoveHint": "Når et rum er for varmt, og fremløbet er så mange grader koldere end rummet, åbner sløjfen og flytter varmen til de andre rum. Den lukker igen 0,3 °C før.",
   "csys.balMode": "Fordeling",
   "csys.balModeNote": "Statisk: fordeling ud fra areal, rør og sløjfelængde. Adaptiv: justerer derudover hver zone time for time efter, om rummet over tid ligger over eller under målet, så alle rum rammer målet ved samme fremløbstemperatur.",
   "alert.driversOff": "Motorerne er slået fra",

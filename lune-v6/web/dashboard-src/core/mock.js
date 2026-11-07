@@ -158,6 +158,7 @@ function seed() {
   setEntity(gkey.heatingModeSource, { state: 'local' });
   setEntity(gkey.balancingMode, { state: 'adaptive' });
   setEntity(gkey.hpOverheatMarginC, { value: 1.0 });
+  setEntity(gkey.hpHeatMoveK, { value: 0.5 });
   setEntity(gkey.hpBasePct, { value: 60 });
   setEntity(gkey.hpTrimFloorPct, { value: 15 });
   setEntity(gkey.hpCloseAboveC, { value: 0.5 });
@@ -721,6 +722,7 @@ export function handleMockPost(body) {
     learned_factor_max_deviation_pct: gkey.learnedFactorMaxDeviationPct,
     min_zone_flow_pct: gkey.minZoneFlowPct,
     hp_overheat_margin_c: gkey.hpOverheatMarginC,
+    hp_heat_move_k: gkey.hpHeatMoveK,
     hp_base_pct: gkey.hpBasePct,
     hp_trim_floor_pct: gkey.hpTrimFloorPct,
     hp_close_above_c: gkey.hpCloseAboveC,
@@ -789,6 +791,7 @@ export function mockSettingsExport(includeLearned) {
       minimum_flow_always: es(gkey.minimumFlowAlways) === 'on',
       heating_mode: es(gkey.heatingMode) || 'heat_pump',
       hp_overheat_margin_c: ev(gkey.hpOverheatMarginC),
+      hp_heat_move_k: ev(gkey.hpHeatMoveK),
       hp_base_pct: ev(gkey.hpBasePct),
       hp_trim_floor_pct: ev(gkey.hpTrimFloorPct),
       hp_demand_pct: ev(gkey.hpDemandPct),

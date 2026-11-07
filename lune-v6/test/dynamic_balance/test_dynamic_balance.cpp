@@ -295,12 +295,14 @@ static void test_heat_moving() {
     if (i != 3)
       expect_near(q[i], q0[i], 1e-4f, "moving: the other loops keep their flows");
 
-  // Hysteresis: 0.7 K below keeps it moving, but does not start it.
-  loops[3].temp_c = 25.7f;
+  // Hysteresis: 0.4 K below keeps it moving, but does not start it.
+  loops[3].temp_c = 25.4f;
   distribute(loops, p, closed, open, q, moving);
-  expect(closed[3] && moving[3], "moving: holds above MOVE_OFF_K");
-  expect(!update_moving(false, 25.7f, 25.0f), "moving: does not start below MOVE_ON_K");
-  expect(!update_moving(true, 25.4f, 25.0f), "moving: stops below MOVE_OFF_K");
+  expect(closed[3] && moving[3], "moving: holds above on − MOVE_HYST_K");
+  expect(!update_moving(false, 25.4f, 25.0f), "moving: does not start below MOVE_ON_K");
+  expect(!update_moving(true, 25.15f, 25.0f), "moving: stops below on − MOVE_HYST_K");
+  expect(update_moving(false, 25.0f, 25.0f, 0.0f), "moving: threshold 0 starts at equal temperatures");
+  expect(!update_moving(false, 25.9f, 25.0f, 1.0f), "moving: threshold 1 waits for 1 K");
 
   // No room wants heat: nothing moves.
   const float warm[6] = {23.5f, 23.4f, 23.6f, 30.5f, 23.5f, 23.5f};

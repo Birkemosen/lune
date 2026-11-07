@@ -123,6 +123,7 @@ export const gkey = {
   effectiveHeatingMode: 'text-effective_heating_mode',
   heatingModeSource: 'text-heating_mode_source',
   hpOverheatMarginC: 'number-hp_overheat_margin_c',
+  hpHeatMoveK: 'number-hp_heat_move_k',
   hpBasePct: 'number-hp_base_pct',
   hpTrimFloorPct: 'number-hp_trim_floor_pct',
   hpCloseAboveC: 'number-hp_close_above_c',

@@ -971,6 +971,17 @@ void Lv6ZoneController::set_hp_overheat_margin_c(float margin_c) {
   config_store_->update_control(cfg.control);
 }
 
+void Lv6ZoneController::set_hp_heat_move_k(float k) {
+  if (!config_store_)
+    return;
+  k = std::clamp(k, 0.0f, 3.0f);
+  auto cfg = config_store_->get_config();
+  if (std::fabs(cfg.control.hp_heat_move_k - k) < 0.001f)
+    return;
+  cfg.control.hp_heat_move_k = k;
+  config_store_->update_control(cfg.control);
+}
+
 void Lv6ZoneController::set_hp_base_pct(float pct) {
   if (!config_store_)
     return;
@@ -1423,6 +1434,7 @@ void Lv6ZoneController::run_cycle_() {
     xSemaphoreGive(snapshot_mutex_);
     dynamic_balance::Params dbp{cfg.control.comfort_band_c, cfg.control.hp_overheat_margin_c, 0.0f};
     dbp.supply_c = read_manifold_flow_();
+    dbp.move_on_k = cfg.control.hp_heat_move_k;
     // Heat source not running (Touch's phase): static balance; running, prestart or
     // no word from Touch: the load law.
     dbp.idle = get_hp_phase() == HpPhase::IDLE;

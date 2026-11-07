@@ -827,6 +827,7 @@ Heating-mode keys (global):
 
 - `heating_mode` (`select`): `normal` | `heat_pump`
 - `hp_overheat_margin_c` (`number`): 0.3–3.0 °C
+- `hp_heat_move_k` (`number`): 0–3.0 K, default 0.5; an overheated loop moves heat while the supply is this far below its room (stops 0.3 K closer)
 - `hp_base_pct` (`number`): 30–100
 - `hp_trim_floor_pct` (`number`): 0 up to the current base; held from setpoint + margin until the zone is overheated
 - `hp_demand_pct` (`number`): current base–100; opening for a zone below setpoint − comfort band (default 80). Raising `hp_base_pct` above it raises it too

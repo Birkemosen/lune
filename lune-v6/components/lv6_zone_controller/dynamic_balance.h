@@ -23,8 +23,8 @@ namespace lv6::dynamic_balance {
 static constexpr float G_MIN = 0.25f;           ///< Load factor at target + overheat margin
 static constexpr float Q_MIN = 0.10f;           ///< Smallest relative flow for an open loop
 static constexpr float REOPEN_HYST_C = 0.3f;    ///< Closed loop reopens this far below its limit
-static constexpr float MOVE_ON_K = 1.0f;        ///< Overheated loop moves heat when supply is this far below its room
-static constexpr float MOVE_OFF_K = 0.5f;       ///< ...until the supply is less than this below it
+static constexpr float MOVE_ON_K = 0.5f;        ///< Default: overheated loop moves heat when supply is this far below its room
+static constexpr float MOVE_HYST_K = 0.3f;      ///< ...until the supply is less than (on − this) below it
 
 struct Loop {
   bool enabled{false};
@@ -42,6 +42,7 @@ struct Params {
   float absorb_band_c{0.0f};  ///< Extra headroom while Touch pre-buffers
   float supply_c{NAN};        ///< Manifold supply temperature (NaN: unknown, no heat moving)
   bool idle{false};           ///< Heat source not running (Touch): static balance, see distribute
+  float move_on_k{MOVE_ON_K}; ///< Supply this far below the room starts heat moving
 };
 
 /// Design shares from measured loop flow: a loop needs flow in proportion to its heat
@@ -103,13 +104,13 @@ inline bool update_closed(bool closed, float temp_c, float setpoint_c, const Par
   return false;
 }
 
-/// Heat-moving latch for an overheated loop: on while the supply is MOVE_ON_K below
-/// the room, off once it is less than MOVE_OFF_K below.
-inline bool update_moving(bool moving, float temp_c, float supply_c) {
+/// Heat-moving latch for an overheated loop: on while the supply is `on_k` below the
+/// room, off once it is less than on_k − MOVE_HYST_K below.
+inline bool update_moving(bool moving, float temp_c, float supply_c, float on_k = MOVE_ON_K) {
   if (!std::isfinite(temp_c) || !std::isfinite(supply_c))
     return false;
   const float d = temp_c - supply_c;
-  return d >= MOVE_ON_K || (moving && d > MOVE_OFF_K);
+  return d >= on_k || (moving && d > on_k - MOVE_HYST_K);
 }
 
 struct Result {
@@ -160,7 +161,7 @@ inline Result distribute(const Loop (&loops)[N], const Params &p, bool (&closed)
       moving[i] = false;
       continue;
     }
-    moving[i] = closed[i] && update_moving(moving[i], loops[i].temp_c, p.supply_c);
+    moving[i] = closed[i] && update_moving(moving[i], loops[i].temp_c, p.supply_c, p.move_on_k);
     cap[i] = valve_curve::flow_fraction(std::clamp(loops[i].max_opening_pct, 0.0f, 100.0f),
                                         loops[i].curve);
     const float share = std::max(0.0f, loops[i].design_share) *

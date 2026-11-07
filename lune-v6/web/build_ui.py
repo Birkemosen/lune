@@ -424,7 +424,8 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
                  srow(lab("heat_min_open",T("csys.minOpening")),stepper("heat_min_open",0,0,100,1,"%",label=T("csys.minOpening"),dec=0),T("csys.minOpeningHint"),cls="normal-only"),
                  help=help_btn("help-heating",T("csys.heating")))}
           {group(T("csys.heatPumpLimits"),
-                 sstep("hp_overheat",T("csys.hpOverheat"),1.0,0.3,3.0,0.1,"°C",hint=T("csys.hpOverheatHint")),cls="hp-limits")}
+                 sstep("hp_overheat",T("csys.hpOverheat"),1.0,0.3,3.0,0.1,"°C",hint=T("csys.hpOverheatHint"))+
+                 sstep("hp_move",T("csys.hpMove"),0.5,0,3.0,0.1,"°C",hint=T("csys.hpMoveHint")),cls="hp-limits")}
           {group(T("bal.title"),
                  srow(span(T("csys.balMode")),seg("balancing_mode",[("static",T("bal.static")),("adaptive",T("bal.adaptive"))],"static",T("csys.balMode"))),
                  f'<p class="note">{T("csys.balModeNote")}</p>')}

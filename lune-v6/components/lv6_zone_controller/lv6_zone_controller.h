@@ -278,6 +278,7 @@ class Lv6ZoneController : public esphome::Component {
   /// Persist heating-mode settings (local law used when Touch is offline).
   void set_heating_mode(HeatingProfile mode);
   void set_hp_overheat_margin_c(float margin_c);
+  void set_hp_heat_move_k(float k);
   void set_hp_base_pct(float pct);
   void set_hp_trim_floor_pct(float pct);
   void set_hp_close_above_c(float c);

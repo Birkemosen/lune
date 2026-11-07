@@ -499,6 +499,8 @@
   "csys.heatPumpLimits": "Heat pump limits",
   "csys.hpOverheat": "Overheat margin",
   "csys.hpOverheatHint": "Degrees above target where the room gets its smallest share of the flow. One comfort band higher, the loop closes. The other loops always have flow.",
+  "csys.hpMove": "Heat moving",
+  "csys.hpMoveHint": "When a room is too warm and the supply is this many degrees colder than the room, its loop opens and moves the heat to the other rooms. It closes again 0.3 °C before.",
   "csys.balMode": "Distribution",
   "csys.balModeNote": "Static: split by area, pipe and loop length. Adaptive: also adjusts each zone every hour by whether the room runs above or below its target over time, so all rooms reach target at the same flow temperature.",
   "alert.driversOff": "Motors are off",

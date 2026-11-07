@@ -291,6 +291,30 @@ struct ControlConfig {
   /// Unused: reserved for the NVS layout (a flow floor tried before dynamic
   /// balancing).
   float hp_running_min_total_pct = 0.0f;
+  /// Heat-pump mode: an overheated loop moves heat while the supply is this far below
+  /// its room (stops 0.3 K closer); docs/dynamic_balancing.md.
+  float hp_heat_move_k = 0.5f;
+};
+
+/// ControlConfig as stored by CONTROL_CONFIG_VERSION 5 (before hp_heat_move_k).
+struct ControlConfigV5 {
+  float comfort_band_c;
+  float maintenance_base_pct;
+  float demand_boost_pct;
+  float boost_factor;
+  float min_movement_pct;
+  float tanh_steepness;
+  bool simple_preheat_enabled;
+  bool preheat_absorb_enabled;
+  float preheat_absorb_band_c;
+  float preheat_detect_delta_c;
+  HeatingProfile mode;
+  float hp_overheat_margin_c;
+  float hp_base_pct;
+  float hp_trim_floor_pct;
+  float hp_demand_pct;
+  float hp_close_above_c;
+  float hp_running_min_total_pct;
 };
 
 /// ControlConfig as stored by CONTROL_CONFIG_VERSION 4 (before hp_running_min_total_pct).
@@ -461,7 +485,7 @@ static constexpr uint32_t GROUPS_CONFIG_VERSION = 1;
 /// v5 adds user-facing display_name and location for the dashboard device menu.
 static constexpr uint32_t SYSTEM_CONFIG_VERSION = 5;
 /// v2 adds heating mode + heat-pump base/margin/trim; drops unused min_valve_opening_pct.
-static constexpr uint32_t CONTROL_CONFIG_VERSION = 5;
+static constexpr uint32_t CONTROL_CONFIG_VERSION = 6;
 /// v2 moves defaults to P1 flow / P2 manifold return with zone return probes
 /// unassigned (return-temperature mode off until the user enables it). Layout
 /// is unchanged; the bump replaces stored v1 values that still carried the
