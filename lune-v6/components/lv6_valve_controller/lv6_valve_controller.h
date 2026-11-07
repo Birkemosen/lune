@@ -692,6 +692,7 @@ class Lv6ValveController : public esphome::Component {
   /// wall does not come within this many counts of the seal is the seal taken.
   static constexpr uint32_t SEAL_PRESS_MIN_RIPPLES = 700;
   static constexpr float SEAL_PRESS_STROKE_FRACTION = 0.35f;
+  static constexpr uint32_t SEAL_CEILING_MARGIN_RIPPLES = 40;
   uint32_t seal_count_{0};   ///< count where the seal bore this close; 0 = not yet
   MotorDirection fault_dir_[NUM_ZONES]{};   ///< direction of the run that faulted
   bool back_off_allowed_[NUM_ZONES]{};      ///< one timed run away from the fault

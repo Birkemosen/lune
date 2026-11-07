@@ -3197,10 +3197,16 @@ void Lv6ValveController::detect_endstop_() {
         xSemaphoreGive(telemetry_mutex_);
         const uint32_t press = std::max(SEAL_PRESS_MIN_RIPPLES,
                                         static_cast<uint32_t>(stroke * SEAL_PRESS_STROKE_FRACTION));
-        if (count >= seal_count_ + press && !short_of_seat(count)) {
+        // A long free travel can leave the wall beyond the count ceiling (.14 z3:
+        // seal at ~2400, ceiling 2601): end on the seal just short of the ceiling
+        // rather than letting the ceiling fault the close.
+        const bool at_ceiling = move_limit_.limit_counts > 0 &&
+                                count + SEAL_CEILING_MARGIN_RIPPLES >= move_limit_.limit_counts;
+        if ((count >= seal_count_ + press || at_ceiling) && !short_of_seat(count)) {
           ESP_LOGW(TAG, "Motor %d no wall %" PRIu32 " counts past the seal at %" PRIu32
-                        " (%.1f mA): taking the seal as the seat",
-                   current_zone_ + 1, count - seal_count_, seal_count_, current_filtered_ma_);
+                        " (%.1f mA%s): taking the seal as the seat",
+                   current_zone_ + 1, count - seal_count_, seal_count_, current_filtered_ma_,
+                   at_ceiling ? ", at the count ceiling" : "");
           threshold_endstop = true;
         }
       }
