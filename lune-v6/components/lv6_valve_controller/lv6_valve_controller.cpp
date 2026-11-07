@@ -1831,6 +1831,13 @@ float Lv6ValveController::estimate_travel_time_ms_(uint8_t zone, float from_pct,
 bool Lv6ValveController::start_motor_(uint8_t zone, MotorDirection dir, bool override_drivers) {
   if (zone >= NUM_ZONES || motor_turning_ || (!drivers_enabled_ && !override_drivers))
     return false;
+  // Reversing a motor that has just stopped trips the bridge (a learn's first close
+  // 12 ms after a move's open: raw fault, "breakaway"). Every path waits out the pause.
+  if (zone == last_stop_zone_ && dir != last_stop_dir_ && last_stop_ms_ != 0) {
+    const uint32_t since = static_cast<uint32_t>(esp_timer_get_time() / 1000) - last_stop_ms_;
+    if (since < REVERSAL_PAUSE_MS)
+      vTaskDelay(pdMS_TO_TICKS(REVERSAL_PAUSE_MS - since));
+  }
   move_aborted_ = false;
   seat_early_logged_ = false;
   seat_short_logged_ = false;
@@ -2041,6 +2048,9 @@ void Lv6ValveController::stop_motor_(bool record_event) {
   else if (driver)
     driver->coast();
   drive_output_enabled_ = false;
+  last_stop_ms_ = static_cast<uint32_t>(esp_timer_get_time() / 1000);
+  last_stop_zone_ = current_zone_;
+  last_stop_dir_ = current_dir_;
 
   // Stop DMA and allow the ripple processor task to drain any pending frames
   // before the motor task reads the final ripple count.

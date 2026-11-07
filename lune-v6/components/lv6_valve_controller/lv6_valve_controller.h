@@ -699,6 +699,9 @@ class Lv6ValveController : public esphome::Component {
   /// Pause between the re-home (seated) and the opening leg: lets the seat and
   /// gear tension relax before the motor reverses.
   static constexpr uint32_t REVERSAL_PAUSE_MS = 500;
+  uint32_t last_stop_ms_{0};                                ///< When the last run stopped (start_motor_ waits out a reversal)
+  uint8_t last_stop_zone_{0xFF};
+  MotorDirection last_stop_dir_{MotorDirection::CLOSE};
   void maybe_recover_drivers_();
   std::atomic<bool> auto_learn_hold_{false};
   /// Set by manual mode during a learn; every calibration loop checks it, the
