@@ -455,7 +455,38 @@ async function refreshZones(force) {
     zones = Array.isArray(data) ? data : (data.zones || []);
     paintCurve();
     paintZoneCurves();
+    paintZonePhysics();
   } catch (_) { /* offline: keep the last curve */ }
+}
+
+/** Zone sheets: heat loss (UA) and time constant (τ), calculated / learned / used. */
+function paintZonePhysics() {
+  if (!h) return;
+  const fin = (v) => v !== null && v !== undefined && Number.isFinite(Number(v)) && Number(v) > 0;
+  const wk = (v) => (fin(v) ? h.escapeHtml(h.t('zdash.phys.wk', { v: h.num(Number(v), 1) })) : '—');
+  const hrs = (v) => (fin(v) ? h.escapeHtml(h.t('zdash.phys.h', { v: h.num(Number(v), 0) })) : '—');
+  for (const row of zones || []) {
+    const z = Number(row.zone);
+    const mass = Number(row.thermal_mass_kwh_per_k);
+    const shown = fin(row.ua_prior_w_per_k);
+    h.setShow(`z${z}.phys`, shown);
+    if (!shown) continue;
+    // τ = C / UA: calculated from the prior UA, used from the UA in use (or a learned τ).
+    const tauCalc = fin(mass) ? (mass * 1000) / Number(row.ua_prior_w_per_k) : NaN;
+    h.setBind(`z${z}.uaCalc`, wk(row.ua_prior_w_per_k));
+    h.setBind(`z${z}.uaLearned`, wk(row.ua_learned_w_per_k));
+    h.setBind(`z${z}.uaUsed`, wk(row.ua_effective_w_per_k));
+    h.setBind(`z${z}.tauCalc`, hrs(tauCalc));
+    h.setBind(`z${z}.tauLearned`, hrs(row.tau_learned_h));
+    h.setBind(`z${z}.tauUsed`, hrs(fin(row.tau_learned_h) ? row.tau_learned_h : row.tau_h));
+    const c = fin(mass) ? h.num(mass, 2) : '—';
+    h.setBind(`z${z}.physNote`, h.escapeHtml(fin(row.ua_learned_w_per_k)
+      ? h.t('zdash.phys.noteLearned', {
+        c, d: Number(row.ua_learned_observed_days) || 0,
+        p: h.num(Math.round(100 * (Number(row.ua_learned_confidence) || 0)), 0),
+      })
+      : h.t('zdash.phys.notePrior', { c })));
+  }
 }
 
 /** Zone sheets: the learned curve (measured by Touch) under the zone's overview. */

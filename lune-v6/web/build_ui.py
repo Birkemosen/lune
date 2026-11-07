@@ -340,6 +340,17 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
             <svg class="trend" viewBox="0 0 600 100" preserveAspectRatio="none" role="img" aria-label="{T("lab.vc.aria")}"><path class="vpos" data-zc-pos="{i}" d=""/><path class="vc" data-zc-curve="{i}" d=""/></svg></div>
           <div class="axis" aria-hidden="true"><span>0 %</span><span>{T("lab.vc.axis")}</span><span>100 %</span></div>
           <p class="note" data-bind="z{i}.vcNote"></p>
+        </div>
+        <div class="sub" data-bind-show="z{i}.phys" hidden>
+          <h4>{T("zdash.phys.title")}</h4>
+          <div class="table-wrap"><table class="table">
+            <thead><tr><th></th><th class="num">{T("zdash.phys.calc")}</th><th class="num">{T("zdash.phys.learned")}</th><th class="num">{T("zdash.phys.used")}</th></tr></thead>
+            <tbody>
+              <tr><td>{T("zdash.phys.ua")}</td><td class="num" data-bind="z{i}.uaCalc">—</td><td class="num" data-bind="z{i}.uaLearned">—</td><td class="num" data-bind="z{i}.uaUsed">—</td></tr>
+              <tr><td>{T("zdash.phys.tau")}</td><td class="num" data-bind="z{i}.tauCalc">—</td><td class="num" data-bind="z{i}.tauLearned">—</td><td class="num" data-bind="z{i}.tauUsed">—</td></tr>
+            </tbody>
+          </table></div>
+          <p class="note" data-bind="z{i}.physNote"></p>
         </div>'''
         # Indstillinger: én formular, én gem-bjælke. data-patch: binderen skriver kun de ændrede dele.
         merge=f'<option value="">{T("common.none")}</option>'+"".join(f'<option value="{y[0]}" data-zone-opt="{y[0]}">Z{y[0]}</option>' for y in Z if y[0]!=i)

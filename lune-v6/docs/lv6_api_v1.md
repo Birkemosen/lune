@@ -346,7 +346,7 @@ older clients ignore):
 - Floor / UA / τ priors per
   [`lune_room_physics_contract_v1.md`](../../shared/contracts/lune_room_physics_contract_v1.md):
   `area_m2`, `exterior_walls`, `floor.{slab_type,covering,active_thickness_cm,r_m2k_per_w,c_slab_kwh_per_k,unset}`,
-  `ua_prior_w_per_k`, `ua_learned_*`, `ua_effective_w_per_k`, `ua_source`, `tau_prior_h`, `warnings`
+  `ua_prior_w_per_k`, `ua_learned_*`, `ua_effective_w_per_k`, `ua_source`, `tau_prior_h`, `tau_learned_h` (null until learned), `warnings`
 - Legacy aliases `ua_w_per_k` / `thermal_mass_kwh_per_k` / `tau_h` remain when present
 - `return_c` — zone return probe °C when mapped, else null.
 - `loop_share_pct` — flow-allocator share of total opening (0–100), Σ ≈ 100 across enabled zones.
@@ -395,6 +395,7 @@ Returns all zones:
         "ua_effective_w_per_k": 36.55,
         "ua_source": "prior",
         "tau_prior_h": 62.7,
+        "tau_learned_h": null,
         "warnings": [],
         "return_c": null,
         "loop_share_pct": 18.5,

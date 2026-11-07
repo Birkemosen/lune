@@ -2337,6 +2337,11 @@ void LV6Dashboard::handle_zones_(AsyncWebServerRequest *request) {
       snprintf(full_lmin_tok, sizeof(full_lmin_tok), "%.2f", snap->zone_valve_curve_full_lmin[i]);
     else
       snprintf(full_lmin_tok, sizeof(full_lmin_tok), "null");
+    char tau_learned_tok[16];
+    if (std::isfinite(snap->zones[i].tau_learned_h) && snap->zones[i].tau_learned_h > 0.0f)
+      snprintf(tau_learned_tok, sizeof(tau_learned_tok), "%.1f", snap->zones[i].tau_learned_h);
+    else
+      snprintf(tau_learned_tok, sizeof(tau_learned_tok), "null");
     char r_ov_tok[24];
     if (std::isfinite(snap->zones[i].r_override_m2k_per_w))
       snprintf(r_ov_tok, sizeof(r_ov_tok), "%.3f", snap->zones[i].r_override_m2k_per_w);
@@ -2349,7 +2354,7 @@ void LV6Dashboard::handle_zones_(AsyncWebServerRequest *request) {
             "\"c_zone_kwh_per_k\":%s,\"r_m2k_per_w\":%s,\"absorb_headroom_k\":%s,\"unset\":%s},"
             "\"ua_prior_w_per_k\":%s,\"ua_learned_w_per_k\":%s,\"ua_learned_confidence\":%s,"
             "\"ua_learned_observed_days\":%s,\"ua_source\":\"%s\",\"ua_weight_override\":%.2f,"
-            "\"ua_effective_w_per_k\":%s,\"tau_prior_h\":%s,"
+            "\"ua_effective_w_per_k\":%s,\"tau_prior_h\":%s,\"tau_learned_h\":%s,"
             "\"ua_w_per_k\":%s,\"thermal_mass_kwh_per_k\":%s,\"tau_h\":%s,"
             "\"return_c\":%s,\"loop_share_pct\":%s,\"heat_moving\":%s,\"absorb_state\":\"%s\","
             "\"absorb_capacity_rank\":%s,\"max_offset_c\":%s,"
@@ -2363,7 +2368,7 @@ void LV6Dashboard::handle_zones_(AsyncWebServerRequest *request) {
             lv6::covering_type_to_string(snap->zones[i].covering), r_ov_tok, c_slab_m2, c_slab,
             c_zone, r_tok, headroom, th.floor_unset ? "true" : "false", ua_prior, ua_learned, conf,
             days_tok, th.ua_source, snap->zones[i].ua_weight_override, ua_eff,
-            th.plausible && std::isfinite(th.tau_prior_h) ? tau : "null",
+            th.plausible && std::isfinite(th.tau_prior_h) ? tau : "null", tau_learned_tok,
             th.plausible ? ua : "null", th.plausible ? mass : "null",
             th.plausible && std::isfinite(th.tau_prior_h) ? tau : "null", return_c, share,
             this->zone_controller_ && this->zone_controller_->is_moving_heat(i) ? "true" : "false",
