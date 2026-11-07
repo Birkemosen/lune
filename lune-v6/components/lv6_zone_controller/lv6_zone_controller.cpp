@@ -1576,6 +1576,7 @@ void Lv6ZoneController::run_cycle_() {
     if (adapt_reset_pending_.exchange(false, std::memory_order_acq_rel)) {
       adapt_err_ema_.fill(0.0f);
       adapt_samples_.fill(0);
+      adapt_live_.fill(NAN);
       last_adapt_ms_ = 0;
     }
     float flow_temp = read_manifold_flow_();
@@ -2189,6 +2190,19 @@ void Lv6ZoneController::recalculate_balance_factors_() {
       max_w = 1.0f;
     }
   }
+  // A learned factor is a deviation from this physics; new physics, new start.
+  if (adaptive) {
+    const uint32_t basis = balance_basis_();
+    uint32_t stored = 0;
+    if (!config_store_->load_balance_basis(&stored) || stored != basis) {
+      reset_balancing();
+      for (auto &z : cfg.zones)
+        z.balance_adapt = 1.0f;
+      config_store_->set_balance_basis(basis);
+      ESP_LOGI(TAG, "Balance basis changed (%08" PRIx32 " -> %08" PRIx32 "): learned factors start at 1",
+               stored, basis);
+    }
+  }
 
   xSemaphoreTake(snapshot_mutex_, portMAX_DELAY);
   for (uint8_t i = 0; i < NUM_ZONES; i++) {
@@ -2499,14 +2513,26 @@ void Lv6ZoneController::update_adaptive_balance_(const DeviceConfig &cfg) {
   // Need ≥2 loops to define a common-mode mean to redistribute around.
   if (contrib >= 2) {
     float e_mean = sum_e / static_cast<float>(contrib);
-    lv6ab::AdaptParams p{cfg.balancing.adapt_step, cfg.balancing.adapt_min, cfg.balancing.adapt_max};
+    lv6ab::DeviationParams p{};
+    p.interval_h = static_cast<float>(interval_ms) / 3600000.0f;
+    float x[NUM_ZONES]{};
+    float x_mean = 0.0f;
     for (uint8_t i = 0; i < NUM_ZONES; i++) {
       if (!contributes[i])
         continue;
-      float old_a = cfg.zones[i].balance_adapt;
-      float new_a = lv6ab::next_adapt(old_a, adapt_err_ema_[i], e_mean, p);
-      // Persist only on a meaningful move (NVS write ≈ a few/day, not per cycle).
-      if (std::fabs(new_a - old_a) >= 0.01f) {
+      x[i] = lv6ab::flow_deviation(adapt_err_ema_[i], p);
+      x_mean += x[i] / static_cast<float>(contrib);
+    }
+    for (uint8_t i = 0; i < NUM_ZONES; i++) {
+      if (!contributes[i])
+        continue;
+      // Moves are small (a deviation is taken up over a day), so the factor runs
+      // in RAM and is stored once it has moved (NVS write ≈ a few/day).
+      const float old_a = cfg.zones[i].balance_adapt;
+      const float live = std::isfinite(adapt_live_[i]) ? adapt_live_[i] : old_a;
+      const float new_a = lv6ab::next_factor(live, x[i], x_mean, p);
+      adapt_live_[i] = new_a;
+      if (std::fabs(new_a - old_a) >= 0.005f) {
         ZoneConfig zc = config_store_->get_zone_config(i);
         zc.balance_adapt = new_a;
         config_store_->update_zone(i, zc);
@@ -2531,6 +2557,27 @@ void Lv6ZoneController::update_adaptive_balance_(const DeviceConfig &cfg) {
   // Reset accumulators for the next interval regardless of whether we stepped.
   adapt_err_ema_.fill(0.0f);
   adapt_samples_.fill(0);
+}
+
+uint32_t Lv6ZoneController::balance_basis_() const {
+  // FNV-1a over the method, whether the shares are measured, and each loop's full
+  // flow to 0.2 l/min (a re-measure that moves it changes the physics).
+  uint32_t h = 2166136261u;
+  auto mix = [&h](uint32_t v) {
+    for (int b = 0; b < 4; b++) {
+      h ^= (v >> (8 * b)) & 0xFFu;
+      h *= 16777619u;
+    }
+  };
+  mix(BALANCE_METHOD_VERSION);
+  mix(balance_measured_ ? 1u : 0u);
+  xSemaphoreTake(snapshot_mutex_, portMAX_DELAY);
+  for (uint8_t i = 0; i < NUM_ZONES; i++) {
+    const float f = valve_curve_full_lmin_[i];
+    mix(balance_measured_ && std::isfinite(f) ? static_cast<uint32_t>(std::lround(f * 5.0f)) : 0u);
+  }
+  xSemaphoreGive(snapshot_mutex_);
+  return h;
 }
 
 void Lv6ZoneController::reset_balancing() {

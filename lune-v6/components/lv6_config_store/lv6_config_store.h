@@ -96,6 +96,9 @@ class Lv6ConfigStore : public esphome::Component {
   /// returns false from load (caller keeps boot default).
   void set_drivers_enabled_pref(bool enabled);
   bool load_drivers_enabled_pref(bool *out) const;
+  /// What the learned balance factors are deviations from (Lv6ZoneController::balance_basis_).
+  void set_balance_basis(uint32_t basis);
+  bool load_balance_basis(uint32_t *out) const;
 
   // Maintenance helpers
   bool erase_namespace();
@@ -129,6 +132,7 @@ class Lv6ConfigStore : public esphome::Component {
   /// Persisted motor-driver arm preference (u8 0/1). Separate from MotorConfig
   /// so toggling it does not bump MOTOR_CONFIG_VERSION / reset tuning.
   static constexpr const char *KEY_DRIVERS_EN = "drven";
+  static constexpr const char *KEY_BALANCE_BASIS = "balbasis";  ///< u32, own key: no section reset
   static constexpr uint64_t DIRTY_DELAY_US = 1000000ULL;  // 1 second
   // Dedicated NVS persistence task — keeps flash commits off the main loop
   // task so loopTask isn't blocked for the 50–500 ms a commit can take.

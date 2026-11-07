@@ -172,26 +172,30 @@ is the mean over the zones contributing this cycle:
 ē = mean_i( ē_i )   over eligible zones
 ```
 
-Balancing is **redistribution of a shared flow**, so we adapt on the *relative* error:
+The learned factor is the loop's **deviation from the physics** (the design share: UA /
+measured full flow, or the pipe model before Touch has measured). A room that settles `ē_i`
+below its own setpoint while getting its share loses `UA·(lift − ē_i)` where the physics gave
+it `UA·lift`, so it needs `(lift + ē_i)/lift` times the heat; a floor loop's heat grows about
+as √flow, so in flow (ln terms):
 
 ```
-adapt_i ← adapt_i + k · (ē_i − ē)
-adapt_i ← clamp(adapt_i, adapt_min, adapt_max)
+x_i  = 2 · ln((lift + ē_i) / lift)      // lift = DESIGN_LIFT_K, 15 K (room − outdoor)
+x̄    = mean_i(x_i)                      // common mode: the supply's, not the loop's
+ln f_i ← (1 − 1/168 h) · ln f_i + (x_i − x̄) / 24 h      // per update, |step| ≤ 0.05
+f_i  ∈ [1/1.33, 1.33]
 ```
 
-- A zone chronically colder than its peers (`ē_i > ē`) is flow-starved → `adapt_i` rises →
-  it gets a larger share.
-- A zone satisfied more easily than its peers (`ē_i < ē`) is over-served → `adapt_i` falls.
+- A loop that stays colder than its peers needs more than the physics gives it → `f_i` rises.
+- Subtracting `x̄` cancels the **common mode**: a whole house cold because the supply is too
+  low moves no factor (that is the heat source's job). Balancing only moves flow between loops.
+- Without evidence `f_i` leaks back to 1 over about a week, so it holds only a deviation that
+  keeps showing.
+- The factors are deviations from one physics: when it changes (the method, whether the
+  shares are measured, a loop's measured full flow by 0.2 l/min) they all start over at 1.
+  The basis is stored under its own NVS key (`balbasis`).
+- The factor runs in RAM and is stored when it has moved 0.005 (a few NVS writes a day).
 
-Using `(ē_i − ē)` cancels the **common mode**: if the whole house is cold because the supply
-temperature is too low, every `e_i` rises together, `(ē_i − ē) ≈ 0`, and balancing does
-**not** react (that is the heat source's / thermostat's job, not balancing's). The controller
-only ever moves flow *between* loops, never demands more total heat — so it cannot fight the
-heat-source loop or the room thermostats.
-
-`k` is small (e.g. `adapt_step` ≈ 0.02 per update) and updates run on a slow cadence
-(`adapt_interval_s`, default 1 h), so full convergence takes days — appropriate for a slab
-with hours of thermal lag. This is a set-and-forget process.
+`adapt_step`, `adapt_min` and `adapt_max` in the config are no longer used.
 
 ### 3. Sampling validity gates
 

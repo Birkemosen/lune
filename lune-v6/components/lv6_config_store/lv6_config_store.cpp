@@ -676,6 +676,29 @@ bool Lv6ConfigStore::load_drivers_enabled_pref(bool *out) const {
   return true;
 }
 
+void Lv6ConfigStore::set_balance_basis(uint32_t basis) {
+  nvs_handle_t handle;
+  if (nvs_open(NVS_NAMESPACE, NVS_READWRITE, &handle) != ESP_OK)
+    return;
+  esp_err_t err = nvs_set_u32(handle, KEY_BALANCE_BASIS, basis);
+  if (err == ESP_OK)
+    err = nvs_commit(handle);
+  nvs_close(handle);
+  if (err != ESP_OK)
+    ESP_LOGW(TAG, "Failed to persist balance basis: %s", esp_err_to_name(err));
+}
+
+bool Lv6ConfigStore::load_balance_basis(uint32_t *out) const {
+  if (out == nullptr)
+    return false;
+  nvs_handle_t handle;
+  if (nvs_open(NVS_NAMESPACE, NVS_READONLY, &handle) != ESP_OK)
+    return false;
+  const esp_err_t err = nvs_get_u32(handle, KEY_BALANCE_BASIS, out);
+  nvs_close(handle);
+  return err == ESP_OK;
+}
+
 // -----------------------------------------------------------------------------
 // Sensor pairing (BLE MAC + temp source) — persisted under its own key so it
 // survives the version-based discard of the main config blob on firmware update.

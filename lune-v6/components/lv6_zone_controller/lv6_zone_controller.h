@@ -358,9 +358,15 @@ class Lv6ZoneController : public esphome::Component {
   std::array<float, NUM_ZONES> adapt_err_ema_{};
   std::array<uint32_t, NUM_ZONES> adapt_samples_{};
   uint32_t last_adapt_ms_ = 0;
+  /// The learned factor as it runs (NaN: take the stored one); stored once it has moved.
+  std::array<float, NUM_ZONES> adapt_live_{NAN, NAN, NAN, NAN, NAN, NAN};
   // Set by reset_balancing() (dashboard task), consumed by the zone task — clears
   // the RAM accumulators without a cross-thread float race.
   std::atomic<bool> adapt_reset_pending_{false};
+  /// What the learned factors are deviations from: the method and each loop's
+  /// measured full flow. When it changes they start over at 1 (stored in NVS).
+  static constexpr uint32_t BALANCE_METHOD_VERSION = 2;  // 2: deviation from the physics
+  uint32_t balance_basis_() const;
 
   // Setpoint adjustments
   QueueHandle_t adj_queue_ = nullptr;

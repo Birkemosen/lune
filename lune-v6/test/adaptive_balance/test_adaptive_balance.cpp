@@ -28,75 +28,76 @@ static void expect(bool cond, const char *what) {
 
 static bool near(float a, float b, float eps = 1e-4f) { return std::fabs(a - b) < eps; }
 
-// ---------------------------------------------------------------------------
-// Common-mode rejection: when a zone's error equals the manifold mean, the
-// learned multiplier must not move (balancing only redistributes residuals).
-// ---------------------------------------------------------------------------
+// A room 0.7 K under its setpoint needs 15.7/15 of the heat, about 9 % more flow.
+static void test_flow_deviation() {
+  DeviationParams p;
+  expect(near(flow_deviation(0.0f, p), 0.0f), "deviation: at setpoint → none");
+  expect(near(std::exp(flow_deviation(0.7f, p)), (15.7f / 15.0f) * (15.7f / 15.0f), 1e-3f),
+         "deviation: 0.7 K cold → (15.7/15)² flow");
+  expect(flow_deviation(-0.5f, p) < 0.0f, "deviation: warm room needs less");
+  expect(std::isfinite(flow_deviation(-100.0f, p)), "deviation: absurd error stays finite");
+}
+
+// When a loop deviates like the others, the shortfall is the supply's, not the loop's.
 static void test_common_mode() {
-  AdaptParams p{0.02f, 0.5f, 1.5f};
-  expect(near(next_adapt(1.0f, 0.0f, 0.0f, p), 1.0f), "common-mode: equal zero error → no move");
-  expect(near(next_adapt(1.2f, 1.5f, 1.5f, p), 1.2f), "common-mode: whole house cold equally → no move");
-  expect(near(next_adapt(0.8f, -0.3f, -0.3f, p), 0.8f), "common-mode: whole house warm equally → no move");
+  DeviationParams p;
+  p.leak_h = 0.0f;
+  const float x = flow_deviation(1.5f, p);
+  expect(near(next_factor(1.0f, x, x, p), 1.0f), "common mode: whole house cold equally → no move");
+  expect(near(next_factor(1.2f, x, x, p), 1.2f), "common mode: learned factor kept");
 }
 
-// ---------------------------------------------------------------------------
-// A zone colder than its peers (e_i > e_mean) is flow-starved → factor rises.
-// One warmer (e_i < e_mean) is over-served → factor falls. Move is proportional
-// to (e_i − e_mean) while inside the per-step bound.
-// ---------------------------------------------------------------------------
-static void test_direction() {
-  AdaptParams p{0.02f, 0.5f, 1.5f};
-  // starved by 0.5 °C relative → +0.02·0.5 = +0.01
-  expect(near(next_adapt(1.0f, 0.7f, 0.2f, p), 1.01f), "starved zone: factor rises");
-  // over-served by 0.5 °C relative → −0.01
-  expect(near(next_adapt(1.0f, -0.3f, 0.2f, p), 0.99f), "over-served zone: factor falls");
+static void test_direction_and_rate() {
+  DeviationParams p;
+  p.leak_h = 0.0f;
+  const float x_cold = flow_deviation(0.7f, p), x_mean = flow_deviation(0.25f, p);
+  const float up = next_factor(1.0f, x_cold, x_mean, p);
+  expect(up > 1.0f, "cold loop: factor rises");
+  expect(near(std::log(up), (x_cold - x_mean) / 24.0f), "cold loop: takes 1/24 of the deviation per hour");
+  expect(next_factor(1.0f, flow_deviation(-0.3f, p), x_mean, p) < 1.0f, "warm loop: factor falls");
 }
 
-// ---------------------------------------------------------------------------
-// The per-update move is bounded by k regardless of how large the relative
-// error is (anti-windup by construction).
-// ---------------------------------------------------------------------------
-static void test_step_bounded() {
-  AdaptParams p{0.02f, 0.5f, 1.5f};
-  // huge positive relative error → move capped at +k
-  expect(near(next_adapt(1.0f, 10.0f, 0.0f, p), 1.02f), "step bound: large +error → +k only");
-  // huge negative relative error → move capped at −k
-  expect(near(next_adapt(1.0f, -10.0f, 0.0f, p), 0.98f), "step bound: large −error → −k only");
-  // exactly at the boundary (relative error = 1.0 °C, k = 0.02) → +k
-  expect(near(next_adapt(1.0f, 1.0f, 0.0f, p), 1.02f), "step bound: relative error 1.0 → +k");
+static void test_leak_to_physics() {
+  DeviationParams p;
+  float f = 1.3f;
+  for (int h = 0; h < 168; h++)
+    f = next_factor(f, 0.0f, 0.0f, p);
+  expect(f < 1.12f && f > 1.0f, "leak: no evidence for a week → most of the way back to 1");
 }
 
-// ---------------------------------------------------------------------------
-// The learned multiplier saturates at [adapt_min, adapt_max].
-// ---------------------------------------------------------------------------
-static void test_clamps() {
-  AdaptParams p{0.02f, 0.5f, 1.5f};
-  expect(near(next_adapt(1.5f, 10.0f, 0.0f, p), 1.5f), "clamp: at adapt_max stays at max");
-  expect(near(next_adapt(1.49f, 10.0f, 0.0f, p), 1.5f), "clamp: step into max is clamped");
-  expect(near(next_adapt(0.5f, -10.0f, 0.0f, p), 0.5f), "clamp: at adapt_min stays at min");
-  expect(near(next_adapt(0.51f, -10.0f, 0.0f, p), 0.5f), "clamp: step into min is clamped");
+static void test_bounds_and_step() {
+  DeviationParams p;
+  p.learn_h = 1.0f;
+  p.leak_h = 0.0f;
+  expect(near(std::log(next_factor(1.0f, 5.0f, 0.0f, p)), p.max_step), "step: one update moves at most max_step");
+  float f = 1.0f;
+  for (int i = 0; i < 100; i++)
+    f = next_factor(f, 5.0f, 0.0f, p);
+  expect(near(f, p.bound, 1e-3f), "bound: never past bound");
+  for (int i = 0; i < 100; i++)
+    f = next_factor(f, -5.0f, 0.0f, p);
+  expect(near(f, 1.0f / p.bound, 1e-3f), "bound: never under 1/bound");
 }
 
-// ---------------------------------------------------------------------------
-// Self-normalizing: over a 2-zone manifold the sum of corrections trends to
-// zero (one rises by the same amount the other falls), so total flow is held.
-// ---------------------------------------------------------------------------
-static void test_self_normalizing() {
-  AdaptParams p{0.02f, 0.5f, 1.5f};
-  float e_cold = 0.6f, e_warm = -0.6f;
-  float mean = (e_cold + e_warm) / 2.0f;  // = 0
-  float up = next_adapt(1.0f, e_cold, mean, p) - 1.0f;
-  float down = next_adapt(1.0f, e_warm, mean, p) - 1.0f;
-  expect(near(up + down, 0.0f), "self-normalizing: corrections sum to zero");
+// Two loops with opposite deviations move by the same ln amount: flow is moved, not added.
+static void test_redistributes() {
+  DeviationParams p;
+  p.leak_h = 0.0f;
+  const float a = flow_deviation(0.6f, p), b = flow_deviation(-0.6f, p);
+  const float mean = 0.5f * (a + b);
+  const float up = std::log(next_factor(1.0f, a, mean, p));
+  const float down = std::log(next_factor(1.0f, b, mean, p));
+  expect(near(up + down, 0.0f), "redistributes: ln moves sum to zero");
 }
 
 int main() {
   printf("=== Adaptive balancing step math tests ===\n");
+  test_flow_deviation();
   test_common_mode();
-  test_direction();
-  test_step_bounded();
-  test_clamps();
-  test_self_normalizing();
+  test_direction_and_rate();
+  test_leak_to_physics();
+  test_bounds_and_step();
+  test_redistributes();
   if (g_failures == 0) {
     printf("\nAll tests passed.\n");
     return 0;
