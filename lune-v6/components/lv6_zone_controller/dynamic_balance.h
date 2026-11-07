@@ -12,7 +12,10 @@
 // The manifold behaves like a statically balanced installation whose balancing
 // valves follow the rooms' load: every loop has flow, warm rooms hand their flow to
 // cold ones, and the manifold's total follows its most demanding room (full when
-// that room is a band below target). Loops close only when overheated. Flows are
+// that room is a band below target). Loops close only when overheated, and an
+// overheated loop reopens while the supply is colder than its room: the water then
+// carries the room's (or the floor's) surplus heat to the others through the
+// buffer (heat moving). Flows are
 // relative loop flows; each loop's valve curve turns them into openings. Pure C++,
 // host-testable.
 namespace lv6::dynamic_balance {
@@ -20,6 +23,8 @@ namespace lv6::dynamic_balance {
 static constexpr float G_MIN = 0.25f;           ///< Load factor at target + overheat margin
 static constexpr float Q_MIN = 0.10f;           ///< Smallest relative flow for an open loop
 static constexpr float REOPEN_HYST_C = 0.3f;    ///< Closed loop reopens this far below its limit
+static constexpr float MOVE_ON_K = 1.0f;        ///< Overheated loop moves heat when supply is this far below its room
+static constexpr float MOVE_OFF_K = 0.5f;       ///< ...until the supply is less than this below it
 
 struct Loop {
   bool enabled{false};
@@ -35,6 +40,7 @@ struct Params {
   float comfort_band_c{0.5f};
   float overheat_margin_c{1.0f};
   float absorb_band_c{0.0f};  ///< Extra headroom while Touch pre-buffers
+  float supply_c{NAN};        ///< Manifold supply temperature (NaN: unknown, no heat moving)
 };
 
 /// Design shares from measured loop flow: a loop needs flow in proportion to its heat
@@ -96,12 +102,22 @@ inline bool update_closed(bool closed, float temp_c, float setpoint_c, const Par
   return false;
 }
 
+/// Heat-moving latch for an overheated loop: on while the supply is MOVE_ON_K below
+/// the room, off once it is less than MOVE_OFF_K below.
+inline bool update_moving(bool moving, float temp_c, float supply_c) {
+  if (!std::isfinite(temp_c) || !std::isfinite(supply_c))
+    return false;
+  const float d = temp_c - supply_c;
+  return d >= MOVE_ON_K || (moving && d > MOVE_OFF_K);
+}
+
 struct Result {
   float q_ref{0.0f};    ///< Σ relative flow of the balanced manifold
   float load{0.0f};     ///< Manifold load: the largest load factor of an open loop
   float q_target{0.0f}; ///< (open loops' Q_ref, plus the closed loops' when a room is cold) × load
   float q_total{0.0f};  ///< Σ relative flow commanded
   float scale{0.0f};    ///< Common factor s
+  uint8_t moving{0};    ///< Overheated loops moving heat
 };
 
 /// Relative flows q_i (0..1) with Σ q = Q_ref × load, by water-filling: loops that
@@ -112,24 +128,32 @@ struct Result {
 /// manifolds a warm floor must not keep its full flow), while the split inside the
 /// manifold moves flow from warm rooms to cold ones. `closed[i]` loops get 0; their
 /// flow goes to the others only while an open room is at or below target, so a
-/// warm room is never handed the flow of closed ones. Openings in percent, through
-/// each loop's valve curve.
+/// warm room is never handed the flow of closed ones. A closed loop whose room is
+/// warmer than the supply (`moving[i]`, update_moving) gets its balanced flow (its
+/// design share, as in a statically balanced manifold) while an open room is at or
+/// below target: it gathers heat for them rather than giving it. Its flow comes on
+/// top, so the open loops keep the flows they had (closed loops' flow included).
+/// Openings in
+/// percent, through each loop's valve curve.
 template <size_t N>
 inline Result distribute(const Loop (&loops)[N], const Params &p, bool (&closed)[N],
-                         float (&opening_pct)[N], float (&q)[N]) {
+                         float (&opening_pct)[N], float (&q)[N], bool (&moving)[N]) {
   Result r;
   float w[N]{};
   float cap[N]{};
   float ref[N]{};
   bool any_open = false;
   bool any_cold = false;  // An open room at or below target (or without a temperature)
+  bool any_moving = false;
   for (size_t i = 0; i < N; i++) {
     q[i] = 0.0f;
     opening_pct[i] = 0.0f;
     if (!loops[i].enabled) {
       closed[i] = false;
+      moving[i] = false;
       continue;
     }
+    moving[i] = closed[i] && update_moving(moving[i], loops[i].temp_c, p.supply_c);
     cap[i] = valve_curve::flow_fraction(std::clamp(loops[i].max_opening_pct, 0.0f, 100.0f),
                                         loops[i].curve);
     const float share = std::max(0.0f, loops[i].design_share) *
@@ -147,8 +171,15 @@ inline Result distribute(const Loop (&loops)[N], const Params &p, bool (&closed)
       }
     }
   }
-  // Never all closed: keep the loop nearest its limit open at the minimum load.
-  if (!any_open) {
+  // Heat moves only while a room on the manifold wants it; otherwise it would go
+  // back into rooms that are already warm.
+  for (size_t i = 0; i < N; i++) {
+    moving[i] = moving[i] && any_cold;
+    any_moving = any_moving || moving[i];
+  }
+  // Never all closed: keep the loop nearest its limit open at the minimum load
+  // (a loop moving heat already keeps water, and the supply probe, moving).
+  if (!any_open && !any_moving) {
     size_t best = N;
     float best_surplus = 0.0f;
     for (size_t i = 0; i < N; i++) {
@@ -207,6 +238,10 @@ inline Result distribute(const Loop (&loops)[N], const Params &p, bool (&closed)
   }
 
   for (size_t i = 0; i < N; i++) {
+    if (moving[i] && closed[i] && ref[i] > 0.0f) {
+      q[i] = ref[i];
+      r.moving++;
+    }
     if (!(q[i] > 0.0f))
       continue;
     q[i] = std::min(std::max(q[i], Q_MIN), std::max(cap[i], Q_MIN));
@@ -215,6 +250,14 @@ inline Result distribute(const Loop (&loops)[N], const Params &p, bool (&closed)
     r.q_total += q[i];
   }
   return r;
+}
+
+/// Without heat moving (no supply temperature).
+template <size_t N>
+inline Result distribute(const Loop (&loops)[N], const Params &p, bool (&closed)[N],
+                         float (&opening_pct)[N], float (&q)[N]) {
+  bool moving[N]{};
+  return distribute(loops, p, closed, opening_pct, q, moving);
 }
 
 }  // namespace lv6::dynamic_balance

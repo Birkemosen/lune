@@ -2348,7 +2348,7 @@ void LV6Dashboard::handle_zones_(AsyncWebServerRequest *request) {
             "\"ua_learned_observed_days\":%s,\"ua_source\":\"%s\",\"ua_weight_override\":%.2f,"
             "\"ua_effective_w_per_k\":%s,\"tau_prior_h\":%s,"
             "\"ua_w_per_k\":%s,\"thermal_mass_kwh_per_k\":%s,\"tau_h\":%s,"
-            "\"return_c\":%s,\"loop_share_pct\":%s,\"absorb_state\":\"%s\","
+            "\"return_c\":%s,\"loop_share_pct\":%s,\"heat_moving\":%s,\"absorb_state\":\"%s\","
             "\"absorb_capacity_rank\":%s,\"max_offset_c\":%s,"
             "\"group_id\":\"%s\",\"group_role\":\"%s\","
             "\"wind_exposure\":%.2f,\"solar_gain\":%.2f,"
@@ -2363,6 +2363,7 @@ void LV6Dashboard::handle_zones_(AsyncWebServerRequest *request) {
             th.plausible && std::isfinite(th.tau_prior_h) ? tau : "null",
             th.plausible ? ua : "null", th.plausible ? mass : "null",
             th.plausible && std::isfinite(th.tau_prior_h) ? tau : "null", return_c, share,
+            this->zone_controller_ && this->zone_controller_->is_moving_heat(i) ? "true" : "false",
             absorb_state, rank, max_offset, group_id, lv6::group_role_to_string(role),
             snap->zones[i].wind_exposure, snap->zones[i].solar_gain,
             lv6::pipe_inner_diameter_mm(snap->zones[i].pipe_type), snap->zones[i].pipe_spacing_mm,

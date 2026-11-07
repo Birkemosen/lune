@@ -272,6 +272,46 @@ static void test_measured_shares() {
   expect(measured_shares(some, ua, part, out) && out[2] == 0.0f, "measured shares: a disabled loop needs no measurement");
 }
 
+static void test_heat_moving() {
+  // 1. sal 2026-11-07 afternoon: Stue Repo in the sun far over its limit, supply 25 C
+  // from the buffer, Josephine below target.
+  Params p{0.5f, 1.0f, 0.0f};
+  Loop loops[6];
+  const float temps[6] = {22.3f, 22.4f, 22.6f, 30.5f, 22.5f, 22.5f};
+  make_loops(loops, temps, 22.5f);
+  bool closed[6]{};
+  for (int i = 0; i < 6; i++)
+    closed[i] = update_closed(closed[i], loops[i].temp_c, loops[i].setpoint_c, p);
+  float open0[6], q0[6], open[6], q[6];
+  bool closed0[6];
+  for (int i = 0; i < 6; i++) closed0[i] = closed[i];
+  distribute(loops, p, closed0, open0, q0);  // no supply temperature: no heat moving
+  p.supply_c = 25.0f;
+  bool moving[6]{};
+  const Result r = distribute(loops, p, closed, open, q, moving);
+  expect(closed[3] && moving[3] && r.moving == 1, "moving: the sunny room's loop reopens");
+  expect_near(q[3], SHARES[3], 1e-3f, "moving: it gets its balanced share");
+  for (int i = 0; i < 6; i++)
+    if (i != 3)
+      expect_near(q[i], q0[i], 1e-4f, "moving: the other loops keep their flows");
+
+  // Hysteresis: 0.7 K below keeps it moving, but does not start it.
+  loops[3].temp_c = 25.7f;
+  distribute(loops, p, closed, open, q, moving);
+  expect(closed[3] && moving[3], "moving: holds above MOVE_OFF_K");
+  expect(!update_moving(false, 25.7f, 25.0f), "moving: does not start below MOVE_ON_K");
+  expect(!update_moving(true, 25.4f, 25.0f), "moving: stops below MOVE_OFF_K");
+
+  // No room wants heat: nothing moves.
+  const float warm[6] = {23.5f, 23.4f, 23.6f, 30.5f, 23.5f, 23.5f};
+  make_loops(loops, warm, 22.5f);
+  bool c2[6]{}, m2[6]{};
+  for (int i = 0; i < 6; i++)
+    c2[i] = update_closed(c2[i], loops[i].temp_c, loops[i].setpoint_c, p);
+  const Result r2 = distribute(loops, p, c2, open, q, m2);
+  expect(r2.moving == 0 && q[3] == 0.0f, "moving: not while every room is warm");
+}
+
 int main() {
   test_measured_shares();
   test_zone_area();
@@ -285,6 +325,7 @@ int main() {
   test_closed_flow_skips_warm_rooms();
   test_warm_manifold_throttles();
   test_never_all_closed();
+  test_heat_moving();
   test_house_balance_and_caps();
   std::printf("All dynamic balance tests passed.\n");
   return 0;

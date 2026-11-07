@@ -1356,6 +1356,7 @@ void Lv6ZoneController::run_cycle_() {
       reopen_[i] = {};
     } else {
       hp_closed_[i] = false;
+      hp_moving_[i] = false;
       position = control_mode_policy::normal_position(state, raw_algo, cfg.control.maintenance_base_pct,
                                                       cfg.zones[i].max_opening_pct);
       // Anticipated reopening (reopen_policy.h): a loop held closed because its room
@@ -1420,16 +1421,25 @@ void Lv6ZoneController::run_cycle_() {
     for (uint8_t i = 0; i < NUM_ZONES; i++)
       loops[i].curve = valve_curve_[i];
     xSemaphoreGive(snapshot_mutex_);
-    const dynamic_balance::Params dbp{cfg.control.comfort_band_c, cfg.control.hp_overheat_margin_c, 0.0f};
+    dynamic_balance::Params dbp{cfg.control.comfort_band_c, cfg.control.hp_overheat_margin_c, 0.0f};
+    dbp.supply_c = read_manifold_flow_();
     bool closed[NUM_ZONES];
+    bool moving[NUM_ZONES];
     float openings[NUM_ZONES];
     float q[NUM_ZONES];
-    for (uint8_t i = 0; i < NUM_ZONES; i++)
+    for (uint8_t i = 0; i < NUM_ZONES; i++) {
       closed[i] = hp_closed_[i];
-    const auto db = dynamic_balance::distribute(loops, dbp, closed, openings, q);
+      moving[i] = hp_moving_[i];
+    }
+    const auto db = dynamic_balance::distribute(loops, dbp, closed, openings, q, moving);
+    for (uint8_t i = 0; i < NUM_ZONES; i++)
+      if (moving[i] != hp_moving_[i])
+        ESP_LOGI(TAG, "Zone %d: %s heat (room %.1f C, supply %.1f C)", i + 1,
+                 moving[i] ? "moving" : "stopped moving", zone_temps[i], dbp.supply_c);
     xSemaphoreTake(snapshot_mutex_, portMAX_DELAY);
     for (uint8_t i = 0; i < NUM_ZONES; i++) {
       hp_closed_[i] = closed[i];
+      hp_moving_[i] = moving[i];
       target_positions[i] = openings[i];
       snapshots_[i].valve_position_pct = openings[i];
       snapshots_[i].was_overheated = closed[i];

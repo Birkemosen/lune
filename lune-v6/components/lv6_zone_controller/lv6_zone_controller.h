@@ -234,6 +234,8 @@ class Lv6ZoneController : public esphome::Component {
   enum class HpPhase : uint8_t { UNKNOWN = 0, RUNNING = 1, PRESTART = 2, IDLE = 3 };
   void set_hp_phase(HpPhase phase, uint32_t ttl_ms);
   HpPhase get_hp_phase() const;
+  /// Overheated loop reopened to move heat (room warmer than the supply).
+  bool is_moving_heat(uint8_t zone) const { return zone < NUM_ZONES && hp_moving_[zone]; }
   static const char *hp_phase_name(HpPhase phase);
   float get_house_balance(uint8_t zone) const;
   /// Valve curve (opening where flow starts / is full) used by dynamic balancing.
@@ -341,6 +343,7 @@ class Lv6ZoneController : public esphome::Component {
   HpPhase hp_phase_{HpPhase::UNKNOWN};
   // «Close above target» latch per zone (hp_close_above_c; reopens 0.2 °C below).
   std::array<bool, NUM_ZONES> hp_closed_{};
+  std::array<bool, NUM_ZONES> hp_moving_{};  ///< Overheated loop moving heat (dynamic_balance.h)
   // Anticipated reopening of warm-closed loops (reopen_policy.h; runtime only).
   std::array<reopen_policy::State, NUM_ZONES> reopen_{};
   std::array<reopen_policy::Trend, NUM_ZONES> reopen_trend_{};

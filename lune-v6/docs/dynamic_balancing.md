@@ -60,6 +60,13 @@ Per control cycle, for each enabled loop *i*:
    - a room above target + band + margin (+ the absorb band while Touch pre-buffers) is
      **closed** (latched, reopens 0.3 °C below that limit). This is the only reason a
      loop closes.
+   - **moving heat:** a closed loop reopens while the manifold's supply is at least
+     1 K colder than its room (until less than 0.5 K), and only while an open room on
+     the manifold is at or below target. The water then gathers the room's surplus
+     (sun, a stove, a warm slab) and carries it through the buffer to the rooms that
+     want it. It gets its design share `min(1, P_i · H_i)`, on top of the others' flows,
+     so the open loops keep theirs. When the heat source runs the supply is warmer than
+     the room and the loop closes again by itself. Without a supply probe nothing moves.
    - no temperature: `g = 1` (the loop behaves as statically balanced).
 3. **Total follows the most demanding room.** The reference flow is what the balanced
    manifold would pass with every room at its design share:
@@ -77,8 +84,8 @@ Per control cycle, for each enabled loop *i*:
 4. **Opening** through the loop's valve curve (below), clamped to the zone's maximum
    opening. An open loop gets at least `Q_MIN` (10 %) of full flow. A maximum opening
    below the curve's full-flow point caps the loop's flow; Q_ref uses the same cap.
-5. **Never all closed.** If every loop would be closed, the one nearest its limit stays
-   open at `G_MIN`.
+5. **Never all closed.** If every loop would be closed (and none is moving heat), the one
+   nearest its limit stays open at `G_MIN`.
 
 The valve deadband (`min_movement_pct`) keeps small changes from moving the motors.
 

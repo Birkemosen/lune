@@ -350,6 +350,7 @@ older clients ignore):
 - Legacy aliases `ua_w_per_k` / `thermal_mass_kwh_per_k` / `tau_h` remain when present
 - `return_c` — zone return probe °C when mapped, else null.
 - `loop_share_pct` — flow-allocator share of total opening (0–100), Σ ≈ 100 across enabled zones.
+- `heat_moving` — heat-pump mode: an overheated loop reopened because its room is warmer than the supply, so it carries heat to the other rooms (`docs/dynamic_balancing.md`).
 - `absorb_capacity_rank` — 1 = highest thermal absorb capacity (group-level §7).
 - `absorb_state` — `idle` | `reactive` | `armed`.
 
@@ -397,6 +398,7 @@ Returns all zones:
         "warnings": [],
         "return_c": null,
         "loop_share_pct": 18.5,
+        "heat_moving": false,
         "absorb_state": "idle",
         "absorb_capacity_rank": 2
       }
