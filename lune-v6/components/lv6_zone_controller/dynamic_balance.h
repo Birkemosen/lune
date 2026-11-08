@@ -268,6 +268,21 @@ inline Result distribute(const Loop (&loops)[N], const Params &p, bool (&closed)
   return r;
 }
 
+/// Full-flow latch. A loop asked for all it can carry (q at its cap) opens to its
+/// maximum opening rather than to where its curve says full flow starts: the curve's
+/// full point moves with the seat reference and the other loops' pressure, and a
+/// loop that should get full flow must not get less (Stue, 1. sal: full at 27.5 %,
+/// held at 28 %). Released when q falls below FULL_OPEN_RELEASE_Q, so a loop
+/// hovering at its cap does not swing between the two openings.
+static constexpr float FULL_OPEN_RELEASE_Q = 0.85f;
+inline bool update_full_open(bool latched, float q, float cap) {
+  if (!(q > 0.0f) || !(cap > 0.0f))
+    return false;
+  if (q >= cap - 1e-3f)
+    return true;
+  return latched && q >= std::min(FULL_OPEN_RELEASE_Q, cap - 0.05f);
+}
+
 /// Without heat moving (no supply temperature).
 template <size_t N>
 inline Result distribute(const Loop (&loops)[N], const Params &p, bool (&closed)[N],

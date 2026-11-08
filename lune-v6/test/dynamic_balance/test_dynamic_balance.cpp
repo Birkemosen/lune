@@ -348,7 +348,17 @@ static void test_idle_static_balance() {
   expect_near(q[4], SHARES[4], 1e-3f, "idle: warm open rooms keep their share too");
 }
 
+static void test_full_open_latch() {
+  expect(update_full_open(false, 1.0f, 1.0f), "full: q at cap latches");
+  expect(!update_full_open(false, 0.95f, 1.0f), "full: below cap does not latch");
+  expect(update_full_open(true, 0.90f, 1.0f), "full: holds above the release");
+  expect(!update_full_open(true, 0.80f, 1.0f), "full: releases below it");
+  expect(update_full_open(false, 0.6f, 0.6f), "full: a max opening's cap counts as full");
+  expect(!update_full_open(true, 0.0f, 1.0f), "full: a closed loop is not full");
+}
+
 int main() {
+  test_full_open_latch();
   test_measured_shares();
   test_zone_area();
   test_valve_curve();
