@@ -172,6 +172,7 @@ void Lv6ConfigStore::setup() {
   initialized_ = true;
   migrate_legacy_nvs_namespace_();
   load_config_();
+  read_balance_basis_();
 
   ESP_LOGI(TAG, "Config store initialized");
 }
@@ -330,6 +331,7 @@ void Lv6ConfigStore::flush_now() {
     esp_timer_stop(dirty_timer_);
   save_pending_ = false;
   save_config_();
+  write_balance_basis_();
 }
 
 void Lv6ConfigStore::update_zone(uint8_t zone, const ZoneConfig &zone_cfg) {
@@ -676,27 +678,61 @@ bool Lv6ConfigStore::load_drivers_enabled_pref(bool *out) const {
   return true;
 }
 
+// The zone task (PSRAM stack) asks for the basis; flash access from it aborts
+// (cache_utils: stack must be internal while the cache is off). So the basis is
+// read once in setup, served from RAM, and written by the NVS task.
 void Lv6ConfigStore::set_balance_basis(uint32_t basis) {
-  nvs_handle_t handle;
-  if (nvs_open(NVS_NAMESPACE, NVS_READWRITE, &handle) != ESP_OK)
-    return;
-  esp_err_t err = nvs_set_u32(handle, KEY_BALANCE_BASIS, basis);
-  if (err == ESP_OK)
-    err = nvs_commit(handle);
-  nvs_close(handle);
-  if (err != ESP_OK)
-    ESP_LOGW(TAG, "Failed to persist balance basis: %s", esp_err_to_name(err));
+  if (mutex_ != nullptr)
+    xSemaphoreTake(mutex_, portMAX_DELAY);
+  balance_basis_ = basis;
+  balance_basis_known_ = true;
+  balance_basis_dirty_ = true;
+  if (mutex_ != nullptr)
+    xSemaphoreGive(mutex_);
+  mark_dirty();
 }
 
 bool Lv6ConfigStore::load_balance_basis(uint32_t *out) const {
   if (out == nullptr)
     return false;
+  if (mutex_ != nullptr)
+    xSemaphoreTake(mutex_, portMAX_DELAY);
+  const bool known = balance_basis_known_;
+  *out = balance_basis_;
+  if (mutex_ != nullptr)
+    xSemaphoreGive(mutex_);
+  return known;
+}
+
+void Lv6ConfigStore::read_balance_basis_() {
   nvs_handle_t handle;
   if (nvs_open(NVS_NAMESPACE, NVS_READONLY, &handle) != ESP_OK)
-    return false;
-  const esp_err_t err = nvs_get_u32(handle, KEY_BALANCE_BASIS, out);
+    return;
+  uint32_t v = 0;
+  if (nvs_get_u32(handle, KEY_BALANCE_BASIS, &v) == ESP_OK) {
+    balance_basis_ = v;
+    balance_basis_known_ = true;
+  }
   nvs_close(handle);
-  return err == ESP_OK;
+}
+
+void Lv6ConfigStore::write_balance_basis_() {
+  if (!balance_basis_dirty_)
+    return;
+  xSemaphoreTake(mutex_, portMAX_DELAY);
+  const uint32_t basis = balance_basis_;
+  balance_basis_dirty_ = false;
+  xSemaphoreGive(mutex_);
+  nvs_handle_t handle;
+  esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &handle);
+  if (err == ESP_OK) {
+    err = nvs_set_u32(handle, KEY_BALANCE_BASIS, basis);
+    if (err == ESP_OK)
+      err = nvs_commit(handle);
+    nvs_close(handle);
+  }
+  if (err != ESP_OK)
+    ESP_LOGW(TAG, "Failed to persist balance basis: %s", esp_err_to_name(err));
 }
 
 // -----------------------------------------------------------------------------
@@ -1259,6 +1295,7 @@ void Lv6ConfigStore::nvs_task_loop_() {
     }
     save_pending_ = false;
     save_config_();
+    write_balance_basis_();
   }
 }
 

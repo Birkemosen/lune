@@ -166,6 +166,8 @@ class Lv6ConfigStore : public esphome::Component {
   static void dirty_timer_cb_(void *arg);
   static void nvs_task_entry_(void *arg);
   void nvs_task_loop_();
+  void read_balance_basis_();
+  void write_balance_basis_();
 
   DeviceConfig config_{};
   SemaphoreHandle_t mutex_ = nullptr;
@@ -173,6 +175,9 @@ class Lv6ConfigStore : public esphome::Component {
   TaskHandle_t nvs_task_ = nullptr;
   esp_timer_handle_t dirty_timer_ = nullptr;
   volatile bool save_pending_ = false;
+  uint32_t balance_basis_ = 0;
+  bool balance_basis_known_ = false;
+  volatile bool balance_basis_dirty_ = false;
   bool initialized_ = false;
 };
 
