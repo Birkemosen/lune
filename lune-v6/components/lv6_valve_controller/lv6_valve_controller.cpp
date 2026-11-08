@@ -745,6 +745,14 @@ MoveCeilingInputs Lv6ValveController::build_ceiling_inputs_(
                                : motor_cfg_.hmip_vdmot_runtime_limit_s) * 1000u;
     in.bootstrap_counts = is_open ? motor_cfg_.open_runtime_limit_counts
                                   : motor_cfg_.close_runtime_limit_counts;
+    // A learning close returns over the open leg it just counted plus the seat;
+    // a long free travel needs more than the fixed ceiling (Toilet, 1. sal: 2200
+    // open, wall past 2601). Still within the plunger's travel budget.
+    if (learning_active_ && !is_open && cal_seat_expected_ > 0)
+      in.bootstrap_counts = std::max(
+          in.bootstrap_counts,
+          std::min(LEARN_CLOSE_CEILING_MAX_COUNTS,
+                   static_cast<uint32_t>(cal_seat_expected_ * LEARN_CLOSE_CEILING_FACTOR)));
   } else {
     in.bootstrap_ms = motor_cfg_.generic_profile_runtime_limit_s * 1000u;
     in.bootstrap_counts = 0;  // no count ceiling for an uncharacterised actuator
@@ -3356,8 +3364,17 @@ void Lv6ValveController::detect_endstop_() {
       if (seat_trusted)
         seat_expected = trusted_seat_expected_();
       seat_short_margin = seat_short_margin_(seat_expected);
-      evidence.seated_start = stroke > 0 && seat_where_expected(seat_moved, seat_expected, seat_margin,
-                                                                seat_short_margin, seat_trusted);
+      // A position that is only a hint (restart, fault) says little about how far
+      // the wall is: past pin contact at the wall's current the valve is seated,
+      // however far it ran (Toilet: the seal pressed 191 counts from a 0 % hint,
+      // window 146, a false BLOCKED after every restart).
+      const bool wall_after_pin = !seat_trusted && current_dir_ == MotorDirection::CLOSE &&
+                                  rev33_backend_ != nullptr && stroke_.contact_seen() &&
+                                  cap_ladder_cached_.seat_ma > 0.0f &&
+                                  current_filtered_ma_ >= cap_ladder_cached_.seat_ma;
+      evidence.seated_start = stroke > 0 && (seat_where_expected(seat_moved, seat_expected, seat_margin,
+                                                                 seat_short_margin, seat_trusted) ||
+                                             wall_after_pin);
       if (seat_trusted && seat_stop_short(seat_moved, seat_expected, seat_short_margin))
         evidence.endpoint_window = false;
     }

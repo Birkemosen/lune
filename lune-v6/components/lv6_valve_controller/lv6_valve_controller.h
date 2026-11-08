@@ -693,6 +693,8 @@ class Lv6ValveController : public esphome::Component {
   static constexpr uint32_t SEAL_PRESS_MIN_RIPPLES = 700;
   static constexpr float SEAL_PRESS_STROKE_FRACTION = 0.35f;
   static constexpr uint32_t SEAL_CEILING_MARGIN_RIPPLES = 40;
+  static constexpr float LEARN_CLOSE_CEILING_FACTOR = 1.25f;      ///< × the learning open leg
+  static constexpr uint32_t LEARN_CLOSE_CEILING_MAX_COUNTS = 3000;  ///< plunger travel budget
   uint32_t seal_count_{0};   ///< count where the seal bore this close; 0 = not yet
   MotorDirection fault_dir_[NUM_ZONES]{};   ///< direction of the run that faulted
   bool back_off_allowed_[NUM_ZONES]{};      ///< one timed run away from the fault
