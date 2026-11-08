@@ -76,7 +76,10 @@ Per control cycle, for each enabled loop *i*:
    `q_i = min(1, s · P_i · H_i · g_i)` are scaled with one common factor `s` so that
    `Σ q_i = Q_ref · L` (water-filling: loops that reach 1.0 stay there and the rest
    share what is left). Inside the manifold warm rooms give up flow and cold rooms take
-   it while the sum stays put; a manifold whose rooms are all warm passes less in total.
+   it. A room above its target gets at most `P_i · H_i · g_i` (its own share × load,
+   `s ≤ 1` for it): once the cold rooms are at full flow, what they cannot take is not
+   handed to warm rooms, and the sum falls short of `Q_ref · L`. A manifold whose rooms
+   are all warm passes less in total.
    That matters while the manifolds are not balanced against each other: a warm floor
    must not keep its full flow because the other floor needs heat. A closed loop's flow
    goes to the others only while an open room is at or below target; when every open

@@ -124,7 +124,9 @@ struct Result {
 
 /// Relative flows q_i (0..1) with Σ q = Q_ref × load, by water-filling: loops that
 /// reach their cap (full flow, or what the max opening passes) stay there, the
-/// others share the rest in proportion to their weight.
+/// others share the rest in proportion to their weight. A room above its target
+/// gets at most its design share × its own load factor, so Σ q falls short of the
+/// target when the cold rooms are at full flow.
 /// The load is the largest load factor among open loops, so the most demanding
 /// room decides how much the whole manifold passes (without balancing between
 /// manifolds a warm floor must not keep its full flow), while the split inside the
@@ -214,7 +216,13 @@ inline Result distribute(const Loop (&loops)[N], const Params &p, bool (&closed)
       q_base += ref[i];
   r.q_target = q_base * r.load;
 
-  // Water-filling for Σ min(cap_i, s·w_i) = q_target.
+  // Water-filling for Σ min(cap_i, s·w_i) = q_target. A room above its target is
+  // held at its own share × load factor (s ≤ 1 for it): the flow a cold room cannot
+  // take (it is at full flow) is not handed to warm rooms (1. sal 2026-11-08:
+  // Stue at 100 % pushed Soveværelse, 0.9 K warm, to 51 %).
+  float limit[N]{};
+  for (size_t i = 0; i < N; i++)
+    limit[i] = loops[i].temp_c > loops[i].setpoint_c ? std::min(cap[i], w[i]) : cap[i];
   bool capped[N]{};
   float remaining = r.q_target;
   for (size_t pass = 0; pass < N + 1; pass++) {
@@ -230,10 +238,10 @@ inline Result distribute(const Loop (&loops)[N], const Params &p, bool (&closed)
     for (size_t i = 0; i < N; i++) {
       if (capped[i] || !(w[i] > 0.0f))
         continue;
-      if (s * w[i] >= cap[i]) {
+      if (s * w[i] >= limit[i]) {
         capped[i] = true;
-        q[i] = cap[i];
-        remaining -= cap[i];
+        q[i] = limit[i];
+        remaining -= limit[i];
         newly_capped = true;
       }
     }

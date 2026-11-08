@@ -91,11 +91,12 @@ static void test_warm_rooms_give_flow_to_cold() {
   float open[6], q[6];
   const Result r = distribute(loops, p, closed, open, q);
   expect_near(r.load, 1.0f, 1e-4f, "redistribute: a cold room keeps the manifold at full load");
-  expect_near(sum6(q), r.q_ref, 1e-3f, "redistribute: total stays at Q_ref");
-  expect(open[0] > 35.0f + 1.0f, "redistribute: cold room above its design share");
-  expect(open[4] <= 100.0f, "redistribute: index never above 100");
+  expect_near(open[0], 100.0f, 0.01f, "redistribute: cold room takes up to full flow");
+  const float g = load_factor(21.8f, 21.0f, p);
   for (int i = 1; i < 6; i++)
-    expect(open[i] > 0.0f, "redistribute: warm rooms keep flow");
+    expect_near(q[i], std::max(SHARES[i] * g, Q_MIN), 1e-3f,
+                "redistribute: warm rooms keep their share × load, not the cold room's surplus");
+  expect(sum6(q) < r.q_ref, "redistribute: what the cold room cannot take is not passed on");
 }
 
 static void test_closed_flow_goes_to_others() {
@@ -142,8 +143,10 @@ static void test_warm_manifold_throttles() {
   const Result r = distribute(loops, p, closed, open, q);
   expect_near(r.load, load_factor(22.5f, 22.0f, p), 1e-4f, "warm floor: load = the coolest room");
   expect(r.load < 0.6f, "warm floor: well below full load");
-  expect(sum6(q) >= r.q_ref * r.load - 1e-3f && sum6(q) <= r.q_ref * r.load + Q_MIN,
-         "warm floor: total = Q_ref × load (+ the Q_MIN floor)");
+  for (int i = 0; i < 6; i++)
+    expect_near(q[i], std::max(SHARES[i] * load_factor(temps[i], 22.0f, p), Q_MIN), 1e-3f,
+                "warm floor: every room at its share × its own load");
+  expect(sum6(q) <= r.q_ref * r.load + Q_MIN, "warm floor: total at most Q_ref × load (+ the Q_MIN floor)");
   expect(open[4] < 100.0f, "warm floor: index loop no longer fully open");
   for (int i = 0; i < 6; i++)
     expect(open[i] > 0.0f, "warm floor: every loop keeps flow");
