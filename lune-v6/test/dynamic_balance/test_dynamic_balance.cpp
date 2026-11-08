@@ -217,7 +217,7 @@ static void test_distribute_through_curve() {
   bool closed[6]{};
   float open[6], q[6];
   distribute(loops, p, closed, open, q);
-  expect_near(open[4], 40.0f, 0.01f, "curve: index loop at the full-flow opening, not 100 %");
+  expect_near(open[4], 8.0f + 1.1f * 32.0f, 0.01f, "curve: index loop at 110 % on its curve, not 100 %");
   expect_near(open[3], 8.0f + 0.85f * 32.0f, 0.01f, "curve: share mapped through the curve");
   expect(open[5] > 8.0f, "curve: smallest loop above where flow starts");
 
@@ -348,17 +348,24 @@ static void test_idle_static_balance() {
   expect_near(q[4], SHARES[4], 1e-3f, "idle: warm open rooms keep their share too");
 }
 
-static void test_full_open_latch() {
-  expect(update_full_open(false, 1.0f, 1.0f), "full: q at cap latches");
-  expect(!update_full_open(false, 0.95f, 1.0f), "full: below cap does not latch");
-  expect(update_full_open(true, 0.90f, 1.0f), "full: holds above the release");
-  expect(!update_full_open(true, 0.80f, 1.0f), "full: releases below it");
-  expect(update_full_open(false, 0.6f, 0.6f), "full: a max opening's cap counts as full");
-  expect(!update_full_open(true, 0.0f, 1.0f), "full: a closed loop is not full");
+static void test_full_flow_margin() {
+  const Params p{0.5f, 1.0f, 0.0f};
+  Loop loops[6];
+  const float temps[6] = {20, 20, 20, 20, 20, 20};
+  make_loops(loops, temps, 21.0f);
+  loops[4].curve = {2.5f, 27.5f};  // Stue Repo
+  bool closed[6]{};
+  float open[6], q[6];
+  distribute(loops, p, closed, open, q);
+  expect_near(q[4], 1.0f, 1e-4f, "full margin: index loop at full flow");
+  expect_near(open[4], 2.5f + 1.1f * 25.0f, 1e-3f, "full margin: opens to 110 % on its curve");
+  loops[4].max_opening_pct = 29.0f;
+  distribute(loops, p, closed, open, q);
+  expect_near(open[4], 29.0f, 1e-3f, "full margin: never past the max opening");
 }
 
 int main() {
-  test_full_open_latch();
+  test_full_flow_margin();
   test_measured_shares();
   test_zone_area();
   test_valve_curve();

@@ -58,4 +58,12 @@ inline float opening_for(float q, const Curve &c) {
   return c.start_pct + std::min(q, 1.0f) * (c.full_pct - c.start_pct);
 }
 
+/// As opening_for, but q above 1 continues the line past the full point (q = 1.1 is
+/// 10 % of the span beyond it). For a margin on full flow; capped at 100 %.
+inline float opening_for_extended(float q, const Curve &c) {
+  if (!(q > 0.0f))
+    return 0.0f;
+  return std::min(100.0f, c.start_pct + q * (c.full_pct - c.start_pct));
+}
+
 }  // namespace lv6::valve_curve

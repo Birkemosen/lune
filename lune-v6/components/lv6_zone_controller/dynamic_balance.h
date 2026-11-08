@@ -21,7 +21,8 @@
 namespace lv6::dynamic_balance {
 
 static constexpr float G_MIN = 0.25f;           ///< Load factor at target + overheat margin
-static constexpr float Q_MIN = 0.10f;           ///< Smallest relative flow for an open loop
+static constexpr float Q_MIN = 0.10f;
+static constexpr float FULL_FLOW_MARGIN = 1.10f;  ///< A loop at full flow opens to 110 % on its curve           ///< Smallest relative flow for an open loop
 static constexpr float REOPEN_HYST_C = 0.3f;    ///< Closed loop reopens this far below its limit
 static constexpr float MOVE_ON_K = 0.5f;        ///< Default: overheated loop moves heat when supply is this far below its room
 static constexpr float MOVE_HYST_K = 0.3f;      ///< ...until the supply is less than (on − this) below it
@@ -262,25 +263,14 @@ inline Result distribute(const Loop (&loops)[N], const Params &p, bool (&closed)
       continue;
     q[i] = std::min(std::max(q[i], Q_MIN), std::max(cap[i], Q_MIN));
     const float max_open = std::clamp(loops[i].max_opening_pct, 0.0f, 100.0f);
-    opening_pct[i] = std::min(valve_curve::opening_for(q[i], loops[i].curve), max_open);
+    // Full flow opens to 110 % on the measured curve, not to its full point: the
+    // point moves with the seat and the other loops' pressure (Stue, 1. sal: full
+    // at 27.5 %, held at 28 %). Not to 100 % stroke: a long travel adds drift.
+    const float open_q = q[i] >= cap[i] - 1e-3f ? FULL_FLOW_MARGIN : q[i];
+    opening_pct[i] = std::min(valve_curve::opening_for_extended(open_q, loops[i].curve), max_open);
     r.q_total += q[i];
   }
   return r;
-}
-
-/// Full-flow latch. A loop asked for all it can carry (q at its cap) opens to its
-/// maximum opening rather than to where its curve says full flow starts: the curve's
-/// full point moves with the seat reference and the other loops' pressure, and a
-/// loop that should get full flow must not get less (Stue, 1. sal: full at 27.5 %,
-/// held at 28 %). Released when q falls below FULL_OPEN_RELEASE_Q, so a loop
-/// hovering at its cap does not swing between the two openings.
-static constexpr float FULL_OPEN_RELEASE_Q = 0.85f;
-inline bool update_full_open(bool latched, float q, float cap) {
-  if (!(q > 0.0f) || !(cap > 0.0f))
-    return false;
-  if (q >= cap - 1e-3f)
-    return true;
-  return latched && q >= std::min(FULL_OPEN_RELEASE_Q, cap - 0.05f);
 }
 
 /// Without heat moving (no supply temperature).

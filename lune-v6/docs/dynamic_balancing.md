@@ -86,9 +86,10 @@ Per control cycle, for each enabled loop *i*:
    room is warm, `Q_ref` counts only the open loops, so the last open room on a warm
    floor keeps its own share × load instead of the whole floor's flow.
 4. **Opening** through the loop's valve curve (below), clamped to the zone's maximum
-   opening. A loop asked for all it can carry (`q_i` at its cap) opens to its maximum
-   opening, not to the curve's full point, and follows the curve again below 85 % (the
-   full point moves with the seat and the other loops' pressure; full flow must be full). An open loop gets at least `Q_MIN` (10 %) of full flow. A maximum opening
+   opening. A loop asked for all it can carry (`q_i` at its cap) opens to 110 % on its
+   curve (10 % of the span past the full point): the full point moves with the seat and
+   the other loops' pressure, and full flow must be full. Not to 100 % stroke, which only
+   adds travel and drift. An open loop gets at least `Q_MIN` (10 %) of full flow. A maximum opening
    below the curve's full-flow point caps the loop's flow; Q_ref uses the same cap.
 5. **Never all closed.** If every loop would be closed (and none is moving heat), the one
    nearest its limit stays open at `G_MIN`.

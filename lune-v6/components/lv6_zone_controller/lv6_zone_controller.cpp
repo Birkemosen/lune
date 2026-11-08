@@ -1451,18 +1451,6 @@ void Lv6ZoneController::run_cycle_() {
       ESP_LOGI(TAG, "Dynamic balance: %s", dbp.idle ? "heat source idle, static balance" : "load law");
       hp_idle_balance_ = dbp.idle;
     }
-    // Full flow means fully open (to the max opening), whatever the curve says.
-    for (uint8_t i = 0; i < NUM_ZONES; i++) {
-      const float max_open = std::clamp(loops[i].max_opening_pct, 0.0f, 100.0f);
-      const float cap = valve_curve::flow_fraction(max_open, loops[i].curve);
-      const bool full = loops[i].enabled && openings[i] > 0.0f &&
-                        dynamic_balance::update_full_open(hp_full_[i], q[i], cap);
-      if (full != hp_full_[i])
-        ESP_LOGI(TAG, "Zone %d: %s", i + 1, full ? "full flow, opening fully" : "below full flow, following the curve");
-      hp_full_[i] = full;
-      if (full)
-        openings[i] = max_open;
-    }
     for (uint8_t i = 0; i < NUM_ZONES; i++)
       if (moving[i] != hp_moving_[i])
         ESP_LOGI(TAG, "Zone %d: %s heat (room %.1f C, supply %.1f C)", i + 1,
