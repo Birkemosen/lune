@@ -76,6 +76,13 @@ Per control cycle, for each enabled loop *i*:
    `s ≤ 1` for it): once the cold rooms are at full flow, what they cannot take is not
    handed to warm rooms, and the sum falls short of `Q_ref · L`. A manifold whose rooms
    are all warm passes less in total.
+   While another loop is at full flow, no loop gets more than `1.25 · P_i · H_i` either
+   (`SHARE_OVER_MAX`). Otherwise, once the long loops are full, the rest of `Q_ref · L`
+   lands on the one loop that can still open, however short: its water passes the floor
+   almost uncooled (low ΔT) and takes pressure from the full loops (1. sal 2026-11-13:
+   Toilet, share 0.15, at 92 % with ΔT 1.4 K while Laura, 3 K cold, was at 100 %). The
+   manifold then passes less. A cold room alone among warm ones (no loop at full flow)
+   still opens fully.
    That matters while the manifolds are not balanced against each other: a warm floor
    must not keep its full flow because the other floor needs heat. A closed loop's flow
    goes to the others only while an open room is at or below target; when every open

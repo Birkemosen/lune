@@ -26,6 +26,7 @@ static constexpr float FULL_FLOW_MARGIN = 1.10f;  ///< A loop at full flow opens
 static constexpr float REOPEN_HYST_C = 0.3f;    ///< Closed loop reopens this far below its limit
 static constexpr float MOVE_ON_K = 0.5f;        ///< Default: overheated loop moves heat when supply is this far below its room
 static constexpr float MOVE_HYST_K = 0.3f;      ///< ...until the supply is less than (on − this) below it
+static constexpr float SHARE_OVER_MAX = 1.25f;  ///< A loop never gets more than this × its design share
 
 struct Loop {
   bool enabled{false};
@@ -201,38 +202,67 @@ inline Result distribute(const Loop (&loops)[N], const Params &p, bool (&closed)
   // held at its own share × load factor (s ≤ 1 for it): the flow a cold room cannot
   // take (it is at full flow) is not handed to warm rooms (1. sal 2026-11-08:
   // Stue at 100 % pushed Soveværelse, 0.9 K warm, to 51 %).
-  float limit[N]{};
-  for (size_t i = 0; i < N; i++)
-    limit[i] = loops[i].temp_c > loops[i].setpoint_c ? std::min(cap[i], w[i]) : cap[i];
-  bool capped[N]{};
-  float remaining = r.q_target;
-  for (size_t pass = 0; pass < N + 1; pass++) {
-    float w_free = 0.0f;
-    for (size_t i = 0; i < N; i++)
-      if (!capped[i])
-        w_free += w[i];
-    if (!(w_free > 0.0f) || !(remaining > 0.0f))
-      break;
-    const float s = remaining / w_free;
-    r.scale = s;
-    bool newly_capped = false;
+  // While another loop is at full flow, no loop takes more than SHARE_OVER_MAX × its share
+  // either: once the long loops are full, the rest of the target would otherwise land on
+  // the one loop that can still open, however short (1. sal 2026-11-13: Toilet, share 0.15,
+  // at 92 % with ΔT 1.4 K while Laura, 3 K cold, was at 100 %). That water passes the floor
+  // almost uncooled and takes pressure from the full loops; the manifold passes less
+  // instead. A cold room alone among warm ones (nothing at full flow) still opens fully.
+  auto fill = [&](bool share_cap) {
+    float limit[N]{};
     for (size_t i = 0; i < N; i++) {
-      if (capped[i] || !(w[i] > 0.0f))
-        continue;
-      if (s * w[i] >= limit[i]) {
-        capped[i] = true;
-        q[i] = limit[i];
-        remaining -= limit[i];
-        newly_capped = true;
-      }
+      const float own = share_cap ? std::min(cap[i], ref[i] * SHARE_OVER_MAX) : cap[i];
+      limit[i] = loops[i].temp_c > loops[i].setpoint_c ? std::min(own, w[i]) : own;
+      q[i] = 0.0f;
     }
-    if (!newly_capped) {
+    bool capped[N]{};
+    float remaining = r.q_target;
+    for (size_t pass = 0; pass < N + 1; pass++) {
+      float w_free = 0.0f;
       for (size_t i = 0; i < N; i++)
         if (!capped[i])
-          q[i] = s * w[i];
-      break;
+          w_free += w[i];
+      if (!(w_free > 0.0f) || !(remaining > 0.0f))
+        break;
+      const float s = remaining / w_free;
+      r.scale = s;
+      bool newly_capped = false;
+      for (size_t i = 0; i < N; i++) {
+        if (capped[i] || !(w[i] > 0.0f))
+          continue;
+        if (s * w[i] >= limit[i]) {
+          capped[i] = true;
+          q[i] = limit[i];
+          remaining -= limit[i];
+          newly_capped = true;
+        }
+      }
+      if (!newly_capped) {
+        for (size_t i = 0; i < N; i++)
+          if (!capped[i])
+            q[i] = s * w[i];
+        break;
+      }
+    }
+  };
+  fill(false);
+  bool full = false, over = false;
+  for (size_t i = 0; i < N; i++) {
+    if (!(q[i] > 0.0f))
+      continue;
+    const bool at_cap = q[i] >= cap[i] - 1e-3f;
+    if (q[i] > ref[i] * SHARE_OVER_MAX + 1e-3f) {
+      // A loop at full flow that its share would nearly give anyway is not the short one.
+      if (at_cap && ref[i] * SHARE_OVER_MAX >= cap[i] * 0.9f)
+        full = true;
+      else
+        over = true;
+    } else if (at_cap) {
+      full = true;
     }
   }
+  if (full && over)
+    fill(true);
 
   for (size_t i = 0; i < N; i++) {
     if (moving[i] && closed[i] && ref[i] > 0.0f) {
