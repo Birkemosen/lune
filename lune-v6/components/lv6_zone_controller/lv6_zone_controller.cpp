@@ -1752,12 +1752,20 @@ float Lv6ZoneController::read_zone_return_temperature_(uint8_t zone) const {
 }
 
 bool Lv6ZoneController::zone_has_return_probe_(uint8_t zone) const {
+  // The zone's probe is its return probe when it is set as one, or when the room
+  // temperature comes from elsewhere (BLE, external): then the probe on the loop can only
+  // measure the water (1. sal: probes 1–6 on the loops, rooms from BLE, role never set).
+  // Never the manifold's own flow or return probe.
   if (zone >= NUM_ZONES || !config_store_)
     return false;
-  if (config_store_->get_zone_config(zone).probe_role != ProbeRole::RETURN_WATER)
+  const ProbeConfig probes = config_store_->get_probe_config();
+  const int8_t probe = probes.zone_return_probe[zone];
+  if (probe < 0 || probe >= MAX_PROBES || probe_sensors_[probe] == nullptr)
     return false;
-  const int8_t probe = config_store_->get_probe_config().zone_return_probe[zone];
-  return probe >= 0 && probe < MAX_PROBES && probe_sensors_[probe] != nullptr;
+  if (probe == probes.manifold_flow_probe || probe == probes.manifold_return_probe)
+    return false;
+  return config_store_->get_zone_config(zone).probe_role == ProbeRole::RETURN_WATER ||
+         config_store_->get_zone_temp_source(zone) != TempSource::LOCAL_PROBE;
 }
 
 // ΔT learning (dt_balance.h). Only loops whose return probe is configured as one learn;
@@ -1773,7 +1781,7 @@ void Lv6ZoneController::step_dt_balance_(const DeviceConfig &cfg, const float (&
     // A synced secondary opens with its primary: it has no flow of its own to learn.
     in[i].enabled = cfg.zones[i].enabled && cfg.zones[i].sync_to_zone < 0;
     in[i].has_return = in[i].enabled && zone_has_return_probe_(i);
-    in[i].return_c = in[i].has_return ? read_zone_return_temperature_(i) : NAN;
+    in[i].return_c = in[i].has_return ? read_probe_(config_store_->get_probe_config().zone_return_probe[i]) : NAN;
     in[i].room_c = zone_temps[i];
     in[i].setpoint_c = zone_setpoints[i];
     in[i].opening_pct = openings[i];
@@ -1807,6 +1815,12 @@ void Lv6ZoneController::step_dt_balance_(const DeviceConfig &cfg, const float (&
              dt_state_.f[0], dt_state_.f[1], dt_state_.f[2], dt_state_.f[3], dt_state_.f[4], dt_state_.f[5],
              r.mean_dt, static_cast<unsigned>(r.eligible));
   }
+}
+
+float Lv6ZoneController::read_probe_(int8_t probe) const {
+  if (probe < 0 || probe >= MAX_PROBES || probe_sensors_[probe] == nullptr || !probe_sensors_[probe]->has_state())
+    return NAN;
+  return probe_sensors_[probe]->state;
 }
 
 float Lv6ZoneController::read_manifold_flow_() const {

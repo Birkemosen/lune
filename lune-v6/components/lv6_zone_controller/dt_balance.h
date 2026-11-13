@@ -18,9 +18,9 @@
 //
 // ΔT is compared per unit of the flow the loop was given relative to its share
 // (ΔT · q / share): a cold room's loop at full flow or a warm room's turned-down
-// loop is not mistaken for a hydraulic error. Only loops with a return probe that
-// is configured as one (zone probe role «return water») learn; the others keep the
-// pipe model (factor 1). Each step keeps the compared loops' geometric mean, so the
+// loop is not mistaken for a hydraulic error. Only loops with a return probe
+// configured for them learn (Lv6ZoneController::zone_has_return_probe_); the others
+// keep the pipe model (factor 1). Each step keeps the compared loops' geometric mean, so the
 // learning loops stay around 1 and the others keep their place. Pure C++, host-testable.
 namespace lv6::dt_balance {
 

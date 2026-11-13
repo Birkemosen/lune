@@ -133,8 +133,10 @@ The pipe model's prior (`P_i`) knows the loop's area, spacing and pipe, not its 
 length, fittings, valve insert or how much the floor gives off. A loop's return
 temperature does: low ΔT means more flow than the floor uses (water back almost as warm
 as it left), high ΔT a starved loop. In adaptive balancing every loop **with a return
-probe configured as one** (zone probe role «return water») learns a factor `D_i` on its
-share (`dt_balance.h`); loops without one keep `D_i = 1`. A manifold with only its flow
+probe configured for it** learns a factor `D_i` on its share (`dt_balance.h`): a probe
+assigned to the zone that is not the room's temperature (the room comes from BLE or an
+external sensor, or the probe role is «return water») and not the manifold's own flow or
+return probe. Loops without one keep `D_i = 1`. A manifold with only its flow
 and return probes (stueetage) does not learn.
 
 - **When:** Touch says the heat pump runs space heat (phase `running`, not hot water) and

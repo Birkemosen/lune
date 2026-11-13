@@ -359,6 +359,7 @@ class Lv6ZoneController : public esphome::Component {
   uint32_t dt_save_ms_{0};
   bool dt_loaded_{false};
   bool zone_has_return_probe_(uint8_t zone) const;
+  float read_probe_(int8_t probe) const;
   void step_dt_balance_(const DeviceConfig &cfg, const float (&q)[NUM_ZONES], const bool (&closed)[NUM_ZONES],
                         const float (&openings)[NUM_ZONES], const std::array<float, NUM_ZONES> &zone_temps,
                         const std::array<float, NUM_ZONES> &zone_setpoints);
