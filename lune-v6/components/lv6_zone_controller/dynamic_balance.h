@@ -16,13 +16,13 @@
 // overheated loop reopens while the supply is colder than its room: the water then
 // carries the room's (or the floor's) surplus heat to the others through the
 // buffer (heat moving). Flows are
-// relative loop flows; each loop's valve curve turns them into openings. Pure C++,
+// relative loop flows; the valve model (valve_curve.h) turns them into openings. Pure C++,
 // host-testable.
 namespace lv6::dynamic_balance {
 
 static constexpr float G_MIN = 0.25f;           ///< Load factor at target + overheat margin
 static constexpr float Q_MIN = 0.10f;
-static constexpr float FULL_FLOW_MARGIN = 1.10f;  ///< A loop at full flow opens to 110 % on its curve           ///< Smallest relative flow for an open loop
+static constexpr float FULL_FLOW_MARGIN = 1.10f;  ///< A loop at full flow opens past the model's full point (to its max opening)
 static constexpr float REOPEN_HYST_C = 0.3f;    ///< Closed loop reopens this far below its limit
 static constexpr float MOVE_ON_K = 0.5f;        ///< Default: overheated loop moves heat when supply is this far below its room
 static constexpr float MOVE_HYST_K = 0.3f;      ///< ...until the supply is less than (on − this) below it
@@ -34,7 +34,7 @@ struct Loop {
   float temp_c{NAN};
   float setpoint_c{NAN};
   float max_opening_pct{100.0f};
-  valve_curve::Curve curve{};  ///< Opening ↔ relative flow
+  valve_curve::Curve curve{};  ///< Opening ↔ relative flow (the fixed model)
 };
 
 struct Params {
@@ -45,31 +45,6 @@ struct Params {
   bool idle{false};           ///< Heat source not running (Touch): static balance, see distribute
   float move_on_k{MOVE_ON_K}; ///< Supply this far below the room starts heat moving
 };
-
-/// Design shares from measured loop flow: a loop needs flow in proportion to its heat
-/// demand (W/K) and can carry its measured full flow (l/min), so its share of full flow
-/// is demand / full_lmin, normalised so the most demanding loop is 1. Replaces the
-/// friction estimate once Touch has measured every enabled loop. Returns false (out
-/// untouched) unless every enabled loop has a demand and a measured full flow.
-template <size_t N>
-inline bool measured_shares(const bool (&enabled)[N], const float (&demand)[N], const float (&full_lmin)[N],
-                            float (&out)[N]) {
-  float need[N]{};
-  float max_need = 0.0f;
-  for (size_t i = 0; i < N; i++) {
-    if (!enabled[i])
-      continue;
-    if (!(std::isfinite(demand[i]) && demand[i] > 0.0f && std::isfinite(full_lmin[i]) && full_lmin[i] > 0.0f))
-      return false;
-    need[i] = demand[i] / full_lmin[i];
-    max_need = std::max(max_need, need[i]);
-  }
-  if (!(max_need > 0.0f))
-    return false;
-  for (size_t i = 0; i < N; i++)
-    out[i] = enabled[i] ? need[i] / max_need : 0.0f;
-  return true;
-}
 
 /// Load factor from the room's error: 1 at least one band below target, G_MIN at
 /// target + margin, linear between. No temperature → 1 (statically balanced).
@@ -139,7 +114,7 @@ struct Result {
 /// below target: it gathers heat for them rather than giving it. Its flow comes on
 /// top, so the open loops keep the flows they had (closed loops' flow included).
 /// Openings in
-/// percent, through each loop's valve curve.
+/// percent, through the valve model.
 ///
 /// `p.idle` (the heat source is not running): the manifold is statically balanced.
 /// Every open loop gets its design share (load factor 1), closed loops hand nothing
@@ -263,9 +238,7 @@ inline Result distribute(const Loop (&loops)[N], const Params &p, bool (&closed)
       continue;
     q[i] = std::min(std::max(q[i], Q_MIN), std::max(cap[i], Q_MIN));
     const float max_open = std::clamp(loops[i].max_opening_pct, 0.0f, 100.0f);
-    // Full flow opens to 110 % on the measured curve, not to its full point: the
-    // point moves with the seat and the other loops' pressure (Stue, 1. sal: full
-    // at 27.5 %, held at 28 %). Not to 100 % stroke: a long travel adds drift.
+    // Full flow opens to the loop's max opening (the margin takes it past 100 %).
     const float open_q = q[i] >= cap[i] - 1e-3f ? FULL_FLOW_MARGIN : q[i];
     opening_pct[i] = std::min(valve_curve::opening_for_extended(open_q, loops[i].curve), max_open);
     r.q_total += q[i];

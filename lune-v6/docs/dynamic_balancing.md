@@ -46,11 +46,7 @@ Per control cycle, for each enabled loop *i*:
    existing resistance-aware model (area × heat loss, floor, pipe, loop length),
    normalised so the most demanding loop is 1.0. A zone without an area (a new zone; 0 = not set) counts
    with the mean area of the board's other zones until it is set, and V6 raises «area not set».
-   Once Touch has measured every enabled loop's full flow (`full_lmin`, below), the
-   measurement replaces the resistance model: the prior is the room's heat demand (UA,
-   W/K) divided by the loop's full flow, normalised the same way (`dynamic_balance.h`,
-   `measured_shares`). `/api/v1/zones` reports which is in use (`balance_basis`:
-   `measured` or `model`). Touch's house balance uses the same quantity between boards.
+   `/api/v1/zones` reports `balance_basis: "model"`.
    The learned correction is the adaptive
    balancing multiplier (slow, hourly, relative to the other loops). Touch's house
    balance `H_i` (≤ 1) multiplies it.
@@ -104,41 +100,23 @@ Per control cycle, for each enabled loop *i*:
 
 The valve deadband (`min_movement_pct`) keeps small changes from moving the motors.
 
-### Valve curve
+### Valve opening
 
-Manifold valve inserts open quickly. Measured on the author's two manifolds (pump flow
-against single valve moves, a week of data): moving a valve from 0 to 6–7 % changed
-nothing, the flow arrives between about 10 and 35 %, and moves between 35 and 80 % changed
-the pump flow by 0–0.6 l/min. Taking the opening as linear therefore left warm loops at
-15–30 % passing most of their flow, and the secondary flow rose to about 150 % of the
-heat pump's.
+The opening is the pin's position in % of its learned travel: 0 % in the seat, 100 % the
+pin free. A loop that is to give heat opens at least 10 % (past the seat's dead zone,
+about 0.2 mm), and above that flow is taken as linear in opening (`valve_curve.h`). The
+room loop closes on temperature, so the valve's quick-opening characteristic is absorbed
+by the control rather than modelled. `/api/v1/zones` reports `opening_mm`: the opening ×
+the learned travel in motor counts × 0.0011 mm per count (Laura, 1. sal, 2026-11-13: 900
+counts from the seat measured 1.0 mm with a caliper).
 
-Each loop has a curve with two points: `start_pct` (flow begins, default 15 %) and
-`full_pct` (full flow, default 50 %), linear between. Relative flow `q` becomes the
-opening `start + q · (full − start)`; the index loop sits at `full_pct`, not 100 %.
-
-The default comes from Touch's measurement of 12 loops on two manifolds: flow starts at
-4–29 % (median 15.5 %, the two manifolds 24 % and 11 %) and is full at 27–48 % (median
-34 %). One curve cannot fit them all, and a start set too low (a loop without flow) or a
-full point set too low (the index loop short of flow) is worse than a curve that is too
-wide, so the default is wide. Measured against the 12 curves, 15 → 50 % leaves a loop
-without flow in 8 % of the cases (8 → 40 %: 23 %) and never starves the index loop.
-
-The curves are stored in their own NVS key (`vcurve`) and shown per zone in
-`/api/v1/zones` (`valve_curve`). `POST /api/v1/zones/{n}/valve-curve` with `start_pct`
-and/or `full_pct` sets one (web UI write gate, or Touch's authority key).
-
-Learning the curves needs the circulation pump's flow, which only Touch sees (and both
-manifolds share the pump), so Touch measures them and writes them here with the time
-(`measured_epoch_s`; a manual change clears it), together with the loop's full flow in l/min
-(`full_lmin`, the pump-flow step from closed to open with every other loop closed,
-converted to a pump head of 3 m), which Touch uses for the split per manifold and V6 for the design shares. For the measurement Touch uses
-`POST /api/v1/valve-test` (authority key): `zone` 1..6 goes to `position_pct`, every other
-loop goes to `others_pct` when given (Touch sends 0 so each loop is measured alone: a
-loop passes far more with its neighbours closed, 1.1 vs 1.9 l/min for one loop at the
-same head) or else holds the position it had when the test began (`zone` 0 = none), the deadband
-is bypassed and adaptive balancing pauses. It ends after `ttl_s` (30..900) or with
-`POST /api/v1/valve-test/stop`. Touch's side: `lune-coordinator`, `valve_probe.h`.
+Until 2026-11 each loop had a curve measured by Touch from the circulation pump's flow
+(`start_pct`, `full_pct`, `full_lmin`). The pump computes its flow from power and speed,
+far from the manifold, and could not tell 1 mm of lift from 2 mm: every measured curve put
+full flow at about 1 mm of a 2–3 mm stroke, the control never opened past it, and rooms
+with long or high-loss loops fell behind (Laura at 51 % = 1.0 mm, 19.8 °C against 22 °C).
+The curves, their NVS key, `POST /api/v1/zones/{n}/valve-curve` and the measured design
+shares are gone. `POST /api/v1/valve-test` stays: Touch uses it to flush air from a loop.
 
 ### Heat demand for Touch
 

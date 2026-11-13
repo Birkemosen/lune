@@ -201,7 +201,6 @@ class Lv6ZoneController : public esphome::Component {
   void reset_balancing();
   /// Recompute balance factors on the next cycle (e.g. after a balancing mode change).
   void request_balance_recalc() { balance_dirty_ = true; }
-  bool balance_measured() const { return balance_measured_; }
 
   bool is_preheat_absorbing() const { return preheat_absorb_active_.load(); }
   /// Armed absorb window from coordinator (P5). Runtime-only; never survives reboot.
@@ -241,11 +240,6 @@ class Lv6ZoneController : public esphome::Component {
   /// Valve curve (opening where flow starts / is full) used by dynamic balancing.
   /// Persisted with when Touch measured it (0 = not measured); sanitised.
   /// full_lmin: the loop's full flow measured by Touch (l/min, NAN = unknown).
-  void set_valve_curve(uint8_t zone, valve_curve::Curve curve, uint32_t measured_epoch_s,
-                       float full_lmin = NAN);
-  valve_curve::Curve get_valve_curve(uint8_t zone) const;
-  uint32_t get_valve_curve_measured(uint8_t zone) const;
-  float get_valve_curve_full_lmin(uint8_t zone) const;
   /// Valve test (Touch measures valve curves from the pump's flow): every loop holds
   /// the position it has when the test starts, or goes to `others_pct` when that is
   /// given; `zone` (0..5, or −1 = none) goes to `position_pct`. Ends after ttl_ms or
@@ -325,12 +319,8 @@ class Lv6ZoneController : public esphome::Component {
   /// clamped (dynamic balancing normalises it).
   std::array<float, NUM_ZONES> design_share_{};
   bool balance_dirty_ = true;
-  bool balance_measured_ = false;  ///< Design shares from measured loop flow (Touch)
   std::array<float, NUM_ZONES> house_balance_{1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f};
   std::array<uint32_t, NUM_ZONES> house_balance_until_ms_{};
-  std::array<valve_curve::Curve, NUM_ZONES> valve_curve_{};  // guarded by snapshot_mutex_
-  std::array<uint32_t, NUM_ZONES> valve_curve_measured_{};    // guarded by snapshot_mutex_
-  std::array<float, NUM_ZONES> valve_curve_full_lmin_{NAN, NAN, NAN, NAN, NAN, NAN};  // guarded by snapshot_mutex_
   struct ValveTest {
     bool active{false};
     bool captured{false};  ///< hold positions taken
@@ -365,7 +355,7 @@ class Lv6ZoneController : public esphome::Component {
   std::atomic<bool> adapt_reset_pending_{false};
   /// What the learned factors are deviations from: the method and each loop's
   /// measured full flow. When it changes they start over at 1 (stored in NVS).
-  static constexpr uint32_t BALANCE_METHOD_VERSION = 2;  // 2: deviation from the physics
+  static constexpr uint32_t BALANCE_METHOD_VERSION = 3;  // 2: deviation from the physics; 3: no measured loop flow
   uint32_t balance_basis_() const;
 
   // Setpoint adjustments

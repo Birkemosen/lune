@@ -135,11 +135,7 @@ struct DashboardSnapshot {
   char              absorb_end_reason[16]{};   ///< "" | disarm | expired
   float             zone_loop_share_pct[6]{};
   float             zone_house_balance[6]{};  ///< Touch house balance in effect (1.0 = none)
-  float             zone_valve_curve_start_pct[6]{};  ///< Valve curve: flow starts
-  float             zone_valve_curve_full_pct[6]{};   ///< Valve curve: full flow
-  uint32_t          zone_valve_curve_measured[6]{};   ///< When Touch measured it (0 = not)
-  float             zone_valve_curve_full_lmin[6]{NAN, NAN, NAN, NAN, NAN, NAN};  ///< Measured full flow, l/min
-  float             zone_flow_pct[6]{};               ///< Loop flow, % of full (valve curve)
+  float             zone_opening_mm[6]{NAN, NAN, NAN, NAN, NAN, NAN};  ///< Pin lift at the opening, mm (valve_curve::opening_mm)
   uint8_t           zone_absorb_capacity_rank[6]{};
   float             zone_relative_kv[6]{};  ///< Kv at current commanded opening
   float             zone_static_factor[6]{};     ///< Resistance-aware static prior (0..1)

@@ -637,14 +637,11 @@ void LV6Dashboard::update_snapshot_() {
       if (this->zone_controller_) {
         s.zone_loop_share_pct[i] = this->zone_controller_->get_loop_share_pct(i);
         s.zone_house_balance[i] = this->zone_controller_->get_house_balance(i);
-        const auto vc = this->zone_controller_->get_valve_curve(i);
-        s.zone_valve_curve_start_pct[i] = vc.start_pct;
-        s.zone_valve_curve_full_pct[i] = vc.full_pct;
-        s.zone_valve_curve_measured[i] = this->zone_controller_->get_valve_curve_measured(i);
-        s.zone_valve_curve_full_lmin[i] = this->zone_controller_->get_valve_curve_full_lmin(i);
-        s.zone_flow_pct[i] = std::isfinite(s.zone_valve_pct[i])
-                                 ? 100.0f * lv6::valve_curve::flow_fraction(s.zone_valve_pct[i], vc)
-                                 : NAN;
+        // Pin travel in counts: the learned working range, else the stroke past free travel.
+        const float range = s.motor_working_ripple[i] > 0.0f
+                                ? s.motor_working_ripple[i]
+                                : s.motor_open_ripple[i] - (s.motor_pin_free_ripple[i] > 0.0f ? s.motor_pin_free_ripple[i] : 0.0f);
+        s.zone_opening_mm[i] = lv6::valve_curve::opening_mm(s.zone_valve_pct[i], range);
         s.zone_absorb_capacity_rank[i] = this->zone_controller_->get_absorb_capacity_rank(i);
         s.zone_relative_kv[i] =
             this->zone_controller_->get_relative_kv(i, s.zone_valve_pct[i]);
@@ -655,11 +652,7 @@ void LV6Dashboard::update_snapshot_() {
       } else {
         s.zone_loop_share_pct[i] = NAN;
         s.zone_house_balance[i] = 1.0f;
-        s.zone_valve_curve_start_pct[i] = NAN;
-        s.zone_valve_curve_full_pct[i] = NAN;
-        s.zone_valve_curve_measured[i] = 0;
-        s.zone_valve_curve_full_lmin[i] = NAN;
-        s.zone_flow_pct[i] = NAN;
+        s.zone_opening_mm[i] = NAN;
         s.zone_absorb_capacity_rank[i] = 0;
         s.zone_relative_kv[i] = NAN;
         s.zone_static_factor[i] = NAN;
@@ -1601,16 +1594,6 @@ void LV6Dashboard::handle_state_(AsyncWebServerRequest *request) {
     if (!append( "\"%s\":{\"value\":%s},", ZONE_VALVE_KEYS[i], num_buf)) return;
   }
 
-  // --- relative loop flow through the valve curve (0 decimals) ---
-  static const char *const ZONE_FLOW_KEYS[6] = {
-    "sensor-zone_1_flow_pct", "sensor-zone_2_flow_pct", "sensor-zone_3_flow_pct",
-    "sensor-zone_4_flow_pct", "sensor-zone_5_flow_pct", "sensor-zone_6_flow_pct",
-  };
-  for (uint8_t i = 0; i < 6; i++) {
-    format_float_token(num_buf, sizeof(num_buf), snap->zone_flow_pct[i], 0);
-    if (!append( "\"%s\":{\"value\":%s},", ZONE_FLOW_KEYS[i], num_buf)) return;
-  }
-
   // --- preheat advance ---
   static const char *const PREHEAT_KEYS[6] = {
     "sensor-zone_1_preheat_advance_c", "sensor-zone_2_preheat_advance_c", "sensor-zone_3_preheat_advance_c",
@@ -2233,7 +2216,7 @@ void LV6Dashboard::handle_zones_(AsyncWebServerRequest *request) {
           node_id, name_esc, place_esc, static_cast<unsigned>(lv6::NUM_ZONES),
           this->zone_controller_ ? lv6::Lv6ZoneController::hp_phase_name(this->zone_controller_->get_hp_phase())
                                  : "unknown",
-          this->zone_controller_ && this->zone_controller_->balance_measured() ? "measured" : "model");
+          "model");
   for (uint8_t i = 0; i < lv6::NUM_ZONES && off + 1200 < JSON_BUF_SIZE; i++) {
     char temp[24], setpoint[24], valve[24], preload[24];
     format_float_token(temp, sizeof(temp), snap->zone_temp_c[i], 1);
@@ -2283,8 +2266,8 @@ void LV6Dashboard::handle_zones_(AsyncWebServerRequest *request) {
       snprintf(rank, sizeof(rank), "null");
     const float max_open = std::max(1.0f, snap->zones[i].max_opening_pct);
     format_float_token(opening_ratio, sizeof(opening_ratio), snap->zone_valve_pct[i] / max_open, 3);
-    char flow_tok[16];
-    format_float_token(flow_tok, sizeof(flow_tok), snap->zone_flow_pct[i], 0);
+    char mm_tok[16];
+    format_float_token(mm_tok, sizeof(mm_tok), snap->zone_opening_mm[i], 1);
     const char *absorb_state =
         (snap->absorb_mode == 2 || (this->zone_controller_ && this->zone_controller_->is_zone_absorb_armed(i))) ? "armed" : (snap->absorb_mode == 1 ? "reactive" : "idle");
     const int8_t primary = sync_roots[i];
@@ -2307,10 +2290,10 @@ void LV6Dashboard::handle_zones_(AsyncWebServerRequest *request) {
             "\",\"friendly_name\":\"");
     append_json_escaped(buf, JSON_BUF_SIZE, off, snap->zones[i].name);
     appendf(buf, JSON_BUF_SIZE, off,
-            "\",\"enabled\":%s,\"temperature_c\":%s,\"setpoint_c\":%s,\"valve_pct\":%s,\"flow_pct\":%s,"
+            "\",\"enabled\":%s,\"temperature_c\":%s,\"setpoint_c\":%s,\"valve_pct\":%s,\"opening_mm\":%s,"
             "\"opening_ratio\":%s,\"preheat_c\":%s,\"state\":\"%s\",\"temp_source\":\"%s\","
             "\"fresh\":%s,\"group_primary\":%u,\"group_members\":[",
-            snap->zones[i].enabled ? "true" : "false", temp, setpoint, valve, flow_tok, opening_ratio, preload,
+            snap->zones[i].enabled ? "true" : "false", temp, setpoint, valve, mm_tok, opening_ratio, preload,
             snap->zone_state[i], temp_source_to_dashboard_str(snap->zone_temp_source[i]),
             std::isfinite(snap->zone_temp_c[i]) ? "true" : "false",
             static_cast<unsigned>(primary + 1));
@@ -2332,11 +2315,6 @@ void LV6Dashboard::handle_zones_(AsyncWebServerRequest *request) {
       snprintf(thick_tok, sizeof(thick_tok), "%.1f", snap->zones[i].active_thickness_cm);
     else
       snprintf(thick_tok, sizeof(thick_tok), "null");
-    char full_lmin_tok[16];
-    if (std::isfinite(snap->zone_valve_curve_full_lmin[i]))
-      snprintf(full_lmin_tok, sizeof(full_lmin_tok), "%.2f", snap->zone_valve_curve_full_lmin[i]);
-    else
-      snprintf(full_lmin_tok, sizeof(full_lmin_tok), "null");
     char tau_learned_tok[16];
     if (std::isfinite(snap->zones[i].tau_learned_h) && snap->zones[i].tau_learned_h > 0.0f)
       snprintf(tau_learned_tok, sizeof(tau_learned_tok), "%.1f", snap->zones[i].tau_learned_h);
@@ -2361,7 +2339,7 @@ void LV6Dashboard::handle_zones_(AsyncWebServerRequest *request) {
             "\"group_id\":\"%s\",\"group_role\":\"%s\","
             "\"wind_exposure\":%.2f,\"solar_gain\":%.2f,"
             "\"pipe_inner_mm\":%.0f,\"pipe_spacing_mm\":%.0f,\"supply_pipe_length_m\":%.1f,"
-            "\"house_balance\":%.2f,\"valve_curve\":{\"start_pct\":%.1f,\"full_pct\":%.1f,\"measured_epoch_s\":%lu,\"full_lmin\":%s},"
+            "\"house_balance\":%.2f,"
             "\"warnings\":[",
             snap->zones[i].area_m2, static_cast<unsigned>(snap->zones[i].exterior_walls & 0x0F),
             lv6::slab_type_to_string(snap->zones[i].slab_type), thick_tok,
@@ -2375,9 +2353,7 @@ void LV6Dashboard::handle_zones_(AsyncWebServerRequest *request) {
             absorb_state, rank, max_offset, group_id, lv6::group_role_to_string(role),
             snap->zones[i].wind_exposure, snap->zones[i].solar_gain,
             lv6::pipe_inner_diameter_mm(snap->zones[i].pipe_type), snap->zones[i].pipe_spacing_mm,
-            snap->zones[i].supply_pipe_length_m, snap->zone_house_balance[i],
-            snap->zone_valve_curve_start_pct[i], snap->zone_valve_curve_full_pct[i],
-            static_cast<unsigned long>(snap->zone_valve_curve_measured[i]), full_lmin_tok);
+            snap->zones[i].supply_pipe_length_m, snap->zone_house_balance[i]);
     bool fw = true;
     if (th.thickness_ignored) {
       appendf(buf, JSON_BUF_SIZE, off, "%s\"thickness_ignored\"", fw ? "" : ",");
@@ -3400,68 +3376,6 @@ void LV6Dashboard::handle_v1_(AsyncWebServerRequest *request, const char *path) 
              "{\"ok\":true,\"version\":\"v1\",\"data\":{\"active\":true,\"zone\":%d,\"position_pct\":%.1f,"
              "\"ttl_s\":%lu}}",
              zi + 1, std::clamp(position, 0.0f, 100.0f), static_cast<unsigned long>(ttl_s));
-    send_text_(request, 200, "application/json", response, true, "no-cache");
-    return;
-  }
-  if ((zone = match_zone_route(path, "/zones", "valve-curve")) != -1) {
-    // Valve curve for dynamic balancing: opening where flow starts and where it is
-    // full. From the web UI (CSRF gate) or from Touch (authority key), which
-    // learns it from the pump's flow.
-    if (zone == 0) {
-      this->send_v1_(request, 400, "invalid_zone", "Zone must be in range 1..6");
-      return;
-    }
-    if (this->config_store_ == nullptr || this->zone_controller_ == nullptr) {
-      this->send_v1_(request, 503, "controller_unavailable", "Zone controller unavailable");
-      return;
-    }
-    const auto key_header = request->get_header("X-Lune-Authority-Key");
-    if (key_header.has_value()) {
-      const auto auth_cfg = this->config_store_->get_authority_config();
-      float auth_timestamp_s = 0.0f;
-      char auth_nonce[48]{};
-      parse_num_param(request, body, "auth_timestamp_s", &auth_timestamp_s);
-      parse_text_param(request, body, "auth_nonce", "", auth_nonce, sizeof(auth_nonce));
-      if (!touch_auth::request_is_authenticated(auth_cfg.shared_key, key_header->c_str(), ::time(nullptr),
-                                                auth_timestamp_s, auth_nonce)) {
-        this->send_v1_(request, 403, "touch_auth_failed",
-                       "Touch command requires provisioned key, valid UTC timestamp, and nonce");
-        return;
-      }
-    } else if (!this->authorize_write_(request)) {
-      return;
-    }
-    const uint8_t zi = static_cast<uint8_t>(zone - 1);
-    lv6::valve_curve::Curve curve = this->zone_controller_->get_valve_curve(zi);
-    float v = NAN;
-    const bool has_start = parse_num_param(request, body, "start_pct", &v) && std::isfinite(v);
-    if (has_start)
-      curve.start_pct = v;
-    const bool has_full = parse_num_param(request, body, "full_pct", &v) && std::isfinite(v);
-    if (has_full)
-      curve.full_pct = v;
-    if (!has_start && !has_full) {
-      this->send_v1_(request, 400, "missing_param", "start_pct or full_pct is required");
-      return;
-    }
-    // Touch sends when it measured the curve; a manual change clears it.
-    float measured = 0.0f;
-    if (!key_header.has_value() || !parse_num_param(request, body, "measured_epoch_s", &measured) ||
-        !std::isfinite(measured) || measured < 0.0f)
-      measured = 0.0f;
-    // With a measurement Touch also sends the loop's full flow (l/min).
-    float full_lmin = NAN;
-    if (measured > 0.0f && (!parse_num_param(request, body, "full_lmin", &full_lmin) || !std::isfinite(full_lmin)))
-      full_lmin = NAN;
-    this->zone_controller_->set_valve_curve(zi, curve, static_cast<uint32_t>(measured), full_lmin);
-    curve = this->zone_controller_->get_valve_curve(zi);
-    char response[160];
-    snprintf(response, sizeof(response),
-             "{\"ok\":true,\"version\":\"v1\",\"data\":{\"zone\":%u,\"start_pct\":%.1f,\"full_pct\":%.1f,"
-             "\"measured_epoch_s\":%lu}}",
-             static_cast<unsigned>(zone), curve.start_pct, curve.full_pct,
-             static_cast<unsigned long>(this->zone_controller_->get_valve_curve_measured(zi)));
-    data_revision_++;
     send_text_(request, 200, "application/json", response, true, "no-cache");
     return;
   }

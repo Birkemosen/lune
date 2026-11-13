@@ -89,17 +89,6 @@ void Lv6ZoneController::setup() {
   } else {
     preheat_advance_c_.fill(0.0f);
   }
-  if (config_store_) {
-    float start[NUM_ZONES], full[NUM_ZONES], lmin[NUM_ZONES];
-    uint32_t measured[NUM_ZONES];
-    if (config_store_->load_valve_curves(start, full, measured, lmin)) {
-      for (uint8_t i = 0; i < NUM_ZONES; i++) {
-        valve_curve_[i] = valve_curve::sanitize({start[i], full[i]});
-        valve_curve_measured_[i] = measured[i];
-        valve_curve_full_lmin_[i] = lmin[i];
-      }
-    }
-  }
   preheat_episode_active_.fill(false);
   preheat_episode_min_temp_c_.fill(NAN);
   preheat_episode_max_temp_c_.fill(NAN);
@@ -1428,10 +1417,6 @@ void Lv6ZoneController::run_cycle_() {
       loops[i].setpoint_c = zone_setpoints[i];
       loops[i].max_opening_pct = cfg.zones[i].max_opening_pct;
     }
-    xSemaphoreTake(snapshot_mutex_, portMAX_DELAY);
-    for (uint8_t i = 0; i < NUM_ZONES; i++)
-      loops[i].curve = valve_curve_[i];
-    xSemaphoreGive(snapshot_mutex_);
     dynamic_balance::Params dbp{cfg.control.comfort_band_c, cfg.control.hp_overheat_margin_c, 0.0f};
     dbp.supply_c = read_manifold_flow_();
     dbp.move_on_k = cfg.control.hp_heat_move_k;
@@ -1619,11 +1604,6 @@ void Lv6ZoneController::run_cycle_() {
     update_adaptive_balance_(cfg);
   }
 
-  std::array<valve_curve::Curve, NUM_ZONES> curves;
-  xSemaphoreTake(snapshot_mutex_, portMAX_DELAY);
-  curves = valve_curve_;
-  xSemaphoreGive(snapshot_mutex_);
-
   // Valve test: every loop holds, the test loop goes where Touch asks (valve-curve
   // measurement from the pump's flow). Bypasses the deadband so small steps land.
   bool valve_test = false;
@@ -1678,8 +1658,7 @@ void Lv6ZoneController::run_cycle_() {
     // is below the deadband (e.g. 17 → 19 % takes a loop from no flow to some).
     bool flow_step = false;
     if (hp_law) {
-      const float dq = valve_curve::flow_fraction(target_positions[i], curves[i]) -
-                       valve_curve::flow_fraction(current_pos, curves[i]);
+      const float dq = valve_curve::flow_fraction(target_positions[i]) - valve_curve::flow_fraction(current_pos);
       flow_step = std::fabs(dq) >= HP_FLOW_DEADBAND && diff >= 0.5f;
     }
     if (diff >= cfg.control.min_movement_pct || below_safety_floor || flow_step || (valve_test && diff >= 0.5f))
@@ -2169,27 +2148,6 @@ void Lv6ZoneController::recalculate_balance_factors_() {
     if (weights[i] > max_w)
       max_w = weights[i];
   }
-  // Once Touch has measured every loop's full flow, the measurement replaces the
-  // friction estimate: share = heat demand (UA) / full flow.
-  {
-    bool enabled[NUM_ZONES];
-    float demand[NUM_ZONES], full[NUM_ZONES], measured[NUM_ZONES];
-    xSemaphoreTake(snapshot_mutex_, portMAX_DELAY);
-    for (uint8_t i = 0; i < NUM_ZONES; i++)
-      full[i] = valve_curve_full_lmin_[i];
-    xSemaphoreGive(snapshot_mutex_);
-    for (uint8_t i = 0; i < NUM_ZONES; i++) {
-      enabled[i] = cfg.zones[i].enabled;
-      const auto th = thermal_model::estimate(cfg.zones[i], cfg.house_physics);
-      demand[i] = th.ua_effective_w_per_k;
-    }
-    balance_measured_ = dynamic_balance::measured_shares(enabled, demand, full, measured);
-    if (balance_measured_) {
-      for (uint8_t i = 0; i < NUM_ZONES; i++)
-        weights[i] = measured[i];
-      max_w = 1.0f;
-    }
-  }
   // A learned factor is a deviation from this physics; new physics, new start.
   if (adaptive) {
     const uint32_t basis = balance_basis_();
@@ -2229,7 +2187,7 @@ void Lv6ZoneController::recalculate_balance_factors_() {
   xSemaphoreGive(snapshot_mutex_);
 
   ESP_LOGI(TAG, "%s balance (%s): [%.2f, %.2f, %.2f, %.2f, %.2f, %.2f]",
-           adaptive ? "Adaptive" : "Static", balance_measured_ ? "measured flow" : "pipe model",
+           adaptive ? "Adaptive" : "Static", "pipe model",
            balance_factors_[0], balance_factors_[1], balance_factors_[2],
            balance_factors_[3], balance_factors_[4], balance_factors_[5]);
 }
@@ -2367,32 +2325,6 @@ float Lv6ZoneController::get_house_balance(uint8_t zone) const {
   return house_balance_[zone];
 }
 
-void Lv6ZoneController::set_valve_curve(uint8_t zone, valve_curve::Curve curve, uint32_t measured_epoch_s,
-                                        float full_lmin) {
-  if (zone >= NUM_ZONES || snapshot_mutex_ == nullptr)
-    return;
-  curve = valve_curve::sanitize(curve);
-  float start[NUM_ZONES], full[NUM_ZONES], lmin[NUM_ZONES];
-  uint32_t measured[NUM_ZONES];
-  xSemaphoreTake(snapshot_mutex_, portMAX_DELAY);
-  valve_curve_[zone] = curve;
-  valve_curve_measured_[zone] = measured_epoch_s;
-  // A measured curve carries its flow; a manual change keeps no measurement.
-  valve_curve_full_lmin_[zone] = measured_epoch_s != 0 && std::isfinite(full_lmin) && full_lmin > 0.0f ? full_lmin : NAN;
-  for (uint8_t i = 0; i < NUM_ZONES; i++) {
-    start[i] = valve_curve_[i].start_pct;
-    full[i] = valve_curve_[i].full_pct;
-    measured[i] = valve_curve_measured_[i];
-    lmin[i] = valve_curve_full_lmin_[i];
-  }
-  xSemaphoreGive(snapshot_mutex_);
-  if (config_store_)
-    config_store_->save_valve_curves(start, full, measured, lmin);
-  balance_dirty_ = true;  // a measured full flow changes the design shares
-  ESP_LOGI(TAG, "Zone %u valve curve: flow from %.0f %%, full at %.0f %%", zone + 1, curve.start_pct,
-           curve.full_pct);
-}
-
 void Lv6ZoneController::set_valve_test(int8_t zone, float position_pct, uint32_t ttl_ms, float others_pct) {
   if (snapshot_mutex_ == nullptr)
     return;
@@ -2425,24 +2357,6 @@ void Lv6ZoneController::clear_valve_test() {
     ESP_LOGI(TAG, "Valve test stopped");
 }
 
-uint32_t Lv6ZoneController::get_valve_curve_measured(uint8_t zone) const {
-  if (zone >= NUM_ZONES || snapshot_mutex_ == nullptr)
-    return 0;
-  xSemaphoreTake(snapshot_mutex_, portMAX_DELAY);
-  const uint32_t m = valve_curve_measured_[zone];
-  xSemaphoreGive(snapshot_mutex_);
-  return m;
-}
-
-float Lv6ZoneController::get_valve_curve_full_lmin(uint8_t zone) const {
-  if (zone >= NUM_ZONES || snapshot_mutex_ == nullptr)
-    return NAN;
-  xSemaphoreTake(snapshot_mutex_, portMAX_DELAY);
-  const float f = valve_curve_full_lmin_[zone];
-  xSemaphoreGive(snapshot_mutex_);
-  return f;
-}
-
 bool Lv6ZoneController::valve_test_active() const {
   if (snapshot_mutex_ == nullptr)
     return false;
@@ -2450,15 +2364,6 @@ bool Lv6ZoneController::valve_test_active() const {
   const bool active = valve_test_.active;
   xSemaphoreGive(snapshot_mutex_);
   return active;
-}
-
-valve_curve::Curve Lv6ZoneController::get_valve_curve(uint8_t zone) const {
-  if (zone >= NUM_ZONES || snapshot_mutex_ == nullptr)
-    return {};
-  xSemaphoreTake(snapshot_mutex_, portMAX_DELAY);
-  const valve_curve::Curve c = valve_curve_[zone];
-  xSemaphoreGive(snapshot_mutex_);
-  return c;
 }
 
 // =============================================================================
@@ -2570,13 +2475,6 @@ uint32_t Lv6ZoneController::balance_basis_() const {
     }
   };
   mix(BALANCE_METHOD_VERSION);
-  mix(balance_measured_ ? 1u : 0u);
-  xSemaphoreTake(snapshot_mutex_, portMAX_DELAY);
-  for (uint8_t i = 0; i < NUM_ZONES; i++) {
-    const float f = valve_curve_full_lmin_[i];
-    mix(balance_measured_ && std::isfinite(f) ? static_cast<uint32_t>(std::lround(f * 5.0f)) : 0u);
-  }
-  xSemaphoreGive(snapshot_mutex_);
   return h;
 }
 

@@ -377,6 +377,7 @@ Returns all zones:
         "temperature_c": 21.3,
         "setpoint_c": 22.0,
         "valve_pct": 47.0,
+        "opening_mm": 0.9,
         "probe_temp_c": 21.2,
         "temp_source": "local_probe",
         "group_id": "g1",

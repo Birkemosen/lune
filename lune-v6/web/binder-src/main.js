@@ -158,11 +158,17 @@ function zoneLearnLong(z) {
   return phase ? `${phase} · ${pct} %` : zoneLearnShort(z);
 }
 
-// Loop flow in % of full flow (the valve curve turns pin travel into flow); falls
-// back to the opening on firmware without flow_pct.
+// Opening: the pin's position in % of its learned travel (0 = seat, 100 = pin free).
 function zoneFlow(z) {
-  const flow = toNum(ev(key.flow(z)));
-  return Number.isFinite(flow) ? flow : toNum(ev(key.valve(z)));
+  return toNum(ev(key.valve(z)));
+}
+
+// Pin lift in mm at the opening: learned travel (motor counts) × mm per count
+// (valve_curve.h MM_PER_COUNT, measured with a caliper on Laura's actuator).
+const MM_PER_COUNT = 0.0011;
+function zoneOpeningMm(z, opening) {
+  const range = toNum(ev(key.motorWorkingRipples(z)));
+  return Number.isFinite(opening) && range > 0 ? (opening / 100) * range * MM_PER_COUNT : NaN;
 }
 
 function zoneLevel(z) {
@@ -573,11 +579,12 @@ function paintStrip() {
     }
     const opening = toNum(ev(key.valve(z)));
     const flow = zoneFlow(z);
-    // Flow is the main figure; the pin's travel follows as text (valve curve).
-    setBind(`z${z}.flow`, Number.isFinite(flow)
-      ? `${withUnit(flow, '%', 0)}${Number.isFinite(opening) ? ` <small>${escapeHtml(t('zdash.pin', { pct: Math.round(opening) }))}</small>` : ''}`
+    // The opening is the main figure; the pin's lift in mm follows.
+    const mm = zoneOpeningMm(z, opening);
+    setBind(`z${z}.flow`, Number.isFinite(opening)
+      ? `${withUnit(opening, '%', 0)}${Number.isFinite(mm) ? ` <small>${escapeHtml(t('zdash.mm', { mm: num(mm, 1) }))}</small>` : ''}`
       : '—');
-    // Zone card: the flow beside the name; fault/blocked/learning/off say it in the value instead.
+    // Zone card: the opening beside the name; fault/blocked/learning/off say it in the value instead.
     // With 8 probes the zone's own return follows (from its assigned probe).
     const cardProbe = probeLayoutMode() === '8' ? parseProbeIndex(es(key.probe(z))) : 0;
     const cardRet = cardProbe ? toNum(ev(key.probeTemp(cardProbe))) : NaN;
@@ -585,7 +592,7 @@ function paintStrip() {
       ? '' : escapeHtml(Number.isFinite(cardRet)
         ? t('zcard.flowRet', { pct: Math.round(flow), ret: num(cardRet) })
         : t('zcard.flow', { pct: Math.round(flow) })));
-    // Tile: flow as number next to the 10-segment bar; learning shows its own %.
+    // Tile: opening as number next to the 10-segment bar; learning shows its own %.
     setBind(`z${z}.valve`, st === 'learning' ? `${zoneLearnPct(z)} %`
       : (st === 'fault' || st === 'blocked' || st === 'off') ? '0 %'
       : (Number.isFinite(flow) ? `${Math.round(flow)} %` : '—'));

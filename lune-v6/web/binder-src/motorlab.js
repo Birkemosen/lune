@@ -442,7 +442,7 @@ function paintThresholds() {
   if (changed) explore();
 }
 
-// ---- Valve curve --------------------------------------------------------------
+// ---- Zones (/api/v1/zones) -----------------------------------------------------
 
 async function refreshZones(force) {
   if (!force && zones && Date.now() - zonesAt < 30000) return;
@@ -453,10 +453,8 @@ async function refreshZones(force) {
     const d = await r.json();
     const data = d.data || d;
     zones = Array.isArray(data) ? data : (data.zones || []);
-    paintCurve();
-    paintZoneCurves();
     paintZonePhysics();
-  } catch (_) { /* offline: keep the last curve */ }
+  } catch (_) { /* offline: keep the last values */ }
 }
 
 /** Zone sheets: heat loss (UA) and time constant (τ), calculated / learned / used. */
@@ -489,73 +487,6 @@ function paintZonePhysics() {
   }
 }
 
-/** Zone sheets: the learned curve (measured by Touch) under the zone's overview. */
-function paintZoneCurves() {
-  if (!h) return;
-  for (const row of zones || []) {
-    const z = Number(row.zone);
-    const c = row.valve_curve;
-    const measured = !!(c && Number(c.measured_epoch_s) > 0);
-    h.setShow(`z${z}.vc`, measured);
-    if (!measured) continue;
-    const start = Number(c.start_pct);
-    const full = Number(c.full_pct);
-    const pos = Number(row.valve_pct);
-    const x = (pct) => (pct / 100) * W;
-    document.querySelectorAll(`[data-zc-curve="${z}"]`).forEach((el) =>
-      el.setAttribute('d', `M0,100H${x(start).toFixed(1)}L${x(full).toFixed(1)},0H${W}`));
-    document.querySelectorAll(`[data-zc-pos="${z}"]`).forEach((el) =>
-      el.setAttribute('d', Number.isFinite(pos) ? `M${x(pos).toFixed(1)},0V100` : ''));
-    const lmin = Number(c.full_lmin);
-    h.setBind(`z${z}.vcMeta`, Number.isFinite(lmin) && lmin > 0 ? h.escapeHtml(h.t('zdash.vcFull', { v: h.num(lmin, 1) })) : '');
-    h.setBind(`z${z}.vcNote`, h.escapeHtml(curveNote(c, row)));
-  }
-}
-
-function curveNote(c, row) {
-  const pos = Number(row.valve_pct);
-  const flow = Number(row.flow_pct);
-  const measured = Number(c.measured_epoch_s) > 0;
-  const src = measured
-    ? h.t('lab.vc.measured', { date: new Date(Number(c.measured_epoch_s) * 1000).toLocaleDateString(/^\/da\b/.test(location.pathname) ? 'da-DK' : 'en-GB') })
-    : h.t('lab.vc.default');
-  return h.t('lab.vc.note', {
-    start: h.num(Number(c.start_pct), 0), full: h.num(Number(c.full_pct), 0), src,
-    pos: Number.isFinite(pos) ? h.num(pos, 0) : '—', flow: Number.isFinite(flow) ? h.num(flow, 0) : '—',
-  });
-}
-
-function paintCurve() {
-  const box = document.querySelector('[data-lab-curve]');
-  if (!box || !h) return;
-  const z = zone();
-  const row = (zones || []).find((r) => Number(r.zone) === z);
-  const c = row && row.valve_curve;
-  if (!c || !Number.isFinite(Number(c.start_pct)) || !Number.isFinite(Number(c.full_pct))) {
-    box.setAttribute('data-empty', '');
-    return;
-  }
-  box.removeAttribute('data-empty');
-  const start = Number(c.start_pct);
-  const full = Number(c.full_pct);
-  const x = (pct) => (pct / 100) * W;
-  document.querySelectorAll('[data-vc="curve"]').forEach((el) =>
-    el.setAttribute('d', `M0,100H${x(start).toFixed(1)}L${x(full).toFixed(1)},0H${W}`));
-  const pos = Number(row.valve_pct);
-  const flow = Number(row.flow_pct);
-  document.querySelectorAll('[data-vc="pos"]').forEach((el) =>
-    el.setAttribute('d', Number.isFinite(pos) ? `M${x(pos).toFixed(1)},0V100` : ''));
-  const measured = Number(c.measured_epoch_s) > 0;
-  const src = measured
-    ? h.t('lab.vc.measured', { date: new Date(Number(c.measured_epoch_s) * 1000).toLocaleDateString(/^\/da\b/.test(location.pathname) ? 'da-DK' : 'en-GB') })
-    : h.t('lab.vc.default');
-  h.setBind('lab.vc.meta', h.escapeHtml(h.t('lab.vc.meta', { z })));
-  h.setBind('lab.vc.note', h.escapeHtml(h.t('lab.vc.note', {
-    start: h.num(start, 0), full: h.num(full, 0), src,
-    pos: Number.isFinite(pos) ? h.num(pos, 0) : '—', flow: Number.isFinite(flow) ? h.num(flow, 0) : '—',
-  })));
-}
-
 /** The zone list carries the zones' names once state has loaded. */
 export function paintMotorLab() {
   const sel = document.getElementById('lab_zone');
@@ -578,7 +509,6 @@ export function initMotorLab(helpers) {
   });
   document.addEventListener('change', (e) => {
     if (e.target.name === 'lab_src' || e.target.closest(THR_FORM)) explore();
-    if (e.target.id === 'lab_zone') paintCurve();
   });
   document.addEventListener('click', (e) => {
     const b = e.target.closest('[data-lab]');

@@ -334,13 +334,6 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
           <div><dt>{T("zdash.offsetNow")}</dt><dd data-bind="z{i}.offset">—</dd></div>
           <div><dt>{T("zdash.tempFrom")}</dt><dd data-bind="z{i}.tempFrom">—</dd></div>
         </dl>
-        <div class="sub mtrace" data-bind-show="z{i}.vc" hidden>
-          <h4>{T("lab.vc.title")} <span class="legend" data-bind="z{i}.vcMeta"></span></h4>
-          <div class="mtrace-row square"><div class="mtrace-y" aria-hidden="true"><span>100 <small>%</small></span><span>50</span><span>0</span></div>
-            <svg class="trend" viewBox="0 0 600 100" preserveAspectRatio="none" role="img" aria-label="{T("lab.vc.aria")}"><path class="vpos" data-zc-pos="{i}" d=""/><path class="vc" data-zc-curve="{i}" d=""/></svg></div>
-          <div class="axis" aria-hidden="true"><span>0 %</span><span>{T("lab.vc.axis")}</span><span>100 %</span></div>
-          <p class="note" data-bind="z{i}.vcNote"></p>
-        </div>
         <div class="sub" data-bind-show="z{i}.phys" hidden>
           <h4>{T("zdash.phys.title")}</h4>
           <div class="table-wrap"><table class="table">
@@ -648,14 +641,6 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
           {group(T("lab.g.caps"),sstep("cap_close_seat_ma",T("lab.p.seat"),5,5,140,1,"mA",dec=0)+sstep("cap_close_seat_frames",T("lab.p.seatFrames"),1,1,20,1,"",dec=0)+sstep("cap_close_popoff_ma",T("lab.p.popoff"),5,5,140,1,"mA",dec=0)+sstep("cap_open_stop_ma",T("lab.p.openStop"),5,5,140,1,"mA",dec=0)+sstep("cap_stall_ma",T("lab.p.stall"),5,5,140,1,"mA",dec=0)+sstep("cap_circuit_fault_ma",T("lab.p.circuit"),5,5,140,1,"mA",dec=0))}
           {savebar("lab-thr",T("lab.p.save"))}
         </form>
-        <div class="sub mtrace" data-lab-curve data-empty>
-          <h4>{T("lab.vc.title")} <span class="legend" data-bind="lab.vc.meta"></span></h4>
-          <p class="empty">{T("lab.vc.empty")}</p>
-          <div class="mtrace-row square"><div class="mtrace-y" aria-hidden="true"><span>100 <small>%</small></span><span>50</span><span>0</span></div>
-            <svg class="trend" viewBox="0 0 600 100" preserveAspectRatio="none" role="img" aria-label="{T("lab.vc.aria")}"><path class="vpos" data-vc="pos" d=""/><path class="vc" data-vc="curve" d=""/></svg></div>
-          <div class="axis" aria-hidden="true"><span>0 %</span><span>{T("lab.vc.axis")}</span><span>100 %</span></div>
-          <p class="note" data-bind="lab.vc.note"></p>
-        </div>
       </div>''',attrs=" data-dev-only hidden"))
     dev_attr=lambda c: " data-dev-only hidden" if c in DEV_ONLY else ""
     sys_radios=f'<input class="state" type="radio" name="syscat" id="c-none" checked aria-label="{T("sys.cats")}">'+"".join(
@@ -705,7 +690,7 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
              "alert.driversOffBody","drv.reason.fault","drv.reason.ota","drv.reason.arm","drv.reason.boot","drv.reason.user","dev.online","dev.offline",
              "zdash.preload","zdash.preloadUntil","src.ble","src.probe",
              "csys.touchWaiting","csys.touchWaitingBody","csys.touchApproved","csys.touchPending","csys.touchControls","csys.touchReady","csys.touchLeaseLost",
-             "zchart.expected","zchart.at","zchart.noForecast","zchart.faultStrong","zcard.flow","zcard.flowRet","zdash.vcFull","zdash.backOffSent","zdash.phys.wk","zdash.phys.h","zdash.phys.noteLearned","zdash.phys.notePrior","lab.thr.meta","lab.thr.capture","lab.thr.reference","lab.thr.verdictNone","lab.thr.verdictCeiling","lab.thr.verdictLate","lab.thr.verdictFirst","lab.thr.first","lab.thr.notReached","lab.thr.suggestText","lab.path.threshold","lab.path.trailing","lab.path.seat","lab.path.popoff","lab.path.openStop","lab.path.stall","lab.path.circuit","lab.path.ceiling","lab.path.wall","lab.vc.note","lab.vc.measured","lab.vc.default","lab.vc.meta","lab.dir.open","lab.dir.close","lab.state.setup","lab.state.armed","lab.state.seated","lab.state.opened","lab.state.closed","lab.state.running","lab.state.halted","lab.phase.free","lab.phase.contact","lab.phase.load","lab.phase.stopping","lab.pinSeen","lab.pinWaiting","lab.on","lab.off","lab.chartMeta","lab.dir.open","lab.dir.close","lab.err.drivers","lab.err.failed","lab.haltedMsg","csys.ownerFlow","csys.ownerReturn","zdash.pin",
+             "zchart.expected","zchart.at","zchart.noForecast","zchart.faultStrong","zcard.flow","zcard.flowRet","zdash.mm","zdash.backOffSent","zdash.phys.wk","zdash.phys.h","zdash.phys.noteLearned","zdash.phys.notePrior","lab.thr.meta","lab.thr.capture","lab.thr.reference","lab.thr.verdictNone","lab.thr.verdictCeiling","lab.thr.verdictLate","lab.thr.verdictFirst","lab.thr.first","lab.thr.notReached","lab.thr.suggestText","lab.path.threshold","lab.path.trailing","lab.path.seat","lab.path.popoff","lab.path.openStop","lab.path.stall","lab.path.circuit","lab.path.ceiling","lab.path.wall","lab.dir.open","lab.dir.close","lab.state.setup","lab.state.armed","lab.state.seated","lab.state.opened","lab.state.closed","lab.state.running","lab.state.halted","lab.phase.free","lab.phase.contact","lab.phase.load","lab.phase.stopping","lab.pinSeen","lab.pinWaiting","lab.on","lab.off","lab.chartMeta","lab.dir.open","lab.dir.close","lab.err.drivers","lab.err.failed","lab.haltedMsg","csys.ownerFlow","csys.ownerReturn",
              "wifi.connectedTo","wifi.notConnected","wifi.apActive","wifi.sent","wifi.needSsid","wifi.busy",
              "wifi.switch.pending","wifi.switch.connected","wifi.switch.reverted","wifi.switch.failed")
     rt={k:T(k) for k in rt_keys}
