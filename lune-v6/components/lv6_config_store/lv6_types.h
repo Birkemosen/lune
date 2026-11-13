@@ -201,8 +201,8 @@ enum class ProbeRole : uint8_t {
 
 struct ZoneConfig {
   bool enabled = true;
-  float area_m2 = 15.0f;
-  float max_opening_pct = 90.0f;
+  float area_m2 = 0.0f;  ///< 0 = not set (zone_area.h)
+  float max_opening_pct = 100.0f;
   PipeType pipe_type = PipeType::PEX_16X2;
   FloorType floor_type = FloorType::TILE;
   float pipe_spacing_mm = 200.0f;
@@ -267,7 +267,7 @@ struct ControlConfig {
   float boost_factor = 1.0f;
   float min_movement_pct = 5.0f;
   float tanh_steepness = 0.70f;
-  bool simple_preheat_enabled = true;
+  bool simple_preheat_enabled = true;  // Unused: kept for the stored layout (simple preheat is always on)
   // Preheat absorption — when Lune Touch pre-buffers
   // the slab, hot water arrives while no zone demands heat. Without this, zones
   // hit OVERHEATED and close, blocking the buffer. While absorbing, the overheat
@@ -279,16 +279,62 @@ struct ControlConfig {
   // Heating mode — local law when Touch is not coordinating. Default HEAT_PUMP
   // preserves today's continuous-distribution behaviour for existing installs.
   HeatingProfile mode = HeatingProfile::HEAT_PUMP;
-  float hp_overheat_margin_c = 1.0f;  ///< °C above setpoint before a heat-pump zone closes
-  float hp_base_pct = 60.0f;          ///< Satisfied opening in heat-pump mode (keeps floors open)
-  float hp_trim_floor_pct = 15.0f;    ///< Opening held from setpoint + margin until overheated
-  /// Opening for a zone below setpoint − comfort band in heat-pump mode; zones
-  /// between that and setpoint ramp from here down to hp_base_pct. Keeps rooms
-  /// that need heat ahead of satisfied ones without closing anyone.
+  /// Heat-pump mode (dynamic balancing): a room's share falls to its minimum at
+  /// setpoint + this margin and its loop closes at setpoint + band + margin.
+  float hp_overheat_margin_c = 1.0f;
+  // Unused since dynamic balancing (docs/dynamic_balancing.md); kept for the NVS
+  // layout and the API.
+  float hp_base_pct = 60.0f;
+  float hp_trim_floor_pct = 15.0f;
   float hp_demand_pct = 80.0f;
-  /// Heat-pump mode: a room this far above its target closes fully (0 = off). It
-  /// reopens 0.2 °C below; the manifold always keeps a minimum total opening.
   float hp_close_above_c = 0.0f;
+  /// Unused: reserved for the NVS layout (a flow floor tried before dynamic
+  /// balancing).
+  float hp_running_min_total_pct = 0.0f;
+  /// Heat-pump mode: an overheated loop moves heat while the supply is this far below
+  /// its room (stops 0.3 K closer); docs/dynamic_balancing.md.
+  float hp_heat_move_k = 0.5f;
+};
+
+/// ControlConfig as stored by CONTROL_CONFIG_VERSION 5 (before hp_heat_move_k).
+struct ControlConfigV5 {
+  float comfort_band_c;
+  float maintenance_base_pct;
+  float demand_boost_pct;
+  float boost_factor;
+  float min_movement_pct;
+  float tanh_steepness;
+  bool simple_preheat_enabled;
+  bool preheat_absorb_enabled;
+  float preheat_absorb_band_c;
+  float preheat_detect_delta_c;
+  HeatingProfile mode;
+  float hp_overheat_margin_c;
+  float hp_base_pct;
+  float hp_trim_floor_pct;
+  float hp_demand_pct;
+  float hp_close_above_c;
+  float hp_running_min_total_pct;
+};
+
+/// ControlConfig as stored by CONTROL_CONFIG_VERSION 4 (before hp_running_min_total_pct).
+struct ControlConfigV4 {
+  float comfort_band_c;
+  float maintenance_base_pct;
+  float demand_boost_pct;
+  float boost_factor;
+  float min_movement_pct;
+  float tanh_steepness;
+  bool simple_preheat_enabled;
+  bool preheat_absorb_enabled;
+  float preheat_absorb_band_c;
+  float preheat_detect_delta_c;
+  HeatingProfile mode;
+  float hp_overheat_margin_c;
+  float hp_base_pct;
+  float hp_trim_floor_pct;
+  float hp_demand_pct;
+  float hp_close_above_c;
 };
 
 /// ControlConfig as stored by CONTROL_CONFIG_VERSION 3 (before hp_close_above_c).
@@ -439,7 +485,7 @@ static constexpr uint32_t GROUPS_CONFIG_VERSION = 1;
 /// v5 adds user-facing display_name and location for the dashboard device menu.
 static constexpr uint32_t SYSTEM_CONFIG_VERSION = 5;
 /// v2 adds heating mode + heat-pump base/margin/trim; drops unused min_valve_opening_pct.
-static constexpr uint32_t CONTROL_CONFIG_VERSION = 4;
+static constexpr uint32_t CONTROL_CONFIG_VERSION = 6;
 /// v2 moves defaults to P1 flow / P2 manifold return with zone return probes
 /// unassigned (return-temperature mode off until the user enables it). Layout
 /// is unchanged; the bump replaces stored v1 values that still carried the
@@ -787,9 +833,9 @@ enum class HeatDemandRecommendation : uint8_t {
 struct HeatDemandSummary {
   int8_t critical_zone = -1;               ///< 0-based; -1 = none
   float critical_opening_ratio = 0.0f;     ///< opening / max_opening for critical zone
-  uint32_t saturated_s = 0;                ///< Seconds any demanding zone ≥ 90% of max
+  uint32_t saturated_s = 0;                ///< Seconds a room has been in demand
   uint8_t demanding_zones = 0;
-  bool headroom = false;                   ///< No demand and max opening below heat-pump base
+  bool headroom = false;                   ///< No room below its target
   HeatDemandRecommendation recommendation = HeatDemandRecommendation::HOLD;
 };
 

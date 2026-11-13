@@ -172,6 +172,7 @@ void Lv6ConfigStore::setup() {
   initialized_ = true;
   migrate_legacy_nvs_namespace_();
   load_config_();
+  read_balance_basis_();
 
   ESP_LOGI(TAG, "Config store initialized");
 }
@@ -229,10 +230,6 @@ ZoneConfig Lv6ConfigStore::get_zone_config(uint8_t zone) const {
   ZoneConfig copy = config_.zones[zone];
   xSemaphoreGive(mutex_);
   return copy;
-}
-
-bool Lv6ConfigStore::get_simple_preheat_enabled() const {
-  return true;
 }
 
 ManifoldType Lv6ConfigStore::get_manifold_type() const {
@@ -334,6 +331,7 @@ void Lv6ConfigStore::flush_now() {
     esp_timer_stop(dirty_timer_);
   save_pending_ = false;
   save_config_();
+  write_balance_basis_();
 }
 
 void Lv6ConfigStore::update_zone(uint8_t zone, const ZoneConfig &zone_cfg) {
@@ -626,6 +624,63 @@ bool Lv6ConfigStore::load_drivers_enabled_pref(bool *out) const {
   return true;
 }
 
+// The zone task (PSRAM stack) asks for the basis; flash access from it aborts
+// (cache_utils: stack must be internal while the cache is off). So the basis is
+// read once in setup, served from RAM, and written by the NVS task.
+void Lv6ConfigStore::set_balance_basis(uint32_t basis) {
+  if (mutex_ != nullptr)
+    xSemaphoreTake(mutex_, portMAX_DELAY);
+  balance_basis_ = basis;
+  balance_basis_known_ = true;
+  balance_basis_dirty_ = true;
+  if (mutex_ != nullptr)
+    xSemaphoreGive(mutex_);
+  mark_dirty();
+}
+
+bool Lv6ConfigStore::load_balance_basis(uint32_t *out) const {
+  if (out == nullptr)
+    return false;
+  if (mutex_ != nullptr)
+    xSemaphoreTake(mutex_, portMAX_DELAY);
+  const bool known = balance_basis_known_;
+  *out = balance_basis_;
+  if (mutex_ != nullptr)
+    xSemaphoreGive(mutex_);
+  return known;
+}
+
+void Lv6ConfigStore::read_balance_basis_() {
+  nvs_handle_t handle;
+  if (nvs_open(NVS_NAMESPACE, NVS_READONLY, &handle) != ESP_OK)
+    return;
+  uint32_t v = 0;
+  if (nvs_get_u32(handle, KEY_BALANCE_BASIS, &v) == ESP_OK) {
+    balance_basis_ = v;
+    balance_basis_known_ = true;
+  }
+  nvs_close(handle);
+}
+
+void Lv6ConfigStore::write_balance_basis_() {
+  if (!balance_basis_dirty_)
+    return;
+  xSemaphoreTake(mutex_, portMAX_DELAY);
+  const uint32_t basis = balance_basis_;
+  balance_basis_dirty_ = false;
+  xSemaphoreGive(mutex_);
+  nvs_handle_t handle;
+  esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &handle);
+  if (err == ESP_OK) {
+    err = nvs_set_u32(handle, KEY_BALANCE_BASIS, basis);
+    if (err == ESP_OK)
+      err = nvs_commit(handle);
+    nvs_close(handle);
+  }
+  if (err != ESP_OK)
+    ESP_LOGW(TAG, "Failed to persist balance basis: %s", esp_err_to_name(err));
+}
+
 // -----------------------------------------------------------------------------
 // Sensor pairing (BLE MAC + temp source) — persisted under its own key so it
 // survives the version-based discard of the main config blob on firmware update.
@@ -707,8 +762,19 @@ bool Lv6ConfigStore::load_zone_config_(nvs_handle_t handle) {
   if (zone_config_blob_is_current(version, read_size)) {
     xSemaphoreTake(mutex_, portMAX_DELAY);
     memcpy(config_.zones, blob.data() + sizeof(uint32_t), sizeof(ZoneConfig) * NUM_ZONES);
+    // The old default cap of 90 % (not settable) becomes 100 %: dynamic balancing
+    // opens the most demanding loop fully. Saved with the next zone write.
+    uint8_t lifted = 0;
+    for (uint8_t i = 0; i < NUM_ZONES; i++) {
+      if (std::fabs(config_.zones[i].max_opening_pct - 90.0f) < 0.01f) {
+        config_.zones[i].max_opening_pct = 100.0f;
+        lifted++;
+      }
+    }
     xSemaphoreGive(mutex_);
     ESP_LOGI(TAG, "Zone config restored from durable key (v%" PRIu32 ")", version);
+    if (lifted > 0)
+      ESP_LOGI(TAG, "Max. opening 90 %% -> 100 %% on %u zone(s)", static_cast<unsigned>(lifted));
     return true;
   }
 
@@ -733,6 +799,8 @@ bool Lv6ConfigStore::load_zone_config_(nvs_handle_t handle) {
       z.tau_learned_h = NAN;
       z.wind_exposure = 0.0f;
       z.solar_gain = 0.0f;
+      if (std::fabs(z.max_opening_pct - 90.0f) < 0.01f)
+        z.max_opening_pct = 100.0f;
       config_.zones[i] = z;
     }
     // Seed groups from legacy sync_to_zone stars when groups section is empty.
@@ -960,11 +1028,55 @@ void Lv6ConfigStore::load_config_() {
   xSemaphoreTake(mutex_, portMAX_DELAY);
   had_all_sections &= load_section(handle, KEY_SYSTEM, SYSTEM_CONFIG_VERSION, config_.system);
   if (!load_section(handle, KEY_CONTROL, CONTROL_CONFIG_VERSION, config_.control)) {
-    // v3 had no hp_close_above_c, v2 no hp_demand_pct: keep every stored control
-    // setting and add the new fields at their defaults.
+    // v5 had no hp_heat_move_k, v4 no hp_running_min_total_pct, v3 no
+    // hp_close_above_c, v2 no hp_demand_pct: keep every stored control setting and
+    // add the new fields at their defaults.
+    ControlConfigV5 v5{};
+    ControlConfigV4 v4{};
     ControlConfigV3 v3{};
     ControlConfigV2 v2{};
-    if (load_section(handle, KEY_CONTROL, 3, v3)) {
+    if (load_section(handle, KEY_CONTROL, 5, v5)) {
+      ControlConfig c{};
+      c.comfort_band_c = v5.comfort_band_c;
+      c.maintenance_base_pct = v5.maintenance_base_pct;
+      c.demand_boost_pct = v5.demand_boost_pct;
+      c.boost_factor = v5.boost_factor;
+      c.min_movement_pct = v5.min_movement_pct;
+      c.tanh_steepness = v5.tanh_steepness;
+      c.simple_preheat_enabled = v5.simple_preheat_enabled;
+      c.preheat_absorb_enabled = v5.preheat_absorb_enabled;
+      c.preheat_absorb_band_c = v5.preheat_absorb_band_c;
+      c.preheat_detect_delta_c = v5.preheat_detect_delta_c;
+      c.mode = v5.mode;
+      c.hp_overheat_margin_c = v5.hp_overheat_margin_c;
+      c.hp_base_pct = v5.hp_base_pct;
+      c.hp_trim_floor_pct = v5.hp_trim_floor_pct;
+      c.hp_demand_pct = v5.hp_demand_pct;
+      c.hp_close_above_c = v5.hp_close_above_c;
+      c.hp_running_min_total_pct = v5.hp_running_min_total_pct;
+      config_.control = c;
+      ESP_LOGI(TAG, "Control section migrated v5 -> v%" PRIu32, CONTROL_CONFIG_VERSION);
+    } else if (load_section(handle, KEY_CONTROL, 4, v4)) {
+      ControlConfig c{};
+      c.comfort_band_c = v4.comfort_band_c;
+      c.maintenance_base_pct = v4.maintenance_base_pct;
+      c.demand_boost_pct = v4.demand_boost_pct;
+      c.boost_factor = v4.boost_factor;
+      c.min_movement_pct = v4.min_movement_pct;
+      c.tanh_steepness = v4.tanh_steepness;
+      c.simple_preheat_enabled = v4.simple_preheat_enabled;
+      c.preheat_absorb_enabled = v4.preheat_absorb_enabled;
+      c.preheat_absorb_band_c = v4.preheat_absorb_band_c;
+      c.preheat_detect_delta_c = v4.preheat_detect_delta_c;
+      c.mode = v4.mode;
+      c.hp_overheat_margin_c = v4.hp_overheat_margin_c;
+      c.hp_base_pct = v4.hp_base_pct;
+      c.hp_trim_floor_pct = v4.hp_trim_floor_pct;
+      c.hp_demand_pct = v4.hp_demand_pct;
+      c.hp_close_above_c = v4.hp_close_above_c;
+      config_.control = c;
+      ESP_LOGI(TAG, "Control section migrated v4 -> v%" PRIu32, CONTROL_CONFIG_VERSION);
+    } else if (load_section(handle, KEY_CONTROL, 3, v3)) {
       ControlConfig c{};
       c.comfort_band_c = v3.comfort_band_c;
       c.maintenance_base_pct = v3.maintenance_base_pct;
@@ -1129,6 +1241,7 @@ void Lv6ConfigStore::nvs_task_loop_() {
     }
     save_pending_ = false;
     save_config_();
+    write_balance_basis_();
   }
 }
 

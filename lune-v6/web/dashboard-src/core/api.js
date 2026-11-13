@@ -87,6 +87,8 @@ function postV1(path, params, mockBody, opts) {
       addActivity(detail);
       const err = new Error(detail);
       err.status = resp.status;
+      // The device's error code (e.g. probe_conflict) lets the UI say what was refused.
+      try { err.code = ((await resp.json()).error || {}).code; } catch (_) { /* no JSON body */ }
       throw err;
     }
     return resp;
@@ -217,7 +219,6 @@ const globalSelectMap = {
   manifold_flow_probe: gkey.manifoldFlowProbe,
   manifold_return_probe: gkey.manifoldReturnProbe,
   motor_profile_default: gkey.motorProfileDefault,
-  simple_preheat_enabled: gkey.simplePreheatEnabled,
   preheat_absorb_enabled: gkey.preheatAbsorbEnabled,
   ble_clock_sync_enabled: gkey.bleClockSyncEnabled,
   heating_mode: gkey.heatingMode,

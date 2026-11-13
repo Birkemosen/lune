@@ -245,6 +245,28 @@ struct EndpointEvidence {
   bool seated_start{false};
 };
 
+/// A closing drive toward the seat that has travelled well short of where the
+/// seat should be (held position x learned stroke, minus `short_margin`).
+constexpr bool seat_stop_short(uint32_t moved, uint32_t expected, uint32_t short_margin) {
+  return moved + short_margin < expected;
+}
+
+/// EndpointEvidence::seated_start for a stop after `moved` counts. Running past
+/// the expected seat by more than `margin` (drift grows with distance, and the
+/// seat is pressed into) is never the seat. Stopping short is the seat only when
+/// the held position is a hint (after a restart, a fault or the reset guide):
+/// from a trusted position the count is accurate to a few tens (one open/close
+/// cycle: 24 of 1671), so a stop more than `short_margin` short is load in the
+/// pin ramp - a stiff insert - and taking it as the seat leaves every later
+/// opening too far open (2026-11-07: a re-home from 94.7 % stopped 243 counts
+/// short and was taken as the seat; 10 % then passed as much as 23 %). The caller
+/// reports it as a jam, and the back-off retry (no longer trusted) finds the seat.
+constexpr bool seat_where_expected(uint32_t moved, uint32_t expected, uint32_t margin,
+                                   uint32_t short_margin, bool position_trusted) {
+  return moved <= expected + margin &&
+         !(position_trusted && seat_stop_short(moved, expected, short_margin));
+}
+
 // The load-bearing pair is motion that has ceased while the motor is still
 // drawing, plus a commanded endpoint window.  Current *rise* (threshold) is
 // confirmation for closing; opening often has no useful current step, so a

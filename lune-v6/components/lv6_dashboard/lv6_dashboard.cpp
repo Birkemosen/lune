@@ -599,13 +599,13 @@ void LV6Dashboard::update_snapshot_() {
     s.probes                 = this->config_store_->get_probe_config();
     s.motor                  = this->config_store_->get_motor_config();
     s.manifold_type          = this->config_store_->get_manifold_type();
-    s.simple_preheat_enabled = this->config_store_->get_simple_preheat_enabled();
     const auto ctrl_cfg = this->config_store_->read([&](const lv6::DeviceConfig &c_) { return c_.control; });
     s.preheat_absorb_enabled = ctrl_cfg.preheat_absorb_enabled;
     s.preheat_absorb_band_c  = ctrl_cfg.preheat_absorb_band_c;
     s.preheat_detect_delta_c = ctrl_cfg.preheat_detect_delta_c;
     s.heating_mode = ctrl_cfg.mode;
     s.hp_overheat_margin_c = ctrl_cfg.hp_overheat_margin_c;
+    s.hp_heat_move_k = ctrl_cfg.hp_heat_move_k;
     s.hp_base_pct = ctrl_cfg.hp_base_pct;
     s.hp_trim_floor_pct = ctrl_cfg.hp_trim_floor_pct;
     s.hp_close_above_c = ctrl_cfg.hp_close_above_c;
@@ -637,6 +637,11 @@ void LV6Dashboard::update_snapshot_() {
       if (this->zone_controller_) {
         s.zone_loop_share_pct[i] = this->zone_controller_->get_loop_share_pct(i);
         s.zone_house_balance[i] = this->zone_controller_->get_house_balance(i);
+        // Pin travel in counts: the learned working range, else the stroke past free travel.
+        const float range = s.motor_working_ripple[i] > 0.0f
+                                ? s.motor_working_ripple[i]
+                                : s.motor_open_ripple[i] - (s.motor_pin_free_ripple[i] > 0.0f ? s.motor_pin_free_ripple[i] : 0.0f);
+        s.zone_opening_mm[i] = lv6::valve_curve::opening_mm(s.zone_valve_pct[i], range);
         s.zone_absorb_capacity_rank[i] = this->zone_controller_->get_absorb_capacity_rank(i);
         s.zone_relative_kv[i] =
             this->zone_controller_->get_relative_kv(i, s.zone_valve_pct[i]);
@@ -647,6 +652,7 @@ void LV6Dashboard::update_snapshot_() {
       } else {
         s.zone_loop_share_pct[i] = NAN;
         s.zone_house_balance[i] = 1.0f;
+        s.zone_opening_mm[i] = NAN;
         s.zone_absorb_capacity_rank[i] = 0;
         s.zone_relative_kv[i] = NAN;
         s.zone_static_factor[i] = NAN;
@@ -1854,10 +1860,6 @@ void LV6Dashboard::handle_state_(AsyncWebServerRequest *request) {
       snap->drivers_enabled ? "on" : "off",
       snap->drivers_enabled ? "" : snap->drivers_off_reason)) return;
 
-  if (!append(
-      "\"switch-simple_preheat_enabled\":{\"state\":\"%s\"},",
-      snap->simple_preheat_enabled ? "on" : "off")) return;
-
   format_float_token(num_buf, sizeof(num_buf), snap->preheat_absorb_band_c, 1);
   if (!append(
       "\"switch-preheat_absorb_enabled\":{\"state\":\"%s\"},"
@@ -1884,6 +1886,8 @@ void LV6Dashboard::handle_state_(AsyncWebServerRequest *request) {
       lv6::heat_demand_recommendation_to_string(snap->heat_demand.recommendation))) return;
   format_float_token(num_buf, sizeof(num_buf), snap->hp_overheat_margin_c, 1);
   if (!append( "\"number-hp_overheat_margin_c\":{\"value\":%s},", num_buf)) return;
+  format_float_token(num_buf, sizeof(num_buf), snap->hp_heat_move_k, 1);
+  if (!append( "\"number-hp_heat_move_k\":{\"value\":%s},", num_buf)) return;
   format_float_token(num_buf, sizeof(num_buf), snap->hp_base_pct, 0);
   if (!append( "\"number-hp_base_pct\":{\"value\":%s},", num_buf)) return;
   format_float_token(num_buf, sizeof(num_buf), snap->hp_trim_floor_pct, 0);
@@ -2207,10 +2211,12 @@ void LV6Dashboard::handle_zones_(AsyncWebServerRequest *request) {
 
   appendf(buf, JSON_BUF_SIZE, off,
           "{\"ok\":true,\"version\":\"v1\",\"data\":{\"node_id\":\"%s\","
-          "\"device_name\":\"%s\",\"device_location\":\"%s\",\"count\":%u,\"hp_phase\":\"%s\",\"zones\":[",
+          "\"device_name\":\"%s\",\"device_location\":\"%s\",\"count\":%u,\"hp_phase\":\"%s\","
+          "\"balance_basis\":\"%s\",\"zones\":[",
           node_id, name_esc, place_esc, static_cast<unsigned>(lv6::NUM_ZONES),
           this->zone_controller_ ? lv6::Lv6ZoneController::hp_phase_name(this->zone_controller_->get_hp_phase())
-                                 : "unknown");
+                                 : "unknown",
+          "model");
   for (uint8_t i = 0; i < lv6::NUM_ZONES && off + 1200 < JSON_BUF_SIZE; i++) {
     char temp[24], setpoint[24], valve[24], preload[24];
     format_float_token(temp, sizeof(temp), snap->zone_temp_c[i], 1);
@@ -2260,6 +2266,8 @@ void LV6Dashboard::handle_zones_(AsyncWebServerRequest *request) {
       snprintf(rank, sizeof(rank), "null");
     const float max_open = std::max(1.0f, snap->zones[i].max_opening_pct);
     format_float_token(opening_ratio, sizeof(opening_ratio), snap->zone_valve_pct[i] / max_open, 3);
+    char mm_tok[16];
+    format_float_token(mm_tok, sizeof(mm_tok), snap->zone_opening_mm[i], 1);
     const char *absorb_state =
         (snap->absorb_mode == 2 || (this->zone_controller_ && this->zone_controller_->is_zone_absorb_armed(i))) ? "armed" : (snap->absorb_mode == 1 ? "reactive" : "idle");
     const int8_t primary = sync_roots[i];
@@ -2282,10 +2290,10 @@ void LV6Dashboard::handle_zones_(AsyncWebServerRequest *request) {
             "\",\"friendly_name\":\"");
     append_json_escaped(buf, JSON_BUF_SIZE, off, snap->zones[i].name);
     appendf(buf, JSON_BUF_SIZE, off,
-            "\",\"enabled\":%s,\"temperature_c\":%s,\"setpoint_c\":%s,\"valve_pct\":%s,"
+            "\",\"enabled\":%s,\"temperature_c\":%s,\"setpoint_c\":%s,\"valve_pct\":%s,\"opening_mm\":%s,"
             "\"opening_ratio\":%s,\"preheat_c\":%s,\"state\":\"%s\",\"temp_source\":\"%s\","
             "\"fresh\":%s,\"group_primary\":%u,\"group_members\":[",
-            snap->zones[i].enabled ? "true" : "false", temp, setpoint, valve, opening_ratio, preload,
+            snap->zones[i].enabled ? "true" : "false", temp, setpoint, valve, mm_tok, opening_ratio, preload,
             snap->zone_state[i], temp_source_to_dashboard_str(snap->zone_temp_source[i]),
             std::isfinite(snap->zone_temp_c[i]) ? "true" : "false",
             static_cast<unsigned>(primary + 1));
@@ -2307,6 +2315,11 @@ void LV6Dashboard::handle_zones_(AsyncWebServerRequest *request) {
       snprintf(thick_tok, sizeof(thick_tok), "%.1f", snap->zones[i].active_thickness_cm);
     else
       snprintf(thick_tok, sizeof(thick_tok), "null");
+    char tau_learned_tok[16];
+    if (std::isfinite(snap->zones[i].tau_learned_h) && snap->zones[i].tau_learned_h > 0.0f)
+      snprintf(tau_learned_tok, sizeof(tau_learned_tok), "%.1f", snap->zones[i].tau_learned_h);
+    else
+      snprintf(tau_learned_tok, sizeof(tau_learned_tok), "null");
     char r_ov_tok[24];
     if (std::isfinite(snap->zones[i].r_override_m2k_per_w))
       snprintf(r_ov_tok, sizeof(r_ov_tok), "%.3f", snap->zones[i].r_override_m2k_per_w);
@@ -2319,22 +2332,24 @@ void LV6Dashboard::handle_zones_(AsyncWebServerRequest *request) {
             "\"c_zone_kwh_per_k\":%s,\"r_m2k_per_w\":%s,\"absorb_headroom_k\":%s,\"unset\":%s},"
             "\"ua_prior_w_per_k\":%s,\"ua_learned_w_per_k\":%s,\"ua_learned_confidence\":%s,"
             "\"ua_learned_observed_days\":%s,\"ua_source\":\"%s\",\"ua_weight_override\":%.2f,"
-            "\"ua_effective_w_per_k\":%s,\"tau_prior_h\":%s,"
+            "\"ua_effective_w_per_k\":%s,\"tau_prior_h\":%s,\"tau_learned_h\":%s,"
             "\"ua_w_per_k\":%s,\"thermal_mass_kwh_per_k\":%s,\"tau_h\":%s,"
-            "\"return_c\":%s,\"loop_share_pct\":%s,\"absorb_state\":\"%s\","
+            "\"return_c\":%s,\"loop_share_pct\":%s,\"heat_moving\":%s,\"absorb_state\":\"%s\","
             "\"absorb_capacity_rank\":%s,\"max_offset_c\":%s,"
             "\"group_id\":\"%s\",\"group_role\":\"%s\","
             "\"wind_exposure\":%.2f,\"solar_gain\":%.2f,"
             "\"pipe_inner_mm\":%.0f,\"pipe_spacing_mm\":%.0f,\"supply_pipe_length_m\":%.1f,"
-            "\"house_balance\":%.2f,\"warnings\":[",
+            "\"house_balance\":%.2f,"
+            "\"warnings\":[",
             snap->zones[i].area_m2, static_cast<unsigned>(snap->zones[i].exterior_walls & 0x0F),
             lv6::slab_type_to_string(snap->zones[i].slab_type), thick_tok,
             lv6::covering_type_to_string(snap->zones[i].covering), r_ov_tok, c_slab_m2, c_slab,
             c_zone, r_tok, headroom, th.floor_unset ? "true" : "false", ua_prior, ua_learned, conf,
             days_tok, th.ua_source, snap->zones[i].ua_weight_override, ua_eff,
-            th.plausible && std::isfinite(th.tau_prior_h) ? tau : "null",
+            th.plausible && std::isfinite(th.tau_prior_h) ? tau : "null", tau_learned_tok,
             th.plausible ? ua : "null", th.plausible ? mass : "null",
             th.plausible && std::isfinite(th.tau_prior_h) ? tau : "null", return_c, share,
+            this->zone_controller_ && this->zone_controller_->is_moving_heat(i) ? "true" : "false",
             absorb_state, rank, max_offset, group_id, lv6::group_role_to_string(role),
             snap->zones[i].wind_exposure, snap->zones[i].solar_gain,
             lv6::pipe_inner_diameter_mm(snap->zones[i].pipe_type), snap->zones[i].pipe_spacing_mm,
@@ -2498,15 +2513,17 @@ void LV6Dashboard::handle_settings_(AsyncWebServerRequest *request) {
   format_float_token(preheat_delta, sizeof(preheat_delta), snap->preheat_detect_delta_c, 1);
   format_float_token(min_flow, sizeof(min_flow), snap->min_zone_flow_pct, 1);
   format_float_token(hp_margin, sizeof(hp_margin), snap->hp_overheat_margin_c, 1);
+  char hp_move[16];
+  format_float_token(hp_move, sizeof(hp_move), snap->hp_heat_move_k, 1);
   format_float_token(hp_base, sizeof(hp_base), snap->hp_base_pct, 0);
   format_float_token(hp_trim, sizeof(hp_trim), snap->hp_trim_floor_pct, 0);
   format_float_token(hp_demand, sizeof(hp_demand), snap->hp_demand_pct, 0);
 
   appendf(buf, BUF_SIZE, off,
           "{\"ok\":true,\"version\":\"v1\",\"data\":{\"control\":{"
-          "\"simple_preheat_enabled\":%s,\"preheat_absorb_enabled\":%s,"
+          "\"preheat_absorb_enabled\":%s,"
           "\"preheat_absorb_band_c\":%s,\"preheat_detect_delta_c\":%s,"
-          "\"heating_mode\":\"%s\",\"hp_overheat_margin_c\":%s,"
+          "\"heating_mode\":\"%s\",\"hp_overheat_margin_c\":%s,\"hp_heat_move_k\":%s,"
           "\"hp_base_pct\":%s,\"hp_trim_floor_pct\":%s,\"hp_demand_pct\":%s},"
           "\"minimum_flow\":{\"enabled\":%s,\"min_zone_flow_pct\":%s},"
           "\"ble_clock_sync\":{\"enabled\":%s,\"interval_min\":%u,\"last_ok_s\":%lu,"
@@ -2516,10 +2533,9 @@ void LV6Dashboard::handle_settings_(AsyncWebServerRequest *request) {
           "\"hmip_runtime_limit_s\":%lu,\"relearn_after_movements\":%lu,"
           "\"relearn_after_hours\":%lu},"
           "\"authority\":{\"installation_id\":\"%s\",\"coordinator_id\":\"%s\",\"authentication_configured\":%s},\"zones\":[",
-          snap->simple_preheat_enabled ? "true" : "false",
           snap->preheat_absorb_enabled ? "true" : "false",
           preheat_band, preheat_delta,
-          lv6::heating_profile_to_string(snap->heating_mode), hp_margin, hp_base, hp_trim, hp_demand,
+          lv6::heating_profile_to_string(snap->heating_mode), hp_margin, hp_move, hp_base, hp_trim, hp_demand,
           snap->minimum_flow_always ? "true" : "false", min_flow,
           snap->ble_clock_sync_enabled ? "true" : "false",
           static_cast<unsigned>(snap->ble_clock_sync_interval_min),
@@ -3306,6 +3322,61 @@ void LV6Dashboard::handle_v1_(AsyncWebServerRequest *request, const char *path) 
       return;
     }
     this->handle_zone_physics_(request, static_cast<uint8_t>(zone), body);
+    return;
+  }
+  if (strcmp(path, "/valve-test") == 0 || strcmp(path, "/valve-test/stop") == 0) {
+    // Touch's valve-curve measurement: every loop holds (or goes to others_pct when
+    // given), `zone` (1..6; 0 = none) goes to position_pct. Ends after ttl_s
+    // (30..900) or on /stop.
+    if (this->config_store_ == nullptr || this->zone_controller_ == nullptr) {
+      this->send_v1_(request, 503, "controller_unavailable", "Zone controller unavailable");
+      return;
+    }
+    const auto auth_cfg = this->config_store_->get_authority_config();
+    const auto key_header = request->get_header("X-Lune-Authority-Key");
+    const char *provided_key = key_header.has_value() ? key_header->c_str() : "";
+    float auth_timestamp_s = 0.0f;
+    char auth_nonce[48]{};
+    parse_num_param(request, body, "auth_timestamp_s", &auth_timestamp_s);
+    parse_text_param(request, body, "auth_nonce", "", auth_nonce, sizeof(auth_nonce));
+    if (!touch_auth::request_is_authenticated(auth_cfg.shared_key, provided_key, ::time(nullptr),
+                                              auth_timestamp_s, auth_nonce)) {
+      this->send_v1_(request, 403, "touch_auth_failed",
+                     "Touch command requires provisioned key, valid UTC timestamp, and nonce");
+      return;
+    }
+    if (request_guard_.check(0, data_revision_, auth_nonce, millis()) == request_guard::Decision::DUPLICATE) {
+      this->send_v1_(request, 409, "replayed_nonce", "Touch command nonce was already used");
+      return;
+    }
+    if (path[11] == '/') {
+      this->zone_controller_->clear_valve_test();
+      send_text_(request, 200, "application/json",
+                 "{\"ok\":true,\"version\":\"v1\",\"data\":{\"active\":false}}", true, "no-cache");
+      return;
+    }
+    float zone_num = 0.0f, position = 0.0f, ttl_s = 300.0f, others = NAN;
+    parse_num_param(request, body, "zone", &zone_num);
+    parse_num_param(request, body, "others_pct", &others);
+    parse_num_param(request, body, "position_pct", &position);
+    parse_num_param(request, body, "ttl_s", &ttl_s);
+    if (!std::isfinite(zone_num) || zone_num < 0.0f || zone_num > lv6::NUM_ZONES) {
+      this->send_v1_(request, 400, "invalid_zone", "Zone must be 0..6");
+      return;
+    }
+    if (!std::isfinite(position))
+      position = 0.0f;
+    if (!std::isfinite(ttl_s))
+      ttl_s = 300.0f;
+    ttl_s = std::clamp(ttl_s, 30.0f, 900.0f);
+    const int8_t zi = static_cast<int8_t>(zone_num) - 1;
+    this->zone_controller_->set_valve_test(zi, position, static_cast<uint32_t>(ttl_s * 1000.0f), others);
+    char response[160];
+    snprintf(response, sizeof(response),
+             "{\"ok\":true,\"version\":\"v1\",\"data\":{\"active\":true,\"zone\":%d,\"position_pct\":%.1f,"
+             "\"ttl_s\":%lu}}",
+             zi + 1, std::clamp(position, 0.0f, 100.0f), static_cast<unsigned long>(ttl_s));
+    send_text_(request, 200, "application/json", response, true, "no-cache");
     return;
   }
   if ((zone = match_zone_route(path, "/zones", "absorb-arm")) != -1 ||
@@ -4508,6 +4579,8 @@ void LV6Dashboard::dispatch_set_(const DashboardAction &act) {
 
   } else if (strcmp(key, "hp_overheat_margin_c") == 0 && has_num && this->zone_controller_) {
     this->zone_controller_->set_hp_overheat_margin_c(num_val);
+  } else if (strcmp(key, "hp_heat_move_k") == 0 && has_num && this->zone_controller_) {
+    this->zone_controller_->set_hp_heat_move_k(num_val);
 
   } else if (strcmp(key, "hp_base_pct") == 0 && has_num && this->zone_controller_) {
     this->zone_controller_->set_hp_base_pct(num_val);
@@ -4531,11 +4604,6 @@ void LV6Dashboard::dispatch_set_(const DashboardAction &act) {
     auto ctrl = this->config_store_->read([&](const lv6::DeviceConfig &c_) { return c_.control; });
     ctrl.preheat_detect_delta_c = std::max(0.1f, std::min(10.0f, num_val));
     this->config_store_->update_control(ctrl);
-
-  // ---- simple_preheat_enabled ----
-  } else if (strcmp(key, "simple_preheat_enabled") == 0 && has_str && this->zone_controller_) {
-    const bool en = strcasecmp(str_val, "on") == 0 || strcasecmp(str_val, "true") == 0 || strcmp(str_val, "1") == 0;
-    this->zone_controller_->set_simple_preheat_enabled(en);
 
   // ---- motor_profile_default ----
   } else if (strcmp(key, "motor_profile_default") == 0 && has_str && this->config_store_ && this->valve_controller_) {

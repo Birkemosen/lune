@@ -151,7 +151,6 @@ function seed() {
   setEntity(gkey.relearnAfterHours, { value: 168 });
   setEntity(gkey.learnedFactorMinSamples, { value: 3 });
   setEntity(gkey.learnedFactorMaxDeviationPct, { value: 12 });
-  setEntity(gkey.simplePreheatEnabled, { state: 'on' });
   setEntity(gkey.minZoneFlowPct, { value: 15 });
   setEntity(gkey.minimumFlowAlways, { state: 'off' });
   setEntity(gkey.heatingMode, { state: 'heat_pump' });
@@ -159,6 +158,7 @@ function seed() {
   setEntity(gkey.heatingModeSource, { state: 'local' });
   setEntity(gkey.balancingMode, { state: 'adaptive' });
   setEntity(gkey.hpOverheatMarginC, { value: 1.0 });
+  setEntity(gkey.hpHeatMoveK, { value: 0.5 });
   setEntity(gkey.hpBasePct, { value: 60 });
   setEntity(gkey.hpTrimFloorPct, { value: 15 });
   setEntity(gkey.hpCloseAboveC, { value: 0.5 });
@@ -652,7 +652,6 @@ export function handleMockPost(body) {
   if (k === 'manifold_flow_probe') { setEntity(gkey.manifoldFlowProbe, { state: String(v) }); addActivity('Setting updated: ' + k + ' = ' + v); return; }
   if (k === 'manifold_return_probe') { setEntity(gkey.manifoldReturnProbe, { state: String(v) }); addActivity('Setting updated: ' + k + ' = ' + v); return; }
   if (k === 'motor_profile_default') { setEntity(gkey.motorProfileDefault, { state: String(v) }); addActivity('Setting updated: ' + k + ' = ' + v); return; }
-  if (k === 'simple_preheat_enabled') { setEntity(gkey.simplePreheatEnabled, { state: String(v) }); addActivity('Setting updated: ' + k + ' = ' + v); return; }
   if (k === 'minimum_flow_always') { setEntity(gkey.minimumFlowAlways, { state: String(v) }); addActivity('Setting updated: ' + k + ' = ' + v); return; }
   if (k === 'heating_mode') {
     const mode = String(v) === 'normal' ? 'normal' : 'heat_pump';
@@ -723,6 +722,7 @@ export function handleMockPost(body) {
     learned_factor_max_deviation_pct: gkey.learnedFactorMaxDeviationPct,
     min_zone_flow_pct: gkey.minZoneFlowPct,
     hp_overheat_margin_c: gkey.hpOverheatMarginC,
+    hp_heat_move_k: gkey.hpHeatMoveK,
     hp_base_pct: gkey.hpBasePct,
     hp_trim_floor_pct: gkey.hpTrimFloorPct,
     hp_close_above_c: gkey.hpCloseAboveC,
@@ -791,10 +791,10 @@ export function mockSettingsExport(includeLearned) {
       minimum_flow_always: es(gkey.minimumFlowAlways) === 'on',
       heating_mode: es(gkey.heatingMode) || 'heat_pump',
       hp_overheat_margin_c: ev(gkey.hpOverheatMarginC),
+      hp_heat_move_k: ev(gkey.hpHeatMoveK),
       hp_base_pct: ev(gkey.hpBasePct),
       hp_trim_floor_pct: ev(gkey.hpTrimFloorPct),
       hp_demand_pct: ev(gkey.hpDemandPct),
-      simple_preheat_enabled: es(gkey.simplePreheatEnabled) === 'on',
       ble_clock_sync_enabled: es(gkey.bleClockSyncEnabled) === 'on',
       ble_clock_sync_interval_min: ev(gkey.bleClockSyncIntervalMin),
     },

@@ -333,7 +333,18 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
           <div><dt>{T("zdash.preheatAdv")}</dt><dd data-bind="z{i}.preheat">—</dd></div>
           <div><dt>{T("zdash.offsetNow")}</dt><dd data-bind="z{i}.offset">—</dd></div>
           <div><dt>{T("zdash.tempFrom")}</dt><dd data-bind="z{i}.tempFrom">—</dd></div>
-        </dl>'''
+        </dl>
+        <div class="sub" data-bind-show="z{i}.phys" hidden>
+          <h4>{T("zdash.phys.title")}</h4>
+          <div class="table-wrap"><table class="table">
+            <thead><tr><th></th><th class="num">{T("zdash.phys.calc")}</th><th class="num">{T("zdash.phys.learned")}</th><th class="num">{T("zdash.phys.used")}</th></tr></thead>
+            <tbody>
+              <tr><td>{T("zdash.phys.ua")}</td><td class="num" data-bind="z{i}.uaCalc">—</td><td class="num" data-bind="z{i}.uaLearned">—</td><td class="num" data-bind="z{i}.uaUsed">—</td></tr>
+              <tr><td>{T("zdash.phys.tau")}</td><td class="num" data-bind="z{i}.tauCalc">—</td><td class="num" data-bind="z{i}.tauLearned">—</td><td class="num" data-bind="z{i}.tauUsed">—</td></tr>
+            </tbody>
+          </table></div>
+          <p class="note" data-bind="z{i}.physNote"></p>
+        </div>'''
         # Indstillinger: én formular, én gem-bjælke. data-patch: binderen skriver kun de ændrede dele.
         merge=f'<option value="">{T("common.none")}</option>'+"".join(f'<option value="{y[0]}" data-zone-opt="{y[0]}">Z{y[0]}</option>' for y in Z if y[0]!=i)
         pipes="".join(f'<option{" selected" if p==pipe else ""}>{p}</option>' for p in PIPES)
@@ -401,20 +412,24 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
             </table></div></div>
           <div class="sub"><h4>{T("csys.probeLive")}</h4>
             <dl class="metrics">
-              {"".join(metric(T("csys.probe",n=k),"—","°C",f"probe.{k}",attrs=f' data-probe="{k}"') for k in range(1,9))}
+              {"".join(metric(f'{T("csys.probe",n=k)} <span class="badge" data-bind="probe.{k}.role" data-bind-show="probe.{k}.hasRole" hidden></span>',"—","°C",f"probe.{k}",attrs=f' data-probe="{k}"') for k in range(1,9))}
             </dl></div>'''
         settings=f'''
-        <form data-save="regulation">
+        <form data-save="regulation" data-patch>
+        {group(T("csys.manifold"),
+               srow(span(T("csys.valveType")),seg("manifold_type",[("no",T("csys.no")),("nc",T("csys.nc"))],"nc",T("csys.valveType")))+
+               srow(lab("probe_flow",T("csys.supplyProbe")),probes(1,"probe_flow",include_none=False))+
+               srow(lab("probe_return",T("csys.returnProbe")),probes(2,"probe_return",include_none=False))+
+               srow(span(T("csys.probeMode")),seg("return_probe_mode",[("2",T("csys.probeMode2")),("8",T("csys.probeMode8"))],"2",T("csys.probeMode"))),
+               f'<p class="note">{T("csys.returnProbesNote")}</p>',
+               help=help_btn("help-manifold",T("csys.manifold")))}
           {group(T("csys.heating"),
                  srow(span(T("csys.heatMode")),seg("heat_mode",[("normal",T("csys.heatNormal")),("heat_pump",T("csys.heatPump"))],"heat_pump",T("csys.heatMode")))+
-                 sstep("heat_min_open",T("csys.minOpening"),0,0,100,1,"%",dec=0),
+                 srow(lab("heat_min_open",T("csys.minOpening")),stepper("heat_min_open",0,0,100,1,"%",label=T("csys.minOpening"),dec=0),T("csys.minOpeningHint"),cls="normal-only"),
                  help=help_btn("help-heating",T("csys.heating")))}
           {group(T("csys.heatPumpLimits"),
-                 sstep("hp_demand",T("csys.hpDemand"),80,30,100,1,"%",dec=0)+
-                 sstep("hp_base",T("csys.hpBase"),60,30,100,1,"%",dec=0)+
-                 sstep("hp_overheat",T("csys.hpOverheat"),1.0,0.3,3.0,0.1,"°C")+
-                 sstep("hp_trim",T("csys.hpTrim"),35,0,100,1,"%",dec=0)+
-                 sstep("hp_close",T("csys.hpCloseAbove"),0.0,0,3.0,0.1,"°C",hint=T("csys.hpCloseAboveHint")),cls="hp-limits")}
+                 sstep("hp_overheat",T("csys.hpOverheat"),1.0,0.3,3.0,0.1,"°C",hint=T("csys.hpOverheatHint"))+
+                 sstep("hp_move",T("csys.hpMove"),0.5,0,3.0,0.1,"°C",hint=T("csys.hpMoveHint")),cls="hp-limits")}
           {group(T("bal.title"),
                  srow(span(T("csys.balMode")),seg("balancing_mode",[("static",T("bal.static")),("adaptive",T("bal.adaptive"))],"static",T("csys.balMode"))),
                  f'<p class="note">{T("csys.balModeNote")}</p>')}
@@ -423,7 +438,7 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
                   extra=f'<p class="note" data-bind-show="absorb.touchNote" hidden>{T("csys.absorbTouch")}</p>',
                   help=help_btn("help-regulation",T("csys.regulation")))}
           <div class="actions">{confirm_pop("confirm-reset-bal","csys.resetBal","csys.resetBalTitle","csys.resetBalNote","reset_balancing","csys.resetBalConfirm")}</div>
-          {savebar("regulation",T("csys.saveReg"))}
+          {savebar("regulation",T("csys.saveManifold"))}
         </form>'''
         status=f'<span data-bind="manifold.status">—</span>'
         return sheet("manifold",T("hash.manifold"),I_MANI,T("sheet.manifold"),status,overview,trend_block(),settings)
@@ -434,7 +449,7 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
         return (f'<section class="sys-cat" data-cat="{cat}" aria-labelledby="h-c-{cat}"{attrs}><label class="sys-back" for="c-none">{T("sys.title")}</label>'
                 f'<header><div><small>{T("sys.title")}</small><h2 id="h-c-{cat}">{title}</h2></div></header>{body}</section>')
     CATS=[("device",T("cat.device"),'<path d="M4 11l8-7 8 7v9H4z"/>'),
-          ("manifold",T("csys.mm"),'<path d="M4 7h16M4 12h16M4 17h16"/>'),
+          ("motors",T("csys.motors"),'<circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3"/>'),
           ("connections",T("cat.connections"),'<path d="M9 15l6-6M7 13l-2 2a3 3 0 0 0 4 4l2-2M17 11l2-2a3 3 0 0 0-4-4l-2 2"/>'),
           ("firmware",T("cat.firmware"),'<path d="M12 4v10M8 10l4 4 4-4M5 19h14"/>'),
           ("service",T("csys.service"),'<path d="M14 6a4 4 0 0 0-5 5l-5 5 3 3 5-5a4 4 0 0 0 5-5l-2 2-3-3z"/>'),
@@ -456,15 +471,8 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
                srow(span(T("csys.bleClockSync")),f'<button class="btn" type="submit" name="action" value="sync">{T("csys.bleClockSync")}</button>'),
                help=help_btn("help-ble-clock",T("csys.bleClock")))}
       </form>'''))
-    cats.append(syscat("manifold",T("csys.mm"),f'''
-      <form data-save="manifold" data-patch>
-        {group(T("csys.manifold"),
-               srow(span(T("csys.valveType")),seg("manifold_type",[("no",T("csys.no")),("nc",T("csys.nc"))],"nc",T("csys.valveType")))+
-               srow(lab("probe_flow",T("csys.supplyProbe")),probes(1,"probe_flow",include_none=False))+
-               srow(lab("probe_return",T("csys.returnProbe")),probes(2,"probe_return",include_none=False))+
-               srow(span(T("csys.probeMode")),seg("return_probe_mode",[("2",T("csys.probeMode2")),("8",T("csys.probeMode8"))],"2",T("csys.probeMode"))),
-               f'<p class="note">{T("csys.returnProbesNote")}</p>',
-               help=help_btn("help-manifold",T("csys.mm")))}
+    cats.append(syscat("motors",T("csys.motors"),f'''
+      <form data-save="motors" data-patch>
         {ggroup(T("csys.motors"),sswitch("motor_drivers",T("csys.drivers"),T("csys.driversSub"),True),
                 srow(lab("motor_type",T("csys.motorType")),'<select class="select" id="motor_type" name="motor_type"><option>Generic</option><option selected>HmIP VdMot</option></select>')+
                 sstep("m_runtime",T("csys.maxRun"),38,5,40,1,"s",dec=0))}
@@ -477,7 +485,7 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
                    sstep("m_relmov",T("csys.afterMoves"),200,10,2000,10,"",dec=0)+sstep("m_relh",T("csys.afterHours"),168,1,720,1,H,dec=0)+sstep("m_minsamp",T("csys.minSamples"),3,1,20,1,"",dec=0)+sstep("m_maxdev",T("csys.maxDev"),0.15,0.01,1,0.01,"",dec=2))),
                f'<p class="note">{T("csys.limitsMsg")}</p>')}
         <div class="actions">{confirm_pop("confirm-relearn-all","csys.relearnAll","csys.relearnAllTitle","csys.relearnAllNote","relearn_all","csys.relearnAllConfirm")}</div>
-        {savebar("manifold",T("csys.saveManifold"))}
+        {savebar("motors",T("csys.saveMotors"))}
       </form>'''))
     copy_row=lambda key,bid,bind: srow(span(T(key)),f'<code class="mono" id="{bid}" data-bind="{bind}">—</code><button type="button" class="btn copy" data-copy="#{bid}">{T("common.copy")}</button>')
     cats.append(syscat("connections",T("cat.connections"),f'''
@@ -555,9 +563,85 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
           {confirm_pop("confirm-restart","csys.restart","csys.restartTitle","csys.restartNote","restart","csys.restartConfirm")}
         </div>
       </form>'''))
+    # Motorlab (kun dev-builds): ét slag ad gangen på én motor, med live strøm og faser.
+    def lab_step(n,key,action,when,done):
+        btn=f'<button class="btn" type="button" data-lab="{action}" data-show-when="{when}">{T(f"lab.{key}.action")}</button>'
+        badge=f'<span class="badge ok" data-bind-show="lab.done.{key}" hidden>{T("lab.done")}</span>'
+        return srow(f'<span>{n}. {T(f"lab.{key}.title")}</span>',badge+btn,T(f"lab.{key}.hint"))
+    lab_zone_opts="".join(f'<option value="{z[0]}">Z{z[0]} {z[1]}</option>' for z in Z)
+    def mt_row(layer,bind,unit,cls):
+        attr=f' data-layer="{layer}"' if layer else ""
+        return (f'<div class="mtrace-row"{attr}><div class="mtrace-y" data-bind="lab.y.{bind}" aria-hidden="true"><span>—</span><span>—</span><span>—</span></div>'
+                f'<svg class="trend" viewBox="0 0 600 100" preserveAspectRatio="none" role="img" aria-label="{T(f"lab.chart.{bind}" if bind=="current" else f"lab.chart.{bind}Aria")}"><path class="{cls}" data-lab-path="{bind}" d=""/></svg></div>')
     cats.append(syscat("motorlab",T("cat.motorlab"),f'''
-      <p class="msg warn"><span>{T("csys.motorLabMsg")}</span></p>
-      <div class="actions"><button class="btn" type="button" data-action="motorlab-estop">{T("csys.motorLabEstop")}</button></div>''',attrs=" data-dev-only hidden"))
+      <div class="lab" data-state="setup">
+        <p class="msg warn"><span>{T("csys.motorLabMsg")}</span></p>
+        {group(T("lab.motor"),
+               srow(lab("lab_zone",T("lab.motor")),f'<select class="select w-md" id="lab_zone" name="lab_zone">{lab_zone_opts}</select>')+
+               srow(span(T("lab.status")),'<span class="badge" data-bind="lab.status">—</span>'),
+               f'<p class="note">{T("lab.intro")}</p>')}
+        {group(T("lab.steps"),
+               lab_step(1,"arm","arm","setup halted","armed")+
+               lab_step(2,"seat","seat","armed","seated")+
+               lab_step(3,"open","open","seated closed","opened")+
+               lab_step(4,"close","close","opened","closed")+
+               sstep("lab_ms",T("lab.manual.duration"),10,1,45,1,"s",dec=0,hint=T("lab.manual.hint"))+
+               srow(span(T("lab.manual.move")),f'<button class="btn" type="button" data-lab="jog-open">{T("lab.manual.open")}</button><button class="btn" type="button" data-lab="jog-close">{T("lab.manual.close")}</button>',attrs=' data-show-when="armed seated opened closed"'))}
+        <div class="actions">
+          <button class="btn danger-solid" type="button" data-action="motorlab-estop">{T("csys.motorLabEstop")}</button>
+          <button class="btn" type="button" data-lab="stop" data-show-when="running">{T("lab.stop")}</button>
+          <button class="btn" type="button" data-lab="finish" data-show-when="armed seated opened closed halted">{T("lab.finish")}</button>
+        </div>
+        <div class="sub"><h4>{T("lab.live")}</h4>
+          <dl class="metrics">
+            {metric(T("lab.current"),"—","mA","lab.current")}
+            {metric(T("lab.mean"),"—","mA","lab.mean")}
+            {metric(T("lab.peak"),"—","mA","lab.peak")}
+            {metric(T("lab.runtime"),"—","s","lab.runtime")}
+            {metric(T("lab.ripples"),"—","","lab.ripples")}
+            {metric(T("lab.phase"),"—","","lab.phase")}
+            {metric(T("lab.pin"),"—","","lab.pin")}
+            {metric(T("lab.drivers"),"—","","lab.drivers")}
+          </dl></div>
+        <div class="sub mtrace" data-empty>
+          <h4>{T("lab.chart.title")} <span class="legend" data-bind="lab.chartMeta"></span></h4>
+          <p class="empty">{T("lab.chart.empty")}</p>
+          <div class="layers" role="group" aria-label="{T("lab.chart.layers")}">
+            <label><input class="sr-only" type="checkbox" value="phase" checked>{T("lab.chart.phase")}</label>
+            <label><input class="sr-only" type="checkbox" value="cadence"><i class="lcad"></i>{T("lab.chart.cadence")}</label>
+            <label><input class="sr-only" type="checkbox" value="slope"><i class="lslp"></i>{T("lab.chart.slope")}</label>
+          </div>
+          {mt_row("","current","mA","mc")}
+          {mt_row("cadence","cadence","Hz","cad")}
+          {mt_row("slope","slope","mA/s","slp")}
+          <div class="phase-strip" data-bind="lab.phases" aria-label="{T("lab.chart.phase")}"></div>
+          <div class="axis" data-bind="lab.x" aria-hidden="true"><span>0 s</span><span>—</span></div>
+          <div class="actions"><button class="btn" type="button" data-lab="csv">{T("lab.csv")}</button></div>
+        </div>
+        <div class="sub mtrace" data-lab-explorer data-empty>
+          <h4>{T("lab.thr.title")} <span class="legend" data-bind="lab.thr.meta"></span></h4>
+          <p class="empty">{T("lab.thr.empty")}</p>
+          {seg("lab_src",[("capture",T("lab.thr.capture")),("reference",T("lab.thr.reference"))],"capture",T("lab.thr.source"))}
+          <p class="note" data-bind="lab.thr.verdict"></p>
+          <div class="actions" data-bind-show="lab.thr.hasSuggest" hidden><span class="hint" data-bind="lab.thr.suggest"></span><button class="btn" type="button" data-lab="suggest">{T("lab.thr.useSuggest")}</button></div>
+          <div class="mtrace-row"><div class="mtrace-y" data-bind="lab.y.thr" aria-hidden="true"><span>—</span><span>—</span><span>—</span></div>
+            <svg class="trend" viewBox="0 0 600 100" preserveAspectRatio="none" role="img" aria-label="{T("lab.thr.chartAria")}"><g data-thr="caps"></g><path class="thr" data-thr="threshold" d=""/><path class="mc" data-thr="current" d=""/><g data-thr="trips"></g></svg></div>
+          <div class="mtrace-row" data-bind-show="lab.thr.rise" hidden><div class="mtrace-y" data-bind="lab.y.rise" aria-hidden="true"><span>—</span><span>—</span><span>—</span></div>
+            <svg class="trend" viewBox="0 0 600 100" preserveAspectRatio="none" role="img" aria-label="{T("lab.thr.riseAria")}"><g data-thr="risecap"></g><path class="slp" data-thr="rise" d=""/></svg></div>
+          <div class="axis" data-bind="lab.thr.x" aria-hidden="true"><span>0 s</span><span>—</span></div>
+          <div class="table-wrap"><table class="table">
+            <thead><tr><th>{T("lab.thr.col.path")}</th><th class="num">{T("lab.thr.col.threshold")}</th><th class="num">{T("lab.thr.col.fires")}</th><th class="num">{T("lab.thr.col.counts")}</th></tr></thead>
+            <tbody data-bind="lab.thr.rows"></tbody>
+          </table></div>
+        </div>
+        <form data-save="lab-thr" data-patch>
+          <p class="note">{T("lab.p.intro")}</p>
+          {group(T("lab.g.close"),sstep("close_threshold_multiplier",T("lab.p.closeFactor"),1.05,1.05,2.5,0.05,"×",dec=2)+sstep("close_trailing_step_ma",T("lab.p.trailStep"),0.5,0.5,20,0.1,"mA",dec=1)+sstep("close_trailing_ref_ms",T("lab.p.trailWindow"),250,250,10000,50,"ms",dec=0)+sstep("close_trailing_sustain_ms",T("lab.p.trailSustain"),0,0,10000,50,"ms",dec=0))}
+          {group(T("lab.g.openCeiling"),sstep("open_endstop_current_factor",T("lab.p.openFactor"),1.0,1.0,5.0,0.05,"×",dec=2)+sstep("open_endstop_stall_fraction",T("lab.p.stallFraction"),0.1,0.1,0.6,0.05,"",dec=2)+sstep("close_runtime_limit_counts",T("lab.p.closeCounts"),1,1,3000,10,"",dec=0))}
+          {group(T("lab.g.caps"),sstep("cap_close_seat_ma",T("lab.p.seat"),5,5,140,1,"mA",dec=0)+sstep("cap_close_seat_frames",T("lab.p.seatFrames"),1,1,20,1,"",dec=0)+sstep("cap_close_popoff_ma",T("lab.p.popoff"),5,5,140,1,"mA",dec=0)+sstep("cap_open_stop_ma",T("lab.p.openStop"),5,5,140,1,"mA",dec=0)+sstep("cap_stall_ma",T("lab.p.stall"),5,5,140,1,"mA",dec=0)+sstep("cap_circuit_fault_ma",T("lab.p.circuit"),5,5,140,1,"mA",dec=0))}
+          {savebar("lab-thr",T("lab.p.save"))}
+        </form>
+      </div>''',attrs=" data-dev-only hidden"))
     dev_attr=lambda c: " data-dev-only hidden" if c in DEV_ONLY else ""
     sys_radios=f'<input class="state" type="radio" name="syscat" id="c-none" checked aria-label="{T("sys.cats")}">'+"".join(
         f'<input class="state" type="radio" name="syscat" id="c-{c}" data-hash="{T("hash."+c)}" aria-label="{t}">' for c,t,_ in CATS)
@@ -599,14 +683,14 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
              "cz.learnPhase.home","cz.learnPhase.open","cz.learnPhase.close","cz.learnPhase.pass",
              "cz.bleAssign","cz.bleAssigned","cz.bleSeen","cz.bleSeenEmpty","cz.bleScanning","cz.scan",
              "common.days","common.hours","common.minutes","common.none","common.learned","common.notLearned",
-             "rt.savedOk","rt.saveFailed","rt.saving","rt.unsaved.one","rt.unsaved.other","rt.nothingToSave","rt.leaveUnsaved",
+             "rt.savedOk","rt.saveFailed","rt.probeConflict","rt.probeConflictAny","rt.probeOwnerFlow","rt.probeOwnerReturn","rt.saving","rt.unsaved.one","rt.unsaved.other","rt.nothingToSave","rt.leaveUnsaved",
              "rt.autoSaving","rt.autoSaved","rt.autoFailed","rt.retry","rt.secondsAgo","rt.minutesAgo",
              "device.copied","device.this","alert.zoneFault","bal.adaptive","bal.static",
              "fault.blocked","fault.blocked.body","fault.mechanical_overrun","fault.mechanical_overrun.body","fault.unknown","fault.unknown.body","fault.open_circuit","fault.open_circuit.body","fault.overcurrent","fault.overcurrent.body","fault.thermal","fault.thermal.body","fault.timeout","fault.timeout.body","fault.stall","fault.stall.body",
              "alert.driversOffBody","drv.reason.fault","drv.reason.ota","drv.reason.arm","drv.reason.boot","drv.reason.user","dev.online","dev.offline",
              "zdash.preload","zdash.preloadUntil","src.ble","src.probe",
              "csys.touchWaiting","csys.touchWaitingBody","csys.touchApproved","csys.touchPending","csys.touchControls","csys.touchReady","csys.touchLeaseLost",
-             "zchart.expected","zchart.at","zchart.noForecast","zchart.faultStrong","zcard.open",
+             "zchart.expected","zchart.at","zchart.noForecast","zchart.faultStrong","zcard.flow","zcard.flowRet","zdash.mm","zdash.backOffSent","zdash.phys.wk","zdash.phys.h","zdash.phys.noteLearned","zdash.phys.notePrior","lab.thr.meta","lab.thr.capture","lab.thr.reference","lab.thr.verdictNone","lab.thr.verdictCeiling","lab.thr.verdictLate","lab.thr.verdictFirst","lab.thr.first","lab.thr.notReached","lab.thr.suggestText","lab.path.threshold","lab.path.trailing","lab.path.seat","lab.path.popoff","lab.path.openStop","lab.path.stall","lab.path.circuit","lab.path.ceiling","lab.path.wall","lab.dir.open","lab.dir.close","lab.state.setup","lab.state.armed","lab.state.seated","lab.state.opened","lab.state.closed","lab.state.running","lab.state.halted","lab.phase.free","lab.phase.contact","lab.phase.load","lab.phase.stopping","lab.pinSeen","lab.pinWaiting","lab.on","lab.off","lab.chartMeta","lab.dir.open","lab.dir.close","lab.err.drivers","lab.err.failed","lab.haltedMsg","csys.ownerFlow","csys.ownerReturn",
              "wifi.connectedTo","wifi.notConnected","wifi.apActive","wifi.sent","wifi.needSsid","wifi.busy",
              "wifi.switch.pending","wifi.switch.connected","wifi.switch.reverted","wifi.switch.failed")
     rt={k:T(k) for k in rt_keys}

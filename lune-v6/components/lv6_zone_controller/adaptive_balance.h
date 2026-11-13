@@ -1,15 +1,22 @@
 // =============================================================================
 // LV6 Adaptive Balancing — pure C++, host-testable (no ESP-IDF / ESPHome deps)
 // =============================================================================
-// Room-temperature-feedback hydraulic balancing. The static prior (resistance-
-// aware design model) supplies the coarse split; this module supplies the slow
-// learned correction multiplier (adapt_i) that rides on top of it.
+// Room-temperature-feedback hydraulic balancing. The physics (design share =
+// heat demand UA / measured full flow, or the pipe model before Touch has
+// measured) supplies the split; this module learns how far each loop deviates
+// from it, as a multiplier f_i around 1.
 //
-// Balancing is a *redistribution* of a shared flow, so adaptation acts on the
-// RELATIVE control error (e_i − e_mean). This cancels the common mode: if the
-// whole house is cold because the supply temperature is too low, every e_i
-// rises together, (e_i − e_mean) ≈ 0, and balancing does not react — it only
-// ever moves flow between loops, never raises total demand.
+// The deviation is physical: a room that settles e_i below its own setpoint
+// while getting its share loses UA·(lift − e_i) where physics gave it UA·lift,
+// so it needs (lift + e_i)/lift times the heat, and in a floor loop heat grows
+// about as √flow, so FLOW_PER_HEAT times that in flow (log terms). The lift
+// (room − outdoor) is not known on V6; DESIGN_LIFT_K is a heating-season value.
+//
+// Balancing is a *redistribution* of a shared flow, so the common mode is
+// removed: if the whole house is cold because the supply is too cold, every
+// room deviates equally and no factor moves. Without evidence a factor leaks
+// back to the physics (leak_h), so it only ever holds a deviation that keeps
+// showing. A changed basis (new measurement, method) starts it over at 1.
 //
 // Tested by test/adaptive_balance/test_adaptive_balance.cpp (make test-balance).
 // See docs/adaptive_balancing.md.
@@ -17,12 +24,18 @@
 
 #pragma once
 
+#include <cmath>
+
 namespace lv6ab {
 
-struct AdaptParams {
-  float step = 0.02f;       ///< k: max factor move per update (bounds the per-step move)
-  float adapt_min = 0.5f;   ///< Clamp on the learned multiplier (lower)
-  float adapt_max = 1.5f;   ///< Clamp on the learned multiplier (upper)
+struct DeviationParams {
+  float lift_k = 15.0f;        ///< DESIGN_LIFT_K: room − outdoor in the heating season
+  float flow_per_heat = 2.0f;  ///< d ln(flow) / d ln(heat) for a floor loop
+  float learn_h = 24.0f;       ///< A persistent deviation is taken up over about this
+  float leak_h = 168.0f;       ///< ...and fades back to the physics over this without evidence
+  float interval_h = 1.0f;     ///< Update period
+  float max_step = 0.05f;      ///< Largest ln-move per update
+  float bound = 1.33f;         ///< f stays within [1/bound, bound]
 };
 
 /// Clamp helper (avoids pulling in <algorithm> for the firmware include path).
@@ -30,19 +43,25 @@ inline float clampf(float v, float lo, float hi) {
   return v < lo ? lo : (v > hi ? hi : v);
 }
 
-/// One outer-loop step of the learned multiplier for a single zone.
-///   delta = clamp(step · (e_i − e_mean), −step, +step)   // move bounded by k
-///   adapt = clamp(adapt + delta, adapt_min, adapt_max)
-///
-/// e_i      — this zone's long-window mean control error (setpoint − temp).
-/// e_mean   — manifold common-mode mean over the contributing zones.
-/// A zone colder than its peers (e_i > e_mean) is flow-starved → adapt rises.
-/// A zone satisfied more easily (e_i < e_mean) is over-served → adapt falls.
-/// Equal errors (common mode) → no move (self-normalizing).
-inline float next_adapt(float adapt, float e_i, float e_mean, const AdaptParams &p) {
-  float delta = p.step * (e_i - e_mean);
-  delta = clampf(delta, -p.step, p.step);
-  return clampf(adapt + delta, p.adapt_min, p.adapt_max);
+/// The loop's flow need against the physics, in ln terms, from its room's mean
+/// error to its own setpoint (setpoint − temp, + = cold).
+inline float flow_deviation(float error_c, const DeviationParams &p) {
+  const float lift = p.lift_k > 1.0f ? p.lift_k : 1.0f;
+  const float ratio = (lift + clampf(error_c, -0.5f * lift, 0.5f * lift)) / lift;
+  return p.flow_per_heat * std::log(ratio);
+}
+
+/// One update of a loop's multiplier: ln f leaks toward 0 (the physics) and
+/// integrates the loop's deviation beyond the manifold's common mode.
+///   x_i, x_mean — flow_deviation of this loop and the contributing loops' mean.
+inline float next_factor(float f, float x_i, float x_mean, const DeviationParams &p) {
+  const float ln_bound = std::log(p.bound > 1.0f ? p.bound : 1.0f);
+  const float ln_f = std::log(f > 0.0f ? f : 1.0f);
+  const float k = p.learn_h > 0.0f ? clampf(p.interval_h / p.learn_h, 0.0f, 1.0f) : 1.0f;
+  const float leak = p.leak_h > 0.0f ? clampf(p.interval_h / p.leak_h, 0.0f, 1.0f) : 0.0f;
+  const float target = (1.0f - leak) * ln_f + k * (x_i - x_mean);
+  const float step = clampf(target - ln_f, -p.max_step, p.max_step);
+  return std::exp(clampf(ln_f + step, -ln_bound, ln_bound));
 }
 
 }  // namespace lv6ab

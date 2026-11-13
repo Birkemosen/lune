@@ -9,6 +9,7 @@
 // =============================================================================
 
 #include "lv6_zone_controller.h"
+#include "dynamic_balance.h"
 #include "flow_allocator.h"
 #include "control_mode_policy.h"
 #include "preheat_absorb_logic.h"
@@ -17,6 +18,7 @@
 #include "reopen_policy.h"
 #include "probe_mapping.h"
 #include "thermal_model.h"
+#include "zone_area.h"
 #include "../lv6_config_store/group_model.h"
 #include "esphome/core/log.h"
 #include "esp_timer.h"
@@ -36,6 +38,8 @@ namespace lv6 {
 
 static const char *const TAG = "lv6_zone_ctrl";
 static constexpr float ALPHA_TOP = 10.8f;  // W/(m²·K) convective+radiative at floor
+/// Heat pump: smallest change in a loop's relative flow that moves its valve.
+static constexpr float HP_FLOW_DEADBAND = 0.10f;
 
 // =============================================================================
 // ESPHome Lifecycle
@@ -74,6 +78,7 @@ void Lv6ZoneController::setup() {
   setpoint_offsets_.fill(0.0f);
   helios_cmds_.fill({});
   balance_factors_.fill(1.0f);
+  design_share_.fill(1.0f);
   last_valid_temp_ms_.fill(0);
   external_temp_last_ms_.fill(0);
   // Restore learned preheat advance from NVS so the device doesn't start from
@@ -383,22 +388,6 @@ void Lv6ZoneController::set_control_algorithm(ControlAlgorithm algorithm) {
   }
 
   ESP_LOGI(TAG, "Control algorithm set to %s for all zones", algo_name);
-}
-
-void Lv6ZoneController::set_simple_preheat_enabled(bool enabled) {
-  (void) enabled;
-  if (!config_store_)
-    return;
-  auto cfg = config_store_->get_config();
-  if (cfg.control.simple_preheat_enabled)
-    return;
-  cfg.control.simple_preheat_enabled = true;
-  config_store_->update_control(cfg.control);
-  ESP_LOGI(TAG, "Simple preheat is always active; stored disabled flag repaired");
-}
-
-bool Lv6ZoneController::is_simple_preheat_enabled() const {
-  return true;
 }
 
 ControlAlgorithm Lv6ZoneController::get_control_algorithm() const {
@@ -971,6 +960,17 @@ void Lv6ZoneController::set_hp_overheat_margin_c(float margin_c) {
   config_store_->update_control(cfg.control);
 }
 
+void Lv6ZoneController::set_hp_heat_move_k(float k) {
+  if (!config_store_)
+    return;
+  k = std::clamp(k, 0.0f, 3.0f);
+  auto cfg = config_store_->get_config();
+  if (std::fabs(cfg.control.hp_heat_move_k - k) < 0.001f)
+    return;
+  cfg.control.hp_heat_move_k = k;
+  config_store_->update_control(cfg.control);
+}
+
 void Lv6ZoneController::set_hp_base_pct(float pct) {
   if (!config_store_)
     return;
@@ -1068,7 +1068,8 @@ void Lv6ZoneController::run_cycle_() {
   // movement commands that will be rejected by the valve controller.
   bool drivers_enabled = valve_controller_->are_drivers_enabled();
 
-  const auto cfg = config_store_->get_config();
+  auto cfg = config_store_->get_config();
+  zone_area::fill_unset(cfg.zones);  // control uses a mean area for zones without one
 
   const BalanceMode bmode = effective_balance_mode(cfg.balancing);
   const bool adaptive_mode = (bmode == BalanceMode::ADAPTIVE);
@@ -1284,7 +1285,6 @@ void Lv6ZoneController::run_cycle_() {
     }
   }
 
-  // Flow allocator: heat-pump mode only (continuous share across demanding zones).
   const HeatingProfile effective_mode = control_mode_policy::resolve_mode(
       cfg.control.mode, touch_authority_active_.load(std::memory_order_acquire),
       touch_control_mode_valid_.load(std::memory_order_acquire),
@@ -1296,47 +1296,10 @@ void Lv6ZoneController::run_cycle_() {
     last_effective_mode_ = effective_mode;
   }
 
-  if (effective_mode == HeatingProfile::HEAT_PUMP) {
-    flow_allocator::ZoneSample samples[flow_allocator::MAX_ZONES]{};
-    for (uint8_t i = 0; i < NUM_ZONES; i++) {
-      samples[i].enabled = cfg.zones[i].enabled;
-      const auto th = thermal_model::estimate(cfg.zones[i], cfg.house_physics);
-      samples[i].ua_w_per_k = th.plausible ? th.ua_effective_w_per_k : (cfg.zones[i].area_m2 * 2.0f);
-      samples[i].temp_c = zone_temps[i];
-      samples[i].setpoint_c = zone_setpoints[i];
-      samples[i].max_opening_pct = cfg.zones[i].max_opening_pct;
-      if (valve_controller_) {
-        auto telem = valve_controller_->get_telemetry(i);
-        samples[i].learned_open_ripples = static_cast<float>(telem.learned_open_ripples);
-      }
-    }
-    const uint32_t now_ms = esphome::millis();
-    float dt_h = 0.0f;
-    if (flow_alloc_last_ms_ != 0 && now_ms > flow_alloc_last_ms_)
-      dt_h = static_cast<float>(now_ms - flow_alloc_last_ms_) / 3600000.0f;
-    flow_alloc_last_ms_ = now_ms;
-    float target_total = cfg.balancing.secondary_min_total_opening_pct;
-    if (!(target_total > 10.0f))
-      target_total = 60.0f;  // keep pump on a workable Kv when floor unset
-    // Prefer natural demand total when higher than the commissioning floor.
-    float demand_hint = 0.0f;
-    for (uint8_t i = 0; i < NUM_ZONES; i++) {
-      if (!cfg.zones[i].enabled || std::isnan(zone_temps[i]))
-        continue;
-      if (zone_temps[i] < zone_setpoints[i] - cfg.control.comfort_band_c)
-        demand_hint += std::min(cfg.zones[i].max_opening_pct, 40.0f);
-    }
-    target_total = std::max(target_total, demand_hint);
-    flow_allocator::step(flow_alloc_, samples, dt_h, target_total);
-    for (uint8_t i = 0; i < NUM_ZONES; i++)
-      loop_share_pct_[i] = flow_alloc_.loop_share[i] * 100.0f;
-  } else {
-    flow_alloc_ = {};
+  const bool hp_law = effective_mode == HeatingProfile::HEAT_PUMP;
+  if (!hp_law)
     loop_share_pct_.fill(0.0f);
-  }
 
-  // Heat-pump overheat rule compares each room with the manifold supply.
-  const float manifold_flow_c = read_manifold_flow_();
   const uint32_t cycle_ms = esphome::millis();
   for (uint8_t i = 0; i < NUM_ZONES; i++) {
     if (!cfg.zones[i].enabled) {
@@ -1383,60 +1346,46 @@ void Lv6ZoneController::run_cycle_() {
       raw_algo = compute_raw_position_(i, temp, setpoint);
       raw_algo += cfg.control.demand_boost_pct;
     }
-    // «Close above target»: latch at setpoint + limit, release 0.2 °C below it.
-    {
-      const float close_above = cfg.control.hp_close_above_c;
-      if (effective_mode == HeatingProfile::HEAT_PUMP && close_above > 0.0f &&
-          std::isfinite(temp) && std::isfinite(setpoint)) {
-        if (temp >= setpoint + close_above)
-          hp_closed_[i] = true;
-        else if (temp <= setpoint + close_above - 0.2f)
-          hp_closed_[i] = false;
-      } else {
-        hp_closed_[i] = false;
+    // Heat pump: dynamic balancing sets every opening after this loop
+    // (dynamic_balance.h); here only the overheat latch. Normal: per-zone law.
+    float position = 0.0f;
+    if (hp_law) {
+      const dynamic_balance::Params dbp{cfg.control.comfort_band_c, cfg.control.hp_overheat_margin_c,
+                                        absorb_band};
+      hp_closed_[i] = dynamic_balance::update_closed(hp_closed_[i], temp, setpoint, dbp);
+      reopen_[i] = {};
+    } else {
+      hp_closed_[i] = false;
+      hp_moving_[i] = false;
+      position = control_mode_policy::normal_position(state, raw_algo, cfg.control.maintenance_base_pct,
+                                                      cfg.zones[i].max_opening_pct);
+      // Anticipated reopening (reopen_policy.h): a loop held closed because its room
+      // is warm reopens at the satisfied opening once the room is expected to fall
+      // to the reopen point within the floor's lag.
+      {
+        const bool closed = position <= 0.0f && state == ZoneState::OVERHEATED;
+        const float close_point = setpoint;  // Normal closes at setpoint
+        const auto th = thermal_model::estimate(cfg.zones[i], cfg.house_physics);
+        const float lag_h = reopen_policy::floor_lag_h(cfg.zones[i].slab_type,
+                                                       cfg.zones[i].active_thickness_cm, th.r_m2k_per_w);
+        const bool was_active = reopen_[i].active;
+        if (reopen_policy::step(reopen_[i], closed, temp, reopen_trend_[i].slope_c_per_h, setpoint,
+                                close_point, lag_h, cycle_ms)) {
+          // Below setpoint the Normal latch lets go, so the next cycle runs the plain law.
+          if (temp < setpoint)
+            normal_closed_[i] = false;
+          state = ZoneState::SATISFIED;
+          zone_states[i] = state;
+          position = control_mode_policy::normal_position(state, raw_algo, cfg.control.maintenance_base_pct,
+                                                          cfg.zones[i].max_opening_pct);
+          if (!was_active)
+            ESP_LOGI(TAG, "Zone %d: reopening ahead at %.2f C (setpoint %.2f, %.2f C/h, floor lag %.1f h)",
+                     i + 1, temp, setpoint, reopen_trend_[i].slope_c_per_h, lag_h);
+        }
       }
+      position = apply_hydraulic_balance_(i, position);
     }
-    float position = control_mode_policy::position_for_state(
-        effective_mode, state, flow_alloc_.opening_pct[i], raw_algo,
-        cfg.control.maintenance_base_pct, cfg.control.hp_base_pct, cfg.control.hp_trim_floor_pct,
-        cfg.control.hp_overheat_margin_c, temp, setpoint, cfg.zones[i].max_opening_pct,
-        zone_absorbing_(i), absorb_band, cfg.control.hp_demand_pct, cfg.control.comfort_band_c,
-        manifold_flow_c, get_hp_phase() == HpPhase::IDLE, hp_closed_[i]);
-    // Anticipated reopening (reopen_policy.h): a loop held closed because its room
-    // is warm reopens at the satisfied opening once the room is expected to fall
-    // to the reopen point within the floor's lag.
-    {
-      const bool closed = position <= 0.0f && (state == ZoneState::OVERHEATED || hp_closed_[i]);
-      float close_point = setpoint;  // Normal closes at setpoint
-      if (effective_mode == HeatingProfile::HEAT_PUMP)
-        close_point = hp_closed_[i] ? setpoint + cfg.control.hp_close_above_c
-                                    : setpoint + cfg.control.comfort_band_c +
-                                          cfg.control.hp_overheat_margin_c + absorb_band;
-      const auto th = thermal_model::estimate(cfg.zones[i], cfg.house_physics);
-      const float lag_h = reopen_policy::floor_lag_h(cfg.zones[i].slab_type,
-                                                     cfg.zones[i].active_thickness_cm, th.r_m2k_per_w);
-      const bool was_active = reopen_[i].active;
-      if (reopen_policy::step(reopen_[i], closed, temp, reopen_trend_[i].slope_c_per_h, setpoint,
-                              close_point, lag_h, cycle_ms)) {
-        // Below setpoint the Normal latch lets go, so the next cycle runs the plain law.
-        if (effective_mode == HeatingProfile::NORMAL && temp < setpoint)
-          normal_closed_[i] = false;
-        state = ZoneState::SATISFIED;
-        zone_states[i] = state;
-        position = control_mode_policy::position_for_state(
-            effective_mode, state, flow_alloc_.opening_pct[i], raw_algo,
-            cfg.control.maintenance_base_pct, cfg.control.hp_base_pct, cfg.control.hp_trim_floor_pct,
-            cfg.control.hp_overheat_margin_c, temp, setpoint, cfg.zones[i].max_opening_pct,
-            zone_absorbing_(i), absorb_band, cfg.control.hp_demand_pct, cfg.control.comfort_band_c,
-            manifold_flow_c, get_hp_phase() == HpPhase::IDLE, false);
-        if (!was_active)
-          ESP_LOGI(TAG, "Zone %d: reopening ahead at %.2f C (setpoint %.2f, %.2f C/h, floor lag %.1f h)",
-                   i + 1, temp, setpoint, reopen_trend_[i].slope_c_per_h, lag_h);
-      }
-    }
-    bool was_overheated = (state == ZoneState::OVERHEATED);
-
-    position = apply_hydraulic_balance_(i, position);
+    bool was_overheated = hp_law ? hp_closed_[i] : (state == ZoneState::OVERHEATED);
     target_positions[i] = position;
 
     xSemaphoreTake(snapshot_mutex_, portMAX_DELAY);
@@ -1455,10 +1404,62 @@ void Lv6ZoneController::run_cycle_() {
       preheat_episode_active_[i] = false;
   }
 
-  // Group flow share: within a multi-loop group, distribute the primary's
-  // commanded opening by loop area (or learned Kv when ripples exist) — not
-  // identical valve positions (contract §2.1).
-  for (uint8_t gi = 0; gi < MAX_GROUPS; gi++) {
+  // Heat pump: dynamic balancing (docs/dynamic_balancing.md). Every loop gets its
+  // design share × load factor; the manifold passes what a statically balanced
+  // manifold would, times its most demanding room's load. Only overheated loops close.
+  if (hp_law) {
+    dynamic_balance::Loop loops[NUM_ZONES];
+    for (uint8_t i = 0; i < NUM_ZONES; i++) {
+      loops[i].enabled = cfg.zones[i].enabled;
+      loops[i].design_share = design_share_[i];
+      loops[i].house_balance = get_house_balance(i);
+      loops[i].temp_c = zone_temps[i];
+      loops[i].setpoint_c = zone_setpoints[i];
+      loops[i].max_opening_pct = cfg.zones[i].max_opening_pct;
+    }
+    dynamic_balance::Params dbp{cfg.control.comfort_band_c, cfg.control.hp_overheat_margin_c, 0.0f};
+    dbp.supply_c = read_manifold_flow_();
+    dbp.move_on_k = cfg.control.hp_heat_move_k;
+    // Heat source not running (Touch's phase): static balance; running, prestart or
+    // no word from Touch: the load law.
+    dbp.idle = get_hp_phase() == HpPhase::IDLE;
+    bool closed[NUM_ZONES];
+    bool moving[NUM_ZONES];
+    float openings[NUM_ZONES];
+    float q[NUM_ZONES];
+    for (uint8_t i = 0; i < NUM_ZONES; i++) {
+      closed[i] = hp_closed_[i];
+      moving[i] = hp_moving_[i];
+    }
+    const auto db = dynamic_balance::distribute(loops, dbp, closed, openings, q, moving);
+    if (dbp.idle != hp_idle_balance_) {
+      ESP_LOGI(TAG, "Dynamic balance: %s", dbp.idle ? "heat source idle, static balance" : "load law");
+      hp_idle_balance_ = dbp.idle;
+    }
+    for (uint8_t i = 0; i < NUM_ZONES; i++)
+      if (moving[i] != hp_moving_[i])
+        ESP_LOGI(TAG, "Zone %d: %s heat (room %.1f C, supply %.1f C)", i + 1,
+                 moving[i] ? "moving" : "stopped moving", zone_temps[i], dbp.supply_c);
+    xSemaphoreTake(snapshot_mutex_, portMAX_DELAY);
+    for (uint8_t i = 0; i < NUM_ZONES; i++) {
+      hp_closed_[i] = closed[i];
+      hp_moving_[i] = moving[i];
+      target_positions[i] = openings[i];
+      snapshots_[i].valve_position_pct = openings[i];
+      snapshots_[i].was_overheated = closed[i];
+      loop_share_pct_[i] = db.q_total > 0.0f ? 100.0f * q[i] / db.q_total : 0.0f;
+    }
+    xSemaphoreGive(snapshot_mutex_);
+    ESP_LOGD(TAG, "Dynamic balance: Q %.2f (ref %.2f × load %.2f), s %.2f, open [%.0f %.0f %.0f %.0f %.0f %.0f]",
+             db.q_total, db.q_ref, db.load, db.scale, openings[0], openings[1], openings[2], openings[3],
+             openings[4], openings[5]);
+  }
+
+  // Group flow share (Normal mode): within a multi-loop group, distribute the
+  // primary's commanded opening by loop area (or learned Kv when ripples exist) —
+  // not identical valve positions (contract §2.1). Heat-pump mode gives each loop
+  // its own design share instead.
+  for (uint8_t gi = 0; gi < MAX_GROUPS && !hp_law; gi++) {
     const GroupConfig &g = cfg.groups.groups[gi];
     if (!group_model::group_active(g) || g.member_mask == 0)
       continue;
@@ -1522,39 +1523,6 @@ void Lv6ZoneController::run_cycle_() {
   if (floor_applies)
     enforce_minimum_total_opening_(target_positions);
 
-  // Flow guarantee for «close above target»: closing warm rooms must never stop the
-  // manifold. Below the minimum total, reopen the closed loops nearest their target
-  // to the trim floor (min total = the manifold setting, else 30 %).
-  if (effective_mode == HeatingProfile::HEAT_PUMP && cfg.control.hp_close_above_c > 0.0f) {
-    float pos[NUM_ZONES];
-    bool closed[NUM_ZONES];
-    bool en[NUM_ZONES];
-    float surplus[NUM_ZONES];
-    for (uint8_t i = 0; i < NUM_ZONES; i++) {
-      pos[i] = target_positions[i];
-      en[i] = cfg.zones[i].enabled;
-      closed[i] = hp_closed_[i];
-      surplus[i] = (std::isfinite(zone_temps[i]) && std::isfinite(zone_setpoints[i]))
-                       ? zone_temps[i] - zone_setpoints[i] : 99.0f;
-    }
-    const float min_total = cfg.balancing.secondary_min_total_opening_pct > 0.0f
-                                ? cfg.balancing.secondary_min_total_opening_pct : 30.0f;
-    const float floor_pct = std::max(5.0f, std::min(cfg.control.hp_trim_floor_pct, cfg.control.hp_base_pct));
-    const unsigned reopened = control_mode_policy::reopen_for_min_total(pos, closed, surplus, en, floor_pct, min_total);
-    if (reopened > 0) {
-      ESP_LOGD(TAG, "Close-above: %u loop(s) reopened to %.0f%% to keep %.0f%% total flow",
-               reopened, floor_pct, min_total);
-      xSemaphoreTake(snapshot_mutex_, portMAX_DELAY);
-      for (uint8_t i = 0; i < NUM_ZONES; i++) {
-        if (pos[i] != target_positions[i]) {
-          target_positions[i] = pos[i];
-          snapshots_[i].valve_position_pct = pos[i];
-        }
-      }
-      xSemaphoreGive(snapshot_mutex_);
-    }
-  }
-
   // Heat-demand summary for Touch / Asgard feed-temperature trim (heat-pump mode).
   {
     control_mode_policy::HeatDemandZoneInput inputs[NUM_ZONES]{};
@@ -1564,7 +1532,7 @@ void Lv6ZoneController::run_cycle_() {
       inputs[i].state = zone_states[i];
       inputs[i].opening_pct = target_positions[i];
       inputs[i].max_opening_pct = cfg.zones[i].max_opening_pct;
-      inputs[i].pre_floor_opening_pct = pre_floor_positions[i];
+      inputs[i].error_c = zone_setpoints[i] - zone_temps[i];
       if (valve_controller_) {
         auto telem = valve_controller_->get_telemetry(i);
         inputs[i].calibrated = (telem.learned_open_ms != 0 && telem.learned_close_ms != 0);
@@ -1576,7 +1544,7 @@ void Lv6ZoneController::run_cycle_() {
       dt_ms = now_ms - heat_demand_last_ms_;
     heat_demand_last_ms_ = now_ms;
     heat_demand_ = control_mode_policy::step_heat_demand(
-        heat_demand_timers_, dt_ms, effective_mode, cfg.control.hp_base_pct, inputs, NUM_ZONES);
+        heat_demand_timers_, dt_ms, effective_mode, inputs, NUM_ZONES);
   }
 
   // The snapshot represents the final commanded target, including safety-flow
@@ -1593,6 +1561,7 @@ void Lv6ZoneController::run_cycle_() {
     if (adapt_reset_pending_.exchange(false, std::memory_order_acq_rel)) {
       adapt_err_ema_.fill(0.0f);
       adapt_samples_.fill(0);
+      adapt_live_.fill(NAN);
       last_adapt_ms_ = 0;
     }
     float flow_temp = read_manifold_flow_();
@@ -1620,6 +1589,9 @@ void Lv6ZoneController::run_cycle_() {
       // Minimum-flow overrides force openings unrelated to demand.
       if (min_total_triggered)
         continue;
+      // A valve test holds positions unrelated to demand.
+      if (valve_test_active())
+        continue;
       // Eligible — fold the relative control error into the long-window EMA.
       accumulate_balance_error_(i, zone_setpoints[i] - temp, cfg.balancing.adapt_error_window_s);
     }
@@ -1630,6 +1602,35 @@ void Lv6ZoneController::run_cycle_() {
       snapshots_[i].adapt_err_ema = (adapt_samples_[i] > 0) ? adapt_err_ema_[i] : NAN;
     xSemaphoreGive(snapshot_mutex_);
     update_adaptive_balance_(cfg);
+  }
+
+  // Valve test: every loop holds, the test loop goes where Touch asks (valve-curve
+  // measurement from the pump's flow). Bypasses the deadband so small steps land.
+  bool valve_test = false;
+  {
+    const uint32_t now_ms = esphome::millis();
+    xSemaphoreTake(snapshot_mutex_, portMAX_DELAY);
+    if (valve_test_.active && static_cast<int32_t>(now_ms - valve_test_.until_ms) >= 0) {
+      valve_test_.active = false;
+      ESP_LOGI(TAG, "Valve test ended (TTL)");
+    }
+    if (valve_test_.active) {
+      if (!valve_test_.captured) {
+        for (uint8_t i = 0; i < NUM_ZONES; i++)
+          valve_test_.hold[i] = valve_controller_->get_position(i);
+        valve_test_.captured = true;
+      }
+      if (std::isfinite(valve_test_.others_pct))
+        valve_test_.hold.fill(valve_test_.others_pct);
+      for (uint8_t i = 0; i < NUM_ZONES; i++)
+        target_positions[i] = valve_test_.hold[i];
+      if (valve_test_.zone >= 0 && valve_test_.zone < static_cast<int8_t>(NUM_ZONES))
+        target_positions[valve_test_.zone] = valve_test_.position_pct;
+      for (uint8_t i = 0; i < NUM_ZONES; i++)
+        snapshots_[i].valve_position_pct = target_positions[i];
+      valve_test = true;
+    }
+    xSemaphoreGive(snapshot_mutex_);
   }
 
   for (uint8_t i = 0; i < NUM_ZONES; i++) {
@@ -1652,7 +1653,15 @@ void Lv6ZoneController::run_cycle_() {
     // min_movement_pct suppresses normal control chatter.  It must not suppress
     // a safety-flow correction: a 3% correction toward a 15% floor still needs
     // to reach the valve even though the ordinary movement deadband is 5%.
-    if (diff >= cfg.control.min_movement_pct || below_safety_floor)
+    // Heat pump: the valve curve is steep (full flow within ~15 points of travel),
+    // so a change of 10 % of the loop's flow moves the valve even when the travel
+    // is below the deadband (e.g. 17 → 19 % takes a loop from no flow to some).
+    bool flow_step = false;
+    if (hp_law) {
+      const float dq = valve_curve::flow_fraction(target_positions[i]) - valve_curve::flow_fraction(current_pos);
+      flow_step = std::fabs(dq) >= HP_FLOW_DEADBAND && diff >= 0.5f;
+    }
+    if (diff >= cfg.control.min_movement_pct || below_safety_floor || flow_step || (valve_test && diff >= 0.5f))
       valve_controller_->request_position(i, target_positions[i]);
   }
 }
@@ -1847,6 +1856,10 @@ void Lv6ZoneController::update_preheat_absorb_(const DeviceConfig &cfg,
 }
 
 bool Lv6ZoneController::zone_absorbing_(uint8_t zone) const {
+  // The manifold's absorb switch also covers Touch's per-zone charges.
+  if (config_store_ != nullptr &&
+      !config_store_->read([](const DeviceConfig &c) { return c.control.preheat_absorb_enabled; }))
+    return false;
   if (preheat_absorb_active_.load())
     return true;
   return is_zone_absorb_armed(zone);
@@ -2102,12 +2115,14 @@ float Lv6ZoneController::static_balance_weight_(const ZoneConfig &zc) {
 void Lv6ZoneController::recalculate_balance_factors_() {
   if (!config_store_)
     return;
-  // Two sections, not the whole config (2.6 KiB): this also runs in loopTask from setup().
-  struct { BalancingConfig balancing; ZoneConfig zones[NUM_ZONES]; } cfg;
+  // Three sections, not the whole config (2.6 KiB): this also runs in loopTask from setup().
+  struct { BalancingConfig balancing; HousePhysicsConfig house_physics; ZoneConfig zones[NUM_ZONES]; } cfg;
   config_store_->read([&](const DeviceConfig &c) {
     cfg.balancing = c.balancing;
+    cfg.house_physics = c.house_physics;
     std::copy(std::begin(c.zones), std::end(c.zones), cfg.zones);
   });
+  zone_area::fill_unset(cfg.zones);
 
   // Legacy return-temp balancing (uses measured return temperatures)
   if (effective_balance_mode(cfg.balancing) == BalanceMode::RETURN_TEMP) {
@@ -2133,11 +2148,25 @@ void Lv6ZoneController::recalculate_balance_factors_() {
     if (weights[i] > max_w)
       max_w = weights[i];
   }
+  // A learned factor is a deviation from this physics; new physics, new start.
+  if (adaptive) {
+    const uint32_t basis = balance_basis_();
+    uint32_t stored = 0;
+    if (!config_store_->load_balance_basis(&stored) || stored != basis) {
+      reset_balancing();
+      for (auto &z : cfg.zones)
+        z.balance_adapt = 1.0f;
+      config_store_->set_balance_basis(basis);
+      ESP_LOGI(TAG, "Balance basis changed (%08" PRIx32 " -> %08" PRIx32 "): learned factors start at 1",
+               stored, basis);
+    }
+  }
 
   xSemaphoreTake(snapshot_mutex_, portMAX_DELAY);
   for (uint8_t i = 0; i < NUM_ZONES; i++) {
     if (!cfg.zones[i].enabled) {
       balance_factors_[i] = 0.0f;
+      design_share_[i] = 0.0f;
       snapshots_[i].static_factor = 0.0f;
       snapshots_[i].balance_adapt = cfg.zones[i].balance_adapt;
       snapshots_[i].hydraulic_factor = 0.0f;
@@ -2148,6 +2177,7 @@ void Lv6ZoneController::recalculate_balance_factors_() {
     float adapt = adaptive ? cfg.zones[i].balance_adapt : 1.0f;
     float eff = std::clamp(sf * adapt, 0.0f, 1.0f);
     balance_factors_[i] = eff;
+    design_share_[i] = sf * adapt;
     snapshots_[i].static_factor = sf;
     snapshots_[i].balance_adapt = adapt;
     snapshots_[i].hydraulic_factor = eff;
@@ -2156,8 +2186,8 @@ void Lv6ZoneController::recalculate_balance_factors_() {
   }
   xSemaphoreGive(snapshot_mutex_);
 
-  ESP_LOGI(TAG, "%s balance: [%.2f, %.2f, %.2f, %.2f, %.2f, %.2f]",
-           adaptive ? "Adaptive" : "Static",
+  ESP_LOGI(TAG, "%s balance (%s): [%.2f, %.2f, %.2f, %.2f, %.2f, %.2f]",
+           adaptive ? "Adaptive" : "Static", "pipe model",
            balance_factors_[0], balance_factors_[1], balance_factors_[2],
            balance_factors_[3], balance_factors_[4], balance_factors_[5]);
 }
@@ -2171,6 +2201,7 @@ void Lv6ZoneController::recalculate_dynamic_balance_factors_() {
     cfg.balancing = c.balancing;
     std::copy(std::begin(c.zones), std::end(c.zones), cfg.zones);
   });
+  zone_area::fill_unset(cfg.zones);
 
   float flow_temp = read_manifold_flow_();
   if (std::isnan(flow_temp)) {
@@ -2233,6 +2264,7 @@ void Lv6ZoneController::recalculate_dynamic_balance_factors_() {
     if (old_factor <= 0.0f || std::isnan(old_factor))
       old_factor = 1.0f;
     balance_factors_[i] = alpha * new_factor + (1.0f - alpha) * old_factor;
+    design_share_[i] = balance_factors_[i];
 
     any_valid = true;
   }
@@ -2293,6 +2325,47 @@ float Lv6ZoneController::get_house_balance(uint8_t zone) const {
   return house_balance_[zone];
 }
 
+void Lv6ZoneController::set_valve_test(int8_t zone, float position_pct, uint32_t ttl_ms, float others_pct) {
+  if (snapshot_mutex_ == nullptr)
+    return;
+  xSemaphoreTake(snapshot_mutex_, portMAX_DELAY);
+  if (!valve_test_.active)
+    valve_test_.captured = false;
+  valve_test_.active = true;
+  valve_test_.zone = zone >= 0 && zone < static_cast<int8_t>(NUM_ZONES) ? zone : -1;
+  valve_test_.position_pct = std::clamp(position_pct, 0.0f, 100.0f);
+  valve_test_.others_pct = std::isfinite(others_pct) ? std::clamp(others_pct, 0.0f, 100.0f) : NAN;
+  const uint32_t until = esphome::millis() + ttl_ms;
+  valve_test_.until_ms = until == 0 ? 1 : until;
+  xSemaphoreGive(snapshot_mutex_);
+  if (std::isfinite(others_pct))
+    ESP_LOGI(TAG, "Valve test: zone %d → %.0f %%, others %.0f %%, %" PRIu32 " s", zone + 1, position_pct,
+             others_pct, ttl_ms / 1000);
+  else
+    ESP_LOGI(TAG, "Valve test: zone %d → %.0f %%, others hold, %" PRIu32 " s", zone + 1, position_pct,
+             ttl_ms / 1000);
+}
+
+void Lv6ZoneController::clear_valve_test() {
+  if (snapshot_mutex_ == nullptr)
+    return;
+  xSemaphoreTake(snapshot_mutex_, portMAX_DELAY);
+  const bool was = valve_test_.active;
+  valve_test_.active = false;
+  xSemaphoreGive(snapshot_mutex_);
+  if (was)
+    ESP_LOGI(TAG, "Valve test stopped");
+}
+
+bool Lv6ZoneController::valve_test_active() const {
+  if (snapshot_mutex_ == nullptr)
+    return false;
+  xSemaphoreTake(snapshot_mutex_, portMAX_DELAY);
+  const bool active = valve_test_.active;
+  xSemaphoreGive(snapshot_mutex_);
+  return active;
+}
+
 // =============================================================================
 // Adaptive Balancing (room-temperature feedback; docs/adaptive_balancing.md)
 // =============================================================================
@@ -2345,14 +2418,26 @@ void Lv6ZoneController::update_adaptive_balance_(const DeviceConfig &cfg) {
   // Need ≥2 loops to define a common-mode mean to redistribute around.
   if (contrib >= 2) {
     float e_mean = sum_e / static_cast<float>(contrib);
-    lv6ab::AdaptParams p{cfg.balancing.adapt_step, cfg.balancing.adapt_min, cfg.balancing.adapt_max};
+    lv6ab::DeviationParams p{};
+    p.interval_h = static_cast<float>(interval_ms) / 3600000.0f;
+    float x[NUM_ZONES]{};
+    float x_mean = 0.0f;
     for (uint8_t i = 0; i < NUM_ZONES; i++) {
       if (!contributes[i])
         continue;
-      float old_a = cfg.zones[i].balance_adapt;
-      float new_a = lv6ab::next_adapt(old_a, adapt_err_ema_[i], e_mean, p);
-      // Persist only on a meaningful move (NVS write ≈ a few/day, not per cycle).
-      if (std::fabs(new_a - old_a) >= 0.01f) {
+      x[i] = lv6ab::flow_deviation(adapt_err_ema_[i], p);
+      x_mean += x[i] / static_cast<float>(contrib);
+    }
+    for (uint8_t i = 0; i < NUM_ZONES; i++) {
+      if (!contributes[i])
+        continue;
+      // Moves are small (a deviation is taken up over a day), so the factor runs
+      // in RAM and is stored once it has moved (NVS write ≈ a few/day).
+      const float old_a = cfg.zones[i].balance_adapt;
+      const float live = std::isfinite(adapt_live_[i]) ? adapt_live_[i] : old_a;
+      const float new_a = lv6ab::next_factor(live, x[i], x_mean, p);
+      adapt_live_[i] = new_a;
+      if (std::fabs(new_a - old_a) >= 0.005f) {
         ZoneConfig zc = config_store_->get_zone_config(i);
         zc.balance_adapt = new_a;
         config_store_->update_zone(i, zc);
@@ -2377,6 +2462,20 @@ void Lv6ZoneController::update_adaptive_balance_(const DeviceConfig &cfg) {
   // Reset accumulators for the next interval regardless of whether we stepped.
   adapt_err_ema_.fill(0.0f);
   adapt_samples_.fill(0);
+}
+
+uint32_t Lv6ZoneController::balance_basis_() const {
+  // FNV-1a over the method, whether the shares are measured, and each loop's full
+  // flow to 0.2 l/min (a re-measure that moves it changes the physics).
+  uint32_t h = 2166136261u;
+  auto mix = [&h](uint32_t v) {
+    for (int b = 0; b < 4; b++) {
+      h ^= (v >> (8 * b)) & 0xFFu;
+      h *= 16777619u;
+    }
+  };
+  mix(BALANCE_METHOD_VERSION);
+  return h;
 }
 
 void Lv6ZoneController::reset_balancing() {
@@ -2422,6 +2521,7 @@ void Lv6ZoneController::calculate_hydraulic_outputs_() {
     cfg.balancing = c.balancing;
     std::copy(std::begin(c.zones), std::end(c.zones), cfg.zones);
   });
+  zone_area::fill_unset(cfg.zones);
 
   xSemaphoreTake(snapshot_mutex_, portMAX_DELAY);
   for (uint8_t i = 0; i < NUM_ZONES; i++) {

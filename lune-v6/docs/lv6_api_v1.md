@@ -346,10 +346,11 @@ older clients ignore):
 - Floor / UA / τ priors per
   [`lune_room_physics_contract_v1.md`](../../shared/contracts/lune_room_physics_contract_v1.md):
   `area_m2`, `exterior_walls`, `floor.{slab_type,covering,active_thickness_cm,r_m2k_per_w,c_slab_kwh_per_k,unset}`,
-  `ua_prior_w_per_k`, `ua_learned_*`, `ua_effective_w_per_k`, `ua_source`, `tau_prior_h`, `warnings`
+  `ua_prior_w_per_k`, `ua_learned_*`, `ua_effective_w_per_k`, `ua_source`, `tau_prior_h`, `tau_learned_h` (null until learned), `warnings`
 - Legacy aliases `ua_w_per_k` / `thermal_mass_kwh_per_k` / `tau_h` remain when present
 - `return_c` — zone return probe °C when mapped, else null.
 - `loop_share_pct` — flow-allocator share of total opening (0–100), Σ ≈ 100 across enabled zones.
+- `heat_moving` — heat-pump mode: an overheated loop reopened because its room is warmer than the supply, so it carries heat to the other rooms (`docs/dynamic_balancing.md`).
 - `absorb_capacity_rank` — 1 = highest thermal absorb capacity (group-level §7).
 - `absorb_state` — `idle` | `reactive` | `armed`.
 
@@ -376,6 +377,7 @@ Returns all zones:
         "temperature_c": 21.3,
         "setpoint_c": 22.0,
         "valve_pct": 47.0,
+        "opening_mm": 0.9,
         "probe_temp_c": 21.2,
         "temp_source": "local_probe",
         "group_id": "g1",
@@ -394,9 +396,11 @@ Returns all zones:
         "ua_effective_w_per_k": 36.55,
         "ua_source": "prior",
         "tau_prior_h": 62.7,
+        "tau_learned_h": null,
         "warnings": [],
         "return_c": null,
         "loop_share_pct": 18.5,
+        "heat_moving": false,
         "absorb_state": "idle",
         "absorb_capacity_rank": 2
       }
@@ -546,7 +550,6 @@ Returns dashboard-editable settings currently backed by config store and control
   "version": "v1",
   "data": {
     "control": {
-      "simple_preheat_enabled": true,
       "preheat_absorb_enabled": true,
       "preheat_absorb_band_c": 1.0,
       "preheat_detect_delta_c": 8.0
@@ -826,6 +829,7 @@ Heating-mode keys (global):
 
 - `heating_mode` (`select`): `normal` | `heat_pump`
 - `hp_overheat_margin_c` (`number`): 0.3–3.0 °C
+- `hp_heat_move_k` (`number`): 0–3.0 K, default 0.5; an overheated loop moves heat while the supply is this far below its room (stops 0.3 K closer)
 - `hp_base_pct` (`number`): 30–100
 - `hp_trim_floor_pct` (`number`): 0 up to the current base; held from setpoint + margin until the zone is overheated
 - `hp_demand_pct` (`number`): current base–100; opening for a zone below setpoint − comfort band (default 80). Raising `hp_base_pct` above it raises it too

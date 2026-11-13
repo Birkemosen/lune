@@ -17,6 +17,7 @@
 #include "adaptive_balance.h"
 #include "control_mode_policy.h"
 #include "flow_allocator.h"
+#include "valve_curve.h"
 #include "hydraulic_policy.h"
 #include "reopen_policy.h"
 #include "freertos/FreeRTOS.h"
@@ -201,8 +202,6 @@ class Lv6ZoneController : public esphome::Component {
   /// Recompute balance factors on the next cycle (e.g. after a balancing mode change).
   void request_balance_recalc() { balance_dirty_ = true; }
 
-  void set_simple_preheat_enabled(bool enabled);
-  bool is_simple_preheat_enabled() const;
   bool is_preheat_absorbing() const { return preheat_absorb_active_.load(); }
   /// Armed absorb window from coordinator (P5). Runtime-only; never survives reboot.
   bool is_absorb_arm_active() const { return absorb_arm_active_(); }
@@ -234,8 +233,20 @@ class Lv6ZoneController : public esphome::Component {
   enum class HpPhase : uint8_t { UNKNOWN = 0, RUNNING = 1, PRESTART = 2, IDLE = 3 };
   void set_hp_phase(HpPhase phase, uint32_t ttl_ms);
   HpPhase get_hp_phase() const;
+  /// Overheated loop reopened to move heat (room warmer than the supply).
+  bool is_moving_heat(uint8_t zone) const { return zone < NUM_ZONES && hp_moving_[zone]; }
   static const char *hp_phase_name(HpPhase phase);
   float get_house_balance(uint8_t zone) const;
+  /// Valve curve (opening where flow starts / is full) used by dynamic balancing.
+  /// Persisted with when Touch measured it (0 = not measured); sanitised.
+  /// full_lmin: the loop's full flow measured by Touch (l/min, NAN = unknown).
+  /// Valve test (Touch measures valve curves from the pump's flow): every loop holds
+  /// the position it has when the test starts, or goes to `others_pct` when that is
+  /// given; `zone` (0..5, or −1 = none) goes to `position_pct`. Ends after ttl_ms or
+  /// clear_valve_test().
+  void set_valve_test(int8_t zone, float position_pct, uint32_t ttl_ms, float others_pct = NAN);
+  void clear_valve_test();
+  bool valve_test_active() const;
   uint8_t get_absorb_capacity_rank(uint8_t zone) const;
   /// Relative Kv at opening percent for Motor lab / diagnostics.
   float get_relative_kv(uint8_t zone, float opening_pct) const;
@@ -261,6 +272,7 @@ class Lv6ZoneController : public esphome::Component {
   /// Persist heating-mode settings (local law used when Touch is offline).
   void set_heating_mode(HeatingProfile mode);
   void set_hp_overheat_margin_c(float margin_c);
+  void set_hp_heat_move_k(float k);
   void set_hp_base_pct(float pct);
   void set_hp_trim_floor_pct(float pct);
   void set_hp_close_above_c(float c);
@@ -303,12 +315,27 @@ class Lv6ZoneController : public esphome::Component {
 
   // Hydraulic balance
   std::array<float, NUM_ZONES> balance_factors_;
+  /// Heat-pump design share per loop: static prior × learned correction, not
+  /// clamped (dynamic balancing normalises it).
+  std::array<float, NUM_ZONES> design_share_{};
   bool balance_dirty_ = true;
   std::array<float, NUM_ZONES> house_balance_{1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f};
   std::array<uint32_t, NUM_ZONES> house_balance_until_ms_{};
+  struct ValveTest {
+    bool active{false};
+    bool captured{false};  ///< hold positions taken
+    int8_t zone{-1};
+    float position_pct{0.0f};
+    float others_pct{NAN};  ///< NaN: the others hold
+    uint32_t until_ms{0};
+    std::array<float, NUM_ZONES> hold{};
+  };
+  ValveTest valve_test_{};  // guarded by snapshot_mutex_
   HpPhase hp_phase_{HpPhase::UNKNOWN};
   // «Close above target» latch per zone (hp_close_above_c; reopens 0.2 °C below).
   std::array<bool, NUM_ZONES> hp_closed_{};
+  bool hp_idle_balance_{false};  ///< Static balance while the heat source is idle
+  std::array<bool, NUM_ZONES> hp_moving_{};  ///< Overheated loop moving heat (dynamic_balance.h)
   // Anticipated reopening of warm-closed loops (reopen_policy.h; runtime only).
   std::array<reopen_policy::State, NUM_ZONES> reopen_{};
   std::array<reopen_policy::Trend, NUM_ZONES> reopen_trend_{};
@@ -321,9 +348,15 @@ class Lv6ZoneController : public esphome::Component {
   std::array<float, NUM_ZONES> adapt_err_ema_{};
   std::array<uint32_t, NUM_ZONES> adapt_samples_{};
   uint32_t last_adapt_ms_ = 0;
+  /// The learned factor as it runs (NaN: take the stored one); stored once it has moved.
+  std::array<float, NUM_ZONES> adapt_live_{NAN, NAN, NAN, NAN, NAN, NAN};
   // Set by reset_balancing() (dashboard task), consumed by the zone task — clears
   // the RAM accumulators without a cross-thread float race.
   std::atomic<bool> adapt_reset_pending_{false};
+  /// What the learned factors are deviations from: the method and each loop's
+  /// measured full flow. When it changes they start over at 1 (stored in NVS).
+  static constexpr uint32_t BALANCE_METHOD_VERSION = 3;  // 2: deviation from the physics; 3: no measured loop flow
+  uint32_t balance_basis_() const;
 
   // Setpoint adjustments
   QueueHandle_t adj_queue_ = nullptr;
@@ -357,8 +390,6 @@ class Lv6ZoneController : public esphome::Component {
   uint8_t absorb_arm_source_{0};  ///< 0=none, 1=armed, 2=reactive (history code)
 
   // Flow allocator (A4) — runtime energy debt + loop shares.
-  flow_allocator::State flow_alloc_{};
-  uint32_t flow_alloc_last_ms_{0};
   std::array<float, NUM_ZONES> loop_share_pct_{};
   std::array<uint8_t, NUM_ZONES> absorb_capacity_rank_{};
 

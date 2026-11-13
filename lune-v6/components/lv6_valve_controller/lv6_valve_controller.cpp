@@ -745,6 +745,14 @@ MoveCeilingInputs Lv6ValveController::build_ceiling_inputs_(
                                : motor_cfg_.hmip_vdmot_runtime_limit_s) * 1000u;
     in.bootstrap_counts = is_open ? motor_cfg_.open_runtime_limit_counts
                                   : motor_cfg_.close_runtime_limit_counts;
+    // A learning close returns over the open leg it just counted plus the seat;
+    // a long free travel needs more than the fixed ceiling (Toilet, 1. sal: 2200
+    // open, wall past 2601). Still within the plunger's travel budget.
+    if (learning_active_ && !is_open && cal_seat_expected_ > 0)
+      in.bootstrap_counts = std::max(
+          in.bootstrap_counts,
+          std::min(LEARN_CLOSE_CEILING_MAX_COUNTS,
+                   static_cast<uint32_t>(cal_seat_expected_ * LEARN_CLOSE_CEILING_FACTOR)));
   } else {
     in.bootstrap_ms = motor_cfg_.generic_profile_runtime_limit_s * 1000u;
     in.bootstrap_counts = 0;  // no count ceiling for an uncharacterised actuator
@@ -1831,8 +1839,16 @@ float Lv6ValveController::estimate_travel_time_ms_(uint8_t zone, float from_pct,
 bool Lv6ValveController::start_motor_(uint8_t zone, MotorDirection dir, bool override_drivers) {
   if (zone >= NUM_ZONES || motor_turning_ || (!drivers_enabled_ && !override_drivers))
     return false;
+  // Reversing a motor that has just stopped trips the bridge (a learn's first close
+  // 12 ms after a move's open: raw fault, "breakaway"). Every path waits out the pause.
+  if (zone == last_stop_zone_ && dir != last_stop_dir_ && last_stop_ms_ != 0) {
+    const uint32_t since = static_cast<uint32_t>(esp_timer_get_time() / 1000) - last_stop_ms_;
+    if (since < REVERSAL_PAUSE_MS)
+      vTaskDelay(pdMS_TO_TICKS(REVERSAL_PAUSE_MS - since));
+  }
   move_aborted_ = false;
   seat_early_logged_ = false;
+  seat_short_logged_ = false;
 
   DRV8215 *driver = nullptr;
   if (!gpio_backend_enabled_) {
@@ -1918,6 +1934,7 @@ bool Lv6ValveController::start_motor_(uint8_t zone, MotorDirection dir, bool ove
   }
   pin_anchor_ma_ = 0.0f;
   seat_rise_.reset();
+  seal_count_ = 0;
   xSemaphoreTake(telemetry_mutex_, portMAX_DELAY);
   close_seating_learned_ = telemetry_[zone].contact_to_stop_close_ripples > 0;
   xSemaphoreGive(telemetry_mutex_);
@@ -2039,6 +2056,9 @@ void Lv6ValveController::stop_motor_(bool record_event) {
   else if (driver)
     driver->coast();
   drive_output_enabled_ = false;
+  last_stop_ms_ = static_cast<uint32_t>(esp_timer_get_time() / 1000);
+  last_stop_zone_ = current_zone_;
+  last_stop_dir_ = current_dir_;
 
   // Stop DMA and allow the ripple processor task to drain any pending frames
   // before the motor task reads the final ripple count.
@@ -2900,6 +2920,30 @@ bool Lv6ValveController::endpoint_window_reached_() const {
   return count >= static_cast<uint32_t>(approach_stroke_ripples_ * tolerance);
 }
 
+uint32_t Lv6ValveController::trusted_seat_expected_() const {
+  if (current_dir_ != MotorDirection::CLOSE || current_zone_ >= NUM_ZONES)
+    return 0;
+  if (calibrating_)
+    return cal_seat_expected_;
+  if (!drive_to_endstop_active_ || !position_confident_[current_zone_])
+    return 0;
+  xSemaphoreTake(telemetry_mutex_, portMAX_DELAY);
+  const float pos = telemetry_[current_zone_].current_position_pct;
+  const uint32_t stroke = telemetry_[current_zone_].learned_close_ripples;
+  xSemaphoreGive(telemetry_mutex_);
+  return static_cast<uint32_t>(std::clamp(pos, 0.0f, 100.0f) / 100.0f * stroke);
+}
+
+uint32_t Lv6ValveController::seat_short_margin_(uint32_t expected) const {
+  uint32_t stroke = expected;
+  if (current_zone_ < NUM_ZONES) {
+    xSemaphoreTake(telemetry_mutex_, portMAX_DELAY);
+    stroke = std::max(stroke, telemetry_[current_zone_].learned_close_ripples);
+    xSemaphoreGive(telemetry_mutex_);
+  }
+  return std::max(SEAT_SHORT_MIN_RIPPLES, static_cast<uint32_t>(stroke * SEAT_SHORT_STROKE_FRACTION));
+}
+
 void Lv6ValveController::detect_endstop_() {
   // Rev 3.3 has no boost phase — it drives continuously — so the guard comes
   // from the tacho contract instead of the PWM profile.
@@ -2982,12 +3026,18 @@ void Lv6ValveController::detect_endstop_() {
   // (https://github.com/Lenti84/VdMot_Controller/blob/master/test/test_logs.txt).
   // Brush chatter can keep the tacho "alive" through the grind, so this path must
   // not require a commutation plateau.
+  // Rev 3.3: the same wall as the DMA ladder's seat rung (cap_close_seat_ma), so
+  // a soft insert's seal region (UNDER_LOAD, 31-38 mA on a warm motor) is
+  // pressed through rather than taken as the seat.
   bool close_fast_endstop = false;
   if (current_dir_ == MotorDirection::CLOSE && past_boost) {
     const StrokePhase phase = stroke_.phase();
     const bool seated_phase =
         phase == StrokePhase::UNDER_LOAD || phase == StrokePhase::STOPPING;
-    if (seated_phase && current_raw_ma_ > CLOSE_FAST_CAP_MA) {
+    const float close_fast_cap_ma = rev33_backend_ != nullptr
+                                        ? std::max(CLOSE_FAST_CAP_MA, cap_ladder_cached_.seat_ma)
+                                        : CLOSE_FAST_CAP_MA;
+    if (seated_phase && current_raw_ma_ > close_fast_cap_ma) {
       if (close_fast_cap_count_ < 255)
         close_fast_cap_count_++;
     } else {
@@ -3101,39 +3151,72 @@ void Lv6ValveController::detect_endstop_() {
     // Past the pin, rate alone cannot place the seat until its depth is
     // learned: on Rev 3.3 z1 the pin ramp runs ~2.5 mA/s, the seat's own rate.
     // Until then the pin-anchored level and the seat/pop-off caps end the stroke.
+    // Short of a trusted seat a rise is the insert's spring ramp, not the seat:
+    // start the reference over and keep closing (seat_where_expected).
+    const uint32_t seat_trusted_at = is_opening ? 0u : trusted_seat_expected_();
+    auto short_of_seat = [&](uint32_t count) {
+      return seat_trusted_at > 0 &&
+             seat_stop_short(count, seat_trusted_at, seat_short_margin_(seat_trusted_at));
+    };
+    auto note_short = [&](const char *what, uint32_t count) {
+      if (seat_short_logged_)
+        return;
+      seat_short_logged_ = true;
+      ESP_LOGW(TAG, "Motor %d %s at %" PRIu32 " counts, seat expected at %" PRIu32
+                    ": ignored, closing on", current_zone_ + 1, what, count, seat_trusted_at);
+    };
+    // Rev 3.3 past the pin a step is only the wall once the rotor is stopping:
+    // the seal region rises at the seat's own rate.
+    const bool step_may_seat =
+        !close_pin_seen ||
+        (rev33_backend_ != nullptr ? stroke_.phase() == StrokePhase::STOPPING : close_seating_learned_);
     if (!is_opening) {
       close_step_.observe(motor_run_time_ms_, current_filtered_ma_);
-      if (close_step_.tripped() && (!close_pin_seen || close_seating_learned_))
-        threshold_endstop = true;
+      if (close_step_.tripped() && step_may_seat) {
+        const uint32_t count = live_ripple_count_.load(std::memory_order_relaxed);
+        if (short_of_seat(count)) {
+          note_short("close step", count);
+          close_step_.reset();
+        } else {
+          threshold_endstop = true;
+        }
+      }
     }
     // A soft seat never slows the rotor or reaches the pin-anchored level
     // before the count ceiling (z1: seat ends ~3000 counts at 35-37 mA).
     // Once the seating depth is learned the classifier's endpoint window keeps
     // an early trip from being accepted short of it.
+    // The seat rise marks where the seal bears (seal_count_); the close presses on
+    // to the wall. Only a wall that never comes ends on the seal, SEAL_PRESS_* on.
     if (close_pin_seen && rev33_backend_ != nullptr) {
-      const bool was_tripped = seat_rise_.tripped();
       const uint32_t count = live_ripple_count_.load(std::memory_order_relaxed);
       seat_rise_.observe(motor_run_time_ms_, count, current_filtered_ma_,
                          stroke_.contact_count(), move_baseline_set_ ? move_baseline_ma_ : 0.0f);
-      if (seat_rise_.tripped()) {
-        if (!was_tripped) {
-          const uint32_t depth = count > stroke_.contact_count() ? count - stroke_.contact_count() : 0;
-          ESP_LOGI(TAG, "Motor %d seat rise at depth %" PRIu32 ": %.1f mA over %.1f mA plateau "
-                        "(rise %.2f mA)",
-                   current_zone_ + 1, depth, current_filtered_ma_, seat_rise_.plateau_ma(),
-                   seat_rise_.rise_ma());
-          if (close_seating_learned_) {
-            xSemaphoreTake(telemetry_mutex_, portMAX_DELAY);
-            const uint32_t learned = telemetry_[current_zone_].contact_to_stop_close_ripples;
-            xSemaphoreGive(telemetry_mutex_);
-            const uint32_t tol = learned * motor_cfg_.endpoint_window_tolerance_pct / 100u;
-            if (depth + tol < learned || depth > learned + tol)
-              ESP_LOGW(TAG, "Motor %d seat depth %" PRIu32 " outside learned %" PRIu32
-                            " +/- %" PRIu32 " (actuator or pin drift?)",
-                       current_zone_ + 1, depth, learned, tol);
-          }
+      if (seat_rise_.tripped() && seal_count_ == 0) {
+        seal_count_ = std::max<uint32_t>(count, 1);
+        const uint32_t depth = count > stroke_.contact_count() ? count - stroke_.contact_count() : 0;
+        ESP_LOGI(TAG, "Motor %d seal at %" PRIu32 " counts (depth %" PRIu32 "): %.1f mA over %.1f mA "
+                      "plateau, pressing on to the wall",
+                 current_zone_ + 1, count, depth, current_filtered_ma_, seat_rise_.plateau_ma());
+      }
+      if (seal_count_ > 0) {
+        xSemaphoreTake(telemetry_mutex_, portMAX_DELAY);
+        const uint32_t stroke = telemetry_[current_zone_].learned_close_ripples;
+        xSemaphoreGive(telemetry_mutex_);
+        const uint32_t press = std::max(SEAL_PRESS_MIN_RIPPLES,
+                                        static_cast<uint32_t>(stroke * SEAL_PRESS_STROKE_FRACTION));
+        // A long free travel can leave the wall beyond the count ceiling (.14 z3:
+        // seal at ~2400, ceiling 2601): end on the seal just short of the ceiling
+        // rather than letting the ceiling fault the close.
+        const bool at_ceiling = move_limit_.limit_counts > 0 &&
+                                count + SEAL_CEILING_MARGIN_RIPPLES >= move_limit_.limit_counts;
+        if ((count >= seal_count_ + press || at_ceiling) && !short_of_seat(count)) {
+          ESP_LOGW(TAG, "Motor %d no wall %" PRIu32 " counts past the seal at %" PRIu32
+                        " (%.1f mA%s): taking the seal as the seat",
+                   current_zone_ + 1, count - seal_count_, seal_count_, current_filtered_ma_,
+                   at_ceiling ? ", at the count ceiling" : "");
+          threshold_endstop = true;
         }
-        threshold_endstop = true;
       }
     }
   }
@@ -3256,8 +3339,9 @@ void Lv6ValveController::detect_endstop_() {
     evidence.direction_is_open = current_dir_ == MotorDirection::OPEN;
     evidence.phase = stroke_.phase();
     evidence.endpoint_window = endpoint_window_reached_();
-    uint32_t seat_moved = 0, seat_expected = 0, seat_margin = 0;
+    uint32_t seat_moved = 0, seat_expected = 0, seat_margin = 0, seat_short_margin = 0;
     float seat_pos = NAN;
+    bool seat_trusted = false;
     if (current_dir_ == MotorDirection::CLOSE && evidence.commanded_endpoint && current_zone_ < NUM_ZONES) {
       // Where should the seat be? The position held before this move, times the
       // learned stroke. Pressing into a seat still turns the rotor a little
@@ -3272,27 +3356,44 @@ void Lv6ValveController::detect_endstop_() {
                               static_cast<uint32_t>(stroke * SEATED_START_STROKE_FRACTION),
                               static_cast<uint32_t>(seat_expected * SEATED_START_EXPECTED_FRACTION)});
       seat_moved = live_ripple_count_.load(std::memory_order_relaxed);
-      // Stopping early is the seat too: the remembered position is only a hint
-      // (it can be off after a restart or an aborted run), and a closing drive
-      // cannot stop more open than the seat it is pressed against. Only running
-      // well past where the seat should be is suspicious.
-      evidence.seated_start = stroke > 0 && seat_moved <= seat_expected + seat_margin;
+      // Stopping short of a trusted seat is not the seat (seat_where_expected);
+      // the loose window (endpoint_window_tolerance_pct) must not accept it either.
+      // Learning only suppresses early rises (detect above); a stall there must
+      // not fail the pass.
+      seat_trusted = !calibrating_ && drive_to_endstop_active_ && position_confident_[current_zone_];
+      if (seat_trusted)
+        seat_expected = trusted_seat_expected_();
+      seat_short_margin = seat_short_margin_(seat_expected);
+      // A position that is only a hint (restart, fault) says little about how far
+      // the wall is: past pin contact at the wall's current the valve is seated,
+      // however far it ran (Toilet: the seal pressed 191 counts from a 0 % hint,
+      // window 146, a false BLOCKED after every restart).
+      const bool wall_after_pin = !seat_trusted && current_dir_ == MotorDirection::CLOSE &&
+                                  rev33_backend_ != nullptr && stroke_.contact_seen() &&
+                                  cap_ladder_cached_.seat_ma > 0.0f &&
+                                  current_filtered_ma_ >= cap_ladder_cached_.seat_ma;
+      evidence.seated_start = stroke > 0 && (seat_where_expected(seat_moved, seat_expected, seat_margin,
+                                                                 seat_short_margin, seat_trusted) ||
+                                             wall_after_pin);
+      if (seat_trusted && seat_stop_short(seat_moved, seat_expected, seat_short_margin))
+        evidence.endpoint_window = false;
     }
     const EndpointDecision decision = classify_endpoint(evidence);
     last_endpoint_decision_ = static_cast<uint8_t>(decision);
     // Only a stop that is accepted as the seat says anything about the
     // remembered position; mid-travel the count is merely still low.
     if (decision == EndpointDecision::ENDPOINT && evidence.seated_start &&
-        seat_moved + seat_margin < seat_expected && !seat_early_logged_) {
+        seat_stop_short(seat_moved, seat_expected, seat_short_margin) && !seat_early_logged_) {
       seat_early_logged_ = true;
       ESP_LOGW(TAG, "Motor %d seated %" PRIu32 " ripples early (held %.1f%%, expected %" PRIu32
                     "): remembered position was off", current_zone_ + 1, seat_expected - seat_moved,
                seat_pos, seat_expected);
     }
     if (decision == EndpointDecision::JAM && evidence.commanded_endpoint && std::isfinite(seat_pos))
-      ESP_LOGW(TAG, "Motor %d seat check: held %.1f%%, moved %" PRIu32 " ripples, expected %" PRIu32
-                    " +/- %" PRIu32 ", phase %u, window %d", current_zone_ + 1, seat_pos, seat_moved,
-               seat_expected, seat_margin, static_cast<unsigned>(evidence.phase), evidence.endpoint_window);
+      ESP_LOGW(TAG, "Motor %d seat check: held %.1f%%%s, moved %" PRIu32 " ripples, expected %" PRIu32
+                    " +/- %" PRIu32 ", phase %u, window %d", current_zone_ + 1, seat_pos,
+               seat_trusted ? "" : " (hint)", seat_moved, seat_expected, seat_margin,
+               static_cast<unsigned>(evidence.phase), evidence.endpoint_window);
     switch (decision) {
       case EndpointDecision::CONTINUE:
         return;
@@ -3370,10 +3471,21 @@ void Lv6ValveController::detect_endstop_() {
                         : already_at_stop ? "at_stop"
                         : stall_endstop ? "stall"
                         : (current_dir_ == MotorDirection::OPEN ? "open_cadence" : "endpoint");
-  ESP_LOGI(TAG, "Motor %d endstop (%s: filt=%.1f mA, raw=%.1f mA, mean=%.1f, slope=%.2f mA/s, t=%" PRIu32 "ms%s)",
+  const uint32_t stop_count = live_ripple_count_.load(std::memory_order_relaxed);
+  ESP_LOGI(TAG, "Motor %d endstop (%s: filt=%.1f mA, raw=%.1f mA, mean=%.1f, slope=%.2f mA/s, t=%" PRIu32
+                "ms, %" PRIu32 " counts%s)",
            current_zone_ + 1, trigger, current_filtered_ma_, current_raw_ma_,
            mean_current_(current_zone_, current_dir_), current_slope_ma_per_s_, motor_run_time_ms_,
-           soft_approach_active_ ? ", soft" : "");
+           stop_count, soft_approach_active_ ? ", soft" : "");
+  // Drift watch: from a trusted position the wall should come where the count
+  // says. Past it by more than the short margin means the counts lost ground.
+  if (current_dir_ == MotorDirection::CLOSE) {
+    const uint32_t expected = trusted_seat_expected_();
+    if (expected > 0 && stop_count > expected + seat_short_margin_(expected))
+      ESP_LOGW(TAG, "Motor %d seat %" PRIu32 " counts past where expected (%" PRIu32 " of %" PRIu32
+                    "): position had drifted",
+               current_zone_ + 1, stop_count - expected, stop_count, expected);
+  }
 
   xSemaphoreTake(telemetry_mutex_, portMAX_DELAY);
   auto &t = telemetry_[current_zone_];
@@ -4150,12 +4262,15 @@ bool Lv6ValveController::learn_working_range_(uint8_t zone, uint8_t attempt) {
   }
   bump(/*home done → next is open*/ 2);
 
+  uint32_t last_open_leg_count = 0;
   while (learner.step() == LearnStep::OPEN_LEG) {
     set_learning_progress_(zone,
                            static_cast<uint8_t>(std::min(99, (100 * static_cast<int>(done)) /
                                                                  std::max(1, static_cast<int>(expected)))),
                            /*open*/ 2, learner.samples(), need);
-    learner.on_open_leg(calibration_open_leg_(zone, learner.next_open_ripples()));
+    const OpenLegResult leg = calibration_open_leg_(zone, learner.next_open_ripples());
+    last_open_leg_count = leg.ok ? leg.count : 0;
+    learner.on_open_leg(leg);
     if (calibration_aborted_())
       return false;
     bump(/*close*/ 3);
@@ -4167,7 +4282,9 @@ bool Lv6ValveController::learn_working_range_(uint8_t zone, uint8_t attempt) {
                                                                  std::max(1, static_cast<int>(expected)))),
                            /*close*/ 3, learner.samples(), need);
     ClosePassResult pass{};
+    cal_seat_expected_ = last_open_leg_count;
     pass.ms = calibration_pass_(zone, MotorDirection::CLOSE);
+    cal_seat_expected_ = 0;
     if (calibration_aborted_())
       return false;
     pass.seat_confirmed = pass.ms > 0 && endpoint_confirmed_;
@@ -4339,8 +4456,10 @@ void Lv6ValveController::run_calibration_(uint8_t zone) {
 
       set_learning_progress_(zone, 66, /*close*/ 3, 0, 1);
       // Pass 3: close fully again (measure closing travel + compute deadzone)
+      cal_seat_expected_ = open_ripples;
       uint32_t close2_ms = calibration_pass_(zone, MotorDirection::CLOSE);
       uint32_t close2_ripples = get_motion_count_();
+      cal_seat_expected_ = 0;
       if (close2_ms == 0) {
         ESP_LOGW(TAG, "Calibration zone %d: second close failed", zone + 1);
         break;

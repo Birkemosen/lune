@@ -11,7 +11,7 @@ Placeringen følger testen i DESIGN.md 15.1: *hører det til én ting i huset* �
 almindelig uge* → også som hverdagskontrol (målet, autogem).
 
 `{i}` = zone 1–6. "Ark" er en `.sheet`-popover (`#sheet-z{i}`, `#sheet-manifold`); "System" er
-`#v-sys` med kategorierne `#c-device`, `#c-manifold`, `#c-connections`, `#c-firmware`,
+`#v-sys` med kategorierne `#c-device`, `#c-motors`, `#c-connections`, `#c-firmware`,
 `#c-service` og `#c-motorlab` (kun synlig, når firmwaren er et dev-build).
 
 ## Navigation
@@ -68,14 +68,17 @@ målet (overblik og indstillinger) er låst.
 | Fremløb, retur, ΔT, samlet åbning | Dashboard › Varme nu | Ark › Overblik (+ Hjem) |
 | Fremløb/retur 24 t | Dashboard › Varme nu | Ark › Historik (+ Hjem) |
 | Balanceringstabel (`bal.*`) | Dashboard › Balancering | Ark › Overblik |
-| Live-værdier probe 1–8 (`probe.*`) | Konfiguration › Returfølere | Ark › Overblik › Live værdier |
+| Live-værdier probe 1–8 (`probe.*`) | Konfiguration › Returfølere | Ark › Overblik › Live værdier; labelen siger, hvad proben er tildelt («Probe 3 · Josephine», «Probe 1 · ikke tildelt») |
+| `manifold_type`, `probe_flow`, `probe_return`, `return_probe_mode` | System › Manifold og motorer › Manifold | Ark › Indstillinger › Manifold, øverst (skrives kun, når de er ændret; formularen er `data-patch`) |
 | `heat_mode`, `heat_min_open` | Konfiguration › Varmetilstand (`heating`) | Ark › Indstillinger › Varmetilstand |
 | `hp_demand`, `hp_base`, `hp_overheat`, `hp_trim` | Konfiguration › Varmetilstand › Varmepumpegrænser | Ark › Indstillinger › Varmepumpegrænser (`.hp-limits`) |
 | `bal_mode`, `bal_interval`, `bal_step`, `bal_min`, `bal_max` | Konfiguration › Regulering | **Fjernet** — intet `/api/v1/settings`-endpoint (kun backup-import sætter dem), binderen skrev dem aldrig. Tilstanden vises fortsat som badge over balanceringstabellen |
 | `preheat_enabled`, `ph_band`, `ph_delta` | Konfiguration › Regulering (gated) | Ark › Indstillinger › Preheat-absorption (gated; switch gemmes med det samme) |
 | `action:reset_balancing` | Konfiguration › Regulering (footer) | Ark › Indstillinger, sidst (`.confirm-pop`) |
 
-Systemfeltet i strimlen og overskriften på Hjem hedder «System» (i18n `scope.manifold`); arket hedder «Manifold» (`sheet.manifold`).
+Feltet i strimlen og overskriften på Hjem hedder «Manifold» (i18n `scope.manifold`) ligesom arket (`sheet.manifold`), så «System» kun er System-siden.
+
+Med 8 prober viser zonekortet på Hjem zonens retur ved siden af flowet («flow 98 % · retur 26,2°», `zcard.flowRet`).
 
 Gem-nøgler: `heating` er slået sammen med `regulation` (én gem-bjælke pr. fane); binderen
 skriver varmetilstand + varmepumpegrænser og derefter preheat, som de to formularer gjorde.
@@ -86,13 +89,11 @@ skriver varmetilstand + varmepumpegrænser og derefter preheat, som de to formul
 |---|---|---|
 | `device_display_name`, `device_location` | Forbindelser › Enhedsidentitet | System › Enhed › Enhedsidentitet (`device`) |
 | `ble_clock_enabled`, sidste synk, `action:sync` | Forbindelser › BLE-ur | System › Enhed › BLE-ur (`ble_clock`) |
-| `manifold_type`, `probe_flow`, `probe_return` | Manifold og motorer › Manifold | System › Manifold og motorer › Manifold |
-| `return_probe_mode` | Manifold › Returfølere (`return_probes`) | System › Manifold og motorer › Manifold › Følerlayout (`manifold`, `data-patch`) |
-| `motor_drivers`, `motor_type`, `m_runtime` | Manifold og motorer › Motorer | System › Manifold og motorer › Motorer (gated) |
+| `motor_drivers`, `motor_type`, `m_runtime` | Manifold og motorer › Motorer | System › Motorer › Motorer (gated, `motors`, `data-patch`) |
 | `m_cthr`, `m_cslope`, `m_cfloor` | … › Endestop- og læringsgrænser (`details.more`) | … › Avanceret › Lukke-endestop (underside). Nu koblet på `/settings/number`: `close_threshold_multiplier` (×), `close_slope_threshold` (mA/s), `close_slope_current_factor` (×) med firmwarens enheder og grænser |
 | `m_othr`, `m_oslope`, `m_ofloor`, `m_ripple` | samme | … › Avanceret › Åbne-endestop (underside). Koblet på `open_threshold_multiplier`, `open_slope_threshold`, `open_slope_current_factor`, `open_ripple_limit_factor` |
 | `m_relmov`, `m_relh`, `m_minsamp`, `m_maxdev` | samme | … › Avanceret › Genlæring (underside) |
-| `action:relearn_all` | Manifold og motorer › Motorer | System › Manifold og motorer, sidst (`.confirm-pop`) |
+| `action:relearn_all` | Manifold og motorer › Motorer | System › Motorer, sidst (`.confirm-pop`) |
 | Lune Touch: status, navn, leverer, `action:approve/cancel/retry/revoke`, tekniske id'er (kopiér) | Forbindelser › Lune Touch | System › Forbindelser › Lune Touch (handlinger efter tilstand, 6.1b; id'er som underside) |
 | `ssid`, `password`, netværk, status | Forbindelser › Wifi | System › Forbindelser › Wifi (`wifi`) |
 | Eksterne rumtemperaturer (hjælpetekst) | — (kun i kataloget) | System › Forbindelser, sidst |

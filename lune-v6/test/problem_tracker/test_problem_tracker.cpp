@@ -195,7 +195,19 @@ static void test_append_utf8() {
   expect(std::strcmp(out, "abcøø") == 0, "cut on a character boundary");  // 'abc' + 2×2 bytes = 7
 }
 
+static void test_zone_area_texts() {
+  char buf[256];
+  title(Lang::DA, Kind::ZONE_AREA, 0, "Toilet", buf, sizeof(buf));
+  expect(std::strcmp(buf, "Toilet: areal ikke angivet") == 0, "area title");
+  expect(std::strcmp(category(Kind::ZONE_AREA), "config") == 0 &&
+             std::strcmp(id_kind(Kind::ZONE_AREA), "config.area_unset") == 0,
+         "area category and id");
+  message(Lang::DA, Kind::ZONE_AREA, Severity::WARNING, 0, 0, buf, sizeof(buf));
+  expect(std::strstr(buf, "gennemsnittet") != nullptr, "area message says what V6 does meanwhile");
+}
+
 int main() {
+  test_zone_area_texts();
   test_hold();
   test_unknown_and_neutral();
   test_send_and_clear();

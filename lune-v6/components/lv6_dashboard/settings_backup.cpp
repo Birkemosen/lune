@@ -689,8 +689,6 @@ size_t write_export_json(char *out, size_t out_cap, const lv6::DeviceConfig &cfg
   b.addf(",\"control\":{");
   b.key_num("comfort_band_c", c.comfort_band_c);
   b.addf(",");
-  b.key_bool("simple_preheat_enabled", c.simple_preheat_enabled);
-  b.addf(",");
   b.key_bool("preheat_absorb_enabled", c.preheat_absorb_enabled);
   b.addf(",");
   b.key_num("preheat_absorb_band_c", c.preheat_absorb_band_c);
@@ -700,6 +698,7 @@ size_t write_export_json(char *out, size_t out_cap, const lv6::DeviceConfig &cfg
   b.key_str("heating_mode", lv6::heating_profile_to_string(c.mode));
   b.addf(",");
   b.key_num("hp_overheat_margin_c", c.hp_overheat_margin_c);
+  b.key_num("hp_heat_move_k", c.hp_heat_move_k);
   b.addf(",");
   b.key_num("hp_base_pct", c.hp_base_pct);
   b.addf(",");
@@ -1098,7 +1097,6 @@ ImportResult apply_import_json(const char *json, lv6::DeviceConfig &cfg, bool re
   if (member_inner(settings, "control", &node)) {
     lv6::ControlConfig &c = cfg.control;
     apply_float(node, "comfort_band_c", c.comfort_band_c, 0.1, 5.0, result.applied);
-    apply_bool(node, "simple_preheat_enabled", c.simple_preheat_enabled, result.applied);
     apply_bool(node, "preheat_absorb_enabled", c.preheat_absorb_enabled, result.applied);
     apply_float(node, "preheat_absorb_band_c", c.preheat_absorb_band_c, 0.0, 10.0, result.applied);
     apply_float(node, "preheat_detect_delta_c", c.preheat_detect_delta_c, 0.0, 40.0,
@@ -1109,6 +1107,7 @@ ImportResult apply_import_json(const char *json, lv6::DeviceConfig &cfg, bool re
       result.applied++;
     }
     apply_float(node, "hp_overheat_margin_c", c.hp_overheat_margin_c, 0.3, 3.0, result.applied);
+    apply_float(node, "hp_heat_move_k", c.hp_heat_move_k, 0.0, 3.0, result.applied);
     apply_float(node, "hp_base_pct", c.hp_base_pct, 30.0, 100.0, result.applied);
     apply_float(node, "hp_trim_floor_pct", c.hp_trim_floor_pct, 0.0, 100.0, result.applied);
     if (c.hp_trim_floor_pct > c.hp_base_pct)

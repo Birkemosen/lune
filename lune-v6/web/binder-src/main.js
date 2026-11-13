@@ -21,10 +21,11 @@ import {
   setMotorTarget, openMotorTimed, closeMotorTimed, stopMotor, command, runI2cScan, postZonePhysics, postForecastProfile,
   exportSettings, importSettings, saveSettingsBackup, fetchLatestRelease,
   firmwareCheck, firmwareInstall, uploadFirmware, downloadDeviceLogs,
-  setManualMode, emergencyStopMotors, fetchPhysicsAlerts, fetchBleScan,
+  setManualMode, fetchPhysicsAlerts, fetchBleScan,
   resetMotorFault, backOffMotor, resetMotorAndRelearn, calibrateAllMotors, fetchWifi, changeWifi,
 } from '../dashboard-src/core/api.js';
 import { projectTemperature, PROJ_HORIZON } from './projection.js';
+import { initMotorLab, labEmergencyStop, paintMotorLab } from './motorlab.js';
 
 /** History entry indices for appended zone temp / sp_plan (after demand @ 10). */
 const HIST_TEMP0 = 11;
@@ -118,8 +119,8 @@ function zoneState(z) {
     return 'idle';
   }
 
-  const valve = toNum(ev(key.valve(z)));
-  if (Number.isFinite(valve) && valve > 5) return 'calling';
+  const flow = zoneFlow(z);
+  if (Number.isFinite(flow) && flow > 5) return 'calling';
   return 'idle';
 }
 
@@ -157,6 +158,19 @@ function zoneLearnLong(z) {
   return phase ? `${phase} · ${pct} %` : zoneLearnShort(z);
 }
 
+// Opening: the pin's position in % of its learned travel (0 = seat, 100 = pin free).
+function zoneFlow(z) {
+  return toNum(ev(key.valve(z)));
+}
+
+// Pin lift in mm at the opening: learned travel (motor counts) × mm per count
+// (valve_curve.h MM_PER_COUNT, measured with a caliper on Laura's actuator).
+const MM_PER_COUNT = 0.0011;
+function zoneOpeningMm(z, opening) {
+  const range = toNum(ev(key.motorWorkingRipples(z)));
+  return Number.isFinite(opening) && range > 0 ? (opening / 100) * range * MM_PER_COUNT : NaN;
+}
+
 function zoneLevel(z) {
   const st = zoneState(z);
   if (st === 'fault' || st === 'blocked' || st === 'off') return 0;
@@ -164,10 +178,10 @@ function zoneLevel(z) {
     const pct = zoneLearnPct(z);
     return Math.max(1, Math.min(10, Math.ceil(Math.max(pct, 1) / 10)));
   }
-  const valve = toNum(ev(key.valve(z)));
-  // Closed valve or no reading → unlit. 10 segments of 10 % (DESIGN.md 5.2).
-  if (!Number.isFinite(valve) || valve <= 0) return 0;
-  return Math.max(1, Math.min(10, Math.ceil(valve / 10)));
+  const flow = zoneFlow(z);
+  // No flow or no reading → unlit. 10 segments of 10 % (DESIGN.md 5.2).
+  if (!Number.isFinite(flow) || flow <= 0) return 0;
+  return Math.max(1, Math.min(10, Math.ceil(flow / 10)));
 }
 
 function setText(sel, html) {
@@ -262,6 +276,27 @@ async function freeProbeFromZones_(probe1based) {
       await setZoneSelect(z, 'zone_probe', 'None');
     }
   }
+}
+
+/** Who holds a 1-based probe: a zone's name or the manifold's supply/return. */
+function probeOwner_(probe1based) {
+  for (let z = 1; z <= 6; z++) {
+    if (parseProbeIndex(es(key.probe(z))) === probe1based) return es(key.name(z)) || `Zone ${z}`;
+  }
+  if (parseProbeIndex(es(gkey.manifoldFlowProbe)) === probe1based) return t('rt.probeOwnerFlow');
+  if (parseProbeIndex(es(gkey.manifoldReturnProbe)) === probe1based) return t('rt.probeOwnerReturn');
+  return '';
+}
+
+/** Save error for the user: a refused probe says which probe and who holds it. */
+function saveErrorText_(err, saveKey, form) {
+  if (err && err.code === 'probe_conflict') {
+    const m = /^zone\/(\d+)$/.exec(saveKey || '');
+    const probe = m ? parseProbeIndex(form[`z${m[1]}_ret`]) : 0;
+    const owner = probe ? probeOwner_(probe) : '';
+    return owner ? t('rt.probeConflict', { probe, owner }) : t('rt.probeConflictAny');
+  }
+  return t('rt.saveFailed');
 }
 
 function firstFreeProbeIndex_(reserved) {
@@ -543,21 +578,31 @@ function paintStrip() {
       now.innerHTML = Number.isFinite(nowT) ? `${num(nowT)}<small>°C</small>` : '—';
     }
     const opening = toNum(ev(key.valve(z)));
-    setBind(`z${z}.flow`, withUnit(opening, '%', 0));
+    const flow = zoneFlow(z);
+    // The opening is the main figure; the pin's lift in mm follows.
+    const mm = zoneOpeningMm(z, opening);
+    setBind(`z${z}.flow`, Number.isFinite(opening)
+      ? `${withUnit(opening, '%', 0)}${Number.isFinite(mm) ? ` <small>${escapeHtml(t('zdash.mm', { mm: num(mm, 1) }))}</small>` : ''}`
+      : '—');
     // Zone card: the opening beside the name; fault/blocked/learning/off say it in the value instead.
-    setBind(`z${z}.cardOpen`, ['fault', 'blocked', 'learning', 'off'].includes(st) || !Number.isFinite(opening)
-      ? '' : escapeHtml(t('zcard.open', { pct: Math.round(opening) })));
+    // With 8 probes the zone's own return follows (from its assigned probe).
+    const cardProbe = probeLayoutMode() === '8' ? parseProbeIndex(es(key.probe(z))) : 0;
+    const cardRet = cardProbe ? toNum(ev(key.probeTemp(cardProbe))) : NaN;
+    setBind(`z${z}.cardOpen`, ['fault', 'blocked', 'learning', 'off'].includes(st) || !Number.isFinite(flow)
+      ? '' : escapeHtml(Number.isFinite(cardRet)
+        ? t('zcard.flowRet', { pct: Math.round(flow), ret: num(cardRet) })
+        : t('zcard.flow', { pct: Math.round(flow) })));
     // Tile: opening as number next to the 10-segment bar; learning shows its own %.
     setBind(`z${z}.valve`, st === 'learning' ? `${zoneLearnPct(z)} %`
       : (st === 'fault' || st === 'blocked' || st === 'off') ? '0 %'
-      : (Number.isFinite(opening) ? `${Math.round(opening)} %` : '—'));
+      : (Number.isFinite(flow) ? `${Math.round(flow)} %` : '—'));
     const zoneProbe = parseProbeIndex(es(key.probe(z)));
     if (zoneProbe) {
       setBind(`z${z}.return`, withUnit(toNum(ev(key.probeTemp(zoneProbe))), '°C'));
     } else {
       setBind(`z${z}.return`, '—');
     }
-    if (Number.isFinite(opening)) setBar(`z${z}.opening`, opening);
+    if (Number.isFinite(flow)) setBar(`z${z}.opening`, flow);
     const prior = toNum(ev(key.balancePrior(z)));
     const learned = toNum(ev(key.balanceLearned(z)));
     const effective = toNum(ev(key.balanceEffective(z)));
@@ -580,7 +625,7 @@ function paintStrip() {
   let openCount = 0;
   let firstFault = 0;
   for (let z = 1; z <= 6; z++) {
-    const v = toNum(ev(key.valve(z)));
+    const v = zoneFlow(z);
     if (Number.isFinite(v)) { totalOpen += v; openCount += 1; }
     if (!firstFault && ['fault', 'blocked'].includes(zoneState(z))) firstFault = z;
   }
@@ -589,6 +634,11 @@ function paintStrip() {
   for (let p = 1; p <= 8; p++) {
     const pt = toNum(ev(key.probeTemp(p)));
     setBind(`probe.${p}`, Number.isFinite(pt) ? `${num(pt)} <small>°C</small>` : '—');
+    const owner = parseProbeIndex(es(gkey.manifoldFlowProbe)) === p ? t('csys.ownerFlow')
+      : parseProbeIndex(es(gkey.manifoldReturnProbe)) === p ? t('csys.ownerReturn') : probeOwner_(p);
+    // The probe's role as a pill next to its name; a free probe has none.
+    setBind(`probe.${p}.role`, escapeHtml(owner));
+    setShow(`probe.${p}.hasRole`, !!owner);
   }
   setBar('manifold.opening', openingPct);
   // Heat pump phase from Touch (valves follow the heat pump): one line, only when known.
@@ -1435,11 +1485,8 @@ function paintFormsFromState() {
     el.value = digits > 0 ? n.toFixed(digits) : String(Math.round(n));
   };
   paintNum('heat_min_open', gkey.minZoneFlowPct, 0);
-  paintNum('hp_demand', gkey.hpDemandPct, 0);
-  paintNum('hp_base', gkey.hpBasePct, 0);
   paintNum('hp_overheat', gkey.hpOverheatMarginC, 1);
-  paintNum('hp_trim', gkey.hpTrimFloorPct, 0);
-  paintNum('hp_close', gkey.hpCloseAboveC, 1);
+  paintNum('hp_move', gkey.hpHeatMoveK, 1);
   const devName = document.getElementById('device_display_name');
   if (devName && !formIsLocked(devName)) {
     devName.value = es(gkey.deviceDisplayName) || devName.value;
@@ -1454,7 +1501,8 @@ function paintFormsFromState() {
   if (manual && !formIsLocked(manual)) manual.checked = !!getDashboardValue('manualMode');
   const absorb = document.querySelector('input[name="preheat_enabled"]');
   if (absorb && !formIsLocked(absorb)) {
-    absorb.checked = isEntityOn(gkey.preheatAbsorbEnabled) || isEntityOn(gkey.simplePreheatEnabled);
+    // Simple preheat is always on in firmware; the switch is absorb alone.
+    absorb.checked = isEntityOn(gkey.preheatAbsorbEnabled);
   }
   paintNum('ph_band', gkey.preheatAbsorbBandC, 1);
   for (const [name, entity] of MOTOR_LIMITS) paintNum(name, gkey[entity], 2);
@@ -1540,6 +1588,7 @@ function paintAll() {
   // alone can flip true from a revision poll before entities are applied.
   const hasEntities = ev(gkey.uptime) != null || ev(gkey.flow) != null || !!es(gkey.firmware);
   if (!hasEntities) return;
+  paintMotorLab();
   paintStrip();
   paintDevice();
   paintTouch();
@@ -1596,7 +1645,6 @@ async function autosaveConfigSwitch_(input) {
     await setGlobalSelect('ble_clock_sync_enabled', on ? 'on' : 'off');
   } else if (name === 'preheat_enabled') {
     await setGlobalSelect('preheat_absorb_enabled', on ? 'on' : 'off');
-    await setGlobalSelect('simple_preheat_enabled', on ? 'on' : 'off');
   } else if (/^z(\d+)_enabled$/.test(name)) {
     await setEnabled(Number(RegExp.$1), on);
   } else {
@@ -1653,6 +1701,24 @@ const MOTOR_LIMITS = [
 ];
 
 /** True when a data-patch save changed one of these fields (or the form is not a patch). */
+/** Manifold sheet: valve type and probes, written only when changed. */
+async function saveManifoldHardware_(detail, form) {
+  // Return-probe layout first: 8 probes resets flow/return to 1/2 and zones to 3–8.
+  if (touched(detail, ['return_probe_mode'])) {
+    const mode = form.return_probe_mode === '8' ? '8' : '2';
+    if (mode === '8') await applyEightProbeDefaults();
+    else await applyTwoProbeLayout();
+    setProbeLayoutUi(mode, { force: true });
+  }
+  // Only when changed: a stale radio must never overwrite the valve type (it inverts every valve).
+  if (touched(detail, ['manifold_type']) && (form.manifold_type === 'no' || form.manifold_type === 'nc')) {
+    await setGlobalSelect('manifold_type', form.manifold_type === 'no' ? 'NO' : 'NC');
+  }
+  if (touched(detail, ['probe_flow', 'probe_return']) && (form.probe_flow != null || form.probe_return != null)) {
+    await applyManifoldProbes_(form.probe_flow, form.probe_return);
+  }
+}
+
 function touched(detail, names) {
   const changed = detail && detail.changed;
   if (!changed) return true;
@@ -1663,11 +1729,7 @@ async function saveHeating_(form) {
   await setGlobalSelect('heating_mode', form.heat_mode === 'heat_pump' ? 'heat_pump' : 'normal');
   if (form.heat_min_open != null) await setGlobalNumber('min_zone_flow_pct', form.heat_min_open);
   if (form.hp_overheat != null) await setGlobalNumber('hp_overheat_margin_c', form.hp_overheat);
-  if (form.hp_base != null) await setGlobalNumber('hp_base_pct', form.hp_base);
-  // After base: the firmware keeps demand ≥ base.
-  if (form.hp_demand != null) await setGlobalNumber('hp_demand_pct', form.hp_demand);
-  if (form.hp_trim != null) await setGlobalNumber('hp_trim_floor_pct', form.hp_trim);
-  if (form.hp_close != null) await setGlobalNumber('hp_close_above_c', form.hp_close);
+  if (form.hp_move != null) await setGlobalNumber('hp_heat_move_k', form.hp_move);
 }
 
 async function saveZoneRoom_(z, form) {
@@ -1753,25 +1815,17 @@ async function handleSave(detail) {
       else {
         await setGlobalSelect('ble_clock_sync_enabled', form.ble_clock_enabled ? 'on' : 'off');
       }
-    } else if (saveKey === 'manifold') {
+    } else if (saveKey === 'lab-thr') {
+      // Motor lab › end-stop thresholds: each write reloads the motor config, so only what changed.
+      for (const [name, value] of Object.entries((detail && detail.changed) || {})) {
+        const v = parseNum(value);
+        if (Number.isFinite(v)) await setGlobalNumber(name, v);
+      }
+    } else if (saveKey === 'motors') {
       if (action === 'relearn_all') {
         await ensureMotorsReady_();
         await calibrateAllMotors();
       } else {
-        // Return-probe layout first: 8 probes resets flow/return to 1/2 and zones to 3–8.
-        if (touched(detail, ['return_probe_mode'])) {
-          const mode = form.return_probe_mode === '8' ? '8' : '2';
-          if (mode === '8') await applyEightProbeDefaults();
-          else await applyTwoProbeLayout();
-          setProbeLayoutUi(mode, { force: true });
-        }
-        // Only when changed: a stale radio must never overwrite the valve type (it inverts every valve).
-        if (touched(detail, ['manifold_type']) && (form.manifold_type === 'no' || form.manifold_type === 'nc')) {
-          await setGlobalSelect('manifold_type', form.manifold_type === 'no' ? 'NO' : 'NC');
-        }
-        if (form.probe_flow != null || form.probe_return != null) {
-          await applyManifoldProbes_(form.probe_flow, form.probe_return);
-        }
         // motor_drivers is a switch and saves on toggle (autosaveConfigSwitch_); writing it here
         // persisted "off" whenever the form was saved while drivers were briefly off after an OTA.
         if (form.motor_type) {
@@ -1797,16 +1851,16 @@ async function handleSave(detail) {
         if (form.m_maxdev != null) await setGlobalNumber('learned_factor_max_deviation_pct', Number(form.m_maxdev) * 100);
       }
     } else if (saveKey === 'regulation') {
-      // Manifold sheet › Settings: heating mode + balancing + preheat in one form.
+      // Manifold sheet › Settings: valve type and probes, heating mode, balancing, preheat.
       if (action === 'reset_balancing') {
         await command('reset_balancing');
       } else {
+        await saveManifoldHardware_(detail, form);
         await saveHeating_(form);
         if (form.balancing_mode === 'static' || form.balancing_mode === 'adaptive')
           await setGlobalSelect('balancing_mode', form.balancing_mode);
-        // Checkbox absent when off — always write both absorb flags.
+        // Checkbox absent when off — always write the absorb flag.
         await setGlobalSelect('preheat_absorb_enabled', form.preheat_enabled ? 'on' : 'off');
-        await setGlobalSelect('simple_preheat_enabled', form.preheat_enabled ? 'on' : 'off');
         if (form.ph_band != null) await setGlobalNumber('preheat_absorb_band_c', parseNum(form.ph_band));
         if (form.ph_delta != null) await setGlobalNumber('preheat_detect_delta_c', parseNum(form.ph_delta));
       }
@@ -1926,8 +1980,9 @@ async function handleSave(detail) {
     if (formEl && typeof formEl.luneSaved === 'function') formEl.luneSaved(true);
   } catch (err) {
     console.error('lune:save failed', saveKey, err);
-    if (formEl && typeof formEl.luneSaved === 'function') formEl.luneSaved(false, t('rt.saveFailed'));
-    else addToast(t('rt.saveFailed'));
+    const msg = saveErrorText_(err, saveKey, form);
+    if (formEl && typeof formEl.luneSaved === 'function') formEl.luneSaved(false, msg);
+    else addToast(msg);
   }
 }
 
@@ -2072,6 +2127,7 @@ function boot() {
   if (m) document.cookie = `lune_lang=${m[1]};path=/;max-age=31536000`;
 
   initZchartScrub();
+  initMotorLab({ t, num, escapeHtml, setBind, setShow, formIsLocked });
 
   document.addEventListener('lune:save', (e) => {
     handleSave(e.detail);
@@ -2115,7 +2171,7 @@ function boot() {
       assignBleMac(Number(assign.dataset.zone) || 0, assign.dataset.mac || '');
     }
     if (e.target.closest('[data-action="motorlab-estop"]')) {
-      emergencyStopMotors();
+      labEmergencyStop();
     }
     if (e.target.closest('[data-action="copy-diag"]')) {
       e.preventDefault();

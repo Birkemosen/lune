@@ -126,7 +126,6 @@ struct DashboardSnapshot {
   lv6::ProbeConfig  probes;
   lv6::MotorConfig  motor;
   lv6::ManifoldType manifold_type;
-  bool              simple_preheat_enabled;
   bool              preheat_absorb_enabled;
   float             preheat_absorb_band_c;
   float             preheat_detect_delta_c;
@@ -136,6 +135,7 @@ struct DashboardSnapshot {
   char              absorb_end_reason[16]{};   ///< "" | disarm | expired
   float             zone_loop_share_pct[6]{};
   float             zone_house_balance[6]{};  ///< Touch house balance in effect (1.0 = none)
+  float             zone_opening_mm[6]{NAN, NAN, NAN, NAN, NAN, NAN};  ///< Pin lift at the opening, mm (valve_curve::opening_mm)
   uint8_t           zone_absorb_capacity_rank[6]{};
   float             zone_relative_kv[6]{};  ///< Kv at current commanded opening
   float             zone_static_factor[6]{};     ///< Resistance-aware static prior (0..1)
@@ -145,6 +145,7 @@ struct DashboardSnapshot {
   lv6::HeatingProfile effective_heating_mode{lv6::HeatingProfile::HEAT_PUMP};
   bool              heating_mode_from_touch{false};
   float             hp_overheat_margin_c{1.0f};
+  float             hp_heat_move_k{0.5f};
   float             hp_base_pct{60.0f};
   float             hp_trim_floor_pct{15.0f};
   float             hp_close_above_c{0.0f};

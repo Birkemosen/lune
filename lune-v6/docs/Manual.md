@@ -22,13 +22,14 @@ zone for room temperatures.
 
 **[Manifold sheet](#manifold-sheet)**
 
+- [Settings › Manifold](#settings--manifold)
 - [Settings › Heating mode and Heat pump limits](#settings--heating-mode-and-heat-pump-limits)
 - [Settings › Preheat absorption and balancing](#settings--preheat-absorption-and-balancing)
 
 **[System](#system)**
 
 - [Device](#device)
-- [Manifold and motors](#manifold-and-motors)
+- [Motors](#motors)
 - [Connections](#connections)
 - [Firmware and backup](#firmware-and-backup)
 - [Service](#service)
@@ -72,10 +73,13 @@ straight at a place, for example `#z3/settings` or `#system/connections`.
 - **Motors are off** — appears when the motor drivers are off, with the cause
   (turned off by you, firmware update, hardware fault, start-up) and **Turn motors on**.
   See [Motor drivers](#motor-drivers-on-off-and-recovery).
-- **Heat now** — manifold supply, return, ΔT, total opening and the last 24 hours.
+- **Heat now** — manifold supply, return, ΔT, total flow and the last 24 hours.
   **Open manifold** opens the manifold sheet.
-- **Comfort by zone** — temperature against target for each zone over 24 hours;
-  a row opens the zone's sheet.
+- **Comfort by zone** — temperature against target for each zone over 24 hours, with
+  the loop's flow; with 8 probes also the zone's own return. A card opens the zone's sheet.
+
+The first tile in the strip, **Manifold**, shows supply and return and opens the
+manifold sheet.
 
 The zone tiles show temperature, a chip with the distance to target (blue below,
 neutral near, orange above) and the valve opening in five steps.
@@ -98,6 +102,10 @@ which zone it follows and opens that one; its target is locked.
 
 **Room**: name, area and temperature source (**probe** or **BLE**, with scan and
 assign). With 8 return probes, the zone's return probe is chosen here.
+
+The floor **area** sets the zone's share of the flow, so set the real heated floor area. A
+new zone has none: until it is set, the control uses the mean area of the other zones and
+the problem list shows «area not set».
 
 External Wi‑Fi room temperatures (Shelly / Home Assistant / Homey) map
 `sensor_id` → zone **only on V6**. Producers never send a zone index. See
@@ -177,58 +185,66 @@ blocked. Each retry and each block is logged with which fault line fired.
 
 ## Manifold sheet
 
-**Overview** — supply, return, ΔT and total opening; the **balancing** table with
-the current mode; **Live readings** of every 1-Wire probe, so wiring can be checked.
+**Overview** — supply, return, ΔT and total flow; the **balancing** table with
+the current mode; **Live readings** of every 1-Wire probe, each labelled with what it is
+assigned to (a zone, the manifold's supply or return, or not assigned), so wiring can
+be checked.
 
 **History** — supply and return over the last 24 hours.
+
+<a id="manifold"></a>
+### Settings › Manifold
+
+Valve type (**NO** / **NC**) and which 1-Wire probes measure manifold supply and
+return. That drives ΔT on the manifold tile and the direction motors must run. The choice
+must match the valve inserts: with **NO** the valve is open when the plunger is up;
+a wrong choice makes every zone run inverted.
+
+<a id="return-probes"></a>
+**Probe layout**: **2 probes** — shared supply/return on the manifold. **8 probes** —
+a return sensor per zone for finer diagnostics and commissioning; assign each zone's
+return in its sheet under Settings › Room. Check the wiring with **Live readings** under
+Overview before saving the layout. A probe can only have one role: choosing one that a zone
+or the manifold already uses is refused, and the message names who holds it.
+1-Wire probes read at 12 bit (0.0625 °C).
 
 <a id="heating"></a>
 ### Settings › Heating mode and Heat pump limits
 
 **Normal** vs **Heat pump**, plus an optional minimum total opening across
-accepting loops (0 disables; normal mode only). Heat-pump openings only apply in
-heat-pump mode, where every loop keeps flow so the heat pump can hold the lowest
-flow temperature:
+accepting loops (0 disables; normal mode only).
 
-- **Opening when calling** — a room below setpoint − comfort band opens at least
-  this far; the flow allocator may open it further (default 80 %). Between that
-  and setpoint the opening ramps down to the base opening.
-- **Base opening** — valve position at setpoint (default 60 %)
-- **Overheat margin** — °C above setpoint over which the opening trims from base
-  to the trim floor (default 1.0 °C)
-- **Trim floor** — opening held above setpoint + margin (default 15 %; 30–40 %
-  keeps more flow). A zone only closes once it is past setpoint + comfort band +
-  margin **and** the manifold supply (flow probe) is more than 1 °C warmer than
-  the room — cooler water cannot heat it, so it keeps flowing.
+**Heat pump: dynamic balancing** ([design](dynamic_balancing.md)). The manifold works
+like a statically balanced installation whose balancing valves follow the rooms:
 
-- **Close fully above target** — 0 = off. A room this far above its target (e.g.
-  +0.5 °C) closes its loop fully instead of holding the trim floor, so a warm floor does
-  not take flow from rooms that need it; it reopens 0.2 °C below the limit. A room that
-  needs heat is never closed. **Flow guarantee:** if the manifold's total opening would
-  fall below *Min. total opening* (else 30 %), the closed loops nearest their target are
-  reopened to the trim floor, one at a time, so the manifold always has flow.
+- Every loop has flow all the time. Its share is its design share (the hydraulic
+  balance: area, heat loss, floor, pipe, loop length, plus the learned correction).
+  The most demanding loop is fully open; the others are throttled to their share.
+- A room's share follows its temperature: full share one comfort band below target,
+  falling to a quarter at target + **overheat margin** (default 1.0 °C).
+- Inside the manifold warm rooms hand their flow to cold ones and the total stays put.
+  The manifold's total follows its most demanding room: full while one room is a comfort
+  band below target, less when every room on the manifold is warm.
+- A loop closes only when its room is past target + comfort band + overheat margin (more
+  while Touch pre-buffers), and reopens 0.3 °C below that. Its flow goes to the other
+  loops. The manifold never closes every loop.
+- The heat comes from the supply temperature. V6 tells Touch to **raise** it when a room
+  has been below target − comfort band for 20 minutes, and to **lower** it when no room
+  has been below target for 30 minutes.
 
-**Reopening ahead (both modes).** A floor answers 1–3 hours after its valve opens, so a
+With every loop open, the circulation pump sets the total flow: set it once so the
+secondary flow is about 105–125 % of the heat pump's (Touch shows the buffer balance).
+
+**Normal mode: reopening ahead.** A floor answers 1–3 hours after its valve opens, so a
 closed room that waited for its thermometer would keep falling well below target. A loop
 closed because its room is warm therefore reopens on the temperature *expected one floor
 lag ahead*: the room's measured fall (°C/h, over 30-minute steps) times the floor lag
 (about 1.5 h for 8 cm concrete, 1 h for screed, less for dry systems, plus about 0.4 h
 for parquet and 0.6 h for carpet). The longer the loop has been closed, the longer the
 lag counts (up to twice after 4 hours), because the slab has given up more of its heat.
-The loop reopens when that expected temperature reaches setpoint + 0.3 °C, at the
-satisfied opening (not the calling opening), after at least 20 minutes closed. In Normal
-mode, which closes at setpoint, it reopens 0.2 °C below setpoint instead of at setpoint −
-comfort band. It closes again if the room turns warm (0.2 °C hysteresis). A steady room
-reopens on its measured temperature.
-
-All openings are for the hardest loop; the hydraulic balance scales each loop by
-its resistance (area, pipe spacing, pipe type, supply length).
-
-**From Lune Touch — the heat pump's phase** (Touch › Circulation › *Follow the heat pump*):
-while Touch says the heat pump is **idle**, a satisfied room uses the trim floor instead of
-the base opening (rooms below target still open to the opening when calling). **Running** and
-**starts soon** use the curve above. The manifold sheet shows the phase in one line; it
-expires after 15 minutes without a new message, and V6 is back on its own curve.
+The loop reopens 0.2 °C below setpoint instead of at setpoint − comfort band, after at
+least 20 minutes closed. It closes again if the room turns warm (0.2 °C hysteresis). A
+steady room reopens on its measured temperature.
 
 Default local mode is heat pump.
 
@@ -269,26 +285,13 @@ without NTP. Automatic display sync is typically once per day.
 press once to enter setup (`SEt`), then press twice rapidly. Bluetooth must be
 on (hold ~5 s to toggle if needed).
 
-<a id="manifold"></a>
-### Manifold and motors
+<a id="motors"></a>
+### Motors
 
-Valve type (**NO** / **NC**) and which 1-Wire probes measure manifold supply and
-return. That drives ΔT on the strip and the direction motors must run. The choice
-must match the valve inserts: with **NO** the valve is open when the plunger is up;
-a wrong choice makes every zone run inverted.
-
-<a id="return-probes"></a>
-**Probe layout**: **2 probes** — shared supply/return on the manifold. **8 probes** —
-a return sensor per zone for finer diagnostics and commissioning; assign each zone's
-return in its sheet under Settings › Room. Check the wiring with **Live readings** in
-the manifold sheet before saving the layout.
-
-**Motors**: motor drivers can be disabled to electrically disconnect all six actuators
+Motor drivers can be disabled to electrically disconnect all six actuators
 (see [Motor drivers](#motor-drivers-on-off-and-recovery)). Saving this panel never
 changes the drivers. Default motor profile and max run time apply until a zone has
 learned its own stroke.
-
-**Temperature probes**: 1-Wire probes read at 12 bit (0.0625 °C).
 
 **Advanced** (subpages **Close end stop**, **Open end stop**, **Relearning**): expert
 endstop limits in the firmware's units. They are commissioning defaults — once
@@ -375,8 +378,37 @@ cause, how long they have been off and how many recoveries have run.
 <a id="motor-lab"></a>
 ### Motor lab (dev builds)
 
-Stroke capture for development firmware only. Suspends automatic control while
-recording; use the emergency stop if needed.
+Stroke capture on one motor, development firmware only (release images hide it).
+
+1. **Arm** pauses automatic control for every zone (manual mode) and turns the motor
+   drivers on.
+2. **Seat the valve** closes until the pin is seated, so the opening stroke starts from a
+   known end.
+3. **Record the opening stroke**, then 4. **the closing stroke**, each run for the motor
+   profile's run time; end-stop detection stops the motor earlier.
+
+**Manual move** runs a timed open or close (1–45 s) with end-stop detection on, once the
+lab is armed. **Live** shows current, mean, peak, runtime, ripples, stroke phase, when the
+pin was met and the drivers. The **motor current** chart covers the whole stroke: the
+browser merges successive reads of the device's trace ring (~13 s) while the motor runs,
+with the stroke phases underneath and cadence and slope as layers. **Download CSV** saves
+the trace. **Emergency stop** stops every motor and turns the drivers off; the sequence
+starts over. **Finish and resume control** turns manual mode off. Leaving the page does
+not, so finish before you go.
+
+**End stop on the stroke** replays the latest recording (or the Rev 3.3 reference trace)
+through the firmware's end-stop logic, tick by tick: the current with the dynamic
+threshold (dashed) and the absolute caps (dotted), a marker where each path would stop the
+motor (solid for the one that stops first), the trailing rise on a closing stroke, and a
+table of every path with its threshold, time and counts. It is exact about the logic, not
+the noise: the firmware runs on finer frames than the trace. A recorded stroke also gives a
+suggested close or open factor (**Use suggestion** puts it in the form).
+
+The **thresholds** below (closing, opening and ceiling, absolute caps) replay in the chart
+as you change them; **Save thresholds** writes only what changed to V6.
+
+**Valve curve** shows the selected zone's flow against opening as the control uses it:
+measured by Lune Touch (with the date) or the default curve, with the valve's position now.
 
 ---
 

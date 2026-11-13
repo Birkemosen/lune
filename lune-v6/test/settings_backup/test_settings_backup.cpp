@@ -85,7 +85,6 @@ lv6::DeviceConfig make_known_config() {
   cfg.motor.contact_recovery_ripples = 22;
 
   cfg.control.comfort_band_c = 0.75f;
-  cfg.control.simple_preheat_enabled = false;
   cfg.control.preheat_absorb_enabled = false;
   cfg.control.preheat_absorb_band_c = 1.5f;
   cfg.control.preheat_detect_delta_c = 9.5f;
@@ -223,7 +222,6 @@ int main() {
   expect_near(restored.control.hp_base_pct, 55.0f, "hp base opening round-trips");
   expect_near(restored.control.hp_trim_floor_pct, 12.0f, "hp trim floor round-trips");
   expect_near(restored.control.hp_demand_pct, 85.0f, "hp demand opening round-trips");
-  expect(!restored.control.simple_preheat_enabled, "simple preheat flag round-trips");
   expect_near(restored.control.preheat_absorb_band_c, 1.5f, "preheat absorb band round-trips");
 
   expect(restored.balancing.secondary_flow_commissioning_enabled,

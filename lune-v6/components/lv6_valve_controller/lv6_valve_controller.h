@@ -356,6 +356,7 @@ class Lv6ValveController : public esphome::Component {
   void persist_positions_();
   /// A close-to-seat drive that stops where the seat was expected (held position
   /// x learned stroke, within this margin) is the seat (endpoint_logic.h, seated_start).
+  /// Short of a trusted position only MIN / STROKE_FRACTION apply (seat_where_expected).
   static constexpr uint32_t SEATED_START_MIN_RIPPLES = 120;
   static constexpr float SEATED_START_STROKE_FRACTION = 0.08f;
   static constexpr float SEATED_START_EXPECTED_FRACTION = 0.15f;
@@ -670,12 +671,40 @@ class Lv6ValveController : public esphome::Component {
   uint8_t breakaway_count_[NUM_ZONES]{};
   uint32_t breakaway_first_ms_[NUM_ZONES]{};
   bool seat_early_logged_ = false;
+  /// Counts to the seat for the close drive now running when its start is
+  /// trusted (position x learned stroke, or cal_seat_expected_ while learning);
+  /// 0 = unknown. Seat signals well short of it are not the seat
+  /// (seat_where_expected): a stiff insert's spring ramp trips the seat rise early.
+  uint32_t trusted_seat_expected_() const;
+  /// Short of a trusted seat by more than this is not the seat.
+  uint32_t seat_short_margin_(uint32_t expected) const;
+  static constexpr uint32_t SEAT_SHORT_MIN_RIPPLES = 40;
+  static constexpr float SEAT_SHORT_STROKE_FRACTION = 0.04f;
+  /// Learning: the open leg just counted from the seat, i.e. where the next
+  /// close pass should seat (the stored stroke may be the one being replaced).
+  uint32_t cal_seat_expected_{0};
+  bool seat_short_logged_ = false;
+  /// Rev 3.3 close past pin contact: the seat rise (+1 mA over the plateau) is
+  /// where the seal first bears, not the seat. A soft insert compresses ~450
+  /// counts further before the wall (Kontor: 31 -> 44 mA), and where the rise
+  /// trips moves with motor temperature and spring ramp, so every close presses
+  /// on to the wall: the seat cap, the rotor stopping or a stall. Only if the
+  /// wall does not come within this many counts of the seal is the seal taken.
+  static constexpr uint32_t SEAL_PRESS_MIN_RIPPLES = 700;
+  static constexpr float SEAL_PRESS_STROKE_FRACTION = 0.35f;
+  static constexpr uint32_t SEAL_CEILING_MARGIN_RIPPLES = 40;
+  static constexpr float LEARN_CLOSE_CEILING_FACTOR = 1.25f;      ///< × the learning open leg
+  static constexpr uint32_t LEARN_CLOSE_CEILING_MAX_COUNTS = 3000;  ///< plunger travel budget
+  uint32_t seal_count_{0};   ///< count where the seal bore this close; 0 = not yet
   MotorDirection fault_dir_[NUM_ZONES]{};   ///< direction of the run that faulted
   bool back_off_allowed_[NUM_ZONES]{};      ///< one timed run away from the fault
   bool move_aborted_ = false;   ///< set by a breakaway retry: the run did not move the valve
   /// Pause between the re-home (seated) and the opening leg: lets the seat and
   /// gear tension relax before the motor reverses.
   static constexpr uint32_t REVERSAL_PAUSE_MS = 500;
+  uint32_t last_stop_ms_{0};                                ///< When the last run stopped (start_motor_ waits out a reversal)
+  uint8_t last_stop_zone_{0xFF};
+  MotorDirection last_stop_dir_{MotorDirection::CLOSE};
   void maybe_recover_drivers_();
   std::atomic<bool> auto_learn_hold_{false};
   /// Set by manual mode during a learn; every calibration loop checks it, the

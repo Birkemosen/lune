@@ -59,131 +59,23 @@ inline ZoneState classify(HeatingProfile mode, float temp, float setpoint,
   return ZoneState::DEMAND;
 }
 
-/// Below this many °C above the room, manifold flow cannot heat a zone. An
-/// overheated heat-pump zone then keeps its floor opening: closing it would
-/// only cut flow (the heat pump runs hotter for everyone) without protecting
-/// the room — the water may even carry its surplus to colder zones.
-static constexpr float HP_COOL_FLOW_MARGIN_C = 1.0f;
-
-/// Map classified state to a raw valve opening (before hydraulic balance).
+/// Normal-mode opening for a classified state (before hydraulic balance).
+/// Heat-pump mode does not use this: dynamic balancing sets every opening
+/// (dynamic_balance.h).
 ///
-/// `allocator_opening_pct` is the flow-allocator share (heat-pump DEMAND only);
-/// `raw_algorithm_pct` is tanh/linear/PID (+ demand boost) for Normal DEMAND and
-/// as a fallback when the allocator share is near zero.
-///
-/// Heat-pump mode follows one continuous curve so floors always see flow and
-/// the heat pump can stay at the lowest flow temperature:
-///   below setpoint − band     ≥ hp_demand_pct (allocator may give more)
-///   setpoint − band → sp      hp_demand_pct → hp_base_pct
-///   setpoint → sp + margin    hp_base_pct → hp_trim_floor_pct
-///   sp + margin → overheated  hp_trim_floor_pct (held)
-///   overheated                0, unless the flow is no warmer than the room
-/// NaN for hp_demand_pct / flow_temp_c keeps the previous behaviour (demand
-/// floor = base; overheated closes).
-///
-/// hp_idle (Touch: the heat pump is not running and no block starts soon): the
-/// high openings only pay while the compressor runs, so a satisfied room uses
-/// the trim floor instead of the base opening. Rooms that need heat still open
-/// (the buffer's remaining heat goes to them), and the comfort band still leans
-/// toward the demand opening.
-inline float position_for_state(HeatingProfile mode, ZoneState state,
-                                float allocator_opening_pct, float raw_algorithm_pct,
-                                float maintenance_base_pct, float hp_base_pct,
-                                float hp_trim_floor_pct, float hp_overheat_margin_c,
-                                float temp, float setpoint, float max_opening_pct,
-                                bool absorbing, float absorb_band_c,
-                                float hp_demand_pct = NAN, float comfort_band_c = 0.5f,
-                                float flow_temp_c = NAN, bool hp_idle = false,
-                                bool hp_closed = false) {
-  const bool hp = mode == HeatingProfile::HEAT_PUMP;
-  const float demand_pct =
-      std::isnan(hp_demand_pct) ? hp_base_pct : std::max(hp_demand_pct, hp_base_pct);
-  const float floor_pct = std::min(hp_trim_floor_pct, hp_base_pct);
-  // «Close above target» (hp_close_above_c): a room latched past it gets no flow;
-  // the manifold minimum (reopen_for_min_total) keeps some flow in the house.
-  if (hp && hp_closed && state != ZoneState::DEMAND)
-    return 0.0f;
+/// `raw_algorithm_pct` is tanh/linear/PID (+ demand boost) for DEMAND.
+inline float normal_position(ZoneState state, float raw_algorithm_pct,
+                             float maintenance_base_pct, float max_opening_pct) {
   switch (state) {
     case ZoneState::OVERHEATED:
-      if (hp && !std::isnan(flow_temp_c) && !std::isnan(temp) &&
-          flow_temp_c <= temp + HP_COOL_FLOW_MARGIN_C)
-        return std::clamp(floor_pct, 0.0f, max_opening_pct);
       return 0.0f;
+    case ZoneState::DEMAND:
+      return std::clamp(raw_algorithm_pct, 0.0f, max_opening_pct);
     case ZoneState::UNKNOWN:
-      return maintenance_base_pct;
-    case ZoneState::DEMAND: {
-      float position = 0.0f;
-      if (hp && allocator_opening_pct > 1.0f)
-        position = allocator_opening_pct;
-      else
-        position = raw_algorithm_pct;
-      // Heat pump: a zone that needs heat never opens less than the demand
-      // opening. The allocator decides how much MORE.
-      if (hp)
-        position = std::max(position, demand_pct);
-      return std::clamp(position, 0.0f, max_opening_pct);
-    }
-    case ZoneState::SATISFIED: {
-      if (!hp)
-        return maintenance_base_pct;
-
-      float base = hp_idle ? floor_pct : hp_base_pct;
-      if (absorbing && allocator_opening_pct > 0.0f)
-        base = std::max(base, allocator_opening_pct * 0.5f);
-
-      if (temp < setpoint) {
-        // Below setpoint but inside the comfort band: lean toward the demand
-        // opening the colder the room is.
-        const float band = std::max(0.1f, comfort_band_c);
-        const float t = std::clamp((setpoint - temp) / band, 0.0f, 1.0f);
-        const float target = std::max(base, demand_pct);
-        return std::clamp(base + t * (target - base), 0.0f, max_opening_pct);
-      }
-      if (!(temp > setpoint))
-        return std::clamp(base, 0.0f, max_opening_pct);
-
-      const float margin = std::max(0.1f, hp_overheat_margin_c + absorb_band_c);
-      const float zone_floor = std::min(floor_pct, base);
-      const float excess = temp - setpoint;
-      if (excess >= margin)
-        return std::clamp(zone_floor, 0.0f, max_opening_pct);  // held until OVERHEATED
-      const float t = excess / margin;  // 0 at setpoint → 1 at margin
-      return std::clamp(base + t * (zone_floor - base), 0.0f, max_opening_pct);
-    }
+    case ZoneState::SATISFIED:
     default:
       return maintenance_base_pct;
   }
-}
-
-/// Flow guarantee for «close above target»: when the manifold's total opening is
-/// below min_total_pct, reopen closed loops to floor_pct, smallest surplus first
-/// (the room nearest its target gets flow back first). Returns loops reopened.
-template <size_t N>
-inline unsigned reopen_for_min_total(float (&positions)[N], const bool (&closed)[N],
-                                     const float (&surplus_c)[N], const bool (&enabled)[N],
-                                     float floor_pct, float min_total_pct) {
-  float total = 0.0f;
-  for (size_t i = 0; i < N; i++)
-    if (enabled[i])
-      total += positions[i];
-  unsigned reopened = 0;
-  bool used[N]{};
-  while (total < min_total_pct) {
-    size_t best = N;
-    for (size_t i = 0; i < N; i++) {
-      if (!enabled[i] || !closed[i] || used[i] || positions[i] >= floor_pct)
-        continue;
-      if (best == N || surplus_c[i] < surplus_c[best])
-        best = i;
-    }
-    if (best == N)
-      break;
-    used[best] = true;
-    total += floor_pct - positions[best];
-    positions[best] = floor_pct;
-    reopened++;
-  }
-  return reopened;
 }
 
 struct HeatDemandTimers {
@@ -197,18 +89,22 @@ struct HeatDemandZoneInput {
   bool calibrated{false};
   ZoneState state{ZoneState::UNKNOWN};
   float opening_pct{0.0f};
-  float max_opening_pct{90.0f};
-  float pre_floor_opening_pct{0.0f};  ///< Opening before min-flow floor raise
+  float max_opening_pct{100.0f};
+  float error_c{NAN};             ///< setpoint − room temperature
 };
 
 /// Update saturation/headroom timers and produce the published heat_demand summary.
 /// `dt_ms` is the elapsed time since the previous cycle (clamped).
+///
+/// With dynamic balancing a room in DEMAND already has its full load factor: only
+/// a higher supply temperature gives it more (the warmer rooms then hand it their
+/// flow). So: RAISE after 20 min with a room in DEMAND; LOWER after 30 min with no
+/// room below its target. The critical zone is the room with the greatest deficit.
 inline HeatDemandSummary step_heat_demand(HeatDemandTimers &timers, uint32_t dt_ms,
-                                          HeatingProfile mode, float hp_base_pct,
+                                          HeatingProfile mode,
                                           const HeatDemandZoneInput *zones, size_t n) {
   static constexpr uint32_t SATURATION_THRESHOLD_MS = 20u * 60u * 1000u;
   static constexpr uint32_t HEADROOM_THRESHOLD_MS = 30u * 60u * 1000u;
-  static constexpr float SATURATION_RATIO = 0.90f;
 
   HeatDemandSummary out{};
   if (mode != HeatingProfile::HEAT_PUMP) {
@@ -218,43 +114,38 @@ inline HeatDemandSummary step_heat_demand(HeatDemandTimers &timers, uint32_t dt_
 
   dt_ms = std::min(dt_ms, uint32_t{60000});  // Cap one cycle's contribution
 
-  float best_ratio = 0.0f;
-  float max_opening = 0.0f;
-  bool any_saturated = false;
+  float worst_error = -INFINITY;
   bool any_demand = false;
+  bool any_known = false;
+  bool any_below_target = false;
 
   for (size_t i = 0; i < n; ++i) {
     const auto &z = zones[i];
     if (!z.enabled || !z.is_primary || !z.calibrated)
       continue;
-    // Exclude openings that were forced up by the minimum-flow floor.
-    if (z.opening_pct > z.pre_floor_opening_pct + 0.01f)
+    if (std::isfinite(z.error_c)) {
+      any_known = true;
+      if (z.error_c > 0.0f)
+        any_below_target = true;
+    }
+    if (z.state != ZoneState::DEMAND)
       continue;
-
-    const float max_open = std::max(1.0f, z.max_opening_pct);
-    const float ratio = z.opening_pct / max_open;
-    if (z.opening_pct > max_opening)
-      max_opening = z.opening_pct;
-
-    if (z.state == ZoneState::DEMAND) {
-      any_demand = true;
-      out.demanding_zones++;
-      if (ratio >= best_ratio) {
-        best_ratio = ratio;
-        out.critical_zone = static_cast<int8_t>(i);
-        out.critical_opening_ratio = ratio;
-      }
-      if (ratio >= SATURATION_RATIO)
-        any_saturated = true;
+    any_demand = true;
+    out.demanding_zones++;
+    const float err = std::isfinite(z.error_c) ? z.error_c : 0.0f;
+    if (err >= worst_error) {
+      worst_error = err;
+      out.critical_zone = static_cast<int8_t>(i);
+      out.critical_opening_ratio = z.opening_pct / std::max(1.0f, z.max_opening_pct);
     }
   }
 
-  if (any_saturated)
+  if (any_demand)
     timers.saturated_ms = std::min(timers.saturated_ms + dt_ms, SATURATION_THRESHOLD_MS * 2);
   else
     timers.saturated_ms = 0;
 
-  out.headroom = !any_demand && max_opening < hp_base_pct;
+  out.headroom = any_known && !any_below_target;
   if (out.headroom)
     timers.headroom_ms = std::min(timers.headroom_ms + dt_ms, HEADROOM_THRESHOLD_MS * 2);
   else

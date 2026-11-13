@@ -48,7 +48,6 @@ class Lv6ConfigStore : public esphome::Component {
   MotorConfig get_motor_config() const;
   SensorConfig get_sensor_config() const;
   ZoneConfig get_zone_config(uint8_t zone) const;
-  bool get_simple_preheat_enabled() const;
   ManifoldType get_manifold_type() const;
   ProbeConfig get_probe_config() const;
   SystemConfig get_system_config() const;
@@ -91,6 +90,9 @@ class Lv6ConfigStore : public esphome::Component {
   /// returns false from load (caller keeps boot default).
   void set_drivers_enabled_pref(bool enabled);
   bool load_drivers_enabled_pref(bool *out) const;
+  /// What the learned balance factors are deviations from (Lv6ZoneController::balance_basis_).
+  void set_balance_basis(uint32_t basis);
+  bool load_balance_basis(uint32_t *out) const;
 
   // Maintenance helpers
   bool erase_namespace();
@@ -122,6 +124,7 @@ class Lv6ConfigStore : public esphome::Component {
   /// Persisted motor-driver arm preference (u8 0/1). Separate from MotorConfig
   /// so toggling it does not bump MOTOR_CONFIG_VERSION / reset tuning.
   static constexpr const char *KEY_DRIVERS_EN = "drven";
+  static constexpr const char *KEY_BALANCE_BASIS = "balbasis";  ///< u32, own key: no section reset
   static constexpr uint64_t DIRTY_DELAY_US = 1000000ULL;  // 1 second
   // Dedicated NVS persistence task — keeps flash commits off the main loop
   // task so loopTask isn't blocked for the 50–500 ms a commit can take.
@@ -155,6 +158,8 @@ class Lv6ConfigStore : public esphome::Component {
   static void dirty_timer_cb_(void *arg);
   static void nvs_task_entry_(void *arg);
   void nvs_task_loop_();
+  void read_balance_basis_();
+  void write_balance_basis_();
 
   DeviceConfig config_{};
   SemaphoreHandle_t mutex_ = nullptr;
@@ -162,6 +167,9 @@ class Lv6ConfigStore : public esphome::Component {
   TaskHandle_t nvs_task_ = nullptr;
   esp_timer_handle_t dirty_timer_ = nullptr;
   volatile bool save_pending_ = false;
+  uint32_t balance_basis_ = 0;
+  bool balance_basis_known_ = false;
+  volatile bool balance_basis_dirty_ = false;
   bool initialized_ = false;
 };
 
