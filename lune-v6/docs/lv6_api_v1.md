@@ -343,6 +343,14 @@ older clients ignore):
 - `group_primary` / `group_members` — legacy sync-group root and members (1-based)
 - `group_id` / `group_role` — first-class manifold group (`single` | `primary` | `member`)
 - `opening_ratio` — current valve ÷ `max_opening_pct`
+- `heat_demand` (top level) — the manifold's heat demand, as `control.heat_demand` in
+  `/overview`: `recommendation` (`raise` | `hold` | `lower`), `critical_zone` (1-based or
+  null), `critical_opening_ratio`, `saturated_s`, `demanding_zones`, `headroom`. Touch
+  reads it here with the zones.
+- Per zone: `demand_state` (`DEMAND` | `SATISFIED` | `OVERHEATED` | `unknown`),
+  `recommendation` (`raise` for the critical loop's group while the manifold says raise,
+  `lower` for every loop while it says lower, else `hold`), `saturated_s` (the critical
+  group's, else 0) and `headroom`.
 - Floor / UA / τ priors per
   [`lune_room_physics_contract_v1.md`](../../shared/contracts/lune_room_physics_contract_v1.md):
   `area_m2`, `exterior_walls`, `floor.{slab_type,covering,active_thickness_cm,r_m2k_per_w,c_slab_kwh_per_k,unset}`,
