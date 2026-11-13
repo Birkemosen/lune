@@ -76,6 +76,13 @@ Per control cycle, for each enabled loop *i*:
    `s ≤ 1` for it): once the cold rooms are at full flow, what they cannot take is not
    handed to warm rooms, and the sum falls short of `Q_ref · L`. A manifold whose rooms
    are all warm passes less in total.
+   While another loop is at full flow, no loop gets more than `1.25 · P_i · H_i` either
+   (`SHARE_OVER_MAX`). Otherwise, once the long loops are full, the rest of `Q_ref · L`
+   lands on the one loop that can still open, however short: its water passes the floor
+   almost uncooled (low ΔT) and takes pressure from the full loops (1. sal 2026-11-13:
+   Toilet, share 0.15, at 92 % with ΔT 1.4 K while Laura, 3 K cold, was at 100 %). The
+   manifold then passes less. A cold room alone among warm ones (no loop at full flow)
+   still opens fully.
    That matters while the manifolds are not balanced against each other: a warm floor
    must not keep its full flow because the other floor needs heat. A closed loop's flow
    goes to the others only while an open room is at or below target; when every open
@@ -119,6 +126,37 @@ full flow at about 1 mm of a 2–3 mm stroke, the control never opened past it, 
 with long or high-loss loops fell behind (Laura at 51 % = 1.0 mm, 19.8 °C against 22 °C).
 The curves, their NVS key, `POST /api/v1/zones/{n}/valve-curve` and the measured design
 shares are gone. `POST /api/v1/valve-test` stays: Touch uses it to flush air from a loop.
+
+### ΔT learning
+
+The pipe model's prior (`P_i`) knows the loop's area, spacing and pipe, not its real
+length, fittings, valve insert or how much the floor gives off. A loop's return
+temperature does: low ΔT means more flow than the floor uses (water back almost as warm
+as it left), high ΔT a starved loop. In adaptive balancing every loop **with a return
+probe configured for it** learns a factor `D_i` on its share (`dt_balance.h`): a probe
+assigned to the zone that is not the room's temperature (the room comes from BLE or an
+external sensor, or the probe role is «return water») and not the manifold's own flow or
+return probe. Loops without one keep `D_i = 1`. A manifold with only its flow
+and return probes (stueetage) does not learn.
+
+- **When:** Touch says the heat pump runs space heat (phase `running`, not hot water) and
+  has for 20 min; the loop's opening has held within 5 % for 15 min; it is open at least
+  20 %, not closed, its room not above target + band, the supply at least 3 K above the
+  room and the loop's ΔT at least 0.2 K; no valve test or flush.
+- **What:** each such loop's `ΔT' = (T_supply − T_return) · q_i / share_i`, the ΔT per
+  unit of the flow it was given relative to its share, so a cold room's loop at full flow
+  or a warm room's turned-down loop is not taken for a hydraulic error. At least two loops
+  and a mean ΔT' of 1 K.
+- **Step:** `D_i ← D_i · exp(k · clamp(ln(ΔT'_i / mean), ±0.7))`, `k = cycle / 6 h`, so a
+  deviation is taken up over hours of running, not one cycle. The compared loops keep
+  their geometric mean (the others keep their place); `D_i` stays within 0.3–3.
+- **Share:** `P_i · adapt_i · D_i`, divided by the largest so the index loop stays 1.
+- **Kept:** in RAM every cycle, in NVS (`baldt`, own key) when a factor has moved 0.02
+  and at most every 30 min, so a restart loses at most that. «Reset learning» and a new
+  balance basis set every `D_i` back to 1.
+
+`sensor-zone_N_balance_dt` in `/api/v1/state` (null without a return probe); the
+manifold sheet's balancing table shows it as «ΔT».
 
 ### Heat demand for Touch
 

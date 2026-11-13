@@ -15,6 +15,7 @@
 #include "../lv6_valve_controller/lv6_valve_controller.h"
 #include "control_algorithms.h"
 #include "adaptive_balance.h"
+#include "dt_balance.h"
 #include "control_mode_policy.h"
 #include "flow_allocator.h"
 #include "valve_curve.h"
@@ -350,6 +351,18 @@ class Lv6ZoneController : public esphome::Component {
   uint32_t last_adapt_ms_ = 0;
   /// The learned factor as it runs (NaN: take the stored one); stored once it has moved.
   std::array<float, NUM_ZONES> adapt_live_{NAN, NAN, NAN, NAN, NAN, NAN};
+  // ΔT learning (dt_balance.h): factors on the pipe-model share from the loops' return
+  // temperatures. Loaded from NVS on the first rebuild, saved when moved (≤ 2/h).
+  dt_balance::State<NUM_ZONES> dt_state_{};
+  float dt_applied_[NUM_ZONES]{1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f};
+  float dt_saved_[NUM_ZONES]{1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f};
+  uint32_t dt_save_ms_{0};
+  bool dt_loaded_{false};
+  bool zone_has_return_probe_(uint8_t zone) const;
+  float read_probe_(int8_t probe) const;
+  void step_dt_balance_(const DeviceConfig &cfg, const float (&q)[NUM_ZONES], const bool (&closed)[NUM_ZONES],
+                        const float (&openings)[NUM_ZONES], const std::array<float, NUM_ZONES> &zone_temps,
+                        const std::array<float, NUM_ZONES> &zone_setpoints);
   // Set by reset_balancing() (dashboard task), consumed by the zone task — clears
   // the RAM accumulators without a cross-thread float race.
   std::atomic<bool> adapt_reset_pending_{false};

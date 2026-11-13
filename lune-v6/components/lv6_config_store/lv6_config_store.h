@@ -93,6 +93,9 @@ class Lv6ConfigStore : public esphome::Component {
   /// What the learned balance factors are deviations from (Lv6ZoneController::balance_basis_).
   void set_balance_basis(uint32_t basis);
   bool load_balance_basis(uint32_t *out) const;
+  /// ΔT-learned share factors (dt_balance.h), one per zone. Own key: survives section resets.
+  void set_balance_dt(const float (&f)[NUM_ZONES]);
+  bool load_balance_dt(float (&f)[NUM_ZONES]) const;
 
   // Maintenance helpers
   bool erase_namespace();
@@ -125,6 +128,8 @@ class Lv6ConfigStore : public esphome::Component {
   /// so toggling it does not bump MOTOR_CONFIG_VERSION / reset tuning.
   static constexpr const char *KEY_DRIVERS_EN = "drven";
   static constexpr const char *KEY_BALANCE_BASIS = "balbasis";  ///< u32, own key: no section reset
+  static constexpr const char *KEY_BALANCE_DT = "baldt";        ///< u32 version + float[NUM_ZONES]
+  static constexpr uint32_t BALANCE_DT_VERSION = 1;
   static constexpr uint64_t DIRTY_DELAY_US = 1000000ULL;  // 1 second
   // Dedicated NVS persistence task — keeps flash commits off the main loop
   // task so loopTask isn't blocked for the 50–500 ms a commit can take.
@@ -160,6 +165,8 @@ class Lv6ConfigStore : public esphome::Component {
   void nvs_task_loop_();
   void read_balance_basis_();
   void write_balance_basis_();
+  void read_balance_dt_();
+  void write_balance_dt_();
 
   DeviceConfig config_{};
   SemaphoreHandle_t mutex_ = nullptr;
@@ -170,6 +177,9 @@ class Lv6ConfigStore : public esphome::Component {
   uint32_t balance_basis_ = 0;
   bool balance_basis_known_ = false;
   volatile bool balance_basis_dirty_ = false;
+  float balance_dt_[NUM_ZONES]{1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f};
+  bool balance_dt_known_ = false;
+  volatile bool balance_dt_dirty_ = false;
   bool initialized_ = false;
 };
 

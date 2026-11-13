@@ -401,15 +401,16 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
 
     # ---- manifold-ark: målinger, balancering og reguleringen (alt der hører til manifolden)
     def manifold_sheet():
-        bal="".join(f'<tr data-bind-row="bal.z{z[0]}"><td data-bind="bal.z{z[0]}.id">{rid(z)}</td><td class="num" data-bind="bal.z{z[0]}.prior">—</td><td class="num c-violet" data-bind="bal.z{z[0]}.learned">—</td><td class="num" data-bind="bal.z{z[0]}.effective">—</td></tr>' for z in Z)
+        bal="".join(f'<tr data-bind-row="bal.z{z[0]}"><td data-bind="bal.z{z[0]}.id">{rid(z)}</td><td class="num" data-bind="bal.z{z[0]}.prior">—</td><td class="num c-violet" data-bind="bal.z{z[0]}.dt">—</td><td class="num c-violet" data-bind="bal.z{z[0]}.learned">—</td><td class="num" data-bind="bal.z{z[0]}.effective">—</td></tr>' for z in Z)
         overview=f'''
           {manifold_metrics()}
           <p class="note" data-bind-show="manifold.hpPhase" hidden><span data-bind="manifold.hpPhaseText"></span></p>
           <div class="sub"><h4>{T("bal.title")} <span class="badge violet" data-bind="bal.mode">{T("bal.adaptive")}</span></h4>
             <div class="table-wrap"><table class="table">
-              <thead><tr><th>{T("bal.zone")}</th><th class="num">{T("bal.prior")}</th><th class="num">{T("bal.learned")}</th><th class="num">{T("bal.effective")}</th></tr></thead>
+              <thead><tr><th>{T("bal.zone")}</th><th class="num">{T("bal.prior")}</th><th class="num">{T("bal.dt")}</th><th class="num">{T("bal.learned")}</th><th class="num">{T("bal.effective")}</th></tr></thead>
               <tbody>{bal}</tbody>
-            </table></div></div>
+            </table></div>
+            <p class="note">{T("bal.note")}</p></div>
           <div class="sub"><h4>{T("csys.probeLive")}</h4>
             <dl class="metrics">
               {"".join(metric(f'{T("csys.probe",n=k)} <span class="badge" data-bind="probe.{k}.role" data-bind-show="probe.{k}.hasRole" hidden></span>',"—","°C",f"probe.{k}",attrs=f' data-probe="{k}"') for k in range(1,9))}

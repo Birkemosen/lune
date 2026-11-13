@@ -341,6 +341,27 @@ static void test_idle_static_balance() {
               "idle: warm open rooms at their share × load factor");
 }
 
+static void test_short_loop_share_cap() {
+  // 1. sal 2026-11-13 (heat pump running): Soveværelse closed, the long loops cold at 100 %;
+  // the rest of the target landed on Toilet (share 0.15) at 92 %, ΔT 1.4 K.
+  const Params p{0.5f, 1.0f, 0.0f};
+  const float shares[6] = {0.88f, 0.88f, 0.15f, 1.0f, 1.0f, 1.0f};
+  const float temps[6] = {21.3f, 18.9f, 20.5f, 23.0f, 22.5f, 22.3f};
+  const float sps[6] = {22.0f, 22.0f, 22.0f, 23.0f, 23.0f, 21.0f};
+  Loop loops[6];
+  make_loops(loops, temps, 22.0f);
+  for (int i = 0; i < 6; i++) {
+    loops[i].design_share = shares[i];
+    loops[i].setpoint_c = sps[i];
+  }
+  bool closed[6]{false, false, false, false, false, true};  // Soveværelse closed, as live
+  float open[6], q[6];
+  const Result r = distribute(loops, p, closed, open, q);
+  expect_near(q[2], 0.15f * SHARE_OVER_MAX, 1e-3f, "share cap: Toilet at most 1.25 × its share");
+  expect(open[1] >= 99.9f && open[0] >= 99.9f, "share cap: the cold long loops still at full flow");
+  expect(r.q_total < r.q_target, "share cap: the manifold passes less rather than overfeed a short loop");
+}
+
 static void test_full_flow_margin() {
   const Params p{0.5f, 1.0f, 0.0f};
   Loop loops[6];
@@ -359,6 +380,7 @@ static void test_full_flow_margin() {
 
 int main() {
   test_full_flow_margin();
+  test_short_loop_share_cap();
   test_zone_area();
   test_valve_curve();
   test_distribute_through_curve();
