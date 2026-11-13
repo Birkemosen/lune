@@ -608,6 +608,8 @@ function paintStrip() {
     const effective = toNum(ev(key.balanceEffective(z)));
     setBind(`bal.z${z}.id`, `Z${z}`);
     setBind(`bal.z${z}.prior`, Number.isFinite(prior) ? num(prior, 2) : '—');
+    const dtF = toNum(ev(key.balanceDt(z)));  // null without a configured return probe
+    setBind(`bal.z${z}.dt`, Number.isFinite(dtF) ? num(dtF, 2) : '—');
     setBind(`bal.z${z}.learned`, Number.isFinite(learned) ? num(learned, 2) : '—');
     setBind(`bal.z${z}.effective`, Number.isFinite(effective) ? num(effective, 2) : '—');
   }

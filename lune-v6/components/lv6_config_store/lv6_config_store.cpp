@@ -173,6 +173,7 @@ void Lv6ConfigStore::setup() {
   migrate_legacy_nvs_namespace_();
   load_config_();
   read_balance_basis_();
+  read_balance_dt_();
 
   ESP_LOGI(TAG, "Config store initialized");
 }
@@ -332,6 +333,7 @@ void Lv6ConfigStore::flush_now() {
   save_pending_ = false;
   save_config_();
   write_balance_basis_();
+  write_balance_dt_();
 }
 
 void Lv6ConfigStore::update_zone(uint8_t zone, const ZoneConfig &zone_cfg) {
@@ -648,6 +650,76 @@ bool Lv6ConfigStore::load_balance_basis(uint32_t *out) const {
   if (mutex_ != nullptr)
     xSemaphoreGive(mutex_);
   return known;
+}
+
+void Lv6ConfigStore::set_balance_dt(const float (&f)[NUM_ZONES]) {
+  if (mutex_ != nullptr)
+    xSemaphoreTake(mutex_, portMAX_DELAY);
+  for (uint8_t i = 0; i < NUM_ZONES; i++)
+    balance_dt_[i] = f[i];
+  balance_dt_known_ = true;
+  balance_dt_dirty_ = true;
+  if (mutex_ != nullptr)
+    xSemaphoreGive(mutex_);
+  mark_dirty();
+}
+
+bool Lv6ConfigStore::load_balance_dt(float (&f)[NUM_ZONES]) const {
+  if (mutex_ != nullptr)
+    xSemaphoreTake(mutex_, portMAX_DELAY);
+  const bool known = balance_dt_known_;
+  for (uint8_t i = 0; i < NUM_ZONES; i++)
+    f[i] = balance_dt_[i];
+  if (mutex_ != nullptr)
+    xSemaphoreGive(mutex_);
+  return known;
+}
+
+void Lv6ConfigStore::read_balance_dt_() {
+  nvs_handle_t handle;
+  if (nvs_open(NVS_NAMESPACE, NVS_READONLY, &handle) != ESP_OK)
+    return;
+  uint8_t blob[sizeof(uint32_t) + sizeof(float) * NUM_ZONES];
+  size_t len = sizeof(blob);
+  if (nvs_get_blob(handle, KEY_BALANCE_DT, blob, &len) == ESP_OK && len == sizeof(blob)) {
+    uint32_t version = 0;
+    memcpy(&version, blob, sizeof(version));
+    if (version == BALANCE_DT_VERSION) {
+      float f[NUM_ZONES];
+      memcpy(f, blob + sizeof(uint32_t), sizeof(f));
+      bool ok = true;
+      for (float v : f)
+        ok = ok && std::isfinite(v) && v > 0.0f;
+      if (ok) {
+        for (uint8_t i = 0; i < NUM_ZONES; i++)
+          balance_dt_[i] = f[i];
+        balance_dt_known_ = true;
+      }
+    }
+  }
+  nvs_close(handle);
+}
+
+void Lv6ConfigStore::write_balance_dt_() {
+  if (!balance_dt_dirty_)
+    return;
+  uint8_t blob[sizeof(uint32_t) + sizeof(float) * NUM_ZONES];
+  xSemaphoreTake(mutex_, portMAX_DELAY);
+  const uint32_t version = BALANCE_DT_VERSION;
+  memcpy(blob, &version, sizeof(version));
+  memcpy(blob + sizeof(uint32_t), balance_dt_, sizeof(float) * NUM_ZONES);
+  balance_dt_dirty_ = false;
+  xSemaphoreGive(mutex_);
+  nvs_handle_t handle;
+  esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &handle);
+  if (err == ESP_OK) {
+    err = nvs_set_blob(handle, KEY_BALANCE_DT, blob, sizeof(blob));
+    if (err == ESP_OK)
+      err = nvs_commit(handle);
+    nvs_close(handle);
+  }
+  if (err != ESP_OK)
+    ESP_LOGW(TAG, "Failed to persist ΔT balance factors: %s", esp_err_to_name(err));
 }
 
 void Lv6ConfigStore::read_balance_basis_() {
@@ -1242,6 +1314,7 @@ void Lv6ConfigStore::nvs_task_loop_() {
     save_pending_ = false;
     save_config_();
     write_balance_basis_();
+    write_balance_dt_();
   }
 }
 

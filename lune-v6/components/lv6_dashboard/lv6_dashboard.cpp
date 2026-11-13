@@ -648,6 +648,7 @@ void LV6Dashboard::update_snapshot_() {
         const auto zs = this->zone_controller_->get_zone_snapshot(i);
         s.zone_static_factor[i] = zs.static_factor;
         s.zone_balance_adapt[i] = zs.balance_adapt;
+        s.zone_balance_dt[i] = zs.balance_dt;
         s.zone_hydraulic_factor[i] = zs.hydraulic_factor;
       } else {
         s.zone_loop_share_pct[i] = NAN;
@@ -657,6 +658,7 @@ void LV6Dashboard::update_snapshot_() {
         s.zone_relative_kv[i] = NAN;
         s.zone_static_factor[i] = NAN;
         s.zone_balance_adapt[i] = 1.0f;
+        s.zone_balance_dt[i] = NAN;
         s.zone_hydraulic_factor[i] = NAN;
       }
     }
@@ -1917,6 +1919,8 @@ void LV6Dashboard::handle_state_(AsyncWebServerRequest *request) {
     if (!append( "\"sensor-zone_%u_balance_prior\":{\"value\":%s},", zn, num_buf)) return;
     format_float_token(num_buf, sizeof(num_buf), snap->zone_balance_adapt[i], 2);
     if (!append( "\"sensor-zone_%u_balance_learned\":{\"value\":%s},", zn, num_buf)) return;
+    format_float_token(num_buf, sizeof(num_buf), snap->zone_balance_dt[i], 2);
+    if (!append( "\"sensor-zone_%u_balance_dt\":{\"value\":%s},", zn, num_buf)) return;
     format_float_token(num_buf, sizeof(num_buf), snap->zone_hydraulic_factor[i], 2);
     if (!append( "\"sensor-zone_%u_balance_effective\":{\"value\":%s},", zn, num_buf)) return;
   }

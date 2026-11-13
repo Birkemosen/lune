@@ -41,6 +41,7 @@ export const key = {
   balancePrior: (zone) => 'sensor-zone_' + zone + '_balance_prior',
   balanceLearned: (zone) => 'sensor-zone_' + zone + '_balance_learned',
   balanceEffective: (zone) => 'sensor-zone_' + zone + '_balance_effective',
+  balanceDt: (zone) => 'sensor-zone_' + zone + '_balance_dt',
 };
 
 export const gkey = {

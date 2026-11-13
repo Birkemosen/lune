@@ -1453,6 +1453,9 @@ void Lv6ZoneController::run_cycle_() {
     ESP_LOGD(TAG, "Dynamic balance: Q %.2f (ref %.2f × load %.2f), s %.2f, open [%.0f %.0f %.0f %.0f %.0f %.0f]",
              db.q_total, db.q_ref, db.load, db.scale, openings[0], openings[1], openings[2], openings[3],
              openings[4], openings[5]);
+    // ΔT learning: loops with a configured return probe compare their ΔT (adaptive mode).
+    if (adaptive_mode)
+      step_dt_balance_(cfg, q, closed, openings, zone_temps, zone_setpoints);
   }
 
   // Group flow share (Normal mode): within a multi-loop group, distribute the
@@ -1746,6 +1749,64 @@ float Lv6ZoneController::read_zone_return_temperature_(uint8_t zone) const {
   if (!probe_sensors_[probe]->has_state())
     return NAN;
   return probe_sensors_[probe]->state;
+}
+
+bool Lv6ZoneController::zone_has_return_probe_(uint8_t zone) const {
+  if (zone >= NUM_ZONES || !config_store_)
+    return false;
+  if (config_store_->get_zone_config(zone).probe_role != ProbeRole::RETURN_WATER)
+    return false;
+  const int8_t probe = config_store_->get_probe_config().zone_return_probe[zone];
+  return probe >= 0 && probe < MAX_PROBES && probe_sensors_[probe] != nullptr;
+}
+
+// ΔT learning (dt_balance.h). Only loops whose return probe is configured as one learn;
+// a manifold with just its flow and return probes keeps the pipe model.
+void Lv6ZoneController::step_dt_balance_(const DeviceConfig &cfg, const float (&q)[NUM_ZONES],
+                                         const bool (&closed)[NUM_ZONES], const float (&openings)[NUM_ZONES],
+                                         const std::array<float, NUM_ZONES> &zone_temps,
+                                         const std::array<float, NUM_ZONES> &zone_setpoints) {
+  if (!dt_loaded_)
+    return;  // factors not read from NVS yet (first rebuild)
+  dt_balance::LoopIn in[NUM_ZONES];
+  for (uint8_t i = 0; i < NUM_ZONES; i++) {
+    // A synced secondary opens with its primary: it has no flow of its own to learn.
+    in[i].enabled = cfg.zones[i].enabled && cfg.zones[i].sync_to_zone < 0;
+    in[i].has_return = in[i].enabled && zone_has_return_probe_(i);
+    in[i].return_c = in[i].has_return ? read_zone_return_temperature_(i) : NAN;
+    in[i].room_c = zone_temps[i];
+    in[i].setpoint_c = zone_setpoints[i];
+    in[i].opening_pct = openings[i];
+    in[i].q = q[i];
+    in[i].share = design_share_[i] * std::clamp(get_house_balance(i), 0.0f, 1.0f);
+    in[i].closed = closed[i];
+  }
+  dt_balance::Params p;
+  p.comfort_band_c = cfg.control.comfort_band_c;
+  const auto r = dt_balance::step(dt_state_, in, read_manifold_flow_(), get_hp_phase() == HpPhase::RUNNING,
+                                  valve_test_active(), cycle_interval_ms_ / 1000.0f, p);
+  if (!r.stepped)
+    return;
+  bool rebuild = false, save = false;
+  for (uint8_t i = 0; i < NUM_ZONES; i++) {
+    rebuild = rebuild || std::fabs(dt_state_.f[i] - dt_applied_[i]) >= 0.01f;
+    save = save || std::fabs(dt_state_.f[i] - dt_saved_[i]) >= 0.02f;
+  }
+  if (rebuild) {
+    for (uint8_t i = 0; i < NUM_ZONES; i++)
+      dt_applied_[i] = dt_state_.f[i];
+    balance_dirty_ = true;
+  }
+  const uint32_t now_ms = esphome::millis();
+  if (save && config_store_ && (dt_save_ms_ == 0 || now_ms - dt_save_ms_ >= 30UL * 60UL * 1000UL)) {
+    config_store_->set_balance_dt(dt_state_.f);
+    for (uint8_t i = 0; i < NUM_ZONES; i++)
+      dt_saved_[i] = dt_state_.f[i];
+    dt_save_ms_ = now_ms;
+    ESP_LOGI(TAG, "ΔT balance saved: [%.2f, %.2f, %.2f, %.2f, %.2f, %.2f] (mean ΔT' %.1f K, %u loops)",
+             dt_state_.f[0], dt_state_.f[1], dt_state_.f[2], dt_state_.f[3], dt_state_.f[4], dt_state_.f[5],
+             r.mean_dt, static_cast<unsigned>(r.eligible));
+  }
 }
 
 float Lv6ZoneController::read_manifold_flow_() const {
@@ -2162,11 +2223,36 @@ void Lv6ZoneController::recalculate_balance_factors_() {
     }
   }
 
+  // ΔT-learned factors (dt_balance.h), read from NVS once; 1 for loops without a return probe.
+  if (!dt_loaded_) {
+    float f[NUM_ZONES];
+    if (config_store_->load_balance_dt(f))
+      for (uint8_t i = 0; i < NUM_ZONES; i++)
+        dt_state_.f[i] = std::clamp(f[i], dt_balance::F_MIN, dt_balance::F_MAX);
+    for (uint8_t i = 0; i < NUM_ZONES; i++)
+      dt_applied_[i] = dt_saved_[i] = dt_state_.f[i];
+    dt_loaded_ = true;
+  }
+  float raw[NUM_ZONES]{};
+  bool has_ret[NUM_ZONES]{};
+  float max_raw = 0.0f;
+  for (uint8_t i = 0; i < NUM_ZONES; i++) {
+    if (!cfg.zones[i].enabled)
+      continue;
+    has_ret[i] = adaptive && zone_has_return_probe_(i);
+    const float sf = (max_w > 0.0f) ? (weights[i] / max_w) : 1.0f;
+    raw[i] = sf * (adaptive ? cfg.zones[i].balance_adapt : 1.0f) * (has_ret[i] ? dt_applied_[i] : 1.0f);
+    max_raw = std::max(max_raw, raw[i]);
+  }
+  // The learned factors may lift a loop past the index loop: the largest share stays 1.
+  const float norm = max_raw > 1.0f ? max_raw : 1.0f;
+
   xSemaphoreTake(snapshot_mutex_, portMAX_DELAY);
   for (uint8_t i = 0; i < NUM_ZONES; i++) {
     if (!cfg.zones[i].enabled) {
       balance_factors_[i] = 0.0f;
       design_share_[i] = 0.0f;
+      snapshots_[i].balance_dt = NAN;
       snapshots_[i].static_factor = 0.0f;
       snapshots_[i].balance_adapt = cfg.zones[i].balance_adapt;
       snapshots_[i].hydraulic_factor = 0.0f;
@@ -2175,11 +2261,12 @@ void Lv6ZoneController::recalculate_balance_factors_() {
     }
     float sf = (max_w > 0.0f) ? (weights[i] / max_w) : 1.0f;
     float adapt = adaptive ? cfg.zones[i].balance_adapt : 1.0f;
-    float eff = std::clamp(sf * adapt, 0.0f, 1.0f);
+    float eff = std::clamp(raw[i] / norm, 0.0f, 1.0f);
     balance_factors_[i] = eff;
-    design_share_[i] = sf * adapt;
+    design_share_[i] = raw[i] / norm;
     snapshots_[i].static_factor = sf;
     snapshots_[i].balance_adapt = adapt;
+    snapshots_[i].balance_dt = has_ret[i] ? dt_applied_[i] : NAN;
     snapshots_[i].hydraulic_factor = eff;
     snapshots_[i].adapt_err_ema =
         (adaptive && adapt_samples_[i] > 0) ? adapt_err_ema_[i] : NAN;
@@ -2488,9 +2575,14 @@ void Lv6ZoneController::reset_balancing() {
       config_store_->update_zone(i, zc);
     }
   }
+  dt_state_ = dt_balance::State<NUM_ZONES>{};
+  for (uint8_t i = 0; i < NUM_ZONES; i++)
+    dt_applied_[i] = dt_saved_[i] = 1.0f;
+  dt_loaded_ = true;
+  config_store_->set_balance_dt(dt_state_.f);
   adapt_reset_pending_.store(true, std::memory_order_release);
   balance_dirty_ = true;
-  ESP_LOGI(TAG, "Adaptive balancing reset (all balance_adapt = 1.0)");
+  ESP_LOGI(TAG, "Adaptive balancing reset (all balance_adapt and ΔT factors = 1.0)");
 }
 
 void Lv6ZoneController::enforce_minimum_total_opening_(std::array<float, NUM_ZONES> &positions) {

@@ -811,6 +811,7 @@ struct ZoneSnapshot {
   float hydraulic_factor = 0.0f;      ///< Effective balance factor applied (static × adapt)
   float static_factor = 0.0f;         ///< Resistance-aware static prior (normalized, 0..1)
   float balance_adapt = 1.0f;         ///< Learned adaptive multiplier in effect (adapt_i)
+  float balance_dt = NAN;             ///< ΔT-learned factor (dt_balance.h); NaN without a return probe
   float adapt_err_ema = NAN;          ///< Long-window room-temp error EMA (NAN = no samples yet)
   bool was_overheated = false;
   float heat_output_w = 0.0f;

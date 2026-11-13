@@ -140,6 +140,7 @@ struct DashboardSnapshot {
   float             zone_relative_kv[6]{};  ///< Kv at current commanded opening
   float             zone_static_factor[6]{};     ///< Resistance-aware static prior (0..1)
   float             zone_balance_adapt[6]{};     ///< Learned adaptive multiplier
+  float             zone_balance_dt[6]{};        ///< ΔT-learned factor; NaN without a return probe
   float             zone_hydraulic_factor[6]{};  ///< Effective static × adapt
   lv6::HeatingProfile heating_mode{lv6::HeatingProfile::HEAT_PUMP};
   lv6::HeatingProfile effective_heating_mode{lv6::HeatingProfile::HEAT_PUMP};
