@@ -302,7 +302,8 @@ static void test_heat_moving() {
 }
 
 static void test_idle_static_balance() {
-  // Heat source idle: every open loop at its design share, whatever the room's load.
+  // Heat source idle: open loops at or below target at their design share; a warm room at
+  // its share × load factor (1. sal 2026-11-13: Stue Repo 1.4 K warm at 100 %).
   Params p{0.5f, 1.0f, 0.0f};
   p.idle = true;
   p.supply_c = 30.0f;  // buffer still warm after a charge
@@ -314,9 +315,16 @@ static void test_idle_static_balance() {
     closed[i] = update_closed(closed[i], loops[i].temp_c, loops[i].setpoint_c, p);
   float open[6], q[6];
   distribute(loops, p, closed, open, q, moving);
-  for (int i = 0; i < 6; i++)
-    if (i != 3)
-      expect_near(q[i], std::max(SHARES[i], Q_MIN), 1e-3f, "idle: open loops at their design share");
+  for (int i = 0; i < 6; i++) {
+    if (i == 3)
+      continue;
+    if (temps[i] > 22.0f)
+      expect_near(q[i], std::max(SHARES[i] * load_factor(temps[i], 22.0f, p), Q_MIN), 1e-3f,
+                  "idle: a warm room at its share × load factor");
+    else  // what the warm rooms no longer take goes to the rooms that want it
+      expect(q[i] >= SHARES[i] - 1e-3f && q[i] <= 1.0f + 1e-3f, "idle: a cold room at least at its design share");
+  }
+  expect(q[5] < SHARES[5] * 0.5f, "idle: 1.2 K warm takes well under half its share");
   expect(closed[3] && !moving[3] && q[3] == 0.0f, "idle: a warm room stays closed while the water would heat it");
 
   // The buffer has cooled below the warm room: it moves heat even with no cold room.
@@ -329,7 +337,8 @@ static void test_idle_static_balance() {
   distribute(loops, p, c2, open, q, m2);
   expect(c2[3] && m2[3], "idle: moves heat without a cold room");
   expect_near(q[3], SHARES[3], 1e-3f, "idle: the moving loop at its design share");
-  expect_near(q[4], SHARES[4], 1e-3f, "idle: warm open rooms keep their share too");
+  expect_near(q[4], std::max(SHARES[4] * load_factor(23.1f, 22.0f, p), Q_MIN), 1e-3f,
+              "idle: warm open rooms at their share × load factor");
 }
 
 static void test_full_flow_margin() {

@@ -117,8 +117,8 @@ struct Result {
 /// percent, through the valve model.
 ///
 /// `p.idle` (the heat source is not running): the manifold is statically balanced.
-/// Every open loop gets its design share (load factor 1), closed loops hand nothing
-/// on, and an overheated loop moves heat whenever the supply is colder than its room,
+/// Every open loop at or below target gets its design share (load factor 1), a loop above
+/// target its share × its load factor, closed loops hand nothing on, and an overheated loop moves heat whenever the supply is colder than its room,
 /// whether or not another room wants it: the buffer's rest and the rooms' surplus
 /// spread by themselves, and only a warm room the water would heat stays closed.
 template <size_t N>
@@ -147,7 +147,12 @@ inline Result distribute(const Loop (&loops)[N], const Params &p, bool (&closed)
     ref[i] = std::min(cap[i], share);
     r.q_ref += ref[i];
     if (!closed[i]) {
-      const float g = p.idle ? 1.0f : load_factor(loops[i].temp_c, loops[i].setpoint_c, p);
+      // Idle: a room at or below target keeps its design share; a room above it is turned
+      // down by its load factor as when the heat source runs, so buffer water at room
+      // temperature goes to the rooms that want it (1. sal 2026-11-13: Stue Repo 1.4 K warm
+      // held at 100 % while Laura was 2 K cold).
+      const bool warm = loops[i].temp_c > loops[i].setpoint_c;
+      const float g = p.idle && !warm ? 1.0f : load_factor(loops[i].temp_c, loops[i].setpoint_c, p);
       w[i] = share * g;
       if (w[i] > 0.0f) {
         any_open = true;

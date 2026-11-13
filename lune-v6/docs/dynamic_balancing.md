@@ -90,8 +90,10 @@ Per control cycle, for each enabled loop *i*:
 5. **Never all closed.** If every loop would be closed (and none is moving heat), the one
    nearest its limit stays open at `G_MIN`.
 6. **Heat source idle: static balance.** While Touch says the heat source is not running
-   (`hp_phase` idle, Touch's «valves follow the heat pump»), every open loop gets its
-   design share (load factor 1), closed loops hand nothing on, and an overheated loop
+   (`hp_phase` idle, Touch's «valves follow the heat pump»), every open loop at or below
+   target gets its design share (load factor 1) and a loop above target its share × its
+   load factor (what the warm loops no longer take goes to the rooms that want it),
+   closed loops hand nothing on, and an overheated loop
    moves heat whenever the supply is `hp_heat_move_k` colder than its room, cold room or not. Flow is
    the default: the buffer's rest and the rooms' surplus spread by themselves, every
    floor keeps water, and the valves mostly move when the heat source starts and stops.
