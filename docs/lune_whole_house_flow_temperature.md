@@ -96,7 +96,7 @@ groups, then drives Setpoint Bias from that.
   latch until `setpoint − comfort_band`. Flow allocator unused.
 - **Heat pump** — allocator on DEMAND; hold `hp_base_pct` when satisfied; soft
   trim down to `hp_trim_floor_pct` between setpoint and
-  `setpoint + hp_overheat_margin_c`; close only past the margin (+ absorb band
+  `setpoint + hp_overheat_margin_c`; close only past setpoint + margin (+ absorb band
   while pre-buffering).
 - **Touch lease** — optional `control_mode` (`normal` / `heat_pump`) overrides
   the local setting while the lease is active. Absent field keeps local mode.

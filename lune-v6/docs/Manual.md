@@ -225,7 +225,7 @@ like a statically balanced installation whose balancing valves follow the rooms:
 - Inside the manifold warm rooms hand their flow to cold ones and the total stays put.
   The manifold's total follows its most demanding room: full while one room is a comfort
   band below target, less when every room on the manifold is warm.
-- A loop closes only when its room is past target + comfort band + overheat margin (more
+- A loop closes only when its room is past target + overheat margin (more
   while Touch pre-buffers), and reopens 0.3 °C below that. Its flow goes to the other
   loops. The manifold never closes every loop.
 - The heat comes from the supply temperature. V6 tells Touch to **raise** it when a room

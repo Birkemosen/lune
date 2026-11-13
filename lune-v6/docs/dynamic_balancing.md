@@ -53,7 +53,7 @@ Per control cycle, for each enabled loop *i*:
 2. **Load factor** `g_i` from the room's error `e_i = setpoint − temperature`:
    - `g = 1` when the room is at least one comfort band below target;
    - `g` falls linearly to `G_MIN` (0.25) at target + overheat margin;
-   - a room above target + band + margin (+ the absorb band while Touch pre-buffers) is
+   - a room above target + margin (+ the absorb band while Touch pre-buffers) is
      **closed** (latched, reopens 0.3 °C below that limit). This is the only reason a
      loop closes.
    - **moving heat:** a closed loop reopens while the manifold's supply is at least
@@ -187,8 +187,10 @@ The stored settings keep their NVS layout; heat-pump mode ignores them.
 
 ## Settings
 
-- **Overheat margin** (`hp_overheat_margin_c`, default 1.0 °C): where the load factor
-  reaches its minimum, and with the comfort band where a loop closes.
+- **Overheat margin** (`hp_overheat_margin_c`, default 1.0 °C): measured from the
+  target. The load factor reaches its minimum there, and a loop closes above
+  target + margin (+ absorb band while Touch pre-buffers). It is not added to the
+  comfort band: a room is overheated once it is the margin above its target.
 - **Comfort band** (`comfort_band_c`): where the load factor reaches 1.
 - **Max. opening per zone**: caps the loop. Default for new zones is 100 %.
 

@@ -483,7 +483,7 @@
   "csys.minOpening": "Min. samlet åbning",
   "csys.heatPumpLimits": "Varmepumpegrænser",
   "csys.hpOverheat": "Overophedningsmargin",
-  "csys.hpOverheatHint": "Grader over målet, hvor rummet får sin mindste andel af flowet. Et komfortbånd højere lukker sløjfen. De andre sløjfer har altid flow.",
+  "csys.hpOverheatHint": "Grader over målet, hvor rummet er for varmt: det får sin mindste andel af flowet, og over det lukker sløjfen. Regnes fra målet, ikke fra komfortbåndet. De andre sløjfer har altid flow.",
   "csys.hpMove": "Varmeflytning",
   "csys.hpMoveHint": "Når et rum er for varmt, og fremløbet er så mange grader koldere end rummet, åbner sløjfen og flytter varmen til de andre rum. Den lukker igen 0,3 °C før.",
   "csys.balMode": "Fordeling",

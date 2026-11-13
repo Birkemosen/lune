@@ -63,10 +63,10 @@ inline float load_factor(float temp_c, float setpoint_c, const Params &p) {
   return G_MIN + t * (1.0f - G_MIN);
 }
 
-/// Temperature above which a loop closes.
+/// Temperature above which a loop closes: the overheat margin is measured from the
+/// target, not from the comfort band's edge (+ absorb band while pre-buffering).
 inline float close_limit_c(float setpoint_c, const Params &p) {
-  return setpoint_c + std::max(0.1f, p.comfort_band_c) + std::max(0.1f, p.overheat_margin_c) +
-         std::max(0.0f, p.absorb_band_c);
+  return setpoint_c + std::max(0.1f, p.overheat_margin_c) + std::max(0.0f, p.absorb_band_c);
 }
 
 /// Overheat latch: closes above the limit, reopens REOPEN_HYST_C below it.
