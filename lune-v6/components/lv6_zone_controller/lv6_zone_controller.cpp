@@ -1366,8 +1366,9 @@ void Lv6ZoneController::run_cycle_() {
         const bool closed = position <= 0.0f && state == ZoneState::OVERHEATED;
         const float close_point = setpoint;  // Normal closes at setpoint
         const auto th = thermal_model::estimate(cfg.zones[i], cfg.house_physics);
-        const float lag_h = reopen_policy::floor_lag_h(cfg.zones[i].slab_type,
-                                                       cfg.zones[i].active_thickness_cm, th.r_m2k_per_w);
+        const float lag_h = floor_response::effective_lag_h(
+            floor_resp_[i], reopen_policy::floor_lag_h(cfg.zones[i].slab_type, cfg.zones[i].active_thickness_cm,
+                                                       th.r_m2k_per_w));
         const bool was_active = reopen_[i].active;
         if (reopen_policy::step(reopen_[i], closed, temp, reopen_trend_[i].slope_c_per_h, setpoint,
                                 close_point, lag_h, cycle_ms)) {
@@ -1525,6 +1526,8 @@ void Lv6ZoneController::run_cycle_() {
 
   if (floor_applies)
     enforce_minimum_total_opening_(target_positions);
+
+  step_floor_response_(cfg, target_positions, zone_temps);
 
   // Heat-demand summary for Touch / Asgard feed-temperature trim (heat-pump mode).
   {
@@ -1815,6 +1818,80 @@ void Lv6ZoneController::step_dt_balance_(const DeviceConfig &cfg, const float (&
              dt_state_.f[0], dt_state_.f[1], dt_state_.f[2], dt_state_.f[3], dt_state_.f[4], dt_state_.f[5],
              r.mean_dt, static_cast<unsigned>(r.eligible));
   }
+}
+
+// Floor response time (floor_response.h): every enabled loop with a room temperature
+// and the manifold's supply learns when its room turns after heat starts or stops.
+void Lv6ZoneController::step_floor_response_(const DeviceConfig &cfg, const std::array<float, NUM_ZONES> &openings,
+                                             const std::array<float, NUM_ZONES> &zone_temps) {
+  if (!config_store_)
+    return;
+  if (!floor_resp_loaded_) {
+    float lag[NUM_ZONES];
+    uint8_t n[NUM_ZONES];
+    if (config_store_->load_floor_response(lag, n))
+      for (uint8_t i = 0; i < NUM_ZONES; i++) {
+        floor_resp_[i].learned_h = lag[i];
+        floor_resp_[i].samples = std::isfinite(lag[i]) ? n[i] : 0;
+      }
+    for (uint8_t i = 0; i < NUM_ZONES; i++)
+      floor_resp_saved_[i] = floor_resp_[i].samples;
+    floor_resp_loaded_ = true;
+  }
+  const float supply = read_manifold_flow_();
+  const bool hold = valve_test_active();
+  const float dt_s = cycle_interval_ms_ / 1000.0f;
+  bool save = false;
+  for (uint8_t i = 0; i < NUM_ZONES; i++) {
+    const auto th = thermal_model::estimate(cfg.zones[i], cfg.house_physics);
+    const float prior = reopen_policy::floor_lag_h(cfg.zones[i].slab_type, cfg.zones[i].active_thickness_cm,
+                                                   th.r_m2k_per_w);
+    xSemaphoreTake(snapshot_mutex_, portMAX_DELAY);
+    floor_prior_h_[i] = prior;
+    xSemaphoreGive(snapshot_mutex_);
+    if (!cfg.zones[i].enabled) {
+      floor_response::step(floor_resp_[i], 0.0f, NAN, true, dt_s);
+      continue;
+    }
+    const float input = floor_response::heat_input_k(openings[i], supply, zone_temps[i]);
+    floor_response::Loop next = floor_resp_[i];
+    const float lag_h = floor_response::step(next, input, zone_temps[i], hold, dt_s);
+    xSemaphoreTake(snapshot_mutex_, portMAX_DELAY);
+    floor_resp_[i] = next;
+    xSemaphoreGive(snapshot_mutex_);
+    if (std::isfinite(lag_h)) {
+      ESP_LOGI(TAG, "Zone %d: floor turned %.1f h after heat %s (learned %.2f h from %u, prior %.2f h)", i + 1,
+               lag_h, next.heating ? "started" : "stopped", next.learned_h, static_cast<unsigned>(next.samples),
+               prior);
+      save = save || next.samples != floor_resp_saved_[i];
+    }
+  }
+  const uint32_t now_ms = esphome::millis();
+  if (save && (floor_resp_save_ms_ == 0 || now_ms - floor_resp_save_ms_ >= 10UL * 60UL * 1000UL)) {
+    float lag[NUM_ZONES];
+    uint8_t n[NUM_ZONES];
+    for (uint8_t i = 0; i < NUM_ZONES; i++) {
+      lag[i] = floor_resp_[i].learned_h;
+      n[i] = floor_resp_[i].samples;
+      floor_resp_saved_[i] = n[i];
+    }
+    config_store_->set_floor_response(lag, n);
+    floor_resp_save_ms_ = now_ms;
+  }
+}
+
+Lv6ZoneController::FloorLag Lv6ZoneController::floor_lag(uint8_t zone) const {
+  FloorLag out;
+  if (zone >= NUM_ZONES)
+    return out;
+  xSemaphoreTake(snapshot_mutex_, portMAX_DELAY);
+  out.prior_h = floor_prior_h_[zone];
+  out.learned_h = floor_resp_[zone].learned_h;
+  out.samples = floor_resp_[zone].samples;
+  out.effective_h = std::isfinite(out.prior_h) ? floor_response::effective_lag_h(floor_resp_[zone], out.prior_h)
+                                               : NAN;
+  xSemaphoreGive(snapshot_mutex_);
+  return out;
 }
 
 float Lv6ZoneController::read_probe_(int8_t probe) const {

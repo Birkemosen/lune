@@ -174,6 +174,7 @@ void Lv6ConfigStore::setup() {
   load_config_();
   read_balance_basis_();
   read_balance_dt_();
+  read_floor_response_();
 
   ESP_LOGI(TAG, "Config store initialized");
 }
@@ -334,6 +335,7 @@ void Lv6ConfigStore::flush_now() {
   save_config_();
   write_balance_basis_();
   write_balance_dt_();
+  write_floor_response_();
 }
 
 void Lv6ConfigStore::update_zone(uint8_t zone, const ZoneConfig &zone_cfg) {
@@ -720,6 +722,79 @@ void Lv6ConfigStore::write_balance_dt_() {
   }
   if (err != ESP_OK)
     ESP_LOGW(TAG, "Failed to persist ΔT balance factors: %s", esp_err_to_name(err));
+}
+
+void Lv6ConfigStore::set_floor_response(const float (&lag_h)[NUM_ZONES], const uint8_t (&samples)[NUM_ZONES]) {
+  if (mutex_ != nullptr)
+    xSemaphoreTake(mutex_, portMAX_DELAY);
+  for (uint8_t i = 0; i < NUM_ZONES; i++) {
+    floor_lag_h_[i] = lag_h[i];
+    floor_lag_samples_[i] = samples[i];
+  }
+  floor_response_known_ = true;
+  floor_response_dirty_ = true;
+  if (mutex_ != nullptr)
+    xSemaphoreGive(mutex_);
+  mark_dirty();
+}
+
+bool Lv6ConfigStore::load_floor_response(float (&lag_h)[NUM_ZONES], uint8_t (&samples)[NUM_ZONES]) const {
+  if (mutex_ != nullptr)
+    xSemaphoreTake(mutex_, portMAX_DELAY);
+  const bool known = floor_response_known_;
+  for (uint8_t i = 0; i < NUM_ZONES; i++) {
+    lag_h[i] = floor_lag_h_[i];
+    samples[i] = floor_lag_samples_[i];
+  }
+  if (mutex_ != nullptr)
+    xSemaphoreGive(mutex_);
+  return known;
+}
+
+void Lv6ConfigStore::read_floor_response_() {
+  nvs_handle_t handle;
+  if (nvs_open(NVS_NAMESPACE, NVS_READONLY, &handle) != ESP_OK)
+    return;
+  uint8_t blob[sizeof(uint32_t) + (sizeof(float) + 1) * NUM_ZONES];
+  size_t len = sizeof(blob);
+  if (nvs_get_blob(handle, KEY_FLOOR_RESPONSE, blob, &len) == ESP_OK && len == sizeof(blob)) {
+    uint32_t version = 0;
+    memcpy(&version, blob, sizeof(version));
+    if (version == FLOOR_RESPONSE_VERSION) {
+      memcpy(floor_lag_h_, blob + sizeof(uint32_t), sizeof(float) * NUM_ZONES);
+      memcpy(floor_lag_samples_, blob + sizeof(uint32_t) + sizeof(float) * NUM_ZONES, NUM_ZONES);
+      for (uint8_t i = 0; i < NUM_ZONES; i++)
+        if (!(std::isfinite(floor_lag_h_[i]) && floor_lag_h_[i] > 0.0f)) {
+          floor_lag_h_[i] = NAN;
+          floor_lag_samples_[i] = 0;
+        }
+      floor_response_known_ = true;
+    }
+  }
+  nvs_close(handle);
+}
+
+void Lv6ConfigStore::write_floor_response_() {
+  if (!floor_response_dirty_)
+    return;
+  uint8_t blob[sizeof(uint32_t) + (sizeof(float) + 1) * NUM_ZONES];
+  xSemaphoreTake(mutex_, portMAX_DELAY);
+  const uint32_t version = FLOOR_RESPONSE_VERSION;
+  memcpy(blob, &version, sizeof(version));
+  memcpy(blob + sizeof(uint32_t), floor_lag_h_, sizeof(float) * NUM_ZONES);
+  memcpy(blob + sizeof(uint32_t) + sizeof(float) * NUM_ZONES, floor_lag_samples_, NUM_ZONES);
+  floor_response_dirty_ = false;
+  xSemaphoreGive(mutex_);
+  nvs_handle_t handle;
+  esp_err_t err = nvs_open(NVS_NAMESPACE, NVS_READWRITE, &handle);
+  if (err == ESP_OK) {
+    err = nvs_set_blob(handle, KEY_FLOOR_RESPONSE, blob, sizeof(blob));
+    if (err == ESP_OK)
+      err = nvs_commit(handle);
+    nvs_close(handle);
+  }
+  if (err != ESP_OK)
+    ESP_LOGW(TAG, "Failed to persist floor response times: %s", esp_err_to_name(err));
 }
 
 void Lv6ConfigStore::read_balance_basis_() {
@@ -1315,6 +1390,7 @@ void Lv6ConfigStore::nvs_task_loop_() {
     save_config_();
     write_balance_basis_();
     write_balance_dt_();
+    write_floor_response_();
   }
 }
 
