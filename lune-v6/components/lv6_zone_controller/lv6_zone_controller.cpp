@@ -1127,8 +1127,9 @@ void Lv6ZoneController::run_cycle_() {
   };
 
   std::array<int8_t, NUM_ZONES> sync_roots{};
+  int8_t sync_roots_arr[NUM_ZONES];
   for (uint8_t i = 0; i < NUM_ZONES; i++)
-    sync_roots[i] = sync_root(i);
+    sync_roots_arr[i] = sync_roots[i] = sync_root(i);
 
   // Apply zone sync groups: one primary may own multiple secondary zones.
   // Members share the primary setpoint and one true mean room temperature.
@@ -1418,6 +1419,8 @@ void Lv6ZoneController::run_cycle_() {
       loops[i].setpoint_c = zone_setpoints[i];
       loops[i].max_opening_pct = cfg.zones[i].max_opening_pct;
     }
+    // A sync group is one unit: its loops share one flow share and open alike.
+    dynamic_balance::pool_group_shares(loops, sync_roots_arr);
     dynamic_balance::Params dbp{cfg.control.comfort_band_c, cfg.control.hp_overheat_margin_c, 0.0f};
     dbp.supply_c = read_manifold_flow_();
     dbp.move_on_k = cfg.control.hp_heat_move_k;

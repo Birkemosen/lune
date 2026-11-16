@@ -171,6 +171,16 @@ Touch uses the manifold's summary to set the heating curve:
 
 The critical zone is the room with the greatest deficit.
 
+### Sync groups
+
+Loops synced into one group (several loops in one room, fx Stue + Stue Repo) are one
+unit. They already share the room's mean temperature and the primary's setpoint; they
+also share one flow share — the mean of their design shares and Touch's factors — so
+they open alike and the group passes what its loops together would. Learned per loop,
+the shares drift apart (a loop with a warmer return is given less), and one loop of a
+room that is cold as a whole was throttled (2026-11-16: Stue Repo at 100 %, Stue at 61 %
+with the room 0.8 K below target).
+
 ## What it replaces (heat-pump mode)
 
 | Removed | Why |

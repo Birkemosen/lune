@@ -380,6 +380,34 @@ static void test_full_flow_margin() {
   expect_near(open[4], 29.0f, 1e-3f, "full margin: never past the max opening");
 }
 
+static void test_group_shares_pooled() {
+  // Stue Repo (Z4) and Stue (Z5) in one sync group: the room's mean temperature for both,
+  // learned shares 0.95 and 0.55. Pooled, they share 0.75 each and open alike; the rest
+  // of the manifold is untouched.
+  const Params p{0.5f, 1.0f, 0.0f};
+  Loop loops[6];
+  const float temps[6] = {22.2f, 20.9f, 21.2f, 22.2f, 22.2f, 21.0f};
+  make_loops(loops, temps, 22.0f);
+  loops[3].setpoint_c = loops[4].setpoint_c = 23.0f;
+  loops[3].design_share = 0.95f;
+  loops[4].design_share = 0.55f;
+  const float other = loops[0].design_share;
+  const int8_t root[6] = {0, 1, 2, 3, 3, 5};
+  pool_group_shares(loops, root);
+  expect_near(loops[3].design_share, 0.75f, 1e-4f, "group: primary gets the members' mean share");
+  expect_near(loops[4].design_share, 0.75f, 1e-4f, "group: member gets the same share");
+  expect_near(loops[0].design_share, other, 1e-6f, "group: loops outside the group keep theirs");
+  bool closed[6]{};
+  float open[6], q[6];
+  distribute(loops, p, closed, open, q);
+  expect_near(open[3], open[4], 0.01f, "group: both loops open alike");
+  // A disabled member is left out of the pool.
+  loops[4].enabled = false;
+  loops[3].design_share = 0.9f;
+  pool_group_shares(loops, root);
+  expect_near(loops[3].design_share, 0.9f, 1e-6f, "group: one enabled member keeps its own share");
+}
+
 int main() {
   test_full_flow_margin();
   test_short_loop_share_cap();
@@ -397,6 +425,7 @@ int main() {
   test_heat_moving();
   test_idle_static_balance();
   test_house_balance_and_caps();
+  test_group_shares_pooled();
   std::printf("All dynamic balance tests passed.\n");
   return 0;
 }
