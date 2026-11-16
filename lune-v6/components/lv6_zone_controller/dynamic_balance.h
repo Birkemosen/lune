@@ -63,10 +63,10 @@ inline float load_factor(float temp_c, float setpoint_c, const Params &p) {
   return G_MIN + t * (1.0f - G_MIN);
 }
 
-/// Temperature above which a loop closes.
+/// Temperature above which a loop closes: the overheat margin is measured from the
+/// target, not from the comfort band's edge (+ absorb band while pre-buffering).
 inline float close_limit_c(float setpoint_c, const Params &p) {
-  return setpoint_c + std::max(0.1f, p.comfort_band_c) + std::max(0.1f, p.overheat_margin_c) +
-         std::max(0.0f, p.absorb_band_c);
+  return setpoint_c + std::max(0.1f, p.overheat_margin_c) + std::max(0.0f, p.absorb_band_c);
 }
 
 /// Overheat latch: closes above the limit, reopens REOPEN_HYST_C below it.
@@ -279,6 +279,33 @@ inline Result distribute(const Loop (&loops)[N], const Params &p, bool (&closed)
     r.q_total += q[i];
   }
   return r;
+}
+
+/// A sync group (several loops in one room, fx Stue + Stue Repo) is one unit: its members
+/// share one flow share — the mean of their design shares and of Touch's factors — so they
+/// open alike, and the group passes what its loops together would. Learned per loop, the
+/// shares drift apart (a loop with a warmer return is given less), which throttles one
+/// loop of a room that is cold as a whole (1. sal 2026-11-16: Stue Repo 100 %, Stue 61 %
+/// with the room 0.8 K below target). `root[i]` is loop i's group primary (i alone: itself).
+template <size_t N>
+inline void pool_group_shares(Loop (&loops)[N], const int8_t (&root)[N]) {
+  for (size_t r = 0; r < N; r++) {
+    float share = 0.0f, house = 0.0f;
+    unsigned n = 0;
+    for (size_t i = 0; i < N; i++)
+      if (loops[i].enabled && root[i] == static_cast<int8_t>(r)) {
+        share += std::max(0.0f, loops[i].design_share);
+        house += std::clamp(loops[i].house_balance, 0.0f, 1.0f);
+        n++;
+      }
+    if (n < 2)
+      continue;
+    for (size_t i = 0; i < N; i++)
+      if (loops[i].enabled && root[i] == static_cast<int8_t>(r)) {
+        loops[i].design_share = share / static_cast<float>(n);
+        loops[i].house_balance = house / static_cast<float>(n);
+      }
+  }
 }
 
 /// Without heat moving (no supply temperature).

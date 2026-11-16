@@ -96,6 +96,9 @@ class Lv6ConfigStore : public esphome::Component {
   /// ΔT-learned share factors (dt_balance.h), one per zone. Own key: survives section resets.
   void set_balance_dt(const float (&f)[NUM_ZONES]);
   bool load_balance_dt(float (&f)[NUM_ZONES]) const;
+  /// Learned floor response time per loop (floor_response.h): hours (NaN: none) and sample count.
+  void set_floor_response(const float (&lag_h)[NUM_ZONES], const uint8_t (&samples)[NUM_ZONES]);
+  bool load_floor_response(float (&lag_h)[NUM_ZONES], uint8_t (&samples)[NUM_ZONES]) const;
 
   // Maintenance helpers
   bool erase_namespace();
@@ -130,6 +133,8 @@ class Lv6ConfigStore : public esphome::Component {
   static constexpr const char *KEY_BALANCE_BASIS = "balbasis";  ///< u32, own key: no section reset
   static constexpr const char *KEY_BALANCE_DT = "baldt";        ///< u32 version + float[NUM_ZONES]
   static constexpr uint32_t BALANCE_DT_VERSION = 1;
+  static constexpr const char *KEY_FLOOR_RESPONSE = "flrlag";   ///< u32 version + float[NUM_ZONES] + u8[NUM_ZONES]
+  static constexpr uint32_t FLOOR_RESPONSE_VERSION = 1;
   static constexpr uint64_t DIRTY_DELAY_US = 1000000ULL;  // 1 second
   // Dedicated NVS persistence task — keeps flash commits off the main loop
   // task so loopTask isn't blocked for the 50–500 ms a commit can take.
@@ -167,6 +172,8 @@ class Lv6ConfigStore : public esphome::Component {
   void write_balance_basis_();
   void read_balance_dt_();
   void write_balance_dt_();
+  void read_floor_response_();
+  void write_floor_response_();
 
   DeviceConfig config_{};
   SemaphoreHandle_t mutex_ = nullptr;
@@ -180,6 +187,10 @@ class Lv6ConfigStore : public esphome::Component {
   float balance_dt_[NUM_ZONES]{1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f};
   bool balance_dt_known_ = false;
   volatile bool balance_dt_dirty_ = false;
+  float floor_lag_h_[NUM_ZONES]{NAN, NAN, NAN, NAN, NAN, NAN};
+  uint8_t floor_lag_samples_[NUM_ZONES]{};
+  bool floor_response_known_ = false;
+  volatile bool floor_response_dirty_ = false;
   bool initialized_ = false;
 };
 

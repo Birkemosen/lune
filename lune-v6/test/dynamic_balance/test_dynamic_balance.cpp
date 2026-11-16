@@ -41,13 +41,15 @@ static void test_load_factor() {
 
 static void test_closed_latch() {
   const Params p{0.5f, 1.0f, 0.0f};
-  // Limit = 21 + 0.5 + 1.0 = 22.5
-  expect(!update_closed(false, 22.5f, 21.0f, p), "latch: at the limit stays open");
-  expect(update_closed(false, 22.6f, 21.0f, p), "latch: above the limit closes");
-  expect(update_closed(true, 22.3f, 21.0f, p), "latch: stays closed inside the hysteresis");
-  expect(!update_closed(true, 22.1f, 21.0f, p), "latch: reopens 0.3 below the limit");
+  // Limit = 21 + 1.0 = 22.0: the margin counts from the target, not the band's edge
+  expect(!update_closed(false, 22.0f, 21.0f, p), "latch: at the limit stays open");
+  expect(update_closed(false, 22.1f, 21.0f, p), "latch: above the limit closes");
+  expect(update_closed(false, 22.6f, 21.0f, p), "latch: target + band + margin is well past the limit");
+  expect(update_closed(true, 21.8f, 21.0f, p), "latch: stays closed inside the hysteresis");
+  expect(!update_closed(true, 21.6f, 21.0f, p), "latch: reopens 0.3 below the limit");
   const Params absorb{0.5f, 1.0f, 1.0f};
-  expect(!update_closed(false, 23.0f, 21.0f, absorb), "latch: absorb band raises the limit");
+  expect(!update_closed(false, 22.5f, 21.0f, absorb), "latch: absorb band raises the limit");
+  expect(update_closed(false, 23.1f, 21.0f, absorb), "latch: absorb limit = target + margin + band");
   expect(!update_closed(true, NAN, 21.0f, p), "latch: no temperature → open");
 }
 
@@ -118,7 +120,7 @@ static void test_closed_flow_goes_to_others() {
 
 static void test_closed_flow_skips_warm_rooms() {
   // Stueetage 2026-11-05 01:00: five rooms closed, Bad open at target + 1.0 (limit 23.0).
-  const Params p{0.5f, 0.5f, 0.0f};
+  const Params p{0.5f, 1.0f, 0.0f};
   Loop loops[6];
   const float temps[6] = {23.4f, 23.9f, 23.4f, 23.3f, 23.4f, 23.0f};
   make_loops(loops, temps, 22.0f);
@@ -308,7 +310,7 @@ static void test_idle_static_balance() {
   p.idle = true;
   p.supply_c = 30.0f;  // buffer still warm after a charge
   Loop loops[6];
-  const float temps[6] = {21.0f, 22.4f, 22.9f, 25.0f, 22.0f, 23.2f};
+  const float temps[6] = {21.0f, 22.4f, 22.9f, 25.0f, 22.0f, 22.9f};
   make_loops(loops, temps, 22.0f);
   bool closed[6]{}, moving[6]{};
   for (int i = 0; i < 6; i++)
@@ -324,11 +326,11 @@ static void test_idle_static_balance() {
     else  // what the warm rooms no longer take goes to the rooms that want it
       expect(q[i] >= SHARES[i] - 1e-3f && q[i] <= 1.0f + 1e-3f, "idle: a cold room at least at its design share");
   }
-  expect(q[5] < SHARES[5] * 0.5f, "idle: 1.2 K warm takes well under half its share");
+  expect(q[5] < SHARES[5] * 0.5f, "idle: 0.9 K warm takes well under half its share");
   expect(closed[3] && !moving[3] && q[3] == 0.0f, "idle: a warm room stays closed while the water would heat it");
 
   // The buffer has cooled below the warm room: it moves heat even with no cold room.
-  const float warm[6] = {23.2f, 23.4f, 23.0f, 25.0f, 23.1f, 23.2f};
+  const float warm[6] = {22.8f, 22.9f, 22.7f, 25.0f, 22.6f, 22.8f};
   make_loops(loops, warm, 22.0f);
   p.supply_c = 23.5f;
   bool c2[6]{}, m2[6]{};
@@ -337,7 +339,7 @@ static void test_idle_static_balance() {
   distribute(loops, p, c2, open, q, m2);
   expect(c2[3] && m2[3], "idle: moves heat without a cold room");
   expect_near(q[3], SHARES[3], 1e-3f, "idle: the moving loop at its design share");
-  expect_near(q[4], std::max(SHARES[4] * load_factor(23.1f, 22.0f, p), Q_MIN), 1e-3f,
+  expect_near(q[4], std::max(SHARES[4] * load_factor(22.6f, 22.0f, p), Q_MIN), 1e-3f,
               "idle: warm open rooms at their share × load factor");
 }
 
@@ -378,6 +380,34 @@ static void test_full_flow_margin() {
   expect_near(open[4], 29.0f, 1e-3f, "full margin: never past the max opening");
 }
 
+static void test_group_shares_pooled() {
+  // Stue Repo (Z4) and Stue (Z5) in one sync group: the room's mean temperature for both,
+  // learned shares 0.95 and 0.55. Pooled, they share 0.75 each and open alike; the rest
+  // of the manifold is untouched.
+  const Params p{0.5f, 1.0f, 0.0f};
+  Loop loops[6];
+  const float temps[6] = {22.2f, 20.9f, 21.2f, 22.2f, 22.2f, 21.0f};
+  make_loops(loops, temps, 22.0f);
+  loops[3].setpoint_c = loops[4].setpoint_c = 23.0f;
+  loops[3].design_share = 0.95f;
+  loops[4].design_share = 0.55f;
+  const float other = loops[0].design_share;
+  const int8_t root[6] = {0, 1, 2, 3, 3, 5};
+  pool_group_shares(loops, root);
+  expect_near(loops[3].design_share, 0.75f, 1e-4f, "group: primary gets the members' mean share");
+  expect_near(loops[4].design_share, 0.75f, 1e-4f, "group: member gets the same share");
+  expect_near(loops[0].design_share, other, 1e-6f, "group: loops outside the group keep theirs");
+  bool closed[6]{};
+  float open[6], q[6];
+  distribute(loops, p, closed, open, q);
+  expect_near(open[3], open[4], 0.01f, "group: both loops open alike");
+  // A disabled member is left out of the pool.
+  loops[4].enabled = false;
+  loops[3].design_share = 0.9f;
+  pool_group_shares(loops, root);
+  expect_near(loops[3].design_share, 0.9f, 1e-6f, "group: one enabled member keeps its own share");
+}
+
 int main() {
   test_full_flow_margin();
   test_short_loop_share_cap();
@@ -395,6 +425,7 @@ int main() {
   test_heat_moving();
   test_idle_static_balance();
   test_house_balance_and_caps();
+  test_group_shares_pooled();
   std::printf("All dynamic balance tests passed.\n");
   return 0;
 }

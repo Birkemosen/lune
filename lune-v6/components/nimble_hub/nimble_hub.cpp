@@ -384,7 +384,8 @@ bool NimbleHub::start_scan_locked_() {
 
 void NimbleHub::stop_scan_locked_() {
 #ifdef USE_ESP32
-  if (!this->scanning_ && !ble_gap_disc_active()) {
+  // A stopped stack has no GAP state: ble_gap_disc_active() would read freed memory.
+  if (!this->enabled_ || (!this->scanning_ && !ble_gap_disc_active())) {
     this->scanning_ = false;
     return;
   }
@@ -471,7 +472,7 @@ bool NimbleHub::set_raw_advertise_data(const uint8_t *data, size_t len) {
 
 void NimbleHub::stop_advertise() {
 #ifdef USE_ESP32
-  if (!this->advertising_ && !ble_gap_adv_active()) {
+  if (!this->enabled_ || (!this->advertising_ && !ble_gap_adv_active())) {
     this->advertising_ = false;
     return;
   }
