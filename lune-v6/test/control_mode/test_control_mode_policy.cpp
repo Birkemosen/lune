@@ -71,9 +71,12 @@ static void test_heat_pump_classify() {
   expect(classify(HeatingProfile::HEAT_PUMP, 21.0f, sp, band, margin, 0.0f, 0.0f, latched) ==
              ZoneState::SATISFIED,
          "HP: at setpoint → SATISFIED (not closed)");
-  expect(classify(HeatingProfile::HEAT_PUMP, sp + band + margin + 0.1f, sp, band, margin, 0.0f, 0.0f,
+  expect(classify(HeatingProfile::HEAT_PUMP, sp + margin, sp, band, margin, 0.0f, 0.0f, latched) ==
+             ZoneState::SATISFIED,
+         "HP: at setpoint + margin → still SATISFIED");
+  expect(classify(HeatingProfile::HEAT_PUMP, sp + margin + 0.1f, sp, band, margin, 0.0f, 0.0f,
                   latched) == ZoneState::OVERHEATED,
-         "HP: past band + margin → OVERHEATED");
+         "HP: past setpoint + margin (not + band) → OVERHEATED");
 }
 
 static void test_heat_pump_absorb_extends_margin() {
@@ -84,12 +87,12 @@ static void test_heat_pump_absorb_extends_margin() {
   const float absorb = 1.0f;
 
   // Without absorb: past margin → OVERHEATED
-  expect(classify(HeatingProfile::HEAT_PUMP, sp + band + margin + 0.2f, sp, band, margin, 0.0f, 0.0f,
+  expect(classify(HeatingProfile::HEAT_PUMP, sp + margin + 0.2f, sp, band, margin, 0.0f, 0.0f,
                   latched) == ZoneState::OVERHEATED,
          "HP without absorb: past margin closes");
 
   // With absorb band: same temp still SATISFIED
-  expect(classify(HeatingProfile::HEAT_PUMP, sp + band + margin + 0.2f, sp, band, margin, 0.0f,
+  expect(classify(HeatingProfile::HEAT_PUMP, sp + margin + 0.2f, sp, band, margin, 0.0f,
                   absorb, latched) == ZoneState::SATISFIED,
          "HP with absorb: margin extended keeps SATISFIED");
 }

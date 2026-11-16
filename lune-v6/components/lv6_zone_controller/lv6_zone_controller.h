@@ -16,6 +16,7 @@
 #include "control_algorithms.h"
 #include "adaptive_balance.h"
 #include "dt_balance.h"
+#include "floor_response.h"
 #include "control_mode_policy.h"
 #include "flow_allocator.h"
 #include "valve_curve.h"
@@ -236,6 +237,15 @@ class Lv6ZoneController : public esphome::Component {
   HpPhase get_hp_phase() const;
   /// Overheated loop reopened to move heat (room warmer than the supply).
   bool is_moving_heat(uint8_t zone) const { return zone < NUM_ZONES && hp_moving_[zone]; }
+  /// Floor response time (floor_response.h): the build's prior, the learned value and
+  /// the one in use.
+  struct FloorLag {
+    float prior_h{NAN};
+    float learned_h{NAN};
+    uint8_t samples{0};
+    float effective_h{NAN};
+  };
+  FloorLag floor_lag(uint8_t zone) const;
   static const char *hp_phase_name(HpPhase phase);
   float get_house_balance(uint8_t zone) const;
   /// Valve curve (opening where flow starts / is full) used by dynamic balancing.
@@ -358,6 +368,15 @@ class Lv6ZoneController : public esphome::Component {
   float dt_saved_[NUM_ZONES]{1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f};
   uint32_t dt_save_ms_{0};
   bool dt_loaded_{false};
+  // Floor response time per loop (floor_response.h), learned from its heat input's
+  // edges. Loaded from NVS on the first cycle, saved after a new sample (≤ 6/h).
+  floor_response::Loop floor_resp_[NUM_ZONES]{};
+  float floor_prior_h_[NUM_ZONES]{NAN, NAN, NAN, NAN, NAN, NAN};
+  uint8_t floor_resp_saved_[NUM_ZONES]{};
+  uint32_t floor_resp_save_ms_{0};
+  bool floor_resp_loaded_{false};
+  void step_floor_response_(const DeviceConfig &cfg, const std::array<float, NUM_ZONES> &openings,
+                            const std::array<float, NUM_ZONES> &zone_temps);
   bool zone_has_return_probe_(uint8_t zone) const;
   float read_probe_(int8_t probe) const;
   void step_dt_balance_(const DeviceConfig &cfg, const float (&q)[NUM_ZONES], const bool (&closed)[NUM_ZONES],

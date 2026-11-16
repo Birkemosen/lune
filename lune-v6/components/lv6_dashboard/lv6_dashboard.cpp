@@ -2049,6 +2049,22 @@ void LV6Dashboard::handle_state_(AsyncWebServerRequest *request) {
   httpd_resp_send_chunk(req, nullptr, 0);
 }
 
+namespace {
+/// The controller's zone state for Touch (DEMAND / SATISFIED / OVERHEATED), from the
+/// dashboard's text (HEATING = demand).
+const char *zone_demand_state(const char *state) {
+  if (state == nullptr)
+    return "unknown";
+  if (strcasecmp(state, "HEATING") == 0 || strcasecmp(state, "DEMAND") == 0)
+    return "DEMAND";
+  if (strcasecmp(state, "OVERHEATED") == 0)
+    return "OVERHEATED";
+  if (strcasecmp(state, "IDLE") == 0 || strcasecmp(state, "SATISFIED") == 0)
+    return "SATISFIED";
+  return "unknown";
+}
+}  // namespace
+
 void LV6Dashboard::handle_overview_(AsyncWebServerRequest *request) {
   if (snapshot_lock_ == nullptr || !snapshot_ready_ ||
       xSemaphoreTake(snapshot_lock_, pdMS_TO_TICKS(50)) != pdTRUE) {
@@ -2216,11 +2232,31 @@ void LV6Dashboard::handle_zones_(AsyncWebServerRequest *request) {
   appendf(buf, JSON_BUF_SIZE, off,
           "{\"ok\":true,\"version\":\"v1\",\"data\":{\"node_id\":\"%s\","
           "\"device_name\":\"%s\",\"device_location\":\"%s\",\"count\":%u,\"hp_phase\":\"%s\","
-          "\"balance_basis\":\"%s\",\"zones\":[",
+          "\"balance_basis\":\"%s\",",
           node_id, name_esc, place_esc, static_cast<unsigned>(lv6::NUM_ZONES),
           this->zone_controller_ ? lv6::Lv6ZoneController::hp_phase_name(this->zone_controller_->get_hp_phase())
                                  : "unknown",
           "model");
+  // The manifold's heat demand, as in /overview control.heat_demand: Touch reads it here
+  // with the zones (a room may lift the house only while its loop is the critical one
+  // and V6 says raise). Per zone below: demand_state, recommendation, saturated_s.
+  const auto &hd = snap->heat_demand;
+  const int8_t hd_root = hd.critical_zone >= 0 && hd.critical_zone < static_cast<int8_t>(lv6::NUM_ZONES)
+                             ? sync_roots[hd.critical_zone] : -1;
+  {
+    char crit[8];
+    if (hd.critical_zone >= 0)
+      snprintf(crit, sizeof(crit), "%d", hd.critical_zone + 1);
+    else
+      snprintf(crit, sizeof(crit), "null");
+    appendf(buf, JSON_BUF_SIZE, off,
+            "\"heat_demand\":{\"recommendation\":\"%s\",\"critical_zone\":%s,"
+            "\"critical_opening_ratio\":%.3f,\"saturated_s\":%lu,\"demanding_zones\":%u,"
+            "\"headroom\":%s},\"zones\":[",
+            lv6::heat_demand_recommendation_to_string(hd.recommendation), crit, hd.critical_opening_ratio,
+            static_cast<unsigned long>(hd.saturated_s), static_cast<unsigned>(hd.demanding_zones),
+            hd.headroom ? "true" : "false");
+  }
   for (uint8_t i = 0; i < lv6::NUM_ZONES && off + 1200 < JSON_BUF_SIZE; i++) {
     char temp[24], setpoint[24], valve[24], preload[24];
     format_float_token(temp, sizeof(temp), snap->zone_temp_c[i], 1);
@@ -2275,6 +2311,12 @@ void LV6Dashboard::handle_zones_(AsyncWebServerRequest *request) {
     const char *absorb_state =
         (snap->absorb_mode == 2 || (this->zone_controller_ && this->zone_controller_->is_zone_absorb_armed(i))) ? "armed" : (snap->absorb_mode == 1 ? "reactive" : "idle");
     const int8_t primary = sync_roots[i];
+    // Raise belongs to the critical loop's group, lower (headroom) to every loop.
+    const bool critical = hd_root >= 0 && primary == hd_root;
+    const char *zone_rec =
+        hd.recommendation == lv6::HeatDemandRecommendation::LOWER ? "lower"
+        : (hd.recommendation == lv6::HeatDemandRecommendation::RAISE && critical) ? "raise" : "hold";
+    const uint32_t zone_sat = critical ? hd.saturated_s : 0;
     lv6::GroupsConfig groups{};
     if (this->config_store_)
       groups = this->config_store_->get_groups();
@@ -2296,9 +2338,12 @@ void LV6Dashboard::handle_zones_(AsyncWebServerRequest *request) {
     appendf(buf, JSON_BUF_SIZE, off,
             "\",\"enabled\":%s,\"temperature_c\":%s,\"setpoint_c\":%s,\"valve_pct\":%s,\"opening_mm\":%s,"
             "\"opening_ratio\":%s,\"preheat_c\":%s,\"state\":\"%s\",\"temp_source\":\"%s\","
+            "\"demand_state\":\"%s\",\"recommendation\":\"%s\",\"saturated_s\":%lu,\"headroom\":%s,"
             "\"fresh\":%s,\"group_primary\":%u,\"group_members\":[",
             snap->zones[i].enabled ? "true" : "false", temp, setpoint, valve, mm_tok, opening_ratio, preload,
             snap->zone_state[i], temp_source_to_dashboard_str(snap->zone_temp_source[i]),
+            zone_demand_state(snap->zone_state[i]), zone_rec, static_cast<unsigned long>(zone_sat),
+            hd.headroom ? "true" : "false",
             std::isfinite(snap->zone_temp_c[i]) ? "true" : "false",
             static_cast<unsigned>(primary + 1));
     bool first_member = true;
@@ -2324,6 +2369,16 @@ void LV6Dashboard::handle_zones_(AsyncWebServerRequest *request) {
       snprintf(tau_learned_tok, sizeof(tau_learned_tok), "%.1f", snap->zones[i].tau_learned_h);
     else
       snprintf(tau_learned_tok, sizeof(tau_learned_tok), "null");
+    // Floor response time (floor_response.h): prior from the build, learned, in use.
+    char lag_eff_tok[16] = "null", lag_prior_tok[16] = "null", lag_learned_tok[16] = "null";
+    unsigned lag_samples = 0;
+    if (this->zone_controller_) {
+      const auto fl = this->zone_controller_->floor_lag(i);
+      format_float_token(lag_eff_tok, sizeof(lag_eff_tok), fl.effective_h, 2);
+      format_float_token(lag_prior_tok, sizeof(lag_prior_tok), fl.prior_h, 2);
+      format_float_token(lag_learned_tok, sizeof(lag_learned_tok), fl.learned_h, 2);
+      lag_samples = fl.samples;
+    }
     char r_ov_tok[24];
     if (std::isfinite(snap->zones[i].r_override_m2k_per_w))
       snprintf(r_ov_tok, sizeof(r_ov_tok), "%.3f", snap->zones[i].r_override_m2k_per_w);
@@ -2344,6 +2399,7 @@ void LV6Dashboard::handle_zones_(AsyncWebServerRequest *request) {
             "\"wind_exposure\":%.2f,\"solar_gain\":%.2f,"
             "\"pipe_inner_mm\":%.0f,\"pipe_spacing_mm\":%.0f,\"supply_pipe_length_m\":%.1f,"
             "\"house_balance\":%.2f,"
+            "\"floor_lag_h\":%s,\"floor_lag_prior_h\":%s,\"floor_lag_learned_h\":%s,\"floor_lag_samples\":%u,"
             "\"warnings\":[",
             snap->zones[i].area_m2, static_cast<unsigned>(snap->zones[i].exterior_walls & 0x0F),
             lv6::slab_type_to_string(snap->zones[i].slab_type), thick_tok,
@@ -2357,7 +2413,8 @@ void LV6Dashboard::handle_zones_(AsyncWebServerRequest *request) {
             absorb_state, rank, max_offset, group_id, lv6::group_role_to_string(role),
             snap->zones[i].wind_exposure, snap->zones[i].solar_gain,
             lv6::pipe_inner_diameter_mm(snap->zones[i].pipe_type), snap->zones[i].pipe_spacing_mm,
-            snap->zones[i].supply_pipe_length_m, snap->zone_house_balance[i]);
+            snap->zones[i].supply_pipe_length_m, snap->zone_house_balance[i], lag_eff_tok, lag_prior_tok,
+            lag_learned_tok, lag_samples);
     bool fw = true;
     if (th.thickness_ignored) {
       appendf(buf, JSON_BUF_SIZE, off, "%s\"thickness_ignored\"", fw ? "" : ",");

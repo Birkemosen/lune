@@ -225,7 +225,7 @@ like a statically balanced installation whose balancing valves follow the rooms:
 - Inside the manifold warm rooms hand their flow to cold ones and the total stays put.
   The manifold's total follows its most demanding room: full while one room is a comfort
   band below target, less when every room on the manifold is warm.
-- A loop closes only when its room is past target + comfort band + overheat margin (more
+- A loop closes only when its room is past target + overheat margin (more
   while Touch pre-buffers), and reopens 0.3 °C below that. Its flow goes to the other
   loops. The manifold never closes every loop.
 - The heat comes from the supply temperature. V6 tells Touch to **raise** it when a room
@@ -240,11 +240,25 @@ closed room that waited for its thermometer would keep falling well below target
 closed because its room is warm therefore reopens on the temperature *expected one floor
 lag ahead*: the room's measured fall (°C/h, over 30-minute steps) times the floor lag
 (about 1.5 h for 8 cm concrete, 1 h for screed, less for dry systems, plus about 0.4 h
-for parquet and 0.6 h for carpet). The longer the loop has been closed, the longer the
+for parquet and 0.6 h for carpet; timber joists with parquet ≈ 1.0 h). Each loop then
+learns its own (see *Floor response time* below). The longer the loop has been closed, the longer the
 lag counts (up to twice after 4 hours), because the slab has given up more of its heat.
 The loop reopens 0.2 °C below setpoint instead of at setpoint − comfort band, after at
 least 20 minutes closed. It closes again if the room turns warm (0.2 °C hysteresis). A
 steady room reopens on its measured temperature.
+
+**Floor response time.** Every loop learns how long its room takes to turn after heat
+starts or stops going in. Heat input is the opening × (supply − room); above 8 K the loop
+counts as heating, below 4 K as not. An edge after at least 90 minutes in the other state
+starts an episode: after heat starts the room holds or keeps falling until the floor
+answers, after it stops the room keeps rising until the floor has given off its charge.
+The response time is the middle of the plateau at that low or high point, counted once
+the room has moved 0.2 °C back; an episode ends without a sample if the heat flips back
+first, a valve test runs, or the turn takes more than 6 hours. Samples between 0.1 and
+5 h are averaged (new sample weight 0.3); the build's prior counts less with each sample
+and is gone after 4. Learned values are kept in NVS. `floor_lag_h` (in use),
+`floor_lag_prior_h`, `floor_lag_learned_h` and `floor_lag_samples` per zone in
+`/api/v1/zones`.
 
 Default local mode is heat pump.
 

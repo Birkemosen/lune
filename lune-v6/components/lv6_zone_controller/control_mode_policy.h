@@ -23,7 +23,8 @@ inline HeatingProfile resolve_mode(HeatingProfile local, bool touch_active,
 ///
 /// Normal mode: closes at setpoint and stays latched closed until the room
 /// drops below setpoint − comfort_band (hysteresis). Heat-pump mode closes only
-/// past setpoint + margin (+ absorb band while buffering).
+/// past setpoint + margin (+ absorb band while buffering); the margin is measured
+/// from the setpoint, not from the comfort band's edge.
 inline ZoneState classify(HeatingProfile mode, float temp, float setpoint,
                           float comfort_band, float hp_overheat_margin_c,
                           float preheat_advance_c, float absorb_band_c,
@@ -50,7 +51,7 @@ inline ZoneState classify(HeatingProfile mode, float temp, float setpoint,
 
   // Heat pump
   normal_latched_closed = false;
-  const float overheat_cut = setpoint + comfort_band + hp_overheat_margin_c + absorb_band_c;
+  const float overheat_cut = setpoint + hp_overheat_margin_c + absorb_band_c;
   if (temp > overheat_cut)
     return ZoneState::OVERHEATED;
   const float demand_threshold = setpoint - comfort_band + preheat_advance_c;
