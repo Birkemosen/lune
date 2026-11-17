@@ -382,8 +382,8 @@ static void test_full_flow_margin() {
 
 static void test_group_shares_pooled() {
   // Stue Repo (Z4) and Stue (Z5) in one sync group: the room's mean temperature for both,
-  // learned shares 0.95 and 0.55. Pooled, they share 0.75 each and open alike; the rest
-  // of the manifold is untouched.
+  // learned shares 0.95 and 0.55. Pooled, they share one share and open alike; the group was
+  // the index loop, so all shares are scaled back until it is 0.95 again.
   const Params p{0.5f, 1.0f, 0.0f};
   Loop loops[6];
   const float temps[6] = {22.2f, 20.9f, 21.2f, 22.2f, 22.2f, 21.0f};
@@ -394,9 +394,9 @@ static void test_group_shares_pooled() {
   const float other = loops[0].design_share;
   const int8_t root[6] = {0, 1, 2, 3, 3, 5};
   pool_group_shares(loops, root);
-  expect_near(loops[3].design_share, 0.75f, 1e-4f, "group: primary gets the members' mean share");
-  expect_near(loops[4].design_share, 0.75f, 1e-4f, "group: member gets the same share");
-  expect_near(loops[0].design_share, other, 1e-6f, "group: loops outside the group keep theirs");
+  expect_near(loops[3].design_share, 0.95f, 1e-4f, "group: primary gets the members' mean share, scaled to the index share");
+  expect_near(loops[4].design_share, 0.95f, 1e-4f, "group: member gets the same share");
+  expect_near(loops[0].design_share, other * 0.95f / 0.75f, 1e-5f, "group: loops outside the group keep their ratio");
   bool closed[6]{};
   float open[6], q[6];
   distribute(loops, p, closed, open, q);
@@ -408,9 +408,33 @@ static void test_group_shares_pooled() {
   expect_near(loops[3].design_share, 0.9f, 1e-6f, "group: one enabled member keeps its own share");
 }
 
+static void test_group_pool_keeps_index_share() {
+  // 1. sal 2026-11-17: Stue Repo (1.0, the index loop) and Stue (0.51) pooled to 0.755 left
+  // nothing at full flow; Soveværelse (0.34) 0.8 K cold sat at 42 %. Scaled back, the group
+  // keeps 1.0 and the others rise with it.
+  Loop loops[6];
+  const float temps[6] = {22.1f, 21.2f, 22.2f, 22.0f, 22.0f, 20.2f};
+  make_loops(loops, temps, 22.0f);
+  const float shares[6] = {0.20f, 0.56f, 0.05f, 1.0f, 0.51f, 0.34f};
+  for (int i = 0; i < 6; i++) loops[i].design_share = shares[i];
+  const int8_t root[6] = {0, 1, 2, 3, 3, 5};
+  pool_group_shares(loops, root);
+  expect_near(loops[3].design_share, 1.0f, 1e-4f, "group pool: the index group keeps share 1");
+  expect_near(loops[4].design_share, 1.0f, 1e-4f, "group pool: both members at 1");
+  expect_near(loops[5].design_share, 0.34f / 0.755f, 1e-3f, "group pool: the others scale with it");
+  loops[3].setpoint_c = loops[4].setpoint_c = 23.0f;
+  loops[5].setpoint_c = 21.0f;
+  bool closed[6]{};
+  float open[6], q[6];
+  distribute(loops, Params{0.5f, 1.0f, 0.0f}, closed, open, q);
+  expect(q[3] >= 0.999f && q[4] >= 0.999f, "group pool: the cold group at full flow");
+  expect(q[5] > 0.44f, "group pool: Soveværelse gets its balanced flow, not 0.755 of it");
+}
+
 int main() {
   test_full_flow_margin();
   test_short_loop_share_cap();
+  test_group_pool_keeps_index_share();
   test_zone_area();
   test_valve_curve();
   test_distribute_through_curve();

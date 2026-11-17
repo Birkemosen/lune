@@ -287,8 +287,16 @@ inline Result distribute(const Loop (&loops)[N], const Params &p, bool (&closed)
 /// shares drift apart (a loop with a warmer return is given less), which throttles one
 /// loop of a room that is cold as a whole (1. sal 2026-11-16: Stue Repo 100 %, Stue 61 %
 /// with the room 0.8 K below target). `root[i]` is loop i's group primary (i alone: itself).
+/// Pooling lowers the largest share when the index loop is in a group; the shares are then
+/// scaled back so the largest is what it was, or the whole manifold passes less at full load
+/// (1. sal 2026-11-17: Stue Repo 1.0 and Stue 0.51 pooled to 0.755, nothing at full flow,
+/// every loop at 0.755 of its balanced flow; Soveværelse 0.8 K cold at 42 %).
 template <size_t N>
 inline void pool_group_shares(Loop (&loops)[N], const int8_t (&root)[N]) {
+  float max_before = 0.0f;
+  for (size_t i = 0; i < N; i++)
+    if (loops[i].enabled)
+      max_before = std::max(max_before, loops[i].design_share);
   for (size_t r = 0; r < N; r++) {
     float share = 0.0f, house = 0.0f;
     unsigned n = 0;
@@ -306,6 +314,13 @@ inline void pool_group_shares(Loop (&loops)[N], const int8_t (&root)[N]) {
         loops[i].house_balance = house / static_cast<float>(n);
       }
   }
+  float max_after = 0.0f;
+  for (size_t i = 0; i < N; i++)
+    if (loops[i].enabled)
+      max_after = std::max(max_after, loops[i].design_share);
+  if (max_after > 0.0f && max_after < max_before)
+    for (size_t i = 0; i < N; i++)
+      loops[i].design_share *= max_before / max_after;
 }
 
 /// Without heat moving (no supply temperature).
