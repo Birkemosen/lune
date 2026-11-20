@@ -431,6 +431,50 @@ static void test_group_pool_keeps_index_share() {
   expect(q[5] > 0.44f, "group pool: Soveværelse gets its balanced flow, not 0.755 of it");
 }
 
+static void test_rising_room_lead() {
+  // Lead: a rising room is taken one floor lag ahead, capped; steady or falling as measured.
+  expect_near(lead_temp_c(22.4f, 0.2f, 1.95f), 22.79f, 1e-3f, "lead: 0.2 C/h × 1.95 h ahead");
+  expect_near(lead_temp_c(22.4f, 1.0f, 1.95f), 22.4f + MAX_LEAD_C, 1e-4f, "lead: capped at MAX_LEAD_C");
+  expect_near(lead_temp_c(22.4f, -0.3f, 1.95f), 22.4f, 1e-4f, "lead: falling room as measured");
+  expect_near(lead_temp_c(22.4f, NAN, 1.95f), 22.4f, 1e-4f, "lead: no trend yet as measured");
+
+  // Stueetage 2026-11-19: target 22.0, margin 0.8 → limit 22.8. Hobbyrum at 22.5 rising
+  // 0.2 C/h with a 1.95 h floor closes now instead of at 22.9 (it then rose to 23.2).
+  const Params p{0.5f, 0.8f, 0.0f};
+  const float lead = lead_temp_c(22.5f, 0.2f, 1.95f);
+  expect(!update_closed(false, 22.5f, 22.0f, p), "lead: measured alone stays open");
+  expect(update_closed(false, lead, 22.0f, p), "lead: rising room closes ahead");
+  // Still rising after closing: stays closed; turned at 22.6: lead = measured, inside the hysteresis.
+  expect(update_closed(true, lead_temp_c(22.6f, 0.1f, 1.95f), 22.0f, p), "lead: closed while still rising");
+  expect(update_closed(true, lead_temp_c(22.6f, -0.1f, 1.95f), 22.0f, p), "lead: turned, held to limit − 0.3");
+  expect(!update_closed(true, lead_temp_c(22.4f, -0.1f, 1.95f), 22.0f, p), "lead: reopens 0.3 below the limit");
+
+  // In the distribution a rising room gets less than a steady one at the same temperature,
+  // and the flow it gives up goes to the cold room.
+  Loop loops[6];
+  const float temps[6] = {22.3f, 22.3f, 21.0f, 22.3f, 22.3f, 22.3f};
+  make_loops(loops, temps, 22.0f);
+  bool closed[6]{};
+  float open0[6], q0[6], open[6], q[6];
+  distribute(loops, p, closed, open0, q0);
+  loops[4].lead_c = lead_temp_c(22.3f, 0.2f, 1.95f);
+  distribute(loops, p, closed, open, q);
+  expect(q[4] < q0[4] - 0.05f, "lead: the rising room is turned down further");
+  expect(q[2] >= q0[2] - 1e-4f, "lead: the cold room keeps (or gains) its flow");
+
+  // Heat moving looks at the measured room, not the lead.
+  Params pm = p;
+  pm.supply_c = 22.0f;
+  Loop l2[6];
+  const float t2[6] = {23.0f, 21.0f, 22.0f, 22.0f, 22.0f, 22.0f};
+  make_loops(l2, t2, 22.0f);
+  l2[0].lead_c = 23.6f;
+  bool c2[6] = {true, false, false, false, false, false};
+  bool mv[6]{};
+  distribute(l2, pm, c2, open, q, mv);
+  expect(mv[0], "lead: heat moving on the measured room (23.0 vs supply 22.0)");
+}
+
 int main() {
   test_full_flow_margin();
   test_short_loop_share_cap();
@@ -440,6 +484,7 @@ int main() {
   test_distribute_through_curve();
   test_load_factor();
   test_closed_latch();
+  test_rising_room_lead();
   test_all_cold_is_static_balance();
   test_warm_rooms_give_flow_to_cold();
   test_closed_flow_goes_to_others();

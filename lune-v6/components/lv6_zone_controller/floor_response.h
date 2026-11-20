@@ -20,9 +20,13 @@
 // the valves, or the turn takes longer than MAX_WAIT_S. Pure C++, host-testable.
 namespace lv6::floor_response {
 
-static constexpr float ON_K = 8.0f;            ///< Heat input above this (K × opening) = heating
-static constexpr float OFF_K = 4.0f;           ///< …below this = not heating (hysteresis)
-static constexpr float OPEN_MIN_PCT = 20.0f;   ///< Below this a loop carries too little to count
+// The thresholds sit below a turned-down loop's typical input: a loop at half opening
+// with the supply 10 K above the room (5 K) heats, the law's minimum opening (~19 %,
+// ~2 K) does not. At 8 K / 4 K / 20 % the stueetage loops (supply ~33 °C, rooms ~23 °C,
+// seldom past 60 %) never counted and kept the prior (2026-11-20: 0 samples, 1. sal 6–14).
+static constexpr float ON_K = 4.0f;            ///< Heat input above this (K × opening) = heating
+static constexpr float OFF_K = 2.0f;           ///< …below this = not heating (hysteresis)
+static constexpr float OPEN_MIN_PCT = 15.0f;   ///< Below this a loop carries too little to count
 static constexpr float QUIET_MIN_S = 90.0f * 60.0f;  ///< State held this long before an edge counts
 static constexpr float TURN_K = 0.2f;          ///< Room back this far from its extreme = turned
 static constexpr float MAX_WAIT_S = 6.0f * 3600.0f;

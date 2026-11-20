@@ -1302,6 +1302,9 @@ void Lv6ZoneController::run_cycle_() {
     loop_share_pct_.fill(0.0f);
 
   const uint32_t cycle_ms = esphome::millis();
+  float lead_c[NUM_ZONES];
+  for (uint8_t i = 0; i < NUM_ZONES; i++)
+    lead_c[i] = NAN;
   for (uint8_t i = 0; i < NUM_ZONES; i++) {
     if (!cfg.zones[i].enabled) {
       target_positions[i] = 0.0f;
@@ -1353,7 +1356,19 @@ void Lv6ZoneController::run_cycle_() {
     if (hp_law) {
       const dynamic_balance::Params dbp{cfg.control.comfort_band_c, cfg.control.hp_overheat_margin_c,
                                         absorb_band};
-      hp_closed_[i] = dynamic_balance::update_closed(hp_closed_[i], temp, setpoint, dbp);
+      // A rising room is taken one floor lag ahead (dynamic_balance::lead_temp_c): the
+      // floor keeps warming it after its loop is turned down.
+      const auto th = thermal_model::estimate(cfg.zones[i], cfg.house_physics);
+      const float lag_h = floor_response::effective_lag_h(
+          floor_resp_[i], reopen_policy::floor_lag_h(cfg.zones[i].slab_type, cfg.zones[i].active_thickness_cm,
+                                                     th.r_m2k_per_w));
+      lead_c[i] = dynamic_balance::lead_temp_c(temp, reopen_trend_[i].slope_c_per_h, lag_h);
+      const bool was_closed = hp_closed_[i];
+      hp_closed_[i] = dynamic_balance::update_closed(hp_closed_[i], lead_c[i], setpoint, dbp);
+      if (hp_closed_[i] && !was_closed && !dynamic_balance::update_closed(false, temp, setpoint, dbp))
+        ESP_LOGI(TAG, "Zone %d: closing ahead at %.2f C (expected %.2f, limit %.2f, %.2f C/h, floor lag %.1f h)",
+                 i + 1, temp, lead_c[i], dynamic_balance::close_limit_c(setpoint, dbp),
+                 reopen_trend_[i].slope_c_per_h, lag_h);
       reopen_[i] = {};
     } else {
       hp_closed_[i] = false;
@@ -1416,6 +1431,7 @@ void Lv6ZoneController::run_cycle_() {
       loops[i].design_share = design_share_[i];
       loops[i].house_balance = get_house_balance(i);
       loops[i].temp_c = zone_temps[i];
+      loops[i].lead_c = lead_c[i];
       loops[i].setpoint_c = zone_setpoints[i];
       loops[i].max_opening_pct = cfg.zones[i].max_opening_pct;
     }

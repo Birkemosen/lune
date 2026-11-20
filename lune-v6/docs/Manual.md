@@ -228,6 +228,11 @@ like a statically balanced installation whose balancing valves follow the rooms:
 - A loop closes only when its room is past target + overheat margin (more
   while Touch pre-buffers), and reopens 0.3 °C below that. Its flow goes to the other
   loops. The manifold never closes every loop.
+- **Closing ahead.** The floor keeps warming its room for about one floor lag after the
+  loop is turned down. A rising room therefore counts with the temperature *expected one
+  floor lag ahead* (its rise in °C/h, over 30-minute steps, times the floor lag; at most
+  0.6 °C more than measured), both for its share and for closing. It stays closed until it
+  has turned and is 0.3 °C below the limit. A steady or falling room counts as measured.
 - The heat comes from the supply temperature. V6 tells Touch to **raise** it when a room
   has been below target − comfort band for 20 minutes, and to **lower** it when no room
   has been below target for 30 minutes.
@@ -248,8 +253,9 @@ least 20 minutes closed. It closes again if the room turns warm (0.2 °C hystere
 steady room reopens on its measured temperature.
 
 **Floor response time.** Every loop learns how long its room takes to turn after heat
-starts or stops going in. Heat input is the opening × (supply − room); above 8 K the loop
-counts as heating, below 4 K as not. An edge after at least 90 minutes in the other state
+starts or stops going in. Heat input is the opening × (supply − room), from 15 % opening;
+above 4 K the loop counts as heating, below 2 K as not (half open with the supply 10 K
+above the room heats, the heat-pump law's minimum opening does not). An edge after at least 90 minutes in the other state
 starts an episode: after heat starts the room holds or keeps falling until the floor
 answers, after it stops the room keeps rising until the floor has given off its charge.
 The response time is the middle of the plateau at that low or high point, counted once

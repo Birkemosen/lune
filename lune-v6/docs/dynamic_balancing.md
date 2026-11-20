@@ -65,6 +65,13 @@ Per control cycle, for each enabled loop *i*:
      so the open loops keep theirs. When the heat source runs the supply is warmer than
      the room and the loop closes again by itself. Without a supply probe nothing moves.
    - no temperature: `g = 1` (the loop behaves as statically balanced).
+   - **closing ahead:** a rising room is taken at the temperature expected one floor
+     lag ahead, `T + min(slope · lag, 0.6 °C)` (`lead_temp_c`; slope from the
+     30-minute trend, lag the learned floor response time or its prior). The floor
+     keeps giving off its charge for about a lag after the loop is turned down, so the
+     load factor and the close latch act on where the room is heading (stueetage
+     2026-11-16–20: rooms closed at 22.1–22.9 °C kept rising 0.1–1.0 K for hours).
+     A steady or falling room, and heat moving, use the measured temperature.
 3. **Total follows the most demanding room.** The reference flow is what the balanced
    manifold would pass with every room at its design share:
    `Q_ref = Σ min(1, P_i · H_i)`. The manifold load `L` is the largest load factor of an
