@@ -465,6 +465,8 @@
   "cz.floorWeather": "Floor and weather",
   "cz.floorPipes": "Floor and pipes",
   "cz.spacing": "Pipe spacing C-C",
+  "cz.maxFlow": "Recommended max flow",
+  "cz.maxFlowHint": "The loop is about {len} long (area ÷ pipe spacing plus leads). Set the manifold's flow preset to this. From the room's heat loss and wind exposure at {dut} °C outdoors, {dt} K cooling and a {res} % reserve.",
   "cz.pipeType": "Pipe type",
   "cz.weather": "Weather preload",
   "cz.walls": "Exterior walls",

@@ -1621,6 +1621,12 @@ function paintFormsFromState() {
       if (solar && !formIsLocked(solar) && Number.isFinite(Number(phys.solar_gain))) {
         solar.value = Number(phys.solar_gain).toFixed(1);
       }
+      // Read-only: estimated loop length and the recommended preset (loop_flow.h).
+      const lf = phys.flow || {};
+      const loopM = num(lf.loop_m, 0);
+      const maxL = num(lf.max_lpm, 1);
+      setBind(`z${z}.loopLength`, loopM === '—' ? loopM : `${loopM} m`);
+      setBind(`z${z}.maxFlow`, maxL === '—' ? maxL : `${maxL} l/min`);
     }
   }
 }

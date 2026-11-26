@@ -436,6 +436,8 @@
   "cz.floorWeather": "Gulv og vejr",
   "cz.floorPipes": "Gulv og rør",
   "cz.spacing": "Rørafstand C-C",
+  "cz.maxFlow": "Anbefalet maks. flow",
+  "cz.maxFlowHint": "Kredsen er ca. {len} lang (areal ÷ rørafstand plus tilledninger). Sæt fordelerens forindstilling hertil. Ud fra rummets varmetab og vindeksponering ved {dut} °C ude, {dt} K afkøling og {res} % reserve.",
   "cz.pipeType": "Rørtype",
   "cz.weather": "Vejr-preload",
   "cz.walls": "Ydervægge",
