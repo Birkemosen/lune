@@ -207,8 +207,11 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
         return f'''<div class="sub trend-wrap">
             <h4>{T("trend.title")} <span class="legend"><i class="lf"></i>{T("m.supply")}<i class="lr"></i>{T("m.return")}</span></h4>
             <p class="empty">{T("trend.empty")}</p>
-            <svg class="trend" viewBox="0 0 240 80" preserveAspectRatio="none" role="img" aria-label="{T("trend.aria")}" data-bind-trend="manifold"></svg>
-            <div class="axis" aria-hidden="true"><span>−24 {H}</span><span>−12 {H}</span><span>{T("trend.now")}</span></div>
+            <div class="hchart-panel">
+              <div class="hchart-y" aria-hidden="true" data-bind="manifold.trendY"><span>—</span><span>—</span><span>—</span></div>
+              <svg class="trend" viewBox="0 0 240 80" preserveAspectRatio="none" role="img" aria-label="{T("trend.aria")}" data-bind-trend="manifold"></svg>
+              <div class="axis at" aria-hidden="true" data-bind="manifold.trendX"><span class="e" style="--x:100"><b>{T("trend.now")}</b></span></div>
+            </div>
           </div>'''
 
     # ---- Hjem (DESIGN.md 15.7): statuslinje, fejl, Varme nu, Komfort pr. zone. Ingen gem-knapper.
@@ -220,7 +223,7 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
               <span class="zc mini" aria-hidden="true">
                 <span class="zc-y" data-bind="z{z[0]}.cardY"><span>—</span><span>—</span><span>—</span></span>
                 <span class="zc-plot"><svg viewBox="0 0 240 100" preserveAspectRatio="none" data-bind-zcard="z{z[0]}"></svg></span>
-                <span class="zc-x"><span style="left:0">−24 {H}</span><span style="left:50%">−12 {H}</span><span class="n" style="left:100%">{T("trend.now")}</span></span>
+                <span class="zc-x at" data-bind="z{z[0]}.cardX"><span class="n" style="left:100%">{T("trend.now")}</span></span>
               </span>
               <span class="empty">{T("zcard.empty")}</span>
             </button>''' for z in Z)
@@ -691,7 +694,7 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
              "alert.driversOffBody","drv.reason.fault","drv.reason.ota","drv.reason.arm","drv.reason.boot","drv.reason.user","dev.online","dev.offline",
              "zdash.preload","zdash.preloadUntil","src.ble","src.probe",
              "csys.touchWaiting","csys.touchWaitingBody","csys.touchApproved","csys.touchPending","csys.touchControls","csys.touchReady","csys.touchLeaseLost",
-             "zchart.expected","zchart.at","zchart.noForecast","zchart.faultStrong","zcard.flow","zcard.flowRet","zdash.mm","zdash.backOffSent","zdash.phys.wk","zdash.phys.h","zdash.phys.noteLearned","zdash.phys.notePrior","lab.thr.meta","lab.thr.capture","lab.thr.reference","lab.thr.verdictNone","lab.thr.verdictCeiling","lab.thr.verdictLate","lab.thr.verdictFirst","lab.thr.first","lab.thr.notReached","lab.thr.suggestText","lab.path.threshold","lab.path.trailing","lab.path.seat","lab.path.popoff","lab.path.openStop","lab.path.stall","lab.path.circuit","lab.path.ceiling","lab.path.wall","lab.dir.open","lab.dir.close","lab.state.setup","lab.state.armed","lab.state.seated","lab.state.opened","lab.state.closed","lab.state.running","lab.state.halted","lab.phase.free","lab.phase.contact","lab.phase.load","lab.phase.stopping","lab.pinSeen","lab.pinWaiting","lab.on","lab.off","lab.chartMeta","lab.dir.open","lab.dir.close","lab.err.drivers","lab.err.failed","lab.haltedMsg","csys.ownerFlow","csys.ownerReturn",
+             "trend.now","zchart.expected","zchart.at","zchart.noForecast","zchart.faultStrong","zcard.flow","zcard.flowRet","zdash.mm","zdash.backOffSent","zdash.phys.wk","zdash.phys.h","zdash.phys.noteLearned","zdash.phys.notePrior","lab.thr.meta","lab.thr.capture","lab.thr.reference","lab.thr.verdictNone","lab.thr.verdictCeiling","lab.thr.verdictLate","lab.thr.verdictFirst","lab.thr.first","lab.thr.notReached","lab.thr.suggestText","lab.path.threshold","lab.path.trailing","lab.path.seat","lab.path.popoff","lab.path.openStop","lab.path.stall","lab.path.circuit","lab.path.ceiling","lab.path.wall","lab.dir.open","lab.dir.close","lab.state.setup","lab.state.armed","lab.state.seated","lab.state.opened","lab.state.closed","lab.state.running","lab.state.halted","lab.phase.free","lab.phase.contact","lab.phase.load","lab.phase.stopping","lab.pinSeen","lab.pinWaiting","lab.on","lab.off","lab.chartMeta","lab.dir.open","lab.dir.close","lab.err.drivers","lab.err.failed","lab.haltedMsg","csys.ownerFlow","csys.ownerReturn",
              "wifi.connectedTo","wifi.notConnected","wifi.apActive","wifi.sent","wifi.needSsid","wifi.busy",
              "wifi.switch.pending","wifi.switch.connected","wifi.switch.reverted","wifi.switch.failed")
     rt={k:T(k) for k in rt_keys}
