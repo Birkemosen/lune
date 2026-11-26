@@ -995,6 +995,36 @@ function paintSparks() {
   paintZcharts();
 }
 
+/** Wall clock (epoch s) of a history entry: entries carry V6 uptime, the history its uptime now. */
+function histClock(hist, ts) {
+  const up = hist && Number(hist.uptime_s);
+  return Number.isFinite(up) ? Date.now() / 1000 - (up - ts) : NaN;
+}
+
+/**
+ * Time axis for the last 24 h ending at `endS` (epoch s), as on Touch: every 6th hour on the
+ * clock, the weekday (bold) at midnight, «now» at the right edge. Marks near either edge are
+ * left out. style 'at' → .axis.at marks (--x), 'left' → .zc-x.at marks (left:).
+ */
+function clockAxis(endS, style) {
+  const lang = (t('_lang') !== '_lang' && t('_lang')) || document.documentElement.lang || 'en';
+  const now = escapeHtml(t('trend.now'));
+  const tail = style === 'at' ? `<span class="e" style="--x:100"><b>${now}</b></span>` : `<span class="n" style="left:100%">${now}</span>`;
+  if (!Number.isFinite(endS)) return tail;
+  let out = '';
+  const first = Math.ceil((endS - 86400) / 3600) * 3600;
+  for (let s = first; s <= endS; s += 3600) {
+    const d = new Date(s * 1000);
+    const hr = d.getHours();
+    if (hr % 6) continue;
+    const x = (1 - (endS - s) / 86400) * 100;
+    if (x < 6 || x > 88) continue;
+    const text = hr === 0 ? `<b>${escapeHtml(d.toLocaleDateString(lang, { weekday: 'short' }))}</b>` : String(hr).padStart(2, '0');
+    out += style === 'at' ? `<span style="--x:${x.toFixed(2)}">${text}</span>` : `<span style="left:${x.toFixed(2)}%">${text}</span>`;
+  }
+  return out + tail;
+}
+
 /**
  * Zone cards on Home: 24 h of the device history (5-min entries) on a 240×100 viewBox,
  * placed by time so a short history after a restart starts mid-chart. Temperature as a
@@ -1065,6 +1095,7 @@ function paintZcards() {
     const lab = (v) => num(v, Number.isInteger(v) ? 0 : 1);
     setBind(`z${z}.cardY`, `<span>${lab(hi)}°</span><span>${lab((hi + lo) / 2)}°</span><span>${lab(lo)}°</span>`);
   }
+  setText('[data-bind$=".cardX"]', clockAxis(histClock(hist, last), 'left'));
 }
 
 function paintTrend() {
@@ -1072,24 +1103,31 @@ function paintTrend() {
   if (!svgs.length) return;
   const hist = getDashboardValue('zoneStateHistory');
   const entries = hist && Array.isArray(hist.entries) ? hist.entries : [];
-  const flows = [];
-  const rets = [];
-  // Prefer device 24 h history; fall back to short client buffer.
+  const W = 240;
+  const Hh = 80;
+  const DAY = 86400;
+  // Device 24 h history, placed by time (a short history after a restart starts mid-chart);
+  // else the short client buffer, evenly spaced.
+  const pts = [];
+  let endS = NaN;
   if (entries.length >= 2) {
-    const step = Math.max(1, Math.floor(entries.length / 48));
+    const last = entries[entries.length - 1][0];
+    endS = histClock(hist, last);
+    const step = Math.max(1, Math.floor(entries.length / 96));
     for (let i = 0; i < entries.length; i += step) {
       const e = entries[i];
-      const f = e[8];
-      const r = e[9];
-      if (typeof f === 'number' && Number.isFinite(f)) flows.push(f);
-      if (typeof r === 'number' && Number.isFinite(r)) rets.push(r);
+      if (!Array.isArray(e) || !(last - e[0] <= DAY)) continue;
+      pts.push({ x: W * (1 - (last - e[0]) / DAY), f: e[8], r: e[9] });
     }
   } else {
     const hf = getDashboardValue('historyFlow') || [];
     const hr = getDashboardValue('historyReturn') || [];
-    flows.push(...hf);
-    rets.push(...hr);
+    const n = Math.max(hf.length, hr.length);
+    for (let k = 0; k < n; k++) pts.push({ x: n <= 1 ? 0 : (k / (n - 1)) * W, f: hf[k], r: hr[k] });
   }
+  const fin = (v) => typeof v === 'number' && Number.isFinite(v);
+  const flows = pts.filter((p) => fin(p.f));
+  const rets = pts.filter((p) => fin(p.r));
   const empty = flows.length < 2 && rets.length < 2;
   svgs.forEach((svg) => {
     const wrap = svg.closest('.trend-wrap');
@@ -1097,22 +1135,24 @@ function paintTrend() {
     if (empty) svg.innerHTML = '';
   });
   if (empty) return;
-  const vals = flows.concat(rets).filter((v) => Number.isFinite(v));
-  let lo = Math.min(...vals) - 1;
-  let hi = Math.max(...vals) + 1;
-  if (!(hi > lo)) { lo = 26; hi = 39; }
-  const W = 240;
-  const Hh = 80;
-  const X = (k, len) => ((len <= 1 ? 0 : k / (len - 1)) * W).toFixed(1);
+  const vals = flows.map((p) => p.f).concat(rets.map((p) => p.r));
+  // Whole degrees, at least 3 °C (LDS 5.9), an even span so the middle mark is a half degree at most.
+  let lo = Math.floor(Math.min(...vals) - 0.5);
+  let hi = Math.ceil(Math.max(...vals) + 0.5);
+  if (hi - lo < 3) { const mid = (lo + hi) / 2; lo = Math.floor(mid - 1.5); hi = lo + 3; }
   const Y = (v) => (Hh - ((v - lo) / (hi - lo)) * Hh).toFixed(1);
-  const line = (arr) => arr.map((v, k) => `${X(k, arr.length)},${Y(Number.isFinite(v) ? v : lo)}`).join(' ');
-  const pf = flows.length ? line(flows) : '';
-  const pr = rets.length ? line(rets) : '';
+  const line = (arr, key) => arr.map((p) => `${p.x.toFixed(1)},${Y(p[key])}`).join(' ');
+  const pf = flows.length >= 2 ? line(flows, 'f') : '';
+  const pr = rets.length >= 2 ? line(rets, 'r') : '';
   const band = pf && pr
     ? `<polygon class="dt" points="${pf} ${pr.split(' ').reverse().join(' ')}"/>`
     : '';
-  const html = `${band}${pf ? `<polyline class="f" points="${pf}"/>` : ''}${pr ? `<polyline class="r" points="${pr}"/>` : ''}`;
+  const grid = [0, Hh / 2, Hh].map((y) => `<line class="gl" x1="0" x2="${W}" y1="${y}" y2="${y}"/>`).join('');
+  const html = `${grid}${band}${pf ? `<polyline class="f" points="${pf}"/>` : ''}${pr ? `<polyline class="r" points="${pr}"/>` : ''}`;
   svgs.forEach((svg) => { svg.innerHTML = html; });
+  const lab = (v) => num(v, Number.isInteger(v) ? 0 : 1);
+  setBind('manifold.trendY', `<span>${lab(hi)}°</span><span>${lab((hi + lo) / 2)}°</span><span>${lab(lo)}°</span>`);
+  setBind('manifold.trendX', clockAxis(endS, 'at'));
 }
 
 /**

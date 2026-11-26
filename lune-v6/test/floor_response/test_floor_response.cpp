@@ -26,6 +26,17 @@ int main() {
   assert(near(heat_input_k(100.0f, 36.0f, 20.0f), 16.0f));
   assert(near(heat_input_k(50.0f, 36.0f, 20.0f), 8.0f));
   assert(heat_input_k(10.0f, 36.0f, 20.0f) == 0.0f);   // below the minimum opening
+  assert(near(heat_input_k(15.0f, 36.0f, 20.0f), 2.4f)); // at the minimum opening
+
+  // --- stueetage: half open with the supply 10 K above the room heats; the law's
+  // minimum opening (19 %) does not
+  {
+    Loop l;
+    step(l, heat_input_k(56.0f, 33.0f, 23.0f), 23.0f, false, 60.0f);
+    assert(l.heating);
+    step(l, heat_input_k(19.0f, 33.0f, 23.0f), 23.0f, false, 60.0f);
+    assert(!l.heating);
+  }
   assert(heat_input_k(100.0f, NAN, 20.0f) == 0.0f);
   assert(heat_input_k(100.0f, 18.0f, 20.0f) == 0.0f);  // water colder than the room
 
@@ -89,11 +100,11 @@ int main() {
   // --- hysteresis: between OFF_K and ON_K the state holds ---------------------------
   {
     Loop l;
-    step(l, 9.0f, 20.0f, false, 60.0f);
+    step(l, 5.0f, 20.0f, false, 60.0f);
     assert(l.heating);
-    step(l, 5.0f, 20.0f, false, 60.0f);                   // buffer water 25 °C, room 20
+    step(l, 3.0f, 20.0f, false, 60.0f);                   // buffer water 23 °C, room 20
     assert(l.heating);
-    step(l, 3.0f, 20.0f, false, 60.0f);
+    step(l, 1.5f, 20.0f, false, 60.0f);
     assert(!l.heating);
   }
 

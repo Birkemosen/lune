@@ -235,6 +235,13 @@ class Lv6ZoneController : public esphome::Component {
   enum class HpPhase : uint8_t { UNKNOWN = 0, RUNNING = 1, PRESTART = 2, IDLE = 3 };
   void set_hp_phase(HpPhase phase, uint32_t ttl_ms);
   HpPhase get_hp_phase() const;
+  /// Touch: a room elsewhere in the house is cold, so warm rooms here close nearer
+  /// their target (hp_overheat_margin_c, tightened only). NAN clears; RAM only,
+  /// expires after ttl_ms.
+  void set_touch_close_margin(float margin_c, uint32_t ttl_ms);
+  float get_touch_close_margin() const;  ///< NAN while Touch says nothing
+  /// The heat-pump margin in use: the local setting, or Touch's when it is tighter.
+  float effective_close_margin_c(float local_margin_c) const;
   /// Overheated loop reopened to move heat (room warmer than the supply).
   bool is_moving_heat(uint8_t zone) const { return zone < NUM_ZONES && hp_moving_[zone]; }
   /// Floor response time (floor_response.h): the build's prior, the learned value and
@@ -351,6 +358,8 @@ class Lv6ZoneController : public esphome::Component {
   std::array<reopen_policy::State, NUM_ZONES> reopen_{};
   std::array<reopen_policy::Trend, NUM_ZONES> reopen_trend_{};
   uint32_t hp_phase_until_ms_{0};
+  float touch_close_margin_c_{NAN};
+  uint32_t touch_close_margin_until_ms_{0};
 
   // Adaptive balancing accumulators (runtime only; adapt_i lives in ZoneConfig).
   // adapt_err_ema_[i] is a long-window EMA of the control error (setpoint−temp)

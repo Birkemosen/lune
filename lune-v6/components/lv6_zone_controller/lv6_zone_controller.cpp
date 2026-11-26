@@ -1300,8 +1300,14 @@ void Lv6ZoneController::run_cycle_() {
   const bool hp_law = effective_mode == HeatingProfile::HEAT_PUMP;
   if (!hp_law)
     loop_share_pct_.fill(0.0f);
+  // Touch tightens the margin while a room on another manifold is cold, so warm
+  // rooms here close nearer their target and the water goes to that room.
+  const float hp_margin_c = effective_close_margin_c(cfg.control.hp_overheat_margin_c);
 
   const uint32_t cycle_ms = esphome::millis();
+  float lead_c[NUM_ZONES];
+  for (uint8_t i = 0; i < NUM_ZONES; i++)
+    lead_c[i] = NAN;
   for (uint8_t i = 0; i < NUM_ZONES; i++) {
     if (!cfg.zones[i].enabled) {
       target_positions[i] = 0.0f;
@@ -1338,7 +1344,7 @@ void Lv6ZoneController::run_cycle_() {
       absorb_band = cfg.control.preheat_absorb_band_c * cap_scale;
     }
     ZoneState state = control_mode_policy::classify(
-        effective_mode, temp, setpoint, cfg.control.comfort_band_c, cfg.control.hp_overheat_margin_c,
+        effective_mode, temp, setpoint, cfg.control.comfort_band_c, hp_margin_c,
         preheat_advance, absorb_band, normal_closed_[i]);
     zone_states[i] = state;
 
@@ -1351,9 +1357,21 @@ void Lv6ZoneController::run_cycle_() {
     // (dynamic_balance.h); here only the overheat latch. Normal: per-zone law.
     float position = 0.0f;
     if (hp_law) {
-      const dynamic_balance::Params dbp{cfg.control.comfort_band_c, cfg.control.hp_overheat_margin_c,
+      const dynamic_balance::Params dbp{cfg.control.comfort_band_c, hp_margin_c,
                                         absorb_band};
-      hp_closed_[i] = dynamic_balance::update_closed(hp_closed_[i], temp, setpoint, dbp);
+      // A rising room is taken one floor lag ahead (dynamic_balance::lead_temp_c): the
+      // floor keeps warming it after its loop is turned down.
+      const auto th = thermal_model::estimate(cfg.zones[i], cfg.house_physics);
+      const float lag_h = floor_response::effective_lag_h(
+          floor_resp_[i], reopen_policy::floor_lag_h(cfg.zones[i].slab_type, cfg.zones[i].active_thickness_cm,
+                                                     th.r_m2k_per_w));
+      lead_c[i] = dynamic_balance::lead_temp_c(temp, reopen_trend_[i].slope_c_per_h, lag_h);
+      const bool was_closed = hp_closed_[i];
+      hp_closed_[i] = dynamic_balance::update_closed(hp_closed_[i], lead_c[i], setpoint, dbp);
+      if (hp_closed_[i] && !was_closed && !dynamic_balance::update_closed(false, temp, setpoint, dbp))
+        ESP_LOGI(TAG, "Zone %d: closing ahead at %.2f C (expected %.2f, limit %.2f, %.2f C/h, floor lag %.1f h)",
+                 i + 1, temp, lead_c[i], dynamic_balance::close_limit_c(setpoint, dbp),
+                 reopen_trend_[i].slope_c_per_h, lag_h);
       reopen_[i] = {};
     } else {
       hp_closed_[i] = false;
@@ -1416,12 +1434,13 @@ void Lv6ZoneController::run_cycle_() {
       loops[i].design_share = design_share_[i];
       loops[i].house_balance = get_house_balance(i);
       loops[i].temp_c = zone_temps[i];
+      loops[i].lead_c = lead_c[i];
       loops[i].setpoint_c = zone_setpoints[i];
       loops[i].max_opening_pct = cfg.zones[i].max_opening_pct;
     }
     // A sync group is one unit: its loops share one flow share and open alike.
     dynamic_balance::pool_group_shares(loops, sync_roots_arr);
-    dynamic_balance::Params dbp{cfg.control.comfort_band_c, cfg.control.hp_overheat_margin_c, 0.0f};
+    dynamic_balance::Params dbp{cfg.control.comfort_band_c, hp_margin_c, 0.0f};
     dbp.supply_c = read_manifold_flow_();
     dbp.move_on_k = cfg.control.hp_heat_move_k;
     // Heat source not running (Touch's phase): static balance; running, prestart or
@@ -2487,6 +2506,36 @@ Lv6ZoneController::HpPhase Lv6ZoneController::get_hp_phase() const {
   if (hp_phase_until_ms_ == 0 || static_cast<int32_t>(esphome::millis() - hp_phase_until_ms_) >= 0)
     return HpPhase::UNKNOWN;
   return hp_phase_;
+}
+
+void Lv6ZoneController::set_touch_close_margin(float margin_c, uint32_t ttl_ms) {
+  const float before = get_touch_close_margin();
+  if (!std::isfinite(margin_c) || margin_c <= 0.0f) {
+    if (std::isfinite(before))
+      ESP_LOGI(TAG, "Close margin from Touch cleared");
+    touch_close_margin_c_ = NAN;
+    touch_close_margin_until_ms_ = 0;
+    return;
+  }
+  margin_c = std::clamp(margin_c, 0.1f, 3.0f);
+  if (!(std::fabs(before - margin_c) < 0.01f))
+    ESP_LOGI(TAG, "Close margin from Touch: %.1f C (ttl %lu s)", margin_c,
+             static_cast<unsigned long>(ttl_ms / 1000));
+  touch_close_margin_c_ = margin_c;
+  const uint32_t until = esphome::millis() + ttl_ms;
+  touch_close_margin_until_ms_ = until == 0 ? 1 : until;
+}
+
+float Lv6ZoneController::get_touch_close_margin() const {
+  if (touch_close_margin_until_ms_ == 0 ||
+      static_cast<int32_t>(esphome::millis() - touch_close_margin_until_ms_) >= 0)
+    return NAN;
+  return touch_close_margin_c_;
+}
+
+float Lv6ZoneController::effective_close_margin_c(float local_margin_c) const {
+  const float touch = get_touch_close_margin();
+  return std::isfinite(touch) ? std::min(local_margin_c, touch) : local_margin_c;
 }
 
 const char *Lv6ZoneController::hp_phase_name(HpPhase phase) {

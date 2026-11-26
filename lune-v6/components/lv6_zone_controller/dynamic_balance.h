@@ -27,12 +27,14 @@ static constexpr float REOPEN_HYST_C = 0.3f;    ///< Closed loop reopens this fa
 static constexpr float MOVE_ON_K = 0.5f;        ///< Default: overheated loop moves heat when supply is this far below its room
 static constexpr float MOVE_HYST_K = 0.3f;      ///< ...until the supply is less than (on − this) below it
 static constexpr float SHARE_OVER_MAX = 1.25f;  ///< A loop never gets more than this × its design share
+static constexpr float MAX_LEAD_C = 0.6f;       ///< A rising room is taken at most this much warmer than measured
 
 struct Loop {
   bool enabled{false};
   float design_share{0.0f};   ///< Static prior × learned correction (index loop ≈ 1)
   float house_balance{1.0f};  ///< Touch's per-loop factor (≤ 1)
   float temp_c{NAN};
+  float lead_c{NAN};          ///< Expected one floor lag ahead while rising (lead_temp_c; NaN: as measured)
   float setpoint_c{NAN};
   float max_opening_pct{100.0f};
   valve_curve::Curve curve{};  ///< Opening ↔ relative flow (the fixed model)
@@ -46,6 +48,20 @@ struct Params {
   bool idle{false};           ///< Heat source not running (Touch): static balance, see distribute
   float move_on_k{MOVE_ON_K}; ///< Supply this far below the room starts heat moving
 };
+
+/// Temperature a rising room is expected to reach one floor lag ahead: the floor keeps
+/// giving off its charge for about that long after its loop is turned down, so the law
+/// acts on where the room is heading, not where it is (stueetage 2026-11-16–20: rooms
+/// rose 0.1–1.0 K for hours after their loop closed). A steady or falling room is taken
+/// as measured; the lead is capped at MAX_LEAD_C.
+inline float lead_temp_c(float temp_c, float slope_c_per_h, float lag_h) {
+  if (!std::isfinite(temp_c) || !std::isfinite(slope_c_per_h) || !(slope_c_per_h > 0.0f) || !(lag_h > 0.0f))
+    return temp_c;
+  return temp_c + std::min(slope_c_per_h * lag_h, MAX_LEAD_C);
+}
+
+/// The temperature the law acts on: the lead while the room rises, else as measured.
+inline float control_temp_c(const Loop &l) { return std::isfinite(l.lead_c) ? l.lead_c : l.temp_c; }
 
 /// Load factor from the room's error: 1 at least one band below target, G_MIN at
 /// target + margin, linear between. No temperature → 1 (statically balanced).
@@ -69,7 +85,9 @@ inline float close_limit_c(float setpoint_c, const Params &p) {
   return setpoint_c + std::max(0.1f, p.overheat_margin_c) + std::max(0.0f, p.absorb_band_c);
 }
 
-/// Overheat latch: closes above the limit, reopens REOPEN_HYST_C below it.
+/// Overheat latch: closes above the limit, reopens REOPEN_HYST_C below it. `temp_c` is
+/// the temperature the law acts on (lead_temp_c), so a rising room closes on where it is
+/// heading and stays closed until it has turned.
 inline bool update_closed(bool closed, float temp_c, float setpoint_c, const Params &p) {
   if (!std::isfinite(temp_c) || !std::isfinite(setpoint_c))
     return false;
@@ -152,13 +170,14 @@ inline Result distribute(const Loop (&loops)[N], const Params &p, bool (&closed)
       // down by its load factor as when the heat source runs, so buffer water at room
       // temperature goes to the rooms that want it (1. sal 2026-11-13: Stue Repo 1.4 K warm
       // held at 100 % while Laura was 2 K cold).
-      const bool warm = loops[i].temp_c > loops[i].setpoint_c;
-      const float g = p.idle && !warm ? 1.0f : load_factor(loops[i].temp_c, loops[i].setpoint_c, p);
+      const float tc = control_temp_c(loops[i]);
+      const bool warm = tc > loops[i].setpoint_c;
+      const float g = p.idle && !warm ? 1.0f : load_factor(tc, loops[i].setpoint_c, p);
       w[i] = share * g;
       if (w[i] > 0.0f) {
         any_open = true;
         r.load = std::max(r.load, g);
-        if (!(loops[i].temp_c > loops[i].setpoint_c))
+        if (!(tc > loops[i].setpoint_c))
           any_cold = true;
       }
     }
@@ -177,8 +196,9 @@ inline Result distribute(const Loop (&loops)[N], const Params &p, bool (&closed)
     for (size_t i = 0; i < N; i++) {
       if (!loops[i].enabled || !(loops[i].design_share > 0.0f))
         continue;
-      const float surplus = (std::isfinite(loops[i].temp_c) && std::isfinite(loops[i].setpoint_c))
-                                ? loops[i].temp_c - close_limit_c(loops[i].setpoint_c, p)
+      const float tc = control_temp_c(loops[i]);
+      const float surplus = (std::isfinite(tc) && std::isfinite(loops[i].setpoint_c))
+                                ? tc - close_limit_c(loops[i].setpoint_c, p)
                                 : 0.0f;
       if (best == N || surplus < best_surplus) {
         best = i;
@@ -212,7 +232,7 @@ inline Result distribute(const Loop (&loops)[N], const Params &p, bool (&closed)
     float limit[N]{};
     for (size_t i = 0; i < N; i++) {
       const float own = share_cap ? std::min(cap[i], ref[i] * SHARE_OVER_MAX) : cap[i];
-      limit[i] = loops[i].temp_c > loops[i].setpoint_c ? std::min(own, w[i]) : own;
+      limit[i] = control_temp_c(loops[i]) > loops[i].setpoint_c ? std::min(own, w[i]) : own;
       q[i] = 0.0f;
     }
     bool capped[N]{};
@@ -287,8 +307,16 @@ inline Result distribute(const Loop (&loops)[N], const Params &p, bool (&closed)
 /// shares drift apart (a loop with a warmer return is given less), which throttles one
 /// loop of a room that is cold as a whole (1. sal 2026-11-16: Stue Repo 100 %, Stue 61 %
 /// with the room 0.8 K below target). `root[i]` is loop i's group primary (i alone: itself).
+/// Pooling lowers the largest share when the index loop is in a group; the shares are then
+/// scaled back so the largest is what it was, or the whole manifold passes less at full load
+/// (1. sal 2026-11-17: Stue Repo 1.0 and Stue 0.51 pooled to 0.755, nothing at full flow,
+/// every loop at 0.755 of its balanced flow; Soveværelse 0.8 K cold at 42 %).
 template <size_t N>
 inline void pool_group_shares(Loop (&loops)[N], const int8_t (&root)[N]) {
+  float max_before = 0.0f;
+  for (size_t i = 0; i < N; i++)
+    if (loops[i].enabled)
+      max_before = std::max(max_before, loops[i].design_share);
   for (size_t r = 0; r < N; r++) {
     float share = 0.0f, house = 0.0f;
     unsigned n = 0;
@@ -306,6 +334,13 @@ inline void pool_group_shares(Loop (&loops)[N], const int8_t (&root)[N]) {
         loops[i].house_balance = house / static_cast<float>(n);
       }
   }
+  float max_after = 0.0f;
+  for (size_t i = 0; i < N; i++)
+    if (loops[i].enabled)
+      max_after = std::max(max_after, loops[i].design_share);
+  if (max_after > 0.0f && max_after < max_before)
+    for (size_t i = 0; i < N; i++)
+      loops[i].design_share *= max_before / max_after;
 }
 
 /// Without heat moving (no supply temperature).

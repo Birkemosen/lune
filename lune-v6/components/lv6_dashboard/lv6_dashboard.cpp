@@ -2229,14 +2229,25 @@ void LV6Dashboard::handle_zones_(AsyncWebServerRequest *request) {
   json_escape_cstr(snap->system.display_name, name_esc, sizeof(name_esc));
   json_escape_cstr(snap->system.location, place_esc, sizeof(place_esc));
 
+  // Heat-pump close margin: the local setting, Touch's (while a room elsewhere is cold)
+  // and the one in use.
+  char margin_local[16], margin_touch[16], margin_eff[16];
+  const float touch_margin = this->zone_controller_ ? this->zone_controller_->get_touch_close_margin() : NAN;
+  format_float_token(margin_local, sizeof(margin_local), snap->hp_overheat_margin_c, 1);
+  format_float_token(margin_touch, sizeof(margin_touch), touch_margin, 1);
+  format_float_token(margin_eff, sizeof(margin_eff),
+                     std::isfinite(touch_margin) ? std::min(snap->hp_overheat_margin_c, touch_margin)
+                                                 : snap->hp_overheat_margin_c, 1);
+
   appendf(buf, JSON_BUF_SIZE, off,
           "{\"ok\":true,\"version\":\"v1\",\"data\":{\"node_id\":\"%s\","
           "\"device_name\":\"%s\",\"device_location\":\"%s\",\"count\":%u,\"hp_phase\":\"%s\","
+          "\"close_margin\":{\"local_c\":%s,\"touch_c\":%s,\"effective_c\":%s},"
           "\"balance_basis\":\"%s\",",
           node_id, name_esc, place_esc, static_cast<unsigned>(lv6::NUM_ZONES),
           this->zone_controller_ ? lv6::Lv6ZoneController::hp_phase_name(this->zone_controller_->get_hp_phase())
                                  : "unknown",
-          "model");
+          margin_local, margin_touch, margin_eff, "model");
   // The manifold's heat demand, as in /overview control.heat_demand: Touch reads it here
   // with the zones (a room may lift the house only while its loop is the critical one
   // and V6 says raise). Per zone below: demand_state, recommendation, saturated_s.
@@ -3668,6 +3679,53 @@ void LV6Dashboard::handle_v1_(AsyncWebServerRequest *request, const char *path) 
     snprintf(response, sizeof(response), "{\"ok\":true,\"version\":\"v1\",\"data\":{\"phase\":\"%s\",\"ttl_s\":%lu}}",
              lv6::Lv6ZoneController::hp_phase_name(this->zone_controller_->get_hp_phase()),
              static_cast<unsigned long>(ttl_s));
+    send_text_(request, 200, "application/json", response, true, "no-cache");
+    return;
+
+  } else if (strcmp(path, "/close-margin") == 0) {
+    // Touch: a room on another manifold is cold, so warm rooms here close at target +
+    // margin_c instead of the local margin (only ever tighter). margin_c missing or 0
+    // clears it; otherwise it expires after ttl_s. Same authentication as heat-pump-phase.
+    if (this->config_store_ == nullptr || this->zone_controller_ == nullptr) {
+      this->send_v1_(request, 503, "controller_unavailable", "Zone controller unavailable");
+      return;
+    }
+    const auto auth_cfg = this->config_store_->get_authority_config();
+    const auto key_header = request->get_header("X-Lune-Authority-Key");
+    const char *provided_key = key_header.has_value() ? key_header->c_str() : "";
+    float auth_timestamp_s = 0.0f;
+    char auth_nonce[48]{};
+    parse_num_param(request, body, "auth_timestamp_s", &auth_timestamp_s);
+    parse_text_param(request, body, "auth_nonce", "", auth_nonce, sizeof(auth_nonce));
+    if (!touch_auth::request_is_authenticated(auth_cfg.shared_key, provided_key,
+                                              ::time(nullptr), auth_timestamp_s, auth_nonce)) {
+      this->send_v1_(request, 403, "touch_auth_failed",
+                     "Touch command requires provisioned key, valid UTC timestamp, and nonce");
+      return;
+    }
+    if (request_guard_.check(0, data_revision_, auth_nonce, millis()) == request_guard::Decision::DUPLICATE) {
+      this->send_v1_(request, 409, "replayed_nonce", "Touch command nonce was already used");
+      return;
+    }
+    float margin_c = NAN;
+    float ttl_s = 900.0f;
+    parse_num_param(request, body, "margin_c", &margin_c);
+    parse_num_param(request, body, "ttl_s", &ttl_s);
+    if (!std::isfinite(ttl_s))
+      ttl_s = 900.0f;
+    ttl_s = std::clamp(ttl_s, 60.0f, 3600.0f);
+    this->zone_controller_->set_touch_close_margin(margin_c, static_cast<uint32_t>(ttl_s * 1000.0f));
+    const float local = this->config_store_->read([&](const lv6::DeviceConfig &c_) {
+      return c_.control.hp_overheat_margin_c;
+    });
+    char touch_tok[16], eff_tok[16];
+    format_float_token(touch_tok, sizeof(touch_tok), this->zone_controller_->get_touch_close_margin(), 1);
+    format_float_token(eff_tok, sizeof(eff_tok), this->zone_controller_->effective_close_margin_c(local), 1);
+    char response[160];
+    snprintf(response, sizeof(response),
+             "{\"ok\":true,\"version\":\"v1\",\"data\":{\"local_c\":%.1f,\"touch_c\":%s,"
+             "\"effective_c\":%s,\"ttl_s\":%lu}}",
+             local, touch_tok, eff_tok, static_cast<unsigned long>(ttl_s));
     send_text_(request, 200, "application/json", response, true, "no-cache");
     return;
 
