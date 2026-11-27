@@ -388,12 +388,15 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
                  srow(lab(f"z{i}_pipe",T("cz.pipeType")),f'<select class="select" id="z{i}_pipe" name="z{i}_pipe">{pipes}</select>')+
                  srow(lab(f"z{i}_slab",T("cz.slab")),slab)+
                  srow(lab(f"z{i}_covering",T("cz.covering")),cover)+
-                 sstep(f"z{i}_thick",T("cz.thickness"),0,0,15,0.5,"cm"),
+                 sstep(f"z{i}_thick",T("cz.thickness"),0,0,15,0.5,"cm")+
+                 srow(span(T("cz.maxFlow")),f'<span data-bind="z{i}.maxFlow">—</span>',
+                      T("cz.maxFlowHint",len=f'<span data-bind="z{i}.loopLength">—</span>',dut="−12",dt=5,res=30)),
                  help=help_btn("help-zone-floor",T("cz.floorWeather")))}
           {group(T("zs.weather"),
                  srow(span(T("cz.walls")),compass(i,walls),T("zs.wallsHint"))+
-                 sstep(f"z{i}_wind",T("cz.wind"),1.0 if walls else 0.0,0,2,0.1,"×")+
-                 sstep(f"z{i}_solar",T("cz.solar"),0.6 if "s" in walls else 0.2,0,2,0.1,"×"))}
+                 sstep(f"z{i}_wind",T("cz.wind"),1.0 if walls else 0.0,0,3.4,0.1,"×")+
+                 sstep(f"z{i}_solar",T("cz.solar"),0.6 if "s" in walls else 0.2,0,2,0.1,"×"),
+                 extra=f'<p class="note" data-bind-show="weather.touchNote" hidden>{T("zs.weatherTouch")}</p>')}
           {group(T("zs.advanced"),
                  subpage(T("zs.motorCal"),f'<span class="badge" data-bind="z{i}.motorBadge">—</span>',motor_body)+
                  subpage(T("zs.grouping"),f'<span class="muted" data-bind="z{i}.mergeVal">{T("common.none")}</span>',group_body))}

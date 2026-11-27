@@ -907,6 +907,16 @@ function paintTouch() {
   const leased = touchLeaseActive();
   // Under a lease only Touch arms absorb (V6 auto-detection is off).
   setShow('absorb.touchNote', leased);
+  // Under a lease Touch owns each room's wind and sun and sends them here: read-only.
+  setShow('weather.touchNote', leased);
+  for (let z = 1; z <= 6; z++) {
+    for (const id of [`z${z}_wind`, `z${z}_solar`]) {
+      const input = document.getElementById(id);
+      if (!input) continue;
+      input.disabled = leased;
+      input.closest('.stepper')?.querySelectorAll('button').forEach((b) => { b.disabled = leased; });
+    }
+  }
   const pending = isEntityOn(gkey.authorityProposalPending);
   const form = document.querySelector('form[data-save="connections"]');
   let pair = 'unpaired';
@@ -1621,6 +1631,12 @@ function paintFormsFromState() {
       if (solar && !formIsLocked(solar) && Number.isFinite(Number(phys.solar_gain))) {
         solar.value = Number(phys.solar_gain).toFixed(1);
       }
+      // Read-only: estimated loop length and the recommended preset (loop_flow.h).
+      const lf = phys.flow || {};
+      const loopM = num(lf.loop_m, 0);
+      const maxL = num(lf.max_lpm, 1);
+      setBind(`z${z}.loopLength`, loopM === '—' ? loopM : `${loopM} m`);
+      setBind(`z${z}.maxFlow`, maxL === '—' ? maxL : `${maxL} l/min`);
     }
   }
 }
@@ -1824,12 +1840,13 @@ async function saveZoneFloor_(z, form, data) {
     await setZoneNumber(z, 'zone_pipe_spacing_mm', spacing);
   }
   if (pipe) await setZoneSelect(z, 'zone_pipe_type', pipe);
-  // Weather exposure is store-only on V6 (Touch owns control); keep UI values.
+  // Weather exposure: Touch owns it under a lease (it sends each room's value); the UI
+  // writes wind and sun only without one.
   const wind = parseNum(form[`z${z}_wind`]);
   const solar = parseNum(form[`z${z}_solar`]);
   const forecast = { exterior_walls: mask };
-  if (Number.isFinite(wind)) forecast.wind_exposure = wind;
-  if (Number.isFinite(solar)) forecast.solar_gain = solar;
+  if (!touchLeaseActive() && Number.isFinite(wind)) forecast.wind_exposure = wind;
+  if (!touchLeaseActive() && Number.isFinite(solar)) forecast.solar_gain = solar;
   await postForecastProfile(z, forecast);
   await fetchPhysicsAlerts();
 }

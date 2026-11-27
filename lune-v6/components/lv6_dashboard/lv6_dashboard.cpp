@@ -4,6 +4,7 @@
 #include "../lv6_zone_controller/absorb_command_logic.h"
 #include "../lv6_zone_controller/hydraulic_diagnostics.h"
 #include "../lv6_zone_controller/probe_mapping.h"
+#include "../lv6_zone_controller/loop_flow.h"
 #include "../lv6_zone_controller/thermal_model.h"
 #include "../lv6_config_store/group_model.h"
 #include "esphome/components/lv6_ble_time_beacon/lv6_ble_time_beacon.h"
@@ -2390,6 +2391,16 @@ void LV6Dashboard::handle_zones_(AsyncWebServerRequest *request) {
       format_float_token(lag_learned_tok, sizeof(lag_learned_tok), fl.learned_h, 2);
       lag_samples = fl.samples;
     }
+    // Recommended max loop flow for the manifold's preset (loop_flow.h).
+    const auto lf = lv6::loop_flow::compute(th.plausible ? th.ua_effective_w_per_k : NAN,
+                                            snap->zones[i].setpoint_c, snap->zones[i].wind_exposure,
+                                            snap->zones[i].area_m2, snap->zones[i].pipe_spacing_mm,
+                                            snap->zones[i].supply_pipe_length_m);
+    char flow_loop[16], flow_w[16], flow_design[16], flow_max[16];
+    format_float_token(flow_loop, sizeof(flow_loop), lf.loop_m, 0);
+    format_float_token(flow_w, sizeof(flow_w), lf.design_w, 0);
+    format_float_token(flow_design, sizeof(flow_design), lf.design_lpm, 2);
+    format_float_token(flow_max, sizeof(flow_max), lf.max_lpm, 2);
     char r_ov_tok[24];
     if (std::isfinite(snap->zones[i].r_override_m2k_per_w))
       snprintf(r_ov_tok, sizeof(r_ov_tok), "%.3f", snap->zones[i].r_override_m2k_per_w);
@@ -2411,6 +2422,7 @@ void LV6Dashboard::handle_zones_(AsyncWebServerRequest *request) {
             "\"pipe_inner_mm\":%.0f,\"pipe_spacing_mm\":%.0f,\"supply_pipe_length_m\":%.1f,"
             "\"house_balance\":%.2f,"
             "\"floor_lag_h\":%s,\"floor_lag_prior_h\":%s,\"floor_lag_learned_h\":%s,\"floor_lag_samples\":%u,"
+            "\"flow\":{\"loop_m\":%s,\"design_w\":%s,\"design_lpm\":%s,\"max_lpm\":%s},"
             "\"warnings\":[",
             snap->zones[i].area_m2, static_cast<unsigned>(snap->zones[i].exterior_walls & 0x0F),
             lv6::slab_type_to_string(snap->zones[i].slab_type), thick_tok,
@@ -2425,7 +2437,7 @@ void LV6Dashboard::handle_zones_(AsyncWebServerRequest *request) {
             snap->zones[i].wind_exposure, snap->zones[i].solar_gain,
             lv6::pipe_inner_diameter_mm(snap->zones[i].pipe_type), snap->zones[i].pipe_spacing_mm,
             snap->zones[i].supply_pipe_length_m, snap->zone_house_balance[i], lag_eff_tok, lag_prior_tok,
-            lag_learned_tok, lag_samples);
+            lag_learned_tok, lag_samples, flow_loop, flow_w, flow_design, flow_max);
     bool fw = true;
     if (th.thickness_ignored) {
       appendf(buf, JSON_BUF_SIZE, off, "%s\"thickness_ignored\"", fw ? "" : ",");
