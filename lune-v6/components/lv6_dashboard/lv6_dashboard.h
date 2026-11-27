@@ -345,6 +345,8 @@ class LV6Dashboard : public Component, public AsyncWebHandler {
   /// CSRF gate for local writes (custom header required). Sends 403 itself and
   /// returns false when the request must be refused.
   bool authorize_write_(AsyncWebServerRequest *request);
+  /// Touch's signed write (authority key + timestamp/nonce in the body) or the UI's CSRF.
+  bool authorize_touch_or_ui_(AsyncWebServerRequest *request, const char *body);
   /// Park the H-bridges before an OTA write: disable the drivers and wait for
   /// any in-flight stroke or calibration to finish, so a reboot mid-flash can
   /// never leave a motor energised.

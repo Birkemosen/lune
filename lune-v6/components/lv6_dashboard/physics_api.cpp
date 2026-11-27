@@ -435,9 +435,32 @@ void LV6Dashboard::handle_group_remove_(AsyncWebServerRequest *request, const ch
   this->send_v1_(request, 200, nullptr, nullptr);
 }
 
+bool LV6Dashboard::authorize_touch_or_ui_(AsyncWebServerRequest *request, const char *body) {
+  // Touch signs with the authority key (auth_timestamp_s + auth_nonce in the body); the
+  // UI sends X-Lune-CSRF. Touch never sends CSRF, so a CSRF-only route refused its
+  // physics write-through with 403 csrf_required (2026-11-27).
+  const auto key_header = request->get_header("X-Lune-Authority-Key");
+  if (!key_header.has_value() || key_header->empty())
+    return this->authorize_write_(request);
+  const auto auth_cfg = this->config_store_ ? this->config_store_->get_authority_config()
+                                            : lv6::AuthorityConfig{};
+  long ts = 0;
+  bool has_ts = false;
+  parse_int_field(body, "auth_timestamp_s", &ts, &has_ts);
+  char auth_nonce[48]{};
+  parse_string_field(body, "auth_nonce", auth_nonce, sizeof(auth_nonce), nullptr);
+  if (auth_cfg.shared_key[0] == '\0' ||
+      !touch_auth::request_is_authenticated(auth_cfg.shared_key, key_header->c_str(), time(nullptr),
+                                            static_cast<uint32_t>(ts), auth_nonce)) {
+    this->send_v1_(request, 403, "touch_auth_failed", "Authority authentication failed");
+    return false;
+  }
+  return true;
+}
+
 void LV6Dashboard::handle_zone_physics_(AsyncWebServerRequest *request, uint8_t zone,
                                         const char *body) {
-  if (!this->authorize_write_(request))
+  if (!this->authorize_touch_or_ui_(request, body))
     return;
   if (zone < 1 || zone > lv6::NUM_ZONES || !this->config_store_) {
     this->send_v1_(request, 400, "invalid_zone", "Zone must be 1..6");
@@ -680,24 +703,8 @@ void LV6Dashboard::handle_forecast_profile_(AsyncWebServerRequest *request, uint
   // room's effective (learned or set) wind and solar here, signed with the authority
   // key. V6 does not use them for control; they show in the zone sheet and size the
   // recommended max loop flow (loop_flow.h). The UI can still write them (CSRF).
-  const auto key_header = request->get_header("X-Lune-Authority-Key");
-  if (key_header.has_value() && !key_header->empty()) {
-    const auto auth_cfg = this->config_store_ ? this->config_store_->get_authority_config()
-                                              : lv6::AuthorityConfig{};
-    long ts = 0;
-    bool has_ts = false;
-    parse_int_field(body, "auth_timestamp_s", &ts, &has_ts);
-    char auth_nonce[48]{};
-    parse_string_field(body, "auth_nonce", auth_nonce, sizeof(auth_nonce), nullptr);
-    if (auth_cfg.shared_key[0] == '\0' ||
-        !touch_auth::request_is_authenticated(auth_cfg.shared_key, key_header->c_str(), time(nullptr),
-                                              static_cast<uint32_t>(ts), auth_nonce)) {
-      this->send_v1_(request, 403, "touch_auth_failed", "Authority authentication failed");
-      return;
-    }
-  } else if (!this->authorize_write_(request)) {
+  if (!this->authorize_touch_or_ui_(request, body))
     return;
-  }
   if (zone < 1 || zone > lv6::NUM_ZONES || !this->config_store_) {
     this->send_v1_(request, 400, "invalid_zone", "Zone must be 1..6");
     return;
