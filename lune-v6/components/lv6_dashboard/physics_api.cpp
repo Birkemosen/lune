@@ -676,10 +676,28 @@ void LV6Dashboard::handle_physics_house_(AsyncWebServerRequest *request, const c
 
 void LV6Dashboard::handle_forecast_profile_(AsyncWebServerRequest *request, uint8_t zone,
                                             const char *body) {
-  // Back-compat: accept and store wind/solar but do not use for control.
-  // Touch is the truth source for weather exposure (contract §1 / §11).
-  if (!this->authorize_write_(request))
+  // Touch is the truth source for weather exposure (contract §1 / §11): it sends each
+  // room's effective (learned or set) wind and solar here, signed with the authority
+  // key. V6 does not use them for control; they show in the zone sheet and size the
+  // recommended max loop flow (loop_flow.h). The UI can still write them (CSRF).
+  const auto key_header = request->get_header("X-Lune-Authority-Key");
+  if (key_header.has_value() && !key_header->empty()) {
+    const auto auth_cfg = this->config_store_ ? this->config_store_->get_authority_config()
+                                              : lv6::AuthorityConfig{};
+    long ts = 0;
+    bool has_ts = false;
+    parse_int_field(body, "auth_timestamp_s", &ts, &has_ts);
+    char auth_nonce[48]{};
+    parse_string_field(body, "auth_nonce", auth_nonce, sizeof(auth_nonce), nullptr);
+    if (auth_cfg.shared_key[0] == '\0' ||
+        !touch_auth::request_is_authenticated(auth_cfg.shared_key, key_header->c_str(), time(nullptr),
+                                              static_cast<uint32_t>(ts), auth_nonce)) {
+      this->send_v1_(request, 403, "touch_auth_failed", "Authority authentication failed");
+      return;
+    }
+  } else if (!this->authorize_write_(request)) {
     return;
+  }
   if (zone < 1 || zone > lv6::NUM_ZONES || !this->config_store_) {
     this->send_v1_(request, 400, "invalid_zone", "Zone must be 1..6");
     return;
@@ -693,13 +711,13 @@ void LV6Dashboard::handle_forecast_profile_(AsyncWebServerRequest *request, uint
       walls <= 15)
     z.exterior_walls = static_cast<uint8_t>(walls);
   if (parse_float_field(body, "wind_exposure", &f, &present) && present)
-    z.wind_exposure = std::clamp(f, 0.0f, 2.0f);
+    z.wind_exposure = std::clamp(f, 0.0f, 3.4f);   // Touch's max: 2.0 extra loss / 0.6
   if (parse_float_field(body, "solar_gain", &f, &present) && present)
     z.solar_gain = std::clamp(f, 0.0f, 2.0f);
   this->config_store_->update_zone(zi, z);
   if (this->data_revision_ != UINT32_MAX) this->data_revision_++;
-  ESP_LOGI(PHYS_TAG, "forecast-profile stored for zone %u (unused by V6 control; Touch owns weather)",
-           zone);
+  ESP_LOGI(PHYS_TAG, "forecast-profile stored for zone %u: wind %.2f solar %.2f (Touch owns weather)",
+           zone, z.wind_exposure, z.solar_gain);
   this->send_v1_(request, 200, nullptr, nullptr);
 }
 

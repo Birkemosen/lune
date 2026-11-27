@@ -625,6 +625,7 @@
   "zs.grouping": "Grouping",
   "zs.targetHint": "Also saved from the overview",
   "zs.wallsHint": "Used for weather preload from Lune Touch",
+  "zs.weatherTouch": "Lune Touch holds the lease and owns wind and sun: it sends each room's value (learned or set in Touch) here. Change them in Touch.",
   "cz.saveZone": "Save zone",
   "sys.title": "System",
   "sys.cats": "Categories",

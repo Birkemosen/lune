@@ -394,8 +394,9 @@ def render(T, langs, lang_urls, css_href, inline_css=None, include_binder=True, 
                  help=help_btn("help-zone-floor",T("cz.floorWeather")))}
           {group(T("zs.weather"),
                  srow(span(T("cz.walls")),compass(i,walls),T("zs.wallsHint"))+
-                 sstep(f"z{i}_wind",T("cz.wind"),1.0 if walls else 0.0,0,2,0.1,"×")+
-                 sstep(f"z{i}_solar",T("cz.solar"),0.6 if "s" in walls else 0.2,0,2,0.1,"×"))}
+                 sstep(f"z{i}_wind",T("cz.wind"),1.0 if walls else 0.0,0,3.4,0.1,"×")+
+                 sstep(f"z{i}_solar",T("cz.solar"),0.6 if "s" in walls else 0.2,0,2,0.1,"×"),
+                 extra=f'<p class="note" data-bind-show="weather.touchNote" hidden>{T("zs.weatherTouch")}</p>')}
           {group(T("zs.advanced"),
                  subpage(T("zs.motorCal"),f'<span class="badge" data-bind="z{i}.motorBadge">—</span>',motor_body)+
                  subpage(T("zs.grouping"),f'<span class="muted" data-bind="z{i}.mergeVal">{T("common.none")}</span>',group_body))}
